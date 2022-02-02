@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/local/bin/python3.7
 #
 # ug_convert_config (convert configuration between NGFW UserGate 5 and 6 version).
 #
@@ -20,13 +20,14 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.13
+# Версия 2.14
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
 import os, sys
 import stdiomask
 import json
+import xmlrpc.client as rpc
 from utm import UtmXmlRpc, UtmError, character_map
 
 

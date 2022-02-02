@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3.7
+#!/usr/bin/python3
 #
 # ug_convert_config (convert configuration between NGFW UserGate 5 and 6 version).
 #

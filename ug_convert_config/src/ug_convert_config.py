@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.14
+# Версия 2.15
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
@@ -126,7 +126,12 @@ class UTM(UtmXmlRpc):
             self.captive_profiles = {x['id']: x['name'] for x in result['items']}
 
         except rpc.Fault as err:
-            print(f"\033[31mОшибка ug_convert_config/init_struct_for_export(): [{err.faultCode}] {err.faultString}\033[0m")
+            if err.faultCode == 102:
+                print("\033[31m\tУ вас нет прав для использования API.")
+                print("\tДобавьте необходимые разрешения в профиль администратора.\033[0m\n")
+            else:
+                print(f"\033[31mОшибка ug_convert_config/init_struct_for_export: [{err.faultCode}] {err.faultString}\033[0m")
+            sys.exit(1)
 
         total, data = self.get_users_list()
         self.list_users = {x['guid']: x['name'] for x in data if total}
@@ -216,7 +221,12 @@ class UTM(UtmXmlRpc):
             self.captive_portal_rules = {x['name']: x['id'] for x in result['items']}
 
         except rpc.Fault as err:
-            print(f"\033[31mОшибка ug_convert_config/init_struct_for_import(): [{err.faultCode}] {err.faultString}\033[0m")
+            if err.faultCode == 102:
+                print("\033[31m\tУ вас нет прав для использования API.")
+                print("\tДобавьте необходимые разрешения в профиль администратора.\033[0m\n")
+            else:
+                print(f"\033[31mОшибка ug_convert_config/init_struct_for_export: [{err.faultCode}] {err.faultString}\033[0m")
+            sys.exit(1)
 
         total, data = self.get_zones_list()
         self.zones = {x['name']: x['id'] for x in data if total}
@@ -6325,7 +6335,7 @@ def main():
         password = stdiomask.getpass("\033[36mВведите пароль:\033[0m ")
     except KeyboardInterrupt:
         print("\nПрограмма принудительно завершена пользователем.")
-        exit()
+        sys.exit(1)
 
     try:
         utm = UTM(server_ip, login, password)

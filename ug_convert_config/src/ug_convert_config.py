@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.15
+# Версия 2.16
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
@@ -2430,6 +2430,10 @@ class UTM(UtmXmlRpc):
             item.pop('cc', None)
             item.pop('guid', None)
             item.pop('position_layer', None),
+            item.pop('log_limit', None)
+            item.pop('log_limit_value', None)
+            item.pop('log_limit_burst', None)
+            item['log_session_start'] = True
             if item['scenario_rule_id']:
                 item['scenario_rule_id'] = self.scenarios_rules[item['scenario_rule_id']]
             if self.version.startswith('6'):

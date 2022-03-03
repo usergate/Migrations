@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.16
+# Версия 2.17
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
@@ -5207,7 +5207,7 @@ class UTM(UtmXmlRpc):
                         ports_num += 1
                         iface_name[key] = f'port{ports_num}'
                     else:
-                        iface_name[key] = f'port{ports_num}.vlan'
+                        iface_name[key] = f'port{ports_num}.{vlan}'
         else:
             iface_name = {x['name']: x['name'] for x in data}
         with open("data/iface_translate.json", "w") as fd:

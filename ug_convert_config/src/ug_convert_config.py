@@ -5201,10 +5201,17 @@ class UTM(UtmXmlRpc):
             ports_num = max([int(x[4:5]) if x.startswith('port') else 0 for x in iface_name.values()])
             for key in sorted(iface_name.keys()):
                 if key.startswith('slot'):
-                    ports_num += 1
-                    iface_name[key] = f'port{ports_num}'
+                    try:
+                        name, vlan = iface_name[key].split('.')
+                    except ValueError:
+                        ports_num += 1
+                        iface_name[key] = f'port{ports_num}'
+                    else:
+                        iface_name[key] = f'port{ports_num}.vlan'
         else:
             iface_name = {x['name']: x['name'] for x in data}
+        with open("data/iface_translate.json", "w") as fd:
+            json.dump(iface_name, fd, indent=4, ensure_ascii=False)
         return iface_name
 
     def set_src_zone_and_ips(self, item):

@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.18
+# Версия 2.19
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
@@ -102,7 +102,7 @@ class UTM(UtmXmlRpc):
             self.list_mime = {x['id']: x['name'] for x in result['items'] if result['count']}
 
             result = self._server.v2.nlists.list(self._auth_token, 'url', 0, 1000, {})
-            self.list_url = {x['id']: x['name'] for x in result['items'] if result['count']}
+            self.list_url = {x['id']: x['name'].strip().translate(trans_table) for x in result['items'] if result['count']}
 
             result = self._server.v2.nlists.list(self._auth_token, 'timerestrictiongroup', 0, 1000, {})
             self.list_calendar = {x['id']: x['name'] for x in result['items'] if result['count']}
@@ -4878,7 +4878,8 @@ class UTM(UtmXmlRpc):
             print("\tНет правил WCCP для импорта.")
             return
 
-        wccp_rules = {x['name']: x['id'] for x in self.get_wccp_list()}
+        _, wccp = self.get_wccp_list()
+        wccp_rules = {x['name']: x['id'] for x in wccp}
 
         for item in data:
             if item['routers']:
@@ -5360,8 +5361,12 @@ class UTM(UtmXmlRpc):
                             x[1] = result
                             users.append(x)
                     else:
-                        x[1] = self.list_users[x[1]]
-                        users.append(x)
+                        try:
+                            x[1] = self.list_users[x[1]]
+                        except KeyError:
+                            print(f'\t\033[31mНе найден пользователь "{x[1]}" для правила "{item["name"]}".\n\tИмпортируйте локальных пользователей и повторите импорт правил.\033[0m')
+                        else:
+                            users.append(x)
 
                 elif x[0] == 'group' and x[1]:
                     i = x[1].partition("\\")
@@ -5375,8 +5380,12 @@ class UTM(UtmXmlRpc):
                             x[1] = result
                             users.append(x)
                     else:
-                        x[1] = self.list_groups[x[1]]
-                        users.append(x)
+                        try:
+                            x[1] = self.list_groups[x[1]]
+                        except KeyError:
+                            print(f'\t\033[31mНе найдена группа "{x[1]}" для правила "{item["name"]}".\n\tИмпортируйте локальные группы и повторите импорт правил.\033[0m')
+                        else:
+                            users.append(x)
                 elif x[0] == 'special' and x[1]:
                     users.append(x)
             item['users'] = users

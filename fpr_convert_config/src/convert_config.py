@@ -59,13 +59,26 @@ def convert_file(file_name):
     def convert_interface(ifname, line, fh):
         iface = {
             'name': ifname,
+            'zone_id': '',
+            'master': False,
+            'netflow_profile': 'undefined',
+            'tap': False,
+            'enabled': False,
             'kind': '',
+            'mtu': 1500,
+            'running': False,
+            'dhcp_relay': {
+                'enabled': False,
+                'host_ipv4': '',
+                'servers': []
+            },
+            'mode': 'static',
         }
         while not line.startswith('!'):
             y = line.translate(trans_table).strip().split(' ')
             if y[0] == 'vlan':
                 iface['kind'] = 'vlan'
-                iface['vlan_id'] = y[1]
+                iface['vlan_id'] = int(y[1])
             elif y[0] == 'nameif':
                 iface['zone_id'] = y[1]
             elif y[0] == 'ip' and y[1] == 'address':
@@ -77,6 +90,12 @@ def convert_file(file_name):
         if iface['kind'] == 'vlan':
             data['ifaces'].append(iface)
         return line
+
+    def convert_dhcprelay(server_ip, zone_name):
+        for iface in data['ifaces']:
+            if iface['zone_id'] == zone_name:
+                iface['dhcp_relay']['enabled'] = True
+                iface['dhcp_relay']['servers'].append(server_ip)
 
     def convert_network_object(name, fh):
         ip_list = {
@@ -308,6 +327,9 @@ def convert_file(file_name):
                 elif x[0] == 'mtu':
                     if x[1].lower() != 'management':
                         data['zones'].append(x[1])
+                elif x[0] == 'dhcprelay':
+                    if x[1] == 'server':
+                        convert_dhcprelay(x[2], x[3])
                 line = fh.readline()
     else:
         print(f'Не найден каталог с конфигурацией Cisco FPR.')
@@ -505,14 +527,14 @@ def import_interfaces(utm, ifaces):
             except KeyError as err:
                 print(f'\t\033[33mЗона {err} для интерфейса "{item["name"]}" не найдена.\n\tСоздайте зону {err} и присвойте этому VLAN.\033[0m')
                 item['zone_id'] = 0
-        item['master'] = False
-        item['netflow_profile'] = 'undefined'
-        item['tap'] = False
-        item['enabled'] = False
-        item['mtu'] = 1500
-        item['running'] = False
-        item['dhcp_relay'] = {'servers': [], 'enabled': False, 'host_ipv4': ''}
-        item['mode'] = 'static'
+#        item['master'] = False
+#        item['netflow_profile'] = 'undefined'
+#        item['tap'] = False
+#        item['enabled'] = False
+#        item['mtu'] = 1500
+#        item['running'] = False
+#        item['dhcp_relay'] = {'servers': [], 'enabled': False, 'host_ipv4': ''}
+#        item['mode'] = 'static'
 
         if item['name'] in vlan_list:
             print(f'\tИнтерфейс "{item["name"]}" уже существует', end= ' - ')

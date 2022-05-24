@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.1
+# Версия 1.2
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -76,7 +76,7 @@ class UTM:
     def get_nlists_list(self, list_type):
         """Получить словарь {name: id} списков URL, applicationgroup, network и т.д."""
         try:
-            result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 5000, {})
+            result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 10000, {})
         except rpc.Fault as err:
             print(f'\033[31m\tОшибка utm.get_nlists_list: [{err.faultCode}] — {err.faultString}\033[0m')
             sys.exit(1)
@@ -127,7 +127,7 @@ class UTM:
     def get_services_list(self):
         """Получить список сервисов раздела Библиотеки"""
         try:
-            result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.libraries.services.list(self._auth_token, 0, 5000, {}, [])
         except rpc.Fault as err:
             print(f'\033[31m\tОшибка utm.get_services_list: [{err.faultCode}] — {err.faultString}\033[0m')
             sys.exit(1)

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# asa_convert_config (convert Cisco FPR NGFW configuration to NGFW UserGate).
+# convert_config (convert Cisco FPR NGFW configuration to NGFW UserGate).
 #
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -21,15 +21,18 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco FPR-2130 на NGFW UserGate версии 6.
-# Версия 1.1
+# Версия 1.2
 #
 
-import os, sys, json
+import os, sys, json, re
 import stdiomask
 import ipaddress
+from pprint import pprint
 from services import character_map, network_proto, service_ports
 from utm import UTM
 
+revers_service_ports = {v: k for k, v in service_ports.items()}
+pattern = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
 def convert_file(file_name):
     """Преобразуем файл конфигурации Cisco FPR-2130 в json."""
@@ -41,7 +44,30 @@ def convert_file(file_name):
         'services': {},
         'ifaces': [],
         'zones': [],
+        'fw_rules': {}
     }
+
+    def add_ip_list(ip, mask='255.255.255.255', obj='host'):
+        ip_list = {
+            'name': '',
+            'description': '',
+            'type': 'network',
+            'url': '',
+            'attributes': {
+                'threat_level': 3
+            },
+            'content': []
+        }
+        if obj == 'subnet':
+            subnet = ipaddress.ip_network(f'{ip}/{mask}')
+            ip_list['name'] = f'subnet {ip}/{subnet.prefixlen}'
+            ip_list['content'].append({'value': f'{ip}/{subnet.prefixlen}'})
+        elif obj == 'host':
+            ip_list['name'] = f'host {ip}'
+            ip_list['content'].append({'value': f'{ip}'})
+
+        data['ip_lists'][ip_list['name']] = ip_list
+        return ip_list['name']
 
     def convert_local_pool(x):
         ip_list = {
@@ -215,7 +241,7 @@ def convert_file(file_name):
                                 while True:
                                     port_number = input(f'\t\033[36mВведите номер порта для сервиса {err}:\033[0m')
                                     if not port_number.isdigit() or (int(port_number) > 65535) or (int(port_number) < 1):
-                                        print('\t\033[31mНеверно, номер порта должен быть цифрой между 1 и 65535.')
+                                        print('\t\033[31mНеверно, номер порта должен быть цифрой между 1 и 65535.\033[0m')
                                     else:
                                         y[indx+3] = port_number
                                         break
@@ -231,7 +257,7 @@ def convert_file(file_name):
                     try:
                         service['protocols'].extend(data['services'][y[2]]['protocols'])
                     except KeyError as err:
-                        print(f"\tОшибка: не найден group-object {err} в сервисе '{' '.join(x)}'")
+                        print(f"\t\033[31mОшибка: не найден group-object {err} в сервисе '{' '.join(x)}'\033[0m")
                         print(y)
                 elif y[1] == 'description':
                     service['description'] = ' '.join(y[2:])
@@ -265,7 +291,7 @@ def convert_file(file_name):
                     try:
                         service['protocols'].extend(data['services'][y[2]]['protocols'])
                     except KeyError as err:
-                        print(f"\tОшибка: не найден group-object {err} в сервисе '{' '.join(x)}'")
+                        print(f"\t\033[31mОшибка: не найден group-object {err} в сервисе '{' '.join(x)}'\033[0m")
                         print(y)
                 elif y[1] == 'description':
                     service['description'] = ' '.join(y[2:])
@@ -297,6 +323,125 @@ def convert_file(file_name):
         data['services'][name] = service
         return line
 
+    def convert_access_list(rule_id, rule_name, fh):
+        fw_rule = {
+            'name': rule_name,
+            'action': '',
+            'src_zones': set(),
+            'dst_zones': set(),
+            'src_ips': set(),
+            'dst_ips': set(),
+            'services': set(),
+            'enabled': False,
+        }
+
+        line = fh.readline()
+        x = line.translate(trans_table).rstrip().split(' ')
+        while x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'advanced':
+            service_name = ''
+            service = {
+                'name': '',
+                'description': '',
+                'protocols': [
+                    {
+                        'proto': '',
+                        'port': '',
+                        'source_port': '',
+                    }
+                ]
+            }
+            if not rule_id == int(x[x.index('rule-id') + 1]):
+                print(f'\t\033[31mОшибка: "{line}" не обработано!\033[0m')
+                break
+            fw_rule['action'] = 'drop' if x[3] == 'deny' else 'accept'
+            if x[4] == 'icmp':
+                fw_rule['services'].add('Any ICMP')
+            elif x[4] == 'ipinip':
+                service_name = f'service-IPinIP'
+                service['name'] = service_name
+                service['protocols'][0]['proto'] = 'ipip'
+            elif x[4] == 'gre':
+                service_name = f'service-gre'
+                service['name'] = service_name
+                service['protocols'][0]['proto'] = 'gre'
+            elif x[4] == '41':
+                line = fh.readline()
+                x = line.translate(trans_table).rstrip().split(' ')
+                continue
+            if x[4] == 'object-group' and x[5] in data['services']:
+                fw_rule['services'].add(x[5])
+                x.pop(5)
+            if x[5] == 'ifc':
+                fw_rule['src_zones'].add(x[6])
+                y = x[7:]
+            else:
+                y = x[5:]
+
+            for i in range(len(y)):
+                if y[i] in ('host', 'object', 'object-group', 'any'):
+                    if y[i] == 'any':
+                        continue
+                    if i == 0:
+                        list_name = add_ip_list(y[1]) if y[0] == 'host' else y[1]
+                        fw_rule['src_ips'].add(('list_id', list_name))
+                    elif i == 2:
+                        list_name = add_ip_list(y[3]) if y[2] == 'host' else y[3]
+                        fw_rule['dst_ips'].add(('list_id', list_name))
+                    else:
+                        if y[i+1] in data['services']:
+                            fw_rule['services'].add(y[i+1])
+                        else:
+                            list_name = add_ip_list(y[i+1]) if y[i] == 'host' else y[i+1]
+                            fw_rule['dst_ips'].add(('list_id', list_name))
+                elif y[i] == 'ifc':
+                    fw_rule['dst_zones'].add(y[i+1])
+                elif y[i] == 'eq':
+                    if service_name:
+                        service_name = f'{service_name} extended'
+                        service['name'] = service_name
+                        service['protocols'][0]['source_port'] = service['protocols'][0]['port']
+                        service['protocols'][0]['port'] = service_ports.get(y[i+1], y[i+1])
+                    else:
+                        service_name = f'service-{x[4]}-{revers_service_ports.get(y[i+1], y[i+1])}'
+                        service['name'] = service_name
+                        service['protocols'][0]['proto'] = x[4]
+                        service['protocols'][0]['port'] = service_ports.get(y[i+1], y[i+1])
+                        
+                elif y[i] == 'range':
+                    if service_name:
+                        service_name = f'{service_name} extended'
+                        service['name'] = service_name
+                        service['protocols'][0]['source_port'] = service['protocols'][0]['port']
+                        service['protocols'][0]['port'] = f'{service_ports.get(y[i+1], y[i+1])}-{service_ports.get(y[i+2], y[i+2])}'
+                    else:
+                        service_name = f'service-{x[4]} {service_ports.get(y[i+1], y[i+1])}-{service_ports.get(y[i+2], y[i+2])}'
+                        service['name'] = service_name
+                        service['protocols'][0]['proto'] = x[4]
+                        service['protocols'][0]['port'] = f'{service_ports.get(y[i+1], y[i+1])}-{service_ports.get(y[i+2], y[i+2])}'
+                elif pattern.match(y[i]) and pattern.match(y[i+1]):
+                    if i == 0:
+                        fw_rule['src_ips'].add(('list_id', add_ip_list(y[0], mask=y[1], obj='subnet')))
+                    elif i == 2:
+                        fw_rule['dst_ips'].add(('list_id', add_ip_list(y[2], mask=y[3], obj='subnet')))
+                    elif i == 4:
+                        fw_rule['dst_ips'].add(('list_id', add_ip_list(y[4], mask=y[5], obj='subnet')))
+            if service_name:
+                fw_rule['services'].add(service_name)
+                if service_name not in data['services']:
+                    data['services'][service_name] = service
+
+            line = fh.readline()
+            x = line.translate(trans_table).rstrip().split(' ')
+
+        fw_rule['src_zones'] = list(fw_rule['src_zones'])
+        fw_rule['dst_zones'] = list(fw_rule['dst_zones'])
+        fw_rule['src_ips'] = list(fw_rule['src_ips'])
+        fw_rule['dst_ips'] = list(fw_rule['dst_ips'])
+        fw_rule['services'] = list(fw_rule['services'])
+
+        data['fw_rules'][rule_id] = fw_rule
+        return line
+
     if os.path.isdir('data_ca'):
         with open(f"data_ca/{file_name}.txt", "r") as fh:
             line = fh.readline()
@@ -324,6 +469,9 @@ def convert_file(file_name):
                     if x[1] == 'icmp-type':
                         line = convert_icmp_object_group(x[2], fh)
                         continue
+                elif x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'remark' and x[5] in ('RULE:', 'L7', 'L4'):
+                    line = convert_access_list(int(x[4][:-1]), ' '.join(x[6:]), fh)
+                    continue
                 elif x[0] == 'mtu':
                     if x[1].lower() != 'management':
                         data['zones'].append(x[1])
@@ -342,7 +490,7 @@ def convert_file(file_name):
 ######################################## Импорт ####################################################
 def import_list_ips(utm, list_ips):
     """Импортировать списки IP адресов"""
-    print('Импорт списков IP-адресов раздела "Библиотеки":')
+    print('\033[32mИмпорт списков IP-адресов раздела "Библиотеки":\033[0m')
 
     if not list_ips:
         print("\tНет списков IP-адресов для импорта.")
@@ -351,6 +499,9 @@ def import_list_ips(utm, list_ips):
     utm_list_ips = utm.get_nlists_list('network')
 
     for item in list_ips.values():
+        if item['name'] in utm_list_ips:
+            print(f'\tСписок "{item["name"]}" уже существует.')
+            continue
         content = item.pop('content')
         err, result = utm.add_nlist(item)
         if err == 1:
@@ -372,7 +523,7 @@ def import_list_ips(utm, list_ips):
 
 def import_services(utm, services):
     """Импортировать список сервисов раздела библиотеки"""
-    print('\nИмпорт списка сервисов раздела "Библиотеки":')
+    print('\n\033[32mИмпорт списка сервисов раздела "Библиотеки":\033[0m')
     services_list = utm.get_services_list()
 
     for item in services.values():
@@ -388,13 +539,13 @@ def import_services(utm, services):
                     if val['port'] in service_ports or val['port'].split('-')[0].isdigit():
                         val['port'] = service_ports.get(val['port'], val['port'])
                     else:
-                        print(f'\tПротокол "{val["port"]}" в сервисе "{item["name"]}" не импортирован!')
+                        print(f'\t\033[33mПротокол "{val["port"]}" в сервисе "{item["name"]}" не импортирован!\033[0m')
                         continue
                 if val['source_port']:
                     if val['source_port'] in service_ports or val['source_port'].split('-')[0].isdigit():
                         val['source_port'] = service_ports.get(val['source_port'], val['source_port'])
                     else:
-                        print(f'\tПротокол "{val["source_port"]}" в сервисе "{item["name"]}" не импортирован!')
+                        print(f'\t\033[33mПротокол "{val["source_port"]}" в сервисе "{item["name"]}" не импортирован!\033[0m')
                         continue
                 protocols.append(val)
         if protocols:
@@ -404,11 +555,11 @@ def import_services(utm, services):
                 print(f'\033[31m\t{result}\033[0m')
             else:
                 services_list[item['name']] = result
-            print(f'\tСервис "{item["name"]}" добавлен.')
+                print(f'\tСервис "{item["name"]}" добавлен.')
 
 def import_zones(utm, zones):
     """Импортировать зоны на UTM"""
-    print('\nИмпорт списка "Зоны" раздела "Сеть":')
+    print('\n\033[32mИмпорт списка "Зоны" раздела "Сеть":\033[0m')
     zones_list = utm.get_zones_list()
 
     for item in zones:
@@ -480,7 +631,7 @@ def import_zones(utm, zones):
 
 def import_interfaces(utm, ifaces):
     """Импортировать интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
-    print('Импорт VLAN в раздела "Сеть/Интерфейсы":')
+    print('\n\033[32mИмпорт VLAN в раздела "Сеть/Интерфейсы":\033[0m')
 
     management_port = ''
     vlan_list = []
@@ -527,14 +678,6 @@ def import_interfaces(utm, ifaces):
             except KeyError as err:
                 print(f'\t\033[33mЗона {err} для интерфейса "{item["name"]}" не найдена.\n\tСоздайте зону {err} и присвойте этому VLAN.\033[0m')
                 item['zone_id'] = 0
-#        item['master'] = False
-#        item['netflow_profile'] = 'undefined'
-#        item['tap'] = False
-#        item['enabled'] = False
-#        item['mtu'] = 1500
-#        item['running'] = False
-#        item['dhcp_relay'] = {'servers': [], 'enabled': False, 'host_ipv4': ''}
-#        item['mode'] = 'static'
 
         if item['name'] in vlan_list:
             print(f'\tИнтерфейс "{item["name"]}" уже существует', end= ' - ')
@@ -550,59 +693,56 @@ def import_interfaces(utm, ifaces):
                 vlan_list.append(item['name'])
                 print(f'\033[32m\tИнтерфейс "{item["name"]}" добавлен.\033[0m\n')
 
-def import_firewall_rules(number, file_rules, utm):
+def import_firewall_rules(utm, fw_rules):
     """Импортировать список правил межсетевого экрана"""
-    print(f'Импорт списка №{number} "Межсетевой экран" раздела "Политики сети":')
-    try:
-        with open(f"data_ug/network_policies/{file_rules}", "r") as fh:
-            data = json.load(fh)
-    except FileNotFoundError as err:
-        print(f'\t\033[31mСписок №{number} "Межсетевой экран" не импортирован!\n\tНе найден файл "data_ug/network_policies/{file_rules}" с сохранённой конфигурацией!\033[0;0m')
+    print(f'\n\033[32mИмпорт правил межсетевого экрана раздела "Политики сети":\033[0m')
+    if not fw_rules:
+        print("\tНет правил межсетевого экрана для импорта.")
         return
 
-    if not data:
-        print("\tНет правил №{number} межсетевого экрана для импорта.")
-        return
-
-    firewall_rules = utm.get_firewall_rules()
+    rules_list = utm.get_firewall_rules()
     services_list = utm.get_services_list()
-    l7_categories = utm.get_l7_categories()
-    applicationgroup = utm.get_nlists_list('applicationgroup')
-    l7_apps = utm.get_l7_apps()
-    zones = utm.get_zones_list()
-    list_ip = utm.get_nlists_list('network')
-    list_users = utm.get_users_list()
-    list_groups = utm.get_groups_list()
+    zones_list = utm.get_zones_list()
+    ip_list = utm.get_nlists_list('network')
 
-    for item in data:
-        get_guids_users_and_groups(utm, item, list_users, list_groups)
-        set_src_zone_and_ips(item, zones, list_ip)
-        set_dst_zone_and_ips(item, zones, list_ip)
+    for item in fw_rules.values():
+        if item['name'] in rules_list:
+            print(f'\tПравило "{item["name"]}" уже существует.')
+            continue
+        set_src_zone_and_ips(item, zones_list, ip_list)
+        set_dst_zone_and_ips(item, zones_list, ip_list)
         try:
             item['services'] = [services_list[x] for x in item['services']]
         except KeyError as err:
             print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
             item['services'] = []
-        try:
-            set_apps(item['apps'], l7_categories, applicationgroup, l7_apps)
-        except KeyError as err:
-            print(f'\t\033[33mНе найдено приложение {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-            item['apps'] = []
 
-        if item['name'] in firewall_rules:
-            print(f'\tПравило МЭ "{item["name"]}" уже существует', end= ' - ')
-            err1, result1 = utm.update_firewall_rule(firewall_rules[item['name']], item)
-            if err1 != 0:
-                print("\n", f"\033[31m{result1}\033[0m")
-            else:
-                print("\033[32mUpdated!\033[0;0m")
+        item['description'] = ''
+        item['scenario_rule_id'] = False
+        item['apps'] = []
+        item['users'] = []
+        item['limit'] = True
+        item['limit_value'] = '3/h'
+        item['burst'] = 5
+        item['log'] = False
+        item['log_session_start'] = False
+        item['src_zones_negate'] = False
+        item['dst_zones_negate'] = False
+        item['src_ips_negate'] = False
+        item['dst_ips_negate'] = False
+        item['services_negate'] = False
+        item['apps_negate'] = False
+        item['fragmented'] = 'ignore'
+        item['time_restrictions'] = []
+        item['active'] = True
+        item['send_host_icmp'] = ''
+
+        err, result = utm.add_firewall_rule(item)
+        if err != 0:
+            print(f"\033[31m{result}\033[0m")
         else:
-            err, result = utm.add_firewall_rule(item)
-            if err != 0:
-                print(f"\033[31m{result}\033[0m")
-            else:
-                firewall_rules[item["name"]] = result
-                print(f'\tПравило МЭ "{item["name"]}" добавлено.')
+            rules_list[item["name"]] = result
+            print(f'\tПравило МЭ "{item["name"]}" добавлено.')
 
 def set_src_zone_and_ips(item, zones, list_ip={}, list_url={}):
     if item['src_zones']:
@@ -639,30 +779,6 @@ def set_dst_zone_and_ips(item, zones, list_ip={}, list_url={}):
         except KeyError as err:
             print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
             item['dst_ips'] = []
-
-def set_apps(array_apps, l7_categories, applicationgroup, l7_apps):
-    """Определяем ID приложения по имени при импорте"""
-    for app in array_apps:
-        if app[0] == 'ro_group':
-            if app[1] == 0:
-                app[1] = "All"
-            elif app[1] == "All":
-                app[1] = 0
-            else:
-                try:
-                    app[1] = l7_categories[app[1]]
-                except KeyError as err:
-                    print(f'\t\033[33mНе найдена категория l7 №{err}.\n\tВозможно нет лицензии, и UTM не получил список категорий l7.\n\tУстановите лицензию и повторите попытку.\033[0m')
-        elif app[0] == 'group':
-            try:
-                app[1] = applicationgroup[app[1]]
-            except KeyError as err:
-                print(f'\t\033[33mНе найдена группа приложений №{err}.\n\tЗагрузите приложения и повторите попытку.\033[0m')
-        elif app[0] == 'app':
-            try:
-                app[1] = l7_apps[app[1]]
-            except KeyError as err:
-                print(f'\t\033[33mНе найдено приложение №{err}.\n\tВозможно нет лицензии, и UTM не получил список приложений l7.\n\tЗагрузите приложения или установите лицензию и повторите попытку.\033[0m')
 
 def menu():
     print("\033c")
@@ -710,8 +826,6 @@ def main():
             print(f'\n\033[31mОшибка парсинга конфигурации: {err}\033[0m')
             sys.exit(1)
 
-#        sys.exit(0)
-
         try:
             with open("data_ca/config_fpr.json", "r") as fh:
                 data = json.load(fh)
@@ -737,6 +851,7 @@ def main():
                 import_interfaces(utm, data['ifaces'])
             import_list_ips(utm, data['ip_lists'])
             import_services(utm, data['services'])
+            import_firewall_rules(utm, data['fw_rules'])
         except Exception as err:
             print(f'\n\033[31mОшибка: {err}\033[0m')
             utm.logout()

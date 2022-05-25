@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# convert_config (convert Cisco FPR NGFW configuration to NGFW UserGate).
+# asa_convert_config (convert Cisco FPR NGFW configuration to NGFW UserGate).
 #
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco FPR-2130 на NGFW UserGate версии 6.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json, re
@@ -44,7 +44,8 @@ def convert_file(file_name):
         'services': {},
         'ifaces': [],
         'zones': [],
-        'fw_rules': {}
+        'fw_rules': {},
+        'routes': []
     }
 
     def add_ip_list(ip, mask='255.255.255.255', obj='host'):
@@ -371,11 +372,15 @@ def convert_file(file_name):
             if x[4] == 'object-group' and x[5] in data['services']:
                 fw_rule['services'].add(x[5])
                 x.pop(5)
+#                print('----------------------------------------------------------------------')
             if x[5] == 'ifc':
                 fw_rule['src_zones'].add(x[6])
                 y = x[7:]
             else:
                 y = x[5:]
+
+#            print(f"\n{x[2:]}")
+#            print(f"{x[4]}", y)
 
             for i in range(len(y)):
                 if y[i] in ('host', 'object', 'object-group', 'any'):
@@ -430,6 +435,8 @@ def convert_file(file_name):
                 if service_name not in data['services']:
                     data['services'][service_name] = service
 
+#            pprint(fw_rule, sort_dicts=False)
+
             line = fh.readline()
             x = line.translate(trans_table).rstrip().split(' ')
 
@@ -441,6 +448,30 @@ def convert_file(file_name):
 
         data['fw_rules'][rule_id] = fw_rule
         return line
+
+    def convert_routes_list(route_line):
+        """Выгрузить список маршрутов"""
+        route = {
+            'enabled': True,
+            'name': '',
+            'description': '',
+            'dest': '',
+            'gateway': '',
+            'ifname': 'undefined',
+            'kind': 'unicast',
+            'metric': 0
+        }
+
+        try:
+            ip_address = ipaddress.ip_interface(f'{route_line[2]}/{route_line[3]}')
+            route['dest'] = f'{route_line[2]}/{ip_address.network.prefixlen}'
+            route['name'] = f'{route_line[1]} - {route["dest"]}'
+            route['gateway'] = route_line[4]
+            route['metric'] = int(route_line[5])
+        except IndexError as err:
+            print(f'\t\033[33mОшибка: {err}. Маршрут "{" ".join(route_line)}" не конвертирован.\033[0m')
+        else:
+            data['routes'].append(route)
 
     if os.path.isdir('data_ca'):
         with open(f"data_ca/{file_name}.txt", "r") as fh:
@@ -478,6 +509,8 @@ def convert_file(file_name):
                 elif x[0] == 'dhcprelay':
                     if x[1] == 'server':
                         convert_dhcprelay(x[2], x[3])
+                elif x[0] == 'route':
+                    convert_routes_list(x)
                 line = fh.readline()
     else:
         print(f'Не найден каталог с конфигурацией Cisco FPR.')
@@ -704,11 +737,17 @@ def import_firewall_rules(utm, fw_rules):
     services_list = utm.get_services_list()
     zones_list = utm.get_zones_list()
     ip_list = utm.get_nlists_list('network')
+#    list_users = utm.get_users_list()
+#    list_groups = utm.get_groups_list()
+#    l7_categories = utm.get_l7_categories()
+#    applicationgroup = utm.get_nlists_list('applicationgroup')
+#    l7_apps = utm.get_l7_apps()
 
     for item in fw_rules.values():
         if item['name'] in rules_list:
             print(f'\tПравило "{item["name"]}" уже существует.')
             continue
+#        get_guids_users_and_groups(utm, item, list_users, list_groups)
         set_src_zone_and_ips(item, zones_list, ip_list)
         set_dst_zone_and_ips(item, zones_list, ip_list)
         try:
@@ -716,6 +755,11 @@ def import_firewall_rules(utm, fw_rules):
         except KeyError as err:
             print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
             item['services'] = []
+#        try:
+#            set_apps(item['apps'], l7_categories, applicationgroup, l7_apps)
+#        except KeyError as err:
+#            print(f'\t\033[33mНе найдено приложение {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
+#            item['apps'] = []
 
         item['description'] = ''
         item['scenario_rule_id'] = False
@@ -737,12 +781,39 @@ def import_firewall_rules(utm, fw_rules):
         item['active'] = True
         item['send_host_icmp'] = ''
 
+#            print(f'\tПравило МЭ "{item["name"]}" уже существует', end= ' - ')
+#            err1, result1 = utm.update_firewall_rule(rules_list[item['name']], item)
+#            if err1 != 0:
+#                print("\n", f"\033[31m{result1}\033[0m")
+#            else:
+#                print("\033[32mUpdated!\033[0;0m")
+
         err, result = utm.add_firewall_rule(item)
         if err != 0:
             print(f"\033[31m{result}\033[0m")
         else:
             rules_list[item["name"]] = result
             print(f'\tПравило МЭ "{item["name"]}" добавлено.')
+
+def import_routes(utm, static_routes):
+    """Импортировать список статических маршрутов"""
+    print(f'\n\033[32mИмпорт списка статических маршрутов в раздел "Сеть/Виртуальные маршрутизаторы":\033[0m')
+    if not static_routes:
+        print("\tНет статических маршрутов для импорта.")
+        return
+
+    virt_router = {
+        'name': 'default',
+        'routes': static_routes,
+    }
+
+    virt_routers = {x['name']: x['id'] for x in utm.get_routers_list()}
+
+    err, result = utm.update_routers(virt_routers['default'], virt_router)
+    if err == 2:
+        print(f'\033[31m{result}\033[0m')
+    else:
+        print(f'\tСтатические маршруты добавлены в виртуальный маршрутизатор по умолчанию.')
 
 def set_src_zone_and_ips(item, zones, list_ip={}, list_url={}):
     if item['src_zones']:
@@ -780,6 +851,30 @@ def set_dst_zone_and_ips(item, zones, list_ip={}, list_url={}):
             print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
             item['dst_ips'] = []
 
+#def set_apps(array_apps, l7_categories, applicationgroup, l7_apps):
+#    """Определяем ID приложения по имени при импорте"""
+#    for app in array_apps:
+#        if app[0] == 'ro_group':
+#            if app[1] == 0:
+#                app[1] = "All"
+#            elif app[1] == "All":
+#                app[1] = 0
+#            else:
+#                try:
+#                    app[1] = l7_categories[app[1]]
+#                except KeyError as err:
+#                    print(f'\t\033[33mНе найдена категория l7 №{err}.\n\tВозможно нет лицензии, и UTM не получил список категорий l7.\n\tУстановите лицензию и повторите попытку.\033[0m')
+#        elif app[0] == 'group':
+#            try:
+#                app[1] = applicationgroup[app[1]]
+#            except KeyError as err:
+#                print(f'\t\033[33mНе найдена группа приложений №{err}.\n\tЗагрузите приложения и повторите попытку.\033[0m')
+#        elif app[0] == 'app':
+#            try:
+#                app[1] = l7_apps[app[1]]
+#            except KeyError as err:
+#                print(f'\t\033[33mНе найдено приложение №{err}.\n\tВозможно нет лицензии, и UTM не получил список приложений l7.\n\tЗагрузите приложения или установите лицензию и повторите попытку.\033[0m')
+
 def menu():
     print("\033c")
     print(f"\033[1;36;43mUserGate\033[1;37;43m              Конвертация конфигурации с Cisco FPR на NGFW UserGate             \033[1;36;43mUserGate\033[0m\n")
@@ -790,10 +885,13 @@ def menu():
     print('\t3. Файл конфигурации имеет имя "config_fpr.txt". Если это не так, переименуйте его.')
     print('\t4. Вы подключились к веб-консоли администратора на зоне Management.\033[0m')
     print('\033[36m\nПереносятся настройки:')
-    print('\tСписки IP-адресов - "Библиотеки/IP-адреса"')
-    print('\tСервисы           - "Библиотеки/Сервисы"')
-    print('\tЗоны              - "Сеть/Зоны"')
-    print('\tИнтерфейсы VLAN   - "Сеть/Интерфейсы"\033[0m')
+    print('\tЗоны                  - "Сеть/Зоны"')
+    print('\tИнтерфейсы VLAN       - "Сеть/Интерфейсы"')
+    print('\tDHCP-relay            -  на интерфейсах VLAN')
+    print('\tСтатические маршруты  - "Сеть/Виртуальные маршрутизаторы"')
+    print('\tСписки IP-адресов     - "Библиотеки/IP-адреса"')
+    print('\tСервисы               - "Библиотеки/Сервисы"')
+    print('\tAccess-lists          - "Политики сети/Межсетевой экран"\033[0m')
     
     while True:
         mode = input('\nДля запуска процесса конвертации введите "yes", для отмены "no": ')
@@ -826,6 +924,8 @@ def main():
             print(f'\n\033[31mОшибка парсинга конфигурации: {err}\033[0m')
             sys.exit(1)
 
+#        sys.exit(0)
+
         try:
             with open("data_ca/config_fpr.json", "r") as fh:
                 data = json.load(fh)
@@ -849,6 +949,7 @@ def main():
                     break
             if user_input == 'yes':
                 import_interfaces(utm, data['ifaces'])
+            import_routes(utm, data['routes'])
             import_list_ips(utm, data['ip_lists'])
             import_services(utm, data['services'])
             import_firewall_rules(utm, data['fw_rules'])

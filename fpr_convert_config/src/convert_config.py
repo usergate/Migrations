@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco FPR-2130 на NGFW UserGate версии 6.
-# Версия 1.3
+# Версия 1.4
 #
 
 import os, sys, json, re
@@ -327,6 +327,7 @@ def convert_file(file_name):
     def convert_access_list(rule_id, rule_name, fh):
         fw_rule = {
             'name': rule_name,
+            'description': "",
             'action': '',
             'src_zones': set(),
             'dst_zones': set(),
@@ -467,11 +468,16 @@ def convert_file(file_name):
             route['dest'] = f'{route_line[2]}/{ip_address.network.prefixlen}'
             route['name'] = f'{route_line[1]} - {route["dest"]}'
             route['gateway'] = route_line[4]
-            route['metric'] = int(route_line[5])
+            if len(route_line) == 6:
+                route['metric'] = int(route_line[5])
         except IndexError as err:
             print(f'\t\033[33mОшибка: {err}. Маршрут "{" ".join(route_line)}" не конвертирован.\033[0m')
         else:
             data['routes'].append(route)
+
+    def add_remark_to_fw_rules(rule_id, remark):
+        """Ремарки занести в описание правила fw"""
+        data['fw_rules'][rule_id]['description'] += f"{remark} -- "
 
     if os.path.isdir('data_ca'):
         with open(f"data_ca/{file_name}.txt", "r") as fh:
@@ -512,6 +518,19 @@ def convert_file(file_name):
                 elif x[0] == 'route':
                     convert_routes_list(x)
                 line = fh.readline()
+                
+        with open(f"data_ca/{file_name}.txt", "r") as fh:
+            line = fh.readline()
+            while line:
+                if line.startswith(':'):
+                    line = fh.readline()
+                    continue
+                x = line.translate(trans_table).rsplit(' ')
+                if x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'remark':
+                    add_remark_to_fw_rules(int(x[4][:-1]), ' '.join(x[5:]))
+                line = fh.readline()
+
+            
     else:
         print(f'Не найден каталог с конфигурацией Cisco FPR.')
         return

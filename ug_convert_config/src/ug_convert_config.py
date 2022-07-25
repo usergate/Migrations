@@ -2440,7 +2440,11 @@ class UTM(UtmXmlRpc):
                 self.get_names_users_and_groups(item)
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            item['service'] = [self.services[x] for x in item['service']]
+            try:
+                item['service'] = [self.services[x] for x in item['service']]
+            except TypeError as err:
+                print(f'\t\033[33mНе найден сервис для правила "{item["name"]}".\n\t{item["service"]}\033[0m')
+                item['service'] = []
 
         with open("data/network_policies/config_nat_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)

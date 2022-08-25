@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.19
+# Версия 2.20
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
@@ -6003,10 +6003,10 @@ def executor(utm, mode, section, command):
             print(err)
             utm.logout()
             sys.exit()
-#        except Exception as err:
-#            print(f'\n\033[31mОшибка ug_convert_config/main(): {err}\033[0m')
-#            utm.logout()
-#            sys.exit()
+        except Exception as err:
+            print(f'\n\033[31mОшибка ug_convert_config/main(): {err}\033[0m')
+            utm.logout()
+            sys.exit()
         finally:
             print("\033[32mЭкспорт конфигурации завершён.\033[0m\n")
             while True:
@@ -6331,10 +6331,10 @@ def executor(utm, mode, section, command):
                 print(f'\n\033[31mОшибка парсинга файла конфигурации: {err}\033[0m')
                 utm.logout()
                 sys.exit()
-#            except Exception as err:
-#                print(f'\n\033[31mОшибка ug_convert_config/main(): {err}.\033[0m')
-#                utm.logout()
-#                sys.exit()
+            except Exception as err:
+                print(f'\n\033[31mОшибка ug_convert_config/main(): {err}.\033[0m')
+                utm.logout()
+                sys.exit()
             finally:
                 print("\033[32mИмпорт конфигурации завершён.\033[0m\n")
                 while True:
@@ -6388,8 +6388,8 @@ def main():
     except KeyboardInterrupt:
         print("\nПрограмма принудительно завершена пользователем.\n")
         utm.logout()
-#    except:
-#        print("\nПрограмма завершена.\n")
+    except:
+        print("\nПрограмма завершена.\n")
 
 if __name__ == '__main__':
     main()

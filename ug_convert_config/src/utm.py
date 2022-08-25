@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 2.19
+# Версия 2.20
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -637,9 +637,12 @@ class UtmXmlRpc:
         for item in result['items']:
             if item['editable']:
                 item['name'] = item['name'].strip()
+                content = {}
                 try:
-                    if list_type == 'ipspolicy' and self.version.startswith('5'):
+                    if (list_type == 'ipspolicy' and self.version.startswith('5')) or self.version.startswith('6.1.8'):
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
+#                    elif self.version.startswith('6.1.8'):
+#                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
                     else:
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, '', [])
                 except rpc.Fault as err:
@@ -647,6 +650,9 @@ class UtmXmlRpc:
                     content['items'] = []
                 except ExpatError:
                     print(f'\033[33m\tСодержимое списка "{item["name"]}" не экспортировано. Список corrupted!\033[0m')
+                    content['items'] = []
+                except UnboundLocalError:
+                    print(f'\033[33m\tСодержимое списка "{item["name"]}" не экспортировано. Ошибка программы!\033[0m')
                     content['items'] = []
                 if list_type == 'timerestrictiongroup' and self.version.startswith('5'):
                     item['content'] = [x['value'] for x in content['items']]

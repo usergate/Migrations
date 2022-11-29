@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.20
+# Версия 2.21
 # Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
 # или между устройствами 6-ой версии.
 #
@@ -55,6 +55,7 @@ class UTM(UtmXmlRpc):
         self.list_ssl_profiles = {}     # Список профилей ssl {name: id}
         self.list_groups = {}           # Список локальных групп {guid: name} для экспорта и {name: guid} для импорта
         self.list_users = {}            # Список локальных пользователей {guid: name} для экспорта и {name: guid} для импорта
+        self.list_authlogin = {}        # Список локальных пользователей {auth_login: guid} только для импорта
         self.profiles_2fa = {}          # Список профилей MFA {name: guid}
         self.auth_servers = {}          # Список серверов авторизации {id: name} для экспорта и {name: id} для импорта
         self.auth_profiles = {}         # Список профилей авторизации {id: name} для экспорта и {name: id} для импорта
@@ -242,6 +243,7 @@ class UTM(UtmXmlRpc):
 
         total, data = self.get_users_list()
         self.list_users = {x['name']: x['guid'] for x in data if total}
+        self.list_authlogin = {x['auth_login']: x['guid'] for x in data if total}
 
         total, data = self.get_2fa_profiles()
         self.profiles_2fa = {x['name']: x['id'] for x in data if total}
@@ -1848,7 +1850,7 @@ class UTM(UtmXmlRpc):
             err, result = self.add_user(item)
             if err == 1:
                 print(result, end= ' - ')
-                item['guid'] = self.list_users[item['name']]
+                item['guid'] = self.list_authlogin[item['auth_login']]
                 err1, result1 = self.update_user(item)
                 if err1 != 0:
                     print("\n", f"\033[31m{result1}\033[0m")
@@ -6003,10 +6005,10 @@ def executor(utm, mode, section, command):
             print(err)
             utm.logout()
             sys.exit()
-        except Exception as err:
-            print(f'\n\033[31mОшибка ug_convert_config/main(): {err}\033[0m')
-            utm.logout()
-            sys.exit()
+#        except Exception as err:
+#            print(f'\n\033[31mОшибка ug_convert_config/main(): {err}\033[0m')
+#            utm.logout()
+#            sys.exit()
         finally:
             print("\033[32mЭкспорт конфигурации завершён.\033[0m\n")
             while True:
@@ -6331,10 +6333,10 @@ def executor(utm, mode, section, command):
                 print(f'\n\033[31mОшибка парсинга файла конфигурации: {err}\033[0m')
                 utm.logout()
                 sys.exit()
-            except Exception as err:
-                print(f'\n\033[31mОшибка ug_convert_config/main(): {err}.\033[0m')
-                utm.logout()
-                sys.exit()
+#            except Exception as err:
+#                print(f'\n\033[31mОшибка ug_convert_config/main(): {err}.\033[0m')
+#                utm.logout()
+#                sys.exit()
             finally:
                 print("\033[32mИмпорт конфигурации завершён.\033[0m\n")
                 while True:
@@ -6388,8 +6390,8 @@ def main():
     except KeyboardInterrupt:
         print("\nПрограмма принудительно завершена пользователем.\n")
         utm.logout()
-    except:
-        print("\nПрограмма завершена.\n")
+#    except:
+#        print("\nПрограмма завершена.\n")
 
 if __name__ == '__main__':
     main()

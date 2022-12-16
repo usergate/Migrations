@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.0
+# Версия 2.0
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -226,3 +226,67 @@ class UTM:
                 return 2, f'Ошибка utm.add_zone: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result
+
+################### Политики сети ############################################################
+    def get_firewall_rules(self):
+        """Получить список {name: id} правил межсетевого экрана"""
+        try:
+            result = self._server.v1.firewall.rules.list(self._auth_token, 0, 5000, {})
+        except rpc.Fault as err:
+            print(f"\tОшибка utm.get_firewall_rules: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        return {x['name']: x['id'] for x in result['items']}
+
+    def add_firewall_rule(self, rule):
+        """Добавить новое правило в МЭ"""
+        try:
+            result = self._server.v1.firewall.rule.add(self._auth_token, rule)
+        except rpc.Fault as err:
+            if err.faultCode == 110:
+                return 1, f'\tПравило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
+            else:
+                return 2, f"\tОшибка utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает ID добавленного правила
+
+    def update_firewall_rule(self, rule_id, rule):
+        """Обновить правило МЭ"""
+        try:
+            result = self._server.v1.firewall.rule.update(self._auth_token, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f"\tОшибка utm.update_firewall_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает True
+
+    def get_traffic_rules(self):
+        """Получить список правил NAT"""
+        try:
+            result = self._server.v1.traffic.rules.list(self._auth_token, 0, 1000, {})
+        except rpc.Fault as err:
+            print(f"\tОшибка utm.get_traffic_rules: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        return len(result['items']), result['items']
+
+    def add_traffic_rule(self, rule):
+        """Добавить новое правило NAT"""
+        if rule['name'] in self.nat_rules.keys():
+            return 1, f'\tПравило "{rule["name"]}" уже существует.'
+        try:
+            result = self._server.v1.traffic.rule.add(self._auth_token, rule)
+        except rpc.Fault as err:
+            return 2, f"\tОшибка utm.add_traffic_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            self.nat_rules[rule['name']] = result
+            return 0, result     # Возвращает ID добавленного правила
+
+    def update_traffic_rule(self, rule):
+        """Обновить правило NAT"""
+        try:
+            rule_id = self.nat_rules[rule['name']]
+            result = self._server.v1.traffic.rule.update(self._auth_token, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f"\tОшибка utm.update_traffic_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает True
+
+class UtmError(Exception): pass

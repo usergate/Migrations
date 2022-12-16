@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 6.
-# Версия 1.0
+# Версия 2.0
 #
 
 import os, sys, json
@@ -33,7 +33,7 @@ from utm import UTM
 
 def convert_file(file_name):
     """Преобразуем файл конфигурации Cisco ASA в json."""
-    print('Преобразование файла конфигурации Cisco ASA в json.', end=' - ')
+    print('Преобразование файла конфигурации Cisco ASA в json.')
 
     trans_table = str.maketrans(character_map)
     data = {
@@ -44,6 +44,7 @@ def convert_file(file_name):
             'ftpclient_captive': 'ftpclient.captive',
         },
         'ip_lists': {},
+        'url_lists': {},
         'services': {},
         'ifaces': [],
         'zones': [],
@@ -55,19 +56,6 @@ def convert_file(file_name):
         data['modules']['logout_captive'] = f'logout.{x[1]}'
         data['modules']['block_page_domain'] = f'block.{x[1]}'
         data['modules']['ftpclient_captive'] = f'ftpclient.{x[1]}'
-
-    def convert_local_pool(x):
-        ip_list = {
-            'name': f'{x[3]}',
-            'description': '',
-            'type': 'network',
-            'url': '',
-            'attributes': {
-                'threat_level': 3
-            },
-            'content': [{'value': x[4]}]
-        }
-        data['ip_lists'][x[3]] = ip_list
 
     def convert_interface(ifname, line, fh):
         iface = {
@@ -89,151 +77,176 @@ def convert_file(file_name):
             data['ifaces'].append(iface)
         return line
 
-    def convert_network_object(name, fh):
-        ip_list = {
-            'name': name,
-            'description': '',
-            'type': 'network',
-            'url': '',
-            'attributes': {
-                'threat_level': 3
-            },
-            'content': []
-        }
-        line = fh.readline()
-        y = line.translate(trans_table).strip().split(' ')
-        if y[0] == 'subnet':
-            subnet = ipaddress.ip_network(f'{y[1]}/{y[2]}')
-            ip_list['content'].append({'value': f'{y[1]}/{subnet.prefixlen}'})
-            data['ip_lists'][name] = ip_list
-        elif y[0] == 'host':
-            ip_list['content'].append({'value': f'{y[1]}'})
-            data['ip_lists'][name] = ip_list
-        elif y[0] == 'range':
-            ip_list['content'].append({'value': f'{y[1]}-{y[2]}'})
-            data['ip_lists'][name] = ip_list
-        return line
+    def convert_network_object(object_block):
+        name = object_block[0][2]
+        try:
+            ip_list = {
+                'name': name,
+                'description': ' '.join(object_block[2][1:]) if len(object_block)==3 else '',
+                'type': 'url' if object_block[1][0] == 'fqdn' else 'network',
+                'url': '',
+                'attributes': {'threat_level': 3},
+                'content': []
+            }
+            if object_block[1][0] == 'subnet':
+                subnet = ipaddress.ip_network(f'{object_block[1][1]}/{object_block[1][2]}')
+                ip_list['content'].append({'value': f'{object_block[1][1]}/{subnet.prefixlen}'})
+                data['ip_lists'][name] = ip_list
+            elif object_block[1][0] == 'host':
+                ip_list['content'].append({'value': f'{object_block[1][1]}'})
+                data['ip_lists'][name] = ip_list
+            elif object_block[1][0] == 'range':
+                ip_list['content'].append({'value': f'{object_block[1][1]}-{object_block[1][2]}'})
+                data['ip_lists'][name] = ip_list
+            elif object_block[1][0] == 'fqdn':
+                ip_list['content'].append({'value': f'{object_block[1][2]}'})
+                data['url_lists'][name] = ip_list
+        except IndexError as err:
+            print("\033[31mERROR: \033[0m", ' '.join(object_block[0]), "- пустая запись, пропущено.")
+        return 0
 
-    def convert_network_object_group(name, fh):
-        ip_list = {
-            'name': name,
-            'description': '',
-            'type': 'network',
-            'url': '',
-            'attributes': {
-                'threat_level': 3
-            },
-            'content': []
-        }
-        line = fh.readline()
-        y = line.translate(trans_table).rstrip().split(' ')
-        while y[0] == '':
-            if y[1] == 'network-object':
-                if y[2] == 'object':
-                    ip_list['content'].extend(data['ip_lists'][y[3]]['content'])
-                elif y[2] == 'host':
-                    ip_list['content'].append({'value': f'{y[3]}'})
-                else:
-                    subnet = ipaddress.ip_network(f'{y[2]}/{y[3]}')
-                    ip_list['content'].append({'value': f'{y[2]}/{subnet.prefixlen}'})
-            elif y[1] == 'group-object':
-                ip_list['content'].extend(data['ip_lists'][y[2]]['content'])
-            line = fh.readline()
-            y = line.translate(trans_table).rstrip().split(' ')
-        data['ip_lists'][name] = ip_list
-        return line        
-
-    def convert_service_object(name, fh):
+    def convert_service_object(object_block):
+        name = object_block[0][2]
         service = {
             'name': name,
-            'description': '',
+            'description': ' '.join(object_block[2][1:]) if len(object_block)==3 else '',
             'protocols': []
         }
         port = ''
         source_port = ''
-        line = fh.readline()
-        y = line.translate(trans_table).strip().split(' ')
-            
         try:
-            i = y.index('source')
-            source_port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
+            i = object_block[1].index('source')
+            source_port = object_block[1][i+2] if object_block[1][i+1] == 'eq' else f'{object_block[1][i+2]}-{object_block[1][i+3]}'
         except ValueError:
             pass
         try:
-            i = y.index('destination')
-            port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
+            i = object_block[1].index('destination')
+            port = object_block[1][i+2] if object_block[1][i+1] == 'eq' else f'{object_block[1][i+2]}-{object_block[1][i+3]}'
         except ValueError:
             pass
 
         service['protocols'].append(
             {
-                'proto': y[1],
+                'proto': object_block[1][1],
                 'port': port,
                 'source_port': source_port,
              }
         )
         data['services'][name] = service
-        return line
+        return 0
 
-    def convert_service_object_group(line, fh):
-        x = line.translate(trans_table).split(' ')
+    def convert_network_object_group(object_block):
+        name = object_block[0][2]
+        ip_list = {
+            'name': name,
+            'description': '',
+            'type': 'network',
+            'url': '',
+            'attributes': {'threat_level': 3},
+            'content': []
+        }
+        url_list = {
+            'name': name,
+            'description': '',
+            'type': 'url',
+            'url': '',
+            'attributes': {'threat_level': 3},
+            'content': []
+        }
+        
+        for object_line in object_block[1:]:
+            if object_line[0] == 'network-object':
+                if object_line[1] == 'host':
+                    ip_list['content'].append({'value': f'{object_line[2]}'})
+                elif object_line[1] == 'object':
+                    try:
+                        ip_list['content'].extend(data['ip_lists'][object_line[2]]['content'])
+                    except KeyError:
+                        url_list['content'].extend(data['url_lists'][object_line[2]]['content'])
+                else:
+                    subnet = ipaddress.ip_network(f'{object_line[1]}/{object_line[2]}')
+                    ip_list['content'].append({'value': f'{object_line[1]}/{subnet.prefixlen}'})
+            elif object_line[0] == 'group-object':
+                try:
+                    ip_list['content'].extend(data['ip_lists'][object_line[1]]['content'])
+                except KeyError:
+                    pass
+                try:
+                    url_list['content'].extend(data['url_lists'][object_line[1]]['content'])
+                except KeyError:
+                    pass
+            elif object_line[0] == 'description':
+                ip_list['description'] = ' '.join(object_line[1:])
+
+        data['ip_lists'][name] = ip_list
+        if url_list['content']:
+            data['url_lists'][name] = url_list
+        return 0
+
+    def convert_service_object_group(object_block):
+        name = object_block[0][2]
         service = {
-            'name': x[2],
+            'name': name,
             'description': '',
             'protocols': []
         }
         port = ''
         source_port = ''
 
-        line = fh.readline()
-        y = line.translate(trans_table).rstrip().split(' ')
-
         try:
-            proto_array = x[3].split('-')
-            while y[0] == '':
-                if y[1] == 'port-object':
+            proto_array = object_block[0][3].split('-')
+            for object_line in object_block[1:]:
+                if object_line[0] == 'port-object':
                     for proto in proto_array:
                         service['protocols'].append(
                             {
                                 'proto': proto,
-                                'port': y[3],
+                                'port': object_line[2] if object_line[1] == 'eq' else f'{object_line[2]}-{object_line[3]}',
                                 'source_port': '',
                              }
                         )
-                line = fh.readline()
-                y = line.translate(trans_table).rstrip().split(' ')
+                elif object_line[0] == 'group-object':
+                    service['protocols'].extend(data['services'][object_line[1]]['protocols'])
+                elif object_line[0] == 'description':
+                    service['description'] = ' '.join(object_line[1:])
         except IndexError:
-            while y[0] == '':
-                if y[1] == 'service-object':
-                    port = ''
-                    source_port = ''
-                    proto_array = y[2].split('-')
-                    try:
-                        i = y.index('source')
-                        source_port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-                    except ValueError:
-                        pass
-                    try:
-                        i = y.index('destination')
-                        port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-                    except ValueError:
-                        pass
-                    for proto in proto_array:
-                        service['protocols'].append(
-                            {
-                                'proto': proto,
-                                'port': port,
-                                'source_port': source_port,
-                             }
-                        )
-                line = fh.readline()
-                y = line.translate(trans_table).rstrip().split(' ')
+            for object_line in object_block[1:]:
+                if object_line[0] == 'service-object':
+                    if object_line[1] == 'object':
+                        service['protocols'].extend(data['services'][object_line[2]]['protocols'])
+                    else:
+                        port = ''
+                        source_port = ''
+                        proto_array = object_line[1].split('-')
+                        try:
+                            i = object_line.index('source')
+                            source_port = object_line[i+2] if object_line[i+1] == 'eq' else f'{object_line[i+2]}-{object_line[i+3]}'
+                        except ValueError:
+                            pass
+                        try:
+                            i = object_line.index('destination')
+                            port = object_line[i+2] if object_line[i+1] == 'eq' else f'{object_line[i+2]}-{object_line[i+3]}'
+                        except ValueError:
+                            pass
+                        for proto in proto_array:
+                            service['protocols'].append(
+                                {
+                                    'proto': proto,
+                                    'port': port,
+                                    'source_port': source_port,
+                                 }
+                            )
+                elif object_line[0] == 'group-object':
+                    service['protocols'].extend(data['services'][object_line[1]]['protocols'])
+                elif object_line[0] == 'description':
+                    service['description'] = ' '.join(object_line[1:])
+                    print(service['description'])
 
+        data['services'][name] = service
+        return 0
 
-        data['services'][x[2]] = service
-        return line
-
-    def convert_icmp_object_group(name, fh):
+    def convert_icmp_object_group(object_block):
+        name = object_block[0][2]
         service = {
             'name': 'Any ICMP',
             'description': '',
@@ -245,49 +258,58 @@ def convert_file(file_name):
                 }
             ]
         }
-        line = fh.readline()
-        y = line.split(' ')
-        while y[0] == '':
-            line = fh.readline()
-            y = line.split(' ')
         data['services'][name] = service
-        return line
+        return 0
 
     if os.path.isdir('data_ca'):
         with open(f"data_ca/{file_name}.txt", "r") as fh:
             line = fh.readline()
             while line:
+                tmp_block = []
                 if line.startswith(':'):
                     line = fh.readline()
                     continue
                 x = line.translate(trans_table).rsplit(' ')
                 if x[0] == 'domain-name':
                     convert_modules(x)
-                elif x[0] == 'ip' and x[1] == 'local' and x[2] == 'pool':
-                    convert_local_pool(x)
+                    line = fh.readline()
                 elif x[0] == 'interface':
                     line = convert_interface(x[1], line, fh)
                 elif x[0] == 'object':
+                    tmp_block.append(x)
+                    while line:
+                        line = fh.readline()
+                        if line.startswith(' '):
+                            tmp_block.append(line.translate(trans_table).strip().split(' '))
+                        else:
+                            break
                     if x[1] == 'network':
-                        line = convert_network_object(x[2], fh)
-                    if x[1] == 'service':
-                        line = convert_service_object(x[2], fh)
+                        convert_network_object(tmp_block)
+                    elif x[1] == 'service':
+                        convert_service_object(tmp_block)
                 elif x[0] == 'object-group':
+                    tmp_block.append(x)
+                    while line:
+                        line = fh.readline()
+                        if line.startswith(' '):
+                            tmp_block.append(line.translate(trans_table).strip().split(' '))
+                        else:
+                            break
                     if x[1] == 'network':
-                        line = convert_network_object_group(x[2], fh)
-                        continue
-                    if x[1] == 'service':
-                        line = convert_service_object_group(line, fh)
-                        continue
-                    if x[1] == 'icmp-type':
-                        line = convert_icmp_object_group(x[2], fh)
-                        continue
+                        convert_network_object_group(tmp_block)
+                    elif x[1] == 'service':
+                        convert_service_object_group(tmp_block)
+                    elif x[1] == 'icmp-type':
+                        convert_icmp_object_group(tmp_block)
                 elif x[0] == 'mtu':
                     if x[1].lower() != 'management':
                         data['zones'].append(x[1])
+                    line = fh.readline()
                 elif x[0] == 'username':
                     data['users'].append(x[1])
-                line = fh.readline()
+                    line = fh.readline()
+                else:
+                    line = fh.readline()
     else:
         print(f'Не найден каталог с конфигурацией Cisco ASA.')
         return
@@ -297,99 +319,6 @@ def convert_file(file_name):
     with open(f"data_ca/{file_name}.json", "w") as fh:
         json.dump(data, fh, indent=4, ensure_ascii=False)
     print('\033[32mOk!\033[0m')
-
-def convert_interfaces():
-    """
-    Выгружаем конфигурацию интерфейсов в файл data_ug/network/config_interfaces.json для последующей загрузки в NGFW.
-    """
-    print('Экспорт интерфейсов')
-    if not os.path.isdir('data_ug/network'):
-        os.makedirs('data_ug/network')
-
-    config = []
-    try:
-        with open("data_cp/config_cp.txt", "r") as fh:
-            for line in fh:
-                x = line.strip('\n').split(' ')
-                if x[0] in ('set', 'add'):
-                    config.append(x)
-    except FileNotFoundError:
-        print(f'\t\033[31m\tНе найден файл "data_cp/config_cp.txt" с конфигурацией Check Point!\033[0;0m')
-        sys.exit(1)
-
-    cp_conf = {}
-    vlans = []
-    mgmt_iface = ''
-    net_untr = ''
-    for item in config:
-        key = item.pop(0)
-        l = len(item)
-        if item[0] == 'management':
-            mgmt_iface = item[2]
-        elif item[0] == 'interface':
-            if key == 'set':
-                try:
-                    cp_conf[item[1]].update({item[i]: item[i+1] if i+1 < l else '' for i in range(2,l,2)})
-                except KeyError:
-                    cp_conf[item[1]] = {item[i]: item[i+1] if i+1 < l else '' for i in range(2,l,2)}
-            elif key  == 'add':
-                if item[2] == 'vlan':
-                    vlans.append(item[3])
-        elif item[0] == 'static-route':
-            if item[1] == 'default':
-                net_untr = item[5].rpartition('.')[0]
-
-    array = []
-    for key, value in cp_conf.items():
-        ifname = key.partition('.')
-        name = ifname[0].replace('eth', 'port')
-        if 'ipv4-address' in value:
-            zone = 'Untrusted' if value['ipv4-address'].startswith(net_untr) else 'Trusted'
-        else:
-            zone = 0
-        if ifname[2] and ifname[2] in vlans:
-            tmp = {
-                'id': f'{name}.{ifname[2]}',
-                'zone_id': zone,
-                'master': False,
-                'description': value['comments'] if 'comments' in value else '',
-                'netflow_profile': 'undefined',
-                'tap': False,
-                'name': f'{name}.{ifname[2]}',
-                'enabled': False,
-                'kind': 'vlan',
-                'mtu': int(value['mtu']) if 'mtu' in value else 1500,
-                'ipv4': [f"{value['ipv4-address']}/{value['mask-length']}"] if 'ipv4-address' in value else [],
-                'vlan_id': int(ifname[2]),
-                'link': name,
-                'mode': 'static' if 'ipv4-address' in value else 'manual'
-            }
-            array.append(tmp)
-        else:
-            if key == 'lo':
-                continue
-            if key == mgmt_iface:
-                name = 'port0'
-                zone = 'Management'
-            tmp = {
-                'id': name,
-                'zone_id': zone,
-                'master': False,
-                'description': value['comments'] if 'comments' in value else '',
-                'netflow_profile': 'undefined',
-                'tap': False,
-                'name': name,
-                'enabled': True,
-                'kind': 'adapter',
-                'mtu': int(value['mtu']) if 'mtu' in value else 1500,
-                'ipv4': [f"{value['ipv4-address']}/{value['mask-length']}"] if 'ipv4-address' in value else [],
-                'mode': 'static' if 'ipv4-address' in value else 'manual'
-            }
-            array.append(tmp)
-
-    with open("data_ug/network/config_interfaces.json", "w") as fh:
-        json.dump(array, fh, indent=4, ensure_ascii=False)
-    print(f'\tКонфигурация интерфейсов выгружена в файл "data_ug/network/config_interfaces.json".')
             
 ######################################## Импорт ####################################################
 def import_settings(self, modules):
@@ -433,6 +362,36 @@ def import_list_ips(utm, list_ips):
             print(f'\tДобавлен список IP-адресов: "{item["name"]}".')
         if content:
             err2, result2 = utm.add_nlist_items(utm_list_ips[item['name']], content)
+            if err2 != 0:
+                print(f'\033[31m\t{result2}\033[0m')
+            else:
+                print(f'\tСодержимое списка "{item["name"]}" обновлено. Added {result2} record.')
+        else:
+            print(f'\tСписок "{item["name"]}" пуст.')
+
+def import_list_urls(utm, list_urls):
+    """Импортировать списки URL на UTM"""
+    print('Импорт списков URL в раздел "Библиотеки --> Списки URL"')
+
+    if not list_urls:
+        print("\tНет списков URL для импорта.")
+        return
+
+    utm_list_urls = utm.get_nlists_list('url')
+
+    for item in list_urls.values():
+        content = item.pop('content')
+        err, result = utm.add_nlist(item)
+        if err == 1:
+            print(f'\t{result}')
+        elif err == 2:
+            print(f"\033[31m\t{result}\033[0m")
+            continue
+        else:
+            utm_list_urls[item['name']] = result
+            print(f'\tДобавлен список URL: "{item["name"]}".')
+        if content:
+            err2, result2 = utm.add_nlist_items(utm_list_urls[item['name']], content)
             if err2 != 0:
                 print(f'\033[31m\t{result2}\033[0m')
             else:
@@ -642,7 +601,7 @@ def import_interfaces(utm, ifaces):
         item['dhcp_relay'] = {'servers': [], 'enabled': False, 'host_ipv4': ''}
         item['mode'] = 'static'
 
-        print(item['name'], vlan_list)
+#        print(item['name'], vlan_list)
         if item['name'] in vlan_list:
             print(f'\tИнтерфейс "{item["name"]}" уже существует', end= ' - ')
             item.pop('vlan_id')
@@ -837,12 +796,14 @@ def menu():
     print(f"\033[1;36;43mUserGate\033[1;37;43m                    Конвертация конфигурации с Cisco ASA на NGFW                   \033[1;36;43mUserGate\033[0m\n")
     print("\033[32mПрограмма импортирует конфигурацию из каталога 'data_ca' в текущей директории на NGFW UserGate.\033[0m\n")
     print('\033[33mПеред запуском конвертации Удостоверьтесь, что:')
-    print('\t1. Конфигурация Cisco ASA выложена в каталог "data_ca" в текущей директории.')
-    print('\t2. Файл конфигурации имеет имя "config_asa.txt". Если это не так, переименуйте его.')
-    print('\t3. Вы подключились к веб-консоли администратора на зоне Management.\033[0m')
+    print('\t1. В текущей директории создан каталог "data_ca".')
+    print('\t2. Конфигурация Cisco ASA выложена в каталог "data_ca" в текущей директории.')
+    print('\t3. Файл конфигурации имеет имя "config_asa.txt". Если это не так, переименуйте его.')
+    print('\t4. Вы подключились к веб-консоли администратора в зоне Management.\033[0m')
     print('\033[36m\nПереносятся настройки:')
     print('\tМодули            - "Настойки/Модули"')
     print('\tСписки IP-адресов - "Библиотеки/IP-адреса"')
+    print('\tСписки URL        - "Библиотеки/Списки URL"')
     print('\tСервисы           - "Библиотеки/Сервисы"')
     print('\tПользователи      - "Пользователи и устройства/Пользователи"')
     print('\tЗоны              - "Сеть/Зоны"')
@@ -863,9 +824,9 @@ def main():
     print("\033[32mПрограмма импортирует конфигурацию из каталога 'data_ca' в текущей директории на NGFW UserGate.\033[0m\n")
     try:
         menu()
-        file_name = 'config_asa'
-        if not os.path.isfile(f'data_ca/{file_name}.txt'):
-            print(f'\t\033[31mИмпорт aborted!\n\tНе найден файл "data_ca/config_asa.txt" с конфигурацией Cosco ASA!\033[0;0m')
+        file_name = "config_asa"
+        if not os.path.isfile(f"data_ca/{file_name}.txt"):
+            print(f'\t\033[31mИмпорт aborted!\n\tНе найден файл "data_ca/config_asa.txt" с конфигурацией Cisco ASA!\033[0;0m')
             sys.exit(1)
 
         server_ip = input("\033[36m\nВведите IP-адрес UTM:\033[0m ")
@@ -876,17 +837,19 @@ def main():
         try:
             convert_file(file_name)
         except json.JSONDecodeError as err:
-            print(f'\n\033[31mОшибка парсинга конфигурации: {err}\033[0m')
+            print(f"\n\033[31mОшибка парсинга конфигурации: {err}\033[0m")
             sys.exit(1)
 
+#        sys.exit(0)
+
         try:
-            with open("data_ca/config_asa.json", "r") as fh:
+            with open(f"data_ca/{file_name}.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mИмпорт aborted!\n\tНе найден файл "data_ca/config_asa.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mИмпорт aborted!\n\tНе найден файл "data_ca/{file_name}.json" с сохранённой конфигурацией!\033[0;0m')
             sys.exit(1)
         except json.JSONDecodeError as err:
-            print(f'\n\033[31mОшибка парсинга конфигурации: {err}\033[0m')
+            print(f"\n\033[31mОшибка парсинга конфигурации: {err}\033[0m")
             sys.exit(1)
 
         try:
@@ -904,6 +867,7 @@ def main():
                 import_interfaces(utm, data['ifaces'])
             import_settings(utm, data['modules'])
             import_list_ips(utm, data['ip_lists'])
+            import_list_urls(utm, data['url_lists'])
             import_services(utm, data['services'])
             import_users(utm, data['users'])
         except Exception as err:
@@ -912,7 +876,7 @@ def main():
             sys.exit(1)
         else:
             utm.logout()
-            os.remove(f'data_ca/{file_name}.json')
+#            os.remove(f'data_ca/{file_name}.json')
             print("\n\033[32mИмпорт конфигурации Cisco ASA на NGFW UserGate завершён.\033[0m\n")
 
     except KeyboardInterrupt:

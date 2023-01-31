@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.2
+# Версия 1.3
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -202,6 +202,26 @@ class UTM:
             return 2, f'Ошибка utm.add_interface_vlan: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного интерфейса
+
+    def get_routers_list(self):
+        """Получить список виртуальных маршрутизаторов"""
+        try:
+            result = self._server.v1.netmanager.virtualrouters.list(self._auth_token)
+        except rpc.Fault as err:
+            print(f"Ошибка utm.get_routers_list: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        return result
+
+    def update_routers(self, rule_id, rule):
+        """Изменить виртуальный маршрутизатор"""
+        try:
+            result = self._server.v1.netmanager.virtualrouter.update(self._auth_token, rule_id, rule)
+        except rpc.Fault as err:
+            if err.faultCode == 1020:
+                return 2, f'\tВ виртуальном маршрутизаторе "{rule["name"]}" указан интерфейс использующийся в другом маршрутизаторе: {rule["interfaces"]} [{err.faultString}]'
+            return 2, f"\tОшибка utm.update_routes_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает ID добавленного правила
 
 ##################################### Zones ##################################################
     def get_zones_list(self):

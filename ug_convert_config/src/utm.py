@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 2.20
+# Версия 3.0
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -20,7 +20,7 @@ class UtmXmlRpc:
     def _connect(self):
         """Подключиться к UTM"""
         try:
-            self._server = rpc.ServerProxy(self._url, verbose=False)
+            self._server = rpc.ServerProxy(self._url, verbose=False, allow_none=True)
             if self.get_node_status() == 'work':
                 result = self._server.v2.core.login(self._login, self._password, {'origin': 'dev-script'})
                 self._auth_token = result.get('auth_token')
@@ -81,6 +81,46 @@ class UtmXmlRpc:
             return 2, f"\tОшибка utm.add_ntp_config: [{err.faultCode}] — {err.faultString}"
         return 0, result
 
+    def get_webui_auth_mode(self):
+        """Получить режим аутентификации веб-консоли"""
+        try:
+            result = self._server.v2.settings.webui.auth.mode.get(self._auth_token)
+        except rpc.Fault as err:
+            return 2, f"\tОшибка utm.get_webui_auth_mode: [{err.faultCode}] — {err.faultString}"
+        return 0, result
+
+    def get_statistics_status(self):
+        """
+        Получить настройки Log Analyzer.
+        """
+        try:
+            result = self._server.v1.statistics.status(self._auth_token)
+            result2 = self._server.v2.settings.stat.server.config.get(self._auth_token)
+        except rpc.Fault as err:
+            print(f"\tОшибка utm.get_statistics_status: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        result.update(result2)
+        return result
+
+    def get_mc_config(self):
+        """Получить парамтры Management Center"""
+        try:
+            result = self._server.v2.settings.ccclient.config.get(self._auth_token)
+        except rpc.Fault as err:
+            return 2, f"\tОшибка utm.get_mc_config: [{err.faultCode}] — {err.faultString}"
+        return result
+
+    def get_settings_parameter(self, param):
+        """
+        Получить один параметр.
+        """
+        try:
+            result = self._server.v2.settings.get.param(self._auth_token, param)
+        except rpc.Fault as err:
+            print(f"\tОшибка utm.get_settings_parameter: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        return result
+
     def get_settings_params(self, params):
         """
         Получить несколько параметров за 1 запрос.
@@ -139,18 +179,25 @@ class UtmXmlRpc:
     def get_admin_profiles_list(self):
         """Получить список профилей администраторов"""
         try:
-            result = self._server.v2.core.administrator.profiles.list(self._auth_token)
+            if int(self.version[:1]) > 6:
+                result = self._server.v2.core.administrator.profiles.list(self._auth_token, 0, 1000, {}, [])
+                return result['count'], result['items']
+            else:
+                result = self._server.v2.core.administrator.profiles.list(self._auth_token)
+                return len(result), result
         except rpc.Fault as err:
             print(f"\tОшибка utm.get_admin_profiles_list: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
-        return len(result), result
 
     def add_admin_profile(self, profile):
         """Добавить новый профиль администраторов"""
         try:
             result = self._server.v2.core.administrator.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_admin_profile: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПрофиль '{profile['name']}' не добавлен, так как русские буквы в имени профиля запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_admin_profile: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -183,18 +230,25 @@ class UtmXmlRpc:
     def get_admin_list(self):
         """Получить список администраторов"""
         try:
-            result = self._server.v2.core.administrator.list(self._auth_token, {})
+            if int(self.version[:1]) > 6:
+                result = self._server.v2.core.administrator.list(self._auth_token, 0, 1000, {}, [])
+                return result['count'], result['items']
+            else:
+                result = self._server.v2.core.administrator.list(self._auth_token, {})
+                return len(result), result
         except rpc.Fault as err:
             print(f"\tОшибка utm.get_admin_list: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
-        return len(result), result
 
     def add_admin(self, admin):
         """Добавить нового администратора"""
         try:
             result = self._server.v2.core.administrator.add(self._auth_token, admin)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_admin: [{err.faultCode}] — {err.faultString}: {admin['login']}"
+            if err.faultCode == 111:
+                return 2, f"\tАдминистратор '{admin['login']}' не добавлен, так как не найден профиль или имя профиля в русском регистре."
+            else:
+                return 2, f"\tОшибка utm.add_admin: [{err.faultCode}] — {err.faultString}: {admin['login']}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -203,7 +257,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v2.core.administrator.update(self._auth_token, admin_id, admin)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.update_admin: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tОшибка обновления '{admin['login']}'. Не найден профиль администратора или имя профиля в русском регистре."
+            else:
+                return 2, f"\tОшибка utm.update_admin: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает True
 
@@ -251,6 +308,15 @@ class UtmXmlRpc:
             return 2, f"\tОшибка utm.add_certificate: [{err.faultCode}] — {err.faultString}: {admin['login']}"
         else:
             return 0, result     # Возвращает ID добавленного правила
+
+    def get_snmp_engine_id(self):
+        """Выгрузить SNMP Engine ID"""
+        try:
+            result = self._server.v1.snmp.engine.id.get(self._auth_token)
+        except rpc.Fault as err:
+            print(f"\tОшибка utm.get_snmp_engine_id: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        return result
 
 ##################################### Network #####################################
     def get_zones_list(self):
@@ -528,10 +594,10 @@ class UtmXmlRpc:
     def get_routers_list(self):
         """Получить список маршрутов"""
         try:
-            if self.version.startswith('6'):
-                result = self._server.v1.netmanager.virtualrouters.list(self._auth_token)
-            else:
+            if self.version.startswith('5'):
                 result = self._server.v1.netmanager.route.list(self._auth_token, self.node_name, {})
+            else:
+                result = self._server.v1.netmanager.virtualrouters.list(self._auth_token)
         except rpc.Fault as err:
             print(f"Ошибка utm.get_routers_list: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
@@ -589,10 +655,10 @@ class UtmXmlRpc:
     def get_custom_url_list(self):
         """Получить список изменённых категорий URL раздела Библиотеки"""
         try:
-            if self.version.startswith('6'):
-                result = self._server.v1.content.override.domains.list(self._auth_token, 0, 1000, {}, [])
-            else:
+            if self.version.startswith('5'):
                 result = self._server.v1.content.override.domains.list(self._auth_token, 0, 1000, {})
+            else:
+                result = self._server.v1.content.override.domains.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
             return 2, f"\tНе удалось выгрузить список изменённых категорий URL!\n\tОшибка get_custom_url_list: [{err.faultCode}] — {err.faultString}"
         return 0, result['items']
@@ -643,8 +709,8 @@ class UtmXmlRpc:
                     if (list_type == 'ipspolicy' and self.version.startswith('5')) \
                              or (self.version.startswith('6.1') and int(utm_version[2]) > 8):
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
-#                    elif self.version.startswith('6.1.8'):
-#                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
+                    elif self.version.startswith('7'):
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
                     else:
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, '', [])
                 except rpc.Fault as err:
@@ -675,6 +741,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 1, f'\tСписок: "{named_list["name"]}" уже существует'
+            elif err.faultCode == 111:
+                return 2, f"\tСписок '{named_list['name']}' не добавлен, так как русские буквы в имени правила запрещены."
             else:
                 return 2, f"\tОшибка utm.add_nlist: [{err.faultCode}] — {err.faultString}"
         else:
@@ -727,10 +795,10 @@ class UtmXmlRpc:
     def get_services_list(self):
         """Получить список сервисов раздела Библиотеки"""
         try:
-            if self.version.startswith('6'):
-                result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, {}, [])
-            else:
+            if self.version.startswith('5'):
                 result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, '', [])
+            else:
+                result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
             print(f"Ошибка get_services_list: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
@@ -780,6 +848,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 1, f"\tПолоса пропускания '{shaper['name']}' уже существует. Проверка параметров..."
+            elif err.faultCode == 406:
+                return 2, f"\tПолоса пропускания '{shaper['name']}' не добавлена! Превышено максимальное количество записей."
             else:
                 return 2, f"\tОшибка add_shaper: [{err.faultCode}] — {err.faultString}"
         else:
@@ -802,10 +872,10 @@ class UtmXmlRpc:
     def get_scada_list(self):
         """Получить список профилей АСУ ТП раздела Библиотеки"""
         try:
-            if self.version.startswith('6'):
-                result = self._server.v1.scada.profiles.list(self._auth_token, 0, 1000, {}, [])
-            else:
+            if self.version.startswith('5'):
                 result = self._server.v1.scada.profiles.list(self._auth_token, 0, 1000, '', [])
+            else:
+                result = self._server.v1.scada.profiles.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
             print(f"Ошибка get_scada_list: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
@@ -857,6 +927,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 1, f"\tШаблон страницы '{template['name']}' уже существует. Проверка параметров..."
+            elif err.faultCode == 111:
+                return 2, f"\tШаблон '{template['name']}' не добавлен. Эта ошибка исправлена в версии 7.0.2."
             else:
                 return 2, f"\tОшибка add_template: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1024,6 +1096,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 1, f"\tГруппа '{group['name']}' уже существует. Проверка параметров..."
+            elif err.faultCode == 111:
+                return 2, f"\tНедопустимые символы в названии группы: '{group['name']}'! Возможно используются русские буквы."
             else:
                 return 2, f"\tОшибка utm.add_group: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1128,7 +1202,10 @@ class UtmXmlRpc:
             elif type == 'saml':
                 result = self._server.v1.auth.saml.idp.server.add(self._auth_token, server)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_auth_server: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tНедопустимые символы в названии auth-сервера! Возможно используются русские буквы."
+            else:
+                return 2, f"\tОшибка utm.add_auth_server: [{err.faultCode}] — {err.faultString}"
         else:
             self.auth_servers[server['name']] = result
             return 0, result     # Возвращает ID добавленного сервера авторизации
@@ -1174,6 +1251,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 110:
                 return 2, f'\tПрофиль авторизации "{profile["name"]}" не добавлен — {err.faultString}.'
+            elif err.faultCode == 111:
+                return 2, f"\tНедопустимые символы в названии auth-профиля '{profile['name']}'. Возможно используются русские буквы."
             else:
                 return 2, f"\tОшибка utm.add_auth_profile: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1207,6 +1286,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 110:
                 return 2, f'\tПрофиль авторизации "{profile["name"]}" не добавлен — {err.faultString}.'
+            elif err.faultCode == 111:
+                return 2, f"\tНедопустимые символы в названии captive-профиля '{profile['name']}'. Возможно используются русские буквы."
             else:
                 return 2, f"\tОшибка utm.add_captive_profile: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1241,6 +1322,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 110:
                 return 2, f'\tПравило Captive-портала "{rule["name"]}" не добавлено — {err.faultString}.'
+            elif err.faultCode == 111:
+                return 2, f"\tНедопустимые символы в названии правила captive-портала '{rule['name']}'. Возможно используются русские буквы."
             else:
                 return 2, f"\tОшибка utm.add_captive_portal_rules: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1365,6 +1448,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 110:
                 return 2, f'\tПравило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
+            elif err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
             else:
                 return 2, f"\tОшибка utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1397,7 +1482,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.traffic.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_traffic_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_traffic_rule: [{err.faultCode}] — {err.faultString}"
         else:
             self.nat_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
@@ -1432,6 +1520,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 1, f'\tПравило "{rule["name"]}" уже существует.'
+            elif err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
             else:
                 return 2, f"\tОшибка utm.add_virtualserver_rule: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1455,6 +1545,9 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.icap.loadbalancing.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
                 return 2, f"\tОшибка utm.add_icap_loadbalancing_rule: [{err.faultCode}] — {err.faultString}"
         else:
             self.icap_loadbalancing[rule['name']] = result
@@ -1477,6 +1570,9 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.reverseproxy.loadbalancing.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
                 return 2, f"\tОшибка utm.add_reverse_loadbalancing_rule: [{err.faultCode}] — {err.faultString}"
         else:
             self.reverse_rules[rule['name']] = result
@@ -1508,13 +1604,16 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.shaper.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_shaper_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_shaper_rule: [{err.faultCode}] — {err.faultString}"
         else:
             shaper_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
     def update_shaper_rule(self, rule_id, rule):
-        """Обновить сценарий"""
+        """Обновить правило пропускной способности"""
         try:
             result = self._server.v1.shaper.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
@@ -1536,12 +1635,15 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_content_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_content_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
     def update_content_rule(self, rule_id, rule):
-        """Обновить сценарий"""
+        """Обновить правило фильтрации контента"""
         try:
             result = self._server.v1.content.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
@@ -1573,6 +1675,33 @@ class UtmXmlRpc:
             result = self._server.v1.content.filtering.options.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
             return 2, f"\tОшибка utm.update_safebrowsing_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает True
+
+    def get_tunnel_inspection_rules(self):
+        """Получить список правил инспектирования туннелей"""
+        try:
+            result = self._server.v1.firewall.tunnel.inspection.rules.list(self._auth_token, 0, 1000, {})
+        except rpc.Fault as err:
+            print(f"\tОшибка utm.get_tunnel_inspection_rules: [{err.faultCode}] — {err.faultString}")
+            sys.exit(1)
+        return result['count'], result['items']
+
+    def add_tunnel_inspection_rule(self, rule):
+        """Добавить новое правило инспектирования туннелей"""
+        try:
+            result = self._server.v1.firewall.tunnel.inspection.rule.add(self._auth_token, rule)
+        except rpc.Fault as err:
+            return 2, f"\tОшибка utm.add_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает ID добавленного правила
+
+    def update_tunnel_inspection_rule(self, rule_id, rule):
+        """Обновить правило инспектирования туннелей"""
+        try:
+            result = self._server.v1.firewall.tunnel.inspection.rule.update(self._auth_token, rule_id, rule)
+        except rpc.Fault as err:
+            return 2, f"\tОшибка utm.update_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает True
 
@@ -1633,12 +1762,12 @@ class UtmXmlRpc:
     def get_idps_rules(self):
         """Получить список правил СОВ"""
         try:
-            if self.version.startswith('6'):
-                result = self._server.v1.idps.rules.list(self._auth_token, 0, 1000, {})
-                return len(result['items']), result['items']
-            else:
+            if self.version.startswith('5'):
                 result = self._server.v1.idps.rules.list(self._auth_token, {})
                 return len(result), result
+            else:
+                result = self._server.v1.idps.rules.list(self._auth_token, 0, 1000, {})
+                return result['count'], result['items']
         except rpc.Fault as err:
             print(f"\tОшибка utm.get_idps_rules: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
@@ -1664,12 +1793,12 @@ class UtmXmlRpc:
     def get_scada_rules(self):
         """Получить список правил АСУ ТП"""
         try:
-            if self.version.startswith('6'):
-                result = self._server.v1.scada.rules.list(self._auth_token, 0, 1000, {})
-                return len(result['items']), result['items']
-            else:
+            if self.version.startswith('5'):
                 result = self._server.v1.scada.rules.list(self._auth_token, {})
                 return len(result), result
+            else:
+                result = self._server.v1.scada.rules.list(self._auth_token, 0, 1000, {})
+                return result['count'], result['items']
         except rpc.Fault as err:
             print(f"\tОшибка utm.get_scada_rules: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
@@ -1740,7 +1869,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.mailsecurity.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_mailsecurity_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_mailsecurity_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -1965,7 +2097,7 @@ class UtmXmlRpc:
                 return len(result), result
             else:
                 result = self._server.v1.reverseproxy.rules.list(self._auth_token, 0, 100, {})
-                return len(result['items']), result['items']
+                return result['count'], result['items']
         except rpc.Fault as err:
             print(f"\tОшибка utm.get_reverseproxy_rules: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
@@ -1975,7 +2107,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.reverseproxy.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_reverseproxy_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_reverseproxy_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2002,7 +2137,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.security.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_vpn_security_profile: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПрофиль '{profile['name']}' не добавлен, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_vpn_security_profile: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2029,7 +2167,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.tunnel.add(self._auth_token, network)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_vpn_network: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{network['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_vpn_network: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2052,14 +2193,17 @@ class UtmXmlRpc:
         if self.version.startswith('5'):
             return len(result), result
         else:
-            return len(result['items']), result['items']
+            return result['count'], result['items']
 
     def add_vpn_server_rule(self, rule):
         """Добавить новое серверное правило VPN"""
         try:
             result = self._server.v1.vpn.server.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_vpn_server_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_vpn_server_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2084,19 +2228,22 @@ class UtmXmlRpc:
     def add_vpn_client_rule(self, rule):
         """Добавить новое клиентское правило VPN"""
         try:
-            if self.version.startswith('6.2'):
+            if int(self.version[:1]) > 6:
                 result = self._server.v1.vpn.client.rule.add(self._auth_token, rule)
             else:
                 result = self._server.v1.vpn.client.rule.add(self._auth_token, self.node_name, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_vpn_client_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_vpn_client_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
     def update_vpn_client_rule(self, rule_id, rule):
         """Обновить клиентское правило VPN"""
         try:
-            if self.version.startswith('6.2'):
+            if int(self.version[:1]) > 6:
                 result = self._server.v1.vpn.client.rule.update(self._auth_token, rule_id, rule)
             else:
                 result = self._server.v1.vpn.client.rule.update(self._auth_token, self.node_name, rule_id, rule)
@@ -2129,7 +2276,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.snmp.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.update_snmp_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.update_snmp_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID изменённого правила
 
@@ -2140,14 +2290,20 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             print(f"\tОшибка utm.get_notification_alert_rules: [{err.faultCode}] — {err.faultString}")
             sys.exit(1)
-        return result
+        if int(self.version[:1]) < 7:
+            return result
+        else:
+            return result['items']
 
     def add_notification_alert_rule(self, rule):
         """Добавить новое правило SNMP"""
         try:
             result = self._server.v1.notification.alert.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 2, f"\tОшибка utm.add_notification_alert_rule: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 111:
+                return 2, f"\tПравило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+            else:
+                return 2, f"\tОшибка utm.add_notification_alert_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2166,9 +2322,9 @@ character_map = {
     ord('\n'): '',
     ord('\t'): '',
     ord('\r'): '',
-    ':': '_',
+#    ':': '_',
     '/': '_',
     '\\': '_',
     '.': '_',
-    ' ': '_',
+#    ' ': '_',
 }

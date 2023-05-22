@@ -20,14 +20,15 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 2.21
-# Программа предназначена для переноса конфигурации с UTM версии 5 на версию 6
+# Версия 3.0
+# Программа предназначена для переноса конфигурации с UTM версии 5 и 6 на версии 6 и 7
 # или между устройствами 6-ой версии.
 #
 import os, sys
 import stdiomask
 import json
 import xmlrpc.client as rpc
+from datetime import datetime as dt
 from utm import UtmXmlRpc, UtmError, character_map
 
 
@@ -37,6 +38,7 @@ class UTM(UtmXmlRpc):
         self._categories = {}           # Список Категорий URL {id: name} для экспорта и {name: id} для импорта
         self.zones = {}                 # Список зон {id: name} для экспорта и {name: id} для импорта
         self.services = {}              # Список сервисов раздела библиотеки {id: name} для экспорта и {name: id} для импорта
+        self.services_groups = {}       # Список групп сервисов раздела библиотеки {id: name} для экспорта и {name: id} для импорта
         self.shaper = {}                # Список полос пропускания раздела библиотеки {name: id}
         self.list_morph = {}            # Списки морфлолгии раздела библиотеки {name: id}
         self.list_IP = {}               # Списки IP-адресов раздела библиотеки {id: name} для экспорта и {name: id} для импорта
@@ -86,11 +88,15 @@ class UTM(UtmXmlRpc):
         try:
             result = self._server.v2.core.get.categories()
             self._categories = {x['id']: x['name'] for x in result}
+
+            if int(self.version[:1]) > 6:
+                result = self._server.v2.nlists.list(self._auth_token, 'servicegroup', 0, 1000, {})
+                self.services_groups = {x['id']: x['name'] for x in result['items'] if result['count']}
             
             result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')
             self.l7_categories = {x['id']: x['name'] for x in result['items'] if result['count']}
             
-            if self.version.startswith('6'):
+            if int(self.version[:1]) > 5:
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, {}, [])
             else:
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, '')
@@ -140,6 +146,9 @@ class UTM(UtmXmlRpc):
         total, data = self.get_zones_list()
         self.zones = {x['id']: x['name'] for x in data if total}
 
+        total, data = self.get_shaper_list()
+        self.shaper = {x['id']: x['name'] for x in data if total}
+
         total, data = self.get_services_list()
         self.services = {x['id']: x['name'] for x in data['items'] if total}
 
@@ -158,11 +167,25 @@ class UTM(UtmXmlRpc):
         total, data = self.get_reverseproxy_servers()
         self.reverse_servers = {x['id']: x['name'] for x in data if total}
 
+        if not os.path.isdir('data'):
+            os.makedirs('data')
+        data = {
+            "node_name": self.node_name,
+            "version": self.version
+        }
+        with open("data/general_values.json", "w") as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+
     def init_struct_for_import(self):
         """Заполнить служебные структуры данных"""
         try:
             result = self._server.v2.core.get.categories()
             self._categories = {x['name']: x['id'] for x in result}
+
+            if int(self.version[:1]) > 6:
+                result = self._server.v2.nlists.list(self._auth_token, 'servicegroup', 0, 1000, {})
+                self.services_groups = {x['name']: x['id'] for x in result['items'] if result['count']}
 
             result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, {}, [])
             self.services = {x['name']: x['id'] for x in result['items'] if result['total']}
@@ -194,11 +217,8 @@ class UTM(UtmXmlRpc):
             result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')
             self.l7_categories = {x['name']: x['id'] for x in result['items'] if result['count']}
             
-            if self.version.startswith('6'):
-                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, {}, [])
-            else:
-                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, '')
-            self.l7_apps = {x['name']: x['id'] if 'id' in x.keys() else x['app_id'] for x in result['items'] if result['count']}
+            result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, {}, [])
+            self.l7_apps = {x['name']: x['id'] for x in result['items'] if result['count']}
 
             result = self._server.v1.notification.profiles.list(self._auth_token)
             self.list_notifications = {x['name']: x['id'] for x in result}
@@ -265,11 +285,11 @@ class UTM(UtmXmlRpc):
     def export_morphology_lists(self):
         """Выгружает списки морфологии и преобразует формат атрибутов списков к версии 6"""
         print('Выгружаются списки морфологии раздела "Библиотеки":')
-        if os.path.isdir('data/library/morphology'):
-            for file_name in os.listdir('data/library/morphology'):
-                os.remove(f"data/library/morphology/{file_name}")
+        if os.path.isdir('data/Libraries/Morphology'):
+            for file_name in os.listdir('data/Libraries/Morphology'):
+                os.remove(f"data/Libraries/Morphology/{file_name}")
         else:
-            os.makedirs('data/library/morphology')
+            os.makedirs('data/Libraries/Morphology')
 
         total, data = self.get_nlist_list('morphology')
 
@@ -295,22 +315,22 @@ class UTM(UtmXmlRpc):
             item.pop('last_update')
             for content in item['content']:
                 content.pop('id')
-            with open(f"data/library/morphology/{item['name']}.json", "w") as fd:
+            with open(f"data/Libraries/Morphology/{item['name']}.json", "w") as fd:
                 json.dump(item, fd, indent=4, ensure_ascii=False)
-            print(f'\tСписок морфологии "{item["name"]}" выгружен в файл "data/library/morphology/{item["name"]}.json"')
+            print(f'\tСписок морфологии "{item["name"]}" выгружен в файл "data/Libraries/Morphology/{item["name"]}.json"')
 
     def import_morphology(self):
         """Импортировать списки морфологии на UTM"""
         print('Импорт списков морфологии раздела "Библиотеки":')
-        if os.path.isdir('data/library/morphology'):
-            files_list = os.listdir('data/library/morphology')
+        if os.path.isdir('data/Libraries/Morphology'):
+            files_list = os.listdir('data/Libraries/Morphology')
             if files_list:
                 for file_name in files_list:
                     try:
-                        with open(f"data/library/morphology/{file_name}", "r") as fh:
+                        with open(f"data/Libraries/Morphology/{file_name}", "r") as fh:
                             morph_list = json.load(fh)
                     except FileNotFoundError as err:
-                        print(f'\t\033[31mСписок "Морфология" не импортирован!\n\tНе найден файл "data/library/morphology/{file_name}" с сохранённой конфигурацией!\033[0;0m')
+                        print(f'\t\033[31mСписок "Морфология" не импортирован!\n\tНе найден файл "data/Libraries/Morphology/{file_name}" с сохранённой конфигурацией!\033[0;0m')
                         return
 
                     content = morph_list.pop('content')
@@ -344,13 +364,13 @@ class UTM(UtmXmlRpc):
     def export_services_list(self):
         """Выгрузить список сервисов раздела библиотеки"""
         print('Выгружается список сервисов раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/Services'):
+            os.makedirs('data/Libraries/Services')
 
         _, data = self.get_services_list()
 
         for item in data['items']:
-            item.pop('id')
+#            item.pop('id')
             item.pop('guid')
             item.pop('cc', None)
             item.pop('readonly', None)
@@ -359,18 +379,18 @@ class UTM(UtmXmlRpc):
                     item['protocols'][0]['proto'] = 'pop3'
                 if item['protocols'][0]['port'] == '995':
                     item['protocols'][0]['proto'] = 'pop3s'
-        with open("data/library/config_services.json", "w") as fh:
+        with open("data/Libraries/Services/config_services.json", "w") as fh:
             json.dump(data['items'], fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок сервисов выгружен в файл "data/library/config_services.json".')
+        print(f'\tСписок сервисов выгружен в файл "data/Libraries/Services/config_services.json".')
 
     def import_services(self):
         """Импортировать список сервисов раздела библиотеки"""
         print('Импорт списка сервисов раздела "Библиотеки":')
         try:
-            with open("data/library/config_services.json", "r") as fh:
+            with open("data/Libraries/Services/config_services.json", "r") as fh:
                 services = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Сервисы" не импортирован!\n\tНе найден файл "data/library/config_services.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Сервисы" не импортирован!\n\tНе найден файл "data/Libraries/Services/config_services.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for item in services:
@@ -392,14 +412,97 @@ class UTM(UtmXmlRpc):
                 self.services[item['name']] = result
                 print(f'\tСервис "{item["name"]}" добавлен.')
 
+    def export_services_groups(self):
+        """Выгрузить группы сервисов раздела библиотеки. Только для версии 7 и выше"""
+        if int(self.version[:1]) < 7:
+            return
+        
+        print('Выгружаются группы сервисов раздела "Библиотеки":')
+        if os.path.isdir('data/Libraries/ServicesGroups'):
+            for file_name in os.listdir('data/Libraries/ServicesGroups'):
+                os.remove(f"data/Libraries/ServicesGroups/{file_name}")
+        else:
+            os.makedirs('data/Libraries/ServicesGroups')
+
+        _, data = self.get_nlist_list('servicegroup')
+
+        if not data:
+            print("\tНет групп сервисов для зкспорта.")
+            return
+
+        trans_table = str.maketrans(character_map)
+
+        for item in data:
+            item.pop('id')
+            item.pop('guid')
+            item.pop('editable')
+            item.pop('enabled')
+            item.pop('version')
+            item.pop('last_update')
+            item['name'] = item['name'].translate(trans_table)
+            for content in item['content']:
+                content.pop('id')
+                content.pop('guid')
+            with open(f"data/Libraries/ServicesGroups/{item['name']}.json", "w") as fd:
+                json.dump(item, fd, indent=4, ensure_ascii=False)
+            print(f'\tГруппа сервисов "{item["name"]}" выгружена в файл "data/Libraries/ServicesGroups/{item["name"]}.json".')
+
+    def import_services_groups(self):
+        """Импортировать группы сервисов адресов"""
+        if int(self.version[:1]) < 7:
+            return
+        
+        print('Импорт групп сервисов раздела "Библиотеки":')
+        if os.path.isdir('data/Libraries/ServicesGroups'):
+            files_list = os.listdir('data/Libraries/ServicesGroups')
+            if files_list:
+                for file_name in files_list:
+                    try:
+                        with open(f"data/Libraries/ServicesGroups/{file_name}", "r") as fh:
+                            services_group = json.load(fh)
+                    except FileNotFoundError as err:
+                        print(f'\t\033[31mГруппа сервисов не импортирована!\n\tНе найден файл "data/Libraries/ServicesGroups/{file_name}" с сохранённой конфигурацией!\033[0;0m')
+                        return
+
+                    content = services_group.pop('content')
+                    err, result = self.add_nlist(services_group)
+                    if err == 1:
+                        print(result, end= ' - ')
+                        result = self.services_groups[services_group['name']]
+                        err1, result1 = self.update_nlist(result, services_group)
+                        if err1 != 0:
+                            print("\n", f"\033[31m{result1}\033[0m")
+                        else:
+                            print("\033[32mUpdated!\033[0;0m")
+                    elif err == 2:
+                        print(f"\033[31m{result}\033[0m")
+                        continue
+                    else:
+                        self.services_groups[services_group['name']] = result
+                        print(f'\tДобавлена группа сервисов: "{services_group["name"]}".')
+                    if content:
+                        err2, result2 = self.add_nlist_items(result, content)
+                        if err2 in (1, 3):
+                            print(result2)
+                        elif err2 == 2:
+                            print(f"\033[31m{result2}\033[0m")
+                        else:
+                            print(f'\tСодержимое группы сервисов "{services_group["name"]}" обновлено. Added {result2} record.')
+                    else:
+                        print(f'\tСписок "{services_group["name"]}" пуст.')
+            else:
+                print("\033[33m\tНет групп сервисов для импорта.\033[0m")
+        else:
+            print("\033[33m\tНет групп сервисов для импорта.\033[0m")
+
     def export_IP_lists(self):
         """Выгружает списки IP-адресов и преобразует формат атрибутов списков к версии 6"""
         print('Выгружаются списки IP-адресов раздела "Библиотеки":')
-        if os.path.isdir('data/library/ip_lists'):
-            for file_name in os.listdir('data/library/ip_lists'):
-                os.remove(f"data/library/ip_lists/{file_name}")
+        if os.path.isdir('data/Libraries/IPAddresses'):
+            for file_name in os.listdir('data/Libraries/IPAddresses'):
+                os.remove(f"data/Libraries/IPAddresses/{file_name}")
         else:
-            os.makedirs('data/library/ip_lists')
+            os.makedirs('data/Libraries/IPAddresses')
 
         total, data = self.get_nlist_list('network')
         trans_table = str.maketrans(character_map)
@@ -417,22 +520,22 @@ class UTM(UtmXmlRpc):
             item['name'] = item['name'].translate(trans_table)
             for content in item['content']:
                 content.pop('id')
-            with open(f"data/library/ip_lists/{item['name']}.json", "w") as fd:
+            with open(f"data/Libraries/IPAddresses/{item['name']}.json", "w") as fd:
                 json.dump(item, fd, indent=4, ensure_ascii=False)
-            print(f'\tСписок IP-адресов "{item["name"]}" выгружен в файл "data/library/ip_lists/{item["name"]}.json".')
+            print(f'\tСписок IP-адресов "{item["name"]}" выгружен в файл "data/Libraries/IPAddresses/{item["name"]}.json".')
 
     def import_IP_lists(self):
         """Импортировать списки IP адресов"""
         print('Импорт списков IP-адресов раздела "Библиотеки":')
-        if os.path.isdir('data/library/ip_lists'):
-            files_list = os.listdir('data/library/ip_lists')
+        if os.path.isdir('data/Libraries/IPAddresses'):
+            files_list = os.listdir('data/Libraries/IPAddresses')
             if files_list:
                 for file_name in files_list:
                     try:
-                        with open(f"data/library/ip_lists/{file_name}", "r") as fh:
+                        with open(f"data/Libraries/IPAddresses/{file_name}", "r") as fh:
                             ip_list = json.load(fh)
                     except FileNotFoundError as err:
-                        print(f'\t\033[31mСписок "IP-адреса" не импортирован!\n\tНе найден файл "data/library/ip_lists/{file_name}" с сохранённой конфигурацией!\033[0;0m')
+                        print(f'\t\033[31mСписок "IP-адреса" не импортирован!\n\tНе найден файл "data/Libraries/IPAddresses/{file_name}" с сохранённой конфигурацией!\033[0;0m')
                         return
 
                     content = ip_list.pop('content')
@@ -469,8 +572,8 @@ class UTM(UtmXmlRpc):
     def export_useragent_lists(self):
         """Выгружает списки useragent и преобразует формат атрибутов списков к версии 6"""
         print('Выгружаются список "Useragent браузеров" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/Useragents'):
+            os.makedirs('data/Libraries/Useragents')
 
         total, data = self.get_nlist_list('useragent')
 
@@ -486,18 +589,18 @@ class UTM(UtmXmlRpc):
             item.pop('last_update', None)
             for content in item['content']:
                 content.pop('id')
-        with open("data/library/config_useragents.json", "w") as fd:
+        with open("data/Libraries/Useragents/config_useragents.json", "w") as fd:
                 json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Useragent браузеров" выгружен в файл "data/library/config_useragents.json".')
+        print(f'\tСписок "Useragent браузеров" выгружен в файл "data/Libraries/Useragents/config_useragents.json".')
 
     def import_useragent_lists(self):
         """Импортировать списки Useragent браузеров"""
         print('Импорт списков "Useragent браузеров" раздела "Библиотеки":')
         try:
-            with open("data/library/config_useragents.json", "r") as fh:
+            with open("data/Libraries/Useragents/config_useragents.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Useragent браузеров" не импортирован!\n\tНе найден файл "data/library/config_useragents.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Useragent браузеров" не импортирован!\n\tНе найден файл "data/Libraries/Useragents/config_useragents.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -532,8 +635,8 @@ class UTM(UtmXmlRpc):
     def export_mime_lists(self):
         """Выгружает списки Типов контента и преобразует формат атрибутов списков к версии 6"""
         print('Выгружается список "Типы контента" (mime типы) раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/ContentTypes'):
+            os.makedirs('data/Libraries/ContentTypes')
 
         total, data = self.get_nlist_list('mime')
 
@@ -549,18 +652,18 @@ class UTM(UtmXmlRpc):
             item.pop('last_update', None)
             for content in item['content']:
                 content.pop('id')
-        with open("data/library/config_mime_types.json", "w") as fd:
+        with open("data/Libraries/ContentTypes/config_mime_types.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Типы контента" выгружен в файл "data/library/config_mime_types.json".')
+        print(f'\tСписок "Типы контента" выгружен в файл "data/Libraries/ContentTypes/config_mime_types.json".')
 
     def import_mime_lists(self):
         """Импортировать списки Типов контента"""
         print('Импорт списка "Типы контента" раздела "Библиотеки":')
         try:
-            with open("data/library/config_mime_types.json", "r") as fh:
+            with open("data/Libraries/ContentTypes/config_mime_types.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Типы контента" не импортирован!\n\tНе найден файл "data/library/config_mime_types.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Типы контента" не импортирован!\n\tНе найден файл "data/Libraries/ContentTypes/config_mime_types.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -593,11 +696,11 @@ class UTM(UtmXmlRpc):
     def export_url_lists(self):
         """Выгружает списки URL и преобразует формат атрибутов списков к версии 6"""
         print('Выгружаются "Списки URL" раздела "Библиотеки":')
-        if os.path.isdir('data/library/url'):
-            for file_name in os.listdir('data/library/url'):
-                os.remove(f"data/library/url/{file_name}")
+        if os.path.isdir('data/Libraries/URLLists'):
+            for file_name in os.listdir('data/Libraries/URLLists'):
+                os.remove(f"data/Libraries/URLLists/{file_name}")
         else:
-            os.makedirs('data/library/url')
+            os.makedirs('data/Libraries/URLLists')
 
         total, data = self.get_nlist_list('url')
         trans_table = str.maketrans(character_map)
@@ -616,22 +719,22 @@ class UTM(UtmXmlRpc):
             item['name'] = url_list_name
             for content in item['content']:
                 content.pop('id', None)
-            with open(f"data/library/url/{url_list_name}.json", "w") as fd:
+            with open(f"data/Libraries/URLLists/{url_list_name}.json", "w") as fd:
                 json.dump(item, fd, indent=4, ensure_ascii=False)
-            print(f'\tСписок URL "{item["name"]}" выгружен в файл data/library/url/{url_list_name}.json')
+            print(f'\tСписок URL "{item["name"]}" выгружен в файл data/Libraries/URLLists/{url_list_name}.json')
 
     def import_url_lists(self):
         """Импортировать списки URL на UTM"""
         print('Импорт списков URL раздела "Библиотеки":')
-        if os.path.isdir('data/library/url'):
-            files_list = os.listdir('data/library/url')
+        if os.path.isdir('data/Libraries/URLLists'):
+            files_list = os.listdir('data/Libraries/URLLists')
             if files_list:
                 for file_name in files_list:
                     try:
-                        with open(f"data/library/url/{file_name}", "r") as fh:
+                        with open(f"data/Libraries/URLLists/{file_name}", "r") as fh:
                             url_list = json.load(fh)
                     except FileNotFoundError as err:
-                        print(f'\t\033[31mСписок "Списки URL" не импортирован!\n\tНе найден файл "data/library/url/{file_name}" с сохранённой конфигурацией!\033[0;0m')
+                        print(f'\t\033[31mСписок "Списки URL" не импортирован!\n\tНе найден файл "data/Libraries/URLLists/{file_name}" с сохранённой конфигурацией!\033[0;0m')
                         return
 
                     print(f'\tДобавляется список URL: "{url_list["name"]}".')
@@ -669,8 +772,8 @@ class UTM(UtmXmlRpc):
     def export_time_restricted_lists(self):
         """Выгружает содержимое календарей и преобразует формат атрибутов списков к версии 6"""
         print('Выгружается список "Календари" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/TimeSets'):
+            os.makedirs('data/Libraries/TimeSets')
 
         total, data = self.get_nlist_list('timerestrictiongroup')
 
@@ -689,18 +792,18 @@ class UTM(UtmXmlRpc):
                 content.pop('fixed_date_from', None)
                 content.pop('fixed_date_to', None)
                 content.pop('fixed_date', None)
-        with open("data/library/config_calendars.json", "w") as fd:
+        with open("data/Libraries/TimeSets/config_calendars.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Календари" выгружен в файл "data/library/config_calendars.json".')
+        print(f'\tСписок "Календари" выгружен в файл "data/Libraries/TimeSets/config_calendars.json".')
 
     def import_time_restricted_lists(self):
         """Импортировать содержимое календарей"""
         print('Импорт списка "Календари" раздела "Библиотеки":')
         try:
-            with open("data/library/config_calendars.json", "r") as fh:
+            with open("data/Libraries/TimeSets/config_calendars.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Календари" не импортирован!\n\tНе найден файл "data/library/config_calendars.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Календари" не импортирован!\n\tНе найден файл "data/Libraries/TimeSets/config_calendars.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -732,8 +835,8 @@ class UTM(UtmXmlRpc):
     def export_shaper_list(self):
         """Выгрузить список Полос пропускания раздела библиотеки"""
         print('Выгружается список "Полосы пропускания" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/BandwidthPools'):
+            os.makedirs('data/Libraries/BandwidthPools')
 
         _, data = self.get_shaper_list()
 
@@ -741,23 +844,25 @@ class UTM(UtmXmlRpc):
             item.pop('id')
             item.pop('guid')
             item.pop('cc', None)
-        with open("data/library/config_shaper.json", "w") as fh:
+        with open("data/Libraries/BandwidthPools/config_shaper.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Полосы пропускания" выгружен в файл "data/library/config_shaper.json".')
+        print(f'\tСписок "Полосы пропускания" выгружен в файл "data/Libraries/BandwidthPools/config_shaper.json".')
 
     def import_shaper(self):
         """Импортировать список Полос пропускания раздела библиотеки"""
         print('Импорт списка "Полосы пропускания" раздела "Библиотеки":')
+
         try:
-            with open("data/library/config_shaper.json", "r") as fh:
+            with open("data/Libraries/BandwidthPools/config_shaper.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Полосы пропускания" не импортирован!\n\tНе найден файл "data/library/config_shaper.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Полосы пропускания" не импортирован!\n\tНе найден файл "data/Libraries/BandwidthPools/config_shaper.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
             print("\tНет полос пропускания для импорта.")
             return
+
         for item in data:
             err, result = self.add_shaper(item)
             if err == 1:
@@ -775,43 +880,45 @@ class UTM(UtmXmlRpc):
 
     def export_scada_list(self):
         """Выгрузить список профилей АСУ ТП раздела библиотеки"""
-        print('Выгружается список "Профили АСУ ТП" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if int(self.version[:1]) < 7:
+            print('Выгружается список "Профили АСУ ТП" раздела "Библиотеки":')
+            if not os.path.isdir('data/Libraries/SCADAProfiles'):
+                os.makedirs('data/Libraries/SCADAProfiles')
 
-        _, data = self.get_scada_list()
+            _, data = self.get_scada_list()
 
-        for item in data:
-            item.pop('id')
-            item.pop('cc', None)
-        with open("data/library/config_scada.json", "w") as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили АСУ ТП" выгружен в файл "data/library/config_scada.json".')
+            for item in data:
+                item.pop('id')
+                item.pop('cc', None)
+            with open("data/Libraries/SCADAProfiles/config_scada.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tСписок "Профили АСУ ТП" выгружен в файл "data/Libraries/SCADAProfiles/config_scada.json".')
 
     def import_scada_list(self):
         """Импортировать список профилей АСУ ТП раздела библиотеки"""
-        print('Импорт списка "Профили АСУ ТП" раздела "Библиотеки":')
-        try:
-            with open("data/library/config_scada.json", "r") as fh:
-                scada = json.load(fh)
-        except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили АСУ ТП" не импортирован!\n\tНе найден файл "data/library/config_scada.json" с сохранённой конфигурацией!\033[0;0m')
-            return
+        if int(self.version[:1]) < 7:
+            print('Импорт списка "Профили АСУ ТП" раздела "Библиотеки":')
+            try:
+                with open("data/Libraries/SCADAProfiles/config_scada.json", "r") as fh:
+                    scada = json.load(fh)
+            except FileNotFoundError as err:
+                print(f'\t\033[31mСписок "Профили АСУ ТП" не импортирован!\n\tНе найден файл "data/Libraries/SCADAProfiles/config_scada.json" с сохранённой конфигурацией!\033[0;0m')
+                return
 
-        for item in scada:
-            err, result = self.add_scada(item)
-            if err == 1:
-                print(result, end= ' - ')
-                err1, result1 = self.update_scada(self.list_scada[item['name']], item)
-                if err1 != 0:
-                    print("\n", f"\033[31m{result1}\033[0m")
+            for item in scada:
+                err, result = self.add_scada(item)
+                if err == 1:
+                    print(result, end= ' - ')
+                    err1, result1 = self.update_scada(self.list_scada[item['name']], item)
+                    if err1 != 0:
+                        print("\n", f"\033[31m{result1}\033[0m")
+                    else:
+                        print("\033[32mOk!\033[0;0m")
+                elif err == 2:
+                    print(f"\033[31m{result}\033[0m")
                 else:
-                    print("\033[32mOk!\033[0;0m")
-            elif err == 2:
-                print(f"\033[31m{result}\033[0m")
-            else:
-                self.list_scada[item['name']] = result
-                print(f'\tПрофиль АСУ ТП "{item["name"]}" добавлен.')
+                    self.list_scada[item['name']] = result
+                    print(f'\tПрофиль АСУ ТП "{item["name"]}" добавлен.')
 
     def export_templates_list(self):
         """
@@ -819,25 +926,25 @@ class UTM(UtmXmlRpc):
         Выгружает файл HTML только для изменённых страниц шаблонов.
         """
         print('Выгружается список "Шаблоны страниц" раздела "Библиотеки":')
-        if os.path.isdir('data/library/templates'):
-            for file_name in os.listdir('data/library/templates'):
-                os.remove(f"data/library/templates/{file_name}")
+        if os.path.isdir('data/Libraries/ResponcePages'):
+            for file_name in os.listdir('data/Libraries/ResponcePages'):
+                os.remove(f"data/Libraries/ResponcePages/{file_name}")
         else:
-            os.makedirs('data/library/templates')
+            os.makedirs('data/Libraries/ResponcePages')
 
         _, data = self.get_templates_list()
         for item in data:
             _, html_data = self.get_template_data(item['type'], item['id'])
             if html_data:
-                with open(f"data/library/templates/{item['name']}.html", "w") as fh:
+                with open(f"data/Libraries/ResponcePages/{item['name']}.html", "w") as fh:
                     fh.write(html_data)
-                print(f'\tСтраница HTML для шаблона "{item["name"]}" выгружена в файл "data/library/templates/{item["name"]}.html".')
+                print(f'\tСтраница HTML для шаблона "{item["name"]}" выгружена в файл "data/Libraries/ResponcePages/{item["name"]}.html".')
             item.pop('id')
             item.pop('last_update', None)
             item.pop('cc', None)
-        with open("data/library/templates/config_templates.json", "w") as fh:
+        with open("data/Libraries/ResponcePages/config_templates.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print('\tСписок "Шаблоны страниц" выгружен в файл "data/library/templates/config_templates.json".')
+        print('\tСписок "Шаблоны страниц" выгружен в файл "data/Libraries/ResponcePages/config_templates.json".')
 
     def import_templates_list(self):
         """
@@ -846,13 +953,13 @@ class UTM(UtmXmlRpc):
         """
         print('Импорт списка "Шаблоны страниц" раздела "Библиотеки":')
         try:
-            with open("data/library/templates/config_templates.json", "r") as fh:
+            with open("data/Libraries/ResponcePages/config_templates.json", "r") as fh:
                 templates = json.load(fh)
         except FileNotFoundError as err:
-            print('\t\033[31mСписок "Шаблоны страниц" не импортирован!\n\tНе найден файл "data/library/templates/config_templates.json" с сохранённой конфигурацией!\033[0;0m')
+            print('\t\033[31mСписок "Шаблоны страниц" не импортирован!\n\tНе найден файл "data/Libraries/ResponcePages/config_templates.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
-        html_files = os.listdir('data/library/templates')
+        html_files = os.listdir('data/Libraries/ResponcePages')
 
         for item in templates:
             err, result = self.add_template(item)
@@ -872,7 +979,7 @@ class UTM(UtmXmlRpc):
                 print(f'\tШаблон страницы "{item["name"]}" добавлен.')
 
             if f"{item['name']}.html" in html_files:
-                with open(f"data/library/templates/{item['name']}.html", "br") as fh:
+                with open(f"data/Libraries/ResponcePages/{item['name']}.html", "br") as fh:
                     file_data = fh.read()
                 _, result2 = self.set_template_data(result, file_data)
                 if result2:
@@ -883,8 +990,8 @@ class UTM(UtmXmlRpc):
         print('Выгружается список "Категории URL" раздела "Библиотеки":')
         group_name_revert = {v: k for k, v in self.default_url_category.items()}
 
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/URLCategories'):
+            os.makedirs('data/Libraries/URLCategories')
 
         total, data = self.get_nlist_list('urlcategorygroup')
 
@@ -898,24 +1005,25 @@ class UTM(UtmXmlRpc):
             item['name'] = group_name_revert.get(item['name'], item['name'])
             if self.version.startswith('5'):
                 item['guid'] = self.default_url_category.get(item['name'], item['guid'])
+                item['attributes'] = {}
             for content in item['content']:
                 content.pop('id')
                 if self.version.startswith('5'):
                     content['category_id'] = content.pop('value')
                     content['name'] = self._categories[int(content['category_id'])]
 
-        with open("data/library/config_categories_url.json", "w") as fd:
+        with open("data/Libraries/URLCategories/config_categories_url.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Категории URL" выгружен в файл "data/library/config_categories_url.json".')
+        print(f'\tСписок "Категории URL" выгружен в файл "data/Libraries/URLCategories/config_categories_url.json".')
 
     def import_categories_groups(self):
         """Импортировать список "Категории URL" на UTM"""
         print('Импорт списка "Категории URL" раздела "Библиотеки":')
         try:
-            with open("data/library/config_categories_url.json", "r") as fh:
+            with open("data/Libraries/URLCategories/config_categories_url.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print('\t\033[31mСписок "Категории URL" не импортирован!\n\tНе найден файл "data/library/config_categories_url.json" с сохранённой конфигурацией!\033[0;0m')
+            print('\t\033[31mСписок "Категории URL" не импортирован!\n\tНе найден файл "data/Libraries/URLCategories/config_categories_url.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -948,8 +1056,8 @@ class UTM(UtmXmlRpc):
         print('Выгружается список "Изменённые категории URL" раздела "Библиотеки":')
         group_name_revert = {v: k for k, v in self.default_url_category.items()}
 
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/OverURLCategories'):
+            os.makedirs('data/Libraries/OverURLCategories')
 
         err, data = self.get_custom_url_list()
         if err == 2:
@@ -964,18 +1072,18 @@ class UTM(UtmXmlRpc):
             item.pop('cc', None)
             item['categories'] = [self._categories[x] for x in item['categories']]
 
-        with open("data/library/custom_categories_url.json", "w") as fd:
+        with open("data/Libraries/OverURLCategories/custom_categories_url.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Изменённые категории URL" выгружен в файл "data/library/custom_categories_url.json".')
+        print(f'\tСписок "Изменённые категории URL" выгружен в файл "data/Libraries/OverURLCategories/custom_categories_url.json".')
 
     def import_custom_url_list(self):
         """Импортировать список "Изменённые категории URL" на UTM"""
         print('Импорт списка "Изменённые категории URL" раздела "Библиотеки":')
         try:
-            with open("data/library/custom_categories_url.json", "r") as fh:
+            with open("data/Libraries/OverURLCategories/custom_categories_url.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print('\t\033[31mСписок "Изменённые категории URL" не импортирован!\n\tНе найден файл "data/library/custom_categories_url.json" с сохранённой конфигурацией!\033[0;0m')
+            print('\t\033[31mСписок "Изменённые категории URL" не импортирован!\n\tНе найден файл "data/Libraries/OverURLCategories/custom_categories_url.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1012,8 +1120,8 @@ class UTM(UtmXmlRpc):
     def export_application_groups(self):
         """Выгружает список "Приложения" и преобразует формат атрибутов списков к версии 6"""
         print('Выгружается список "Приложения" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/Applications'):
+            os.makedirs('data/Libraries/Applications')
 
         total, data = self.get_nlist_list('applicationgroup')
 
@@ -1025,31 +1133,33 @@ class UTM(UtmXmlRpc):
             item.pop('url', None)
             item.pop('version', None)
             item.pop('last_update', None)
+            if self.version.startswith('5'):
+                item['attributes'] = {}
             for content in item['content']:
                 content.pop('id')
-                content['value'] = self.l7_apps.get(content['value'], content['value'])
-                if content['value'] == '1С':
-                    content['value'] = '1C'   # Ставим английскую букву
-                elif content['value'] == 'Facebook Chat':
-                    content['value'] = 'Facebook  Chat'     # Добавляем лишний пробел
+                if self.version.startswith('5'):
+                    content['name'] = self.l7_apps[content['value']]
 
-        with open("data/library/config_applications.json", "w") as fd:
+        with open("data/Libraries/Applications/config_applications.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Приложения" выгружен в файл "data/library/config_applications.json".')
+        print(f'\tСписок "Приложения" выгружен в файл "data/Libraries/Applications/config_applications.json".')
 
     def import_application_groups(self):
         """Импортировать список "Приложения" на UTM"""
         print('Импорт списка "Приложения" раздела "Библиотеки":')
         try:
-            with open("data/library/config_applications.json", "r") as fh:
+            with open("data/Libraries/Applications/config_applications.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print('\t\033[31mСписок "Приложения" не импортирован!\n\tНе найден файл "data/library/config_applications.json" с сохранённой конфигурацией!\033[0;0m')
+            print('\t\033[31mСписок "Приложения" не импортирован!\n\tНе найден файл "data/Libraries/Applications/config_applications.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
             print("\tНет групп приложений для импорта.")
             return
+
+        l7_app_id = {x for x in self.l7_apps.values()}
+
         for item in data:
             content = item.pop('content')
             err, result = self.add_nlist(item)
@@ -1061,14 +1171,17 @@ class UTM(UtmXmlRpc):
                 self.list_applicationgroup[item['name']] = result
                 print(f'\tГруппа приложений "{item["name"]}" добавлена.')
                 for app in content:
-                    try:
-                        err2, result2 = self.add_nlist_item(result, self.l7_apps[app['value']])
+                    if app['value'] in l7_app_id:
+                        if int(self.version[:1]) > 6:
+                            err2, result2 = self.add_nlist_item(result, app)
+                        else:
+                            err2, result2 = self.add_nlist_item(result, app['value'])
                         if err2 != 0:
                             print(f'\033[31m{result2}\033[0m')
                         else:
-                            print(f'\t\tДобавлено приложение: "{app["value"]}".')
-                    except:
-                        print(f'\t\t\033[33mПриложение "{app["value"]}" не будет добавлено, так как не существует на целевой системе.\033[0m')
+                            print(f'\t\tДобавлено приложение: "{app["name"]}".')
+                    else:
+                        print(f'\t\t\033[33mПриложение "{app["name"]}" не будет добавлено, так как не существует на целевой системе.\033[0m')
 
     def export_nlist_groups(self, list_type):
         """Выгружает списки: "Почтовые адреса", "Номера телефонов" и преобразует формат списков к версии 6"""
@@ -1077,8 +1190,11 @@ class UTM(UtmXmlRpc):
             'phonegroup': "Номера телефонов"
             }
         print(f'Выгружается список "{list_name[list_type]}" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+
+        config_path = "data/Libraries/Emails" if list_type == "emailgroup" else "data/Libraries/Phones"
+
+        if not os.path.isdir(config_path):
+            os.makedirs(config_path)
 
         total, data = self.get_nlist_list(list_type)
 
@@ -1093,9 +1209,9 @@ class UTM(UtmXmlRpc):
             for content in item['content']:
                 content.pop('id')
 
-        with open(f"data/library/config_{list_type}.json", "w") as fd:
+        with open(f"{config_path}/config_{list_type}.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "{list_name[list_type]}" выгружен в файл "data/library/config_{list_type}.json".')
+        print(f'\tСписок "{list_name[list_type]}" выгружен в файл "data/Libraries/Emails/config_{list_type}.json".')
 
     def import_nlist_groups(self, list_type):
         """Импортировать списки: "Почтовые адреса" и "Номера телефонов" на UTM"""
@@ -1104,11 +1220,14 @@ class UTM(UtmXmlRpc):
             'phonegroup': ["Номера телефонов", "номеров", "номер"],
             }
         print(f'Импорт списка "{list_name[list_type][0]}" раздела "Библиотеки":')
+
+        config_path = "data/Libraries/Emails/config_emailgroup.json" if list_type == "emailgroup" else "data/Libraries/Phones/config_phonegroup.json"
+            
         try:
-            with open(f"data/library/config_{list_type}.json", "r") as fh:
+            with open(config_path, "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "{list_name[list_type][0]}" не импортирован!\n\tНе найден файл "data/library/config_{list_type}.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "{list_name[list_type][0]}" не импортирован!\n\tНе найден файл "{config_path}" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1136,8 +1255,8 @@ class UTM(UtmXmlRpc):
     def export_ips_profiles(self):
         """Выгружает списки: "Профили СОВ" и преобразует формат списков к версии 6"""
         print(f'Выгружается список "Профили СОВ" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/IPSProfiles'):
+            os.makedirs('data/Libraries/IPSProfiles')
 
         total, data = self.get_nlist_list('ipspolicy')
 
@@ -1160,18 +1279,18 @@ class UTM(UtmXmlRpc):
                 if 'threat_level' in content.keys():
                     content['threat'] = content.pop('threat_level')
 
-        with open(f"data/library/config_ips_profiles.json", "w") as fd:
+        with open(f"data/Libraries/IPSProfiles/config_ips_profiles.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили СОВ" выгружен в файл "data/library/config_ips_profiles.json".')
+        print(f'\tСписок "Профили СОВ" выгружен в файл "data/Libraries/IPSProfiles/config_ips_profiles.json".')
 
     def import_ips_profiles(self):
         """Импортировать списки: "Профили СОВ" на UTM"""
         print(f'Импорт списка "Профили СОВ" раздела "Библиотеки":')
         try:
-            with open(f"data/library/config_ips_profiles.json", "r") as fh:
+            with open(f"data/Libraries/IPSProfiles/config_ips_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили СОВ" не импортирован!\n\tНе найден файл "data/library/config_ips_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили СОВ" не импортирован!\n\tНе найден файл "data/Libraries/IPSProfiles/config_ips_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1193,7 +1312,7 @@ class UTM(UtmXmlRpc):
                 idps[item['name']] = result
                 print(f'\tПрофиль СОВ "{item["name"]}" добавлен.')
 
-            if int(self.version[6:11]) >= 10709:
+            if  int(self.version[:1]) > 6 or int(self.version[6:11]) >= 10709:
                 for signature in content:
                     if 'value' not in signature.keys():
                         print(f'\t\t\033[33mСигнатуры для данного профиля не будут добавлены так как формат не соответствует целевой системе.\033[0m')
@@ -1212,25 +1331,25 @@ class UTM(UtmXmlRpc):
     def export_notification_profiles_list(self):
         """Выгрузить список профилей оповещения раздела библиотеки"""
         print('Выгружается список "Профили оповещений" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/NotificationProfiles'):
+            os.makedirs('data/Libraries/NotificationProfiles')
 
         _, data = self.get_notification_profiles_list()
 
         for item in data:
             item.pop('cc', None)
-        with open("data/library/config_notification_profiles.json", "w") as fh:
+        with open("data/Libraries/NotificationProfiles/config_notification_profiles.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили оповещений" выгружен в файл "data/library/config_notification_profiles.json".')
+        print(f'\tСписок "Профили оповещений" выгружен в файл "data/Libraries/NotificationProfiles/config_notification_profiles.json".')
 
     def import_notification_profiles(self):
         """Импортировать список профилей оповещения раздела библиотеки"""
         print('Импорт списка "Профили оповещений" раздела "Библиотеки":')
         try:
-            with open("data/library/config_notification_profiles.json", "r") as fh:
+            with open("data/Libraries/NotificationProfiles/config_notification_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили оповещений" не импортирован!\n\tНе найден файл "data/library/config_notification_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили оповещений" не импортирован!\n\tНе найден файл "data/Libraries/NotificationProfiles/config_notification_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1255,25 +1374,25 @@ class UTM(UtmXmlRpc):
     def export_netflow_profiles_list(self):
         """Выгрузить список профилей netflow раздела библиотеки"""
         print('Выгружается список "Профили netflow" раздела "Библиотеки":')
-        if not os.path.isdir('data/library'):
-            os.makedirs('data/library')
+        if not os.path.isdir('data/Libraries/NetflowProfiles'):
+            os.makedirs('data/Libraries/NetflowProfiles')
 
         _, data = self.get_netflow_profiles_list()
 
         for item in data:
             item.pop('cc', None)
-        with open("data/library/config_netflow_profiles.json", "w") as fh:
+        with open("data/Libraries/NetflowProfiles/config_netflow_profiles.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили netflow" выгружен в файл "data/library/config_netflow_profiles.json".')
+        print(f'\tСписок "Профили netflow" выгружен в файл "data/Libraries/NetflowProfiles/config_netflow_profiles.json".')
 
     def import_netflow_profiles(self):
         """Импортировать список профилей netflow раздела библиотеки"""
         print('Импорт списка "Профили netflow" раздела "Библиотеки":')
         try:
-            with open("data/library/config_netflow_profiles.json", "r") as fh:
+            with open("data/Libraries/NetflowProfiles/config_netflow_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили netflow" не импортирован!\n\tНе найден файл "data/library/config_netflow_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили netflow" не импортирован!\n\tНе найден файл "data/Libraries/NetflowProfiles/config_netflow_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1297,26 +1416,26 @@ class UTM(UtmXmlRpc):
 
     def export_ssl_profiles_list(self):
         """Выгрузить список профилей SSL раздела библиотеки"""
-        if self.version.startswith('6'):
+        if int(self.version[:1]) > 5:
             print('Выгружается список "Профили SSL" раздела "Библиотеки":')
-            if not os.path.isdir('data/library'):
-                os.makedirs('data/library')
+            if not os.path.isdir('data/Libraries/SSLProfiles'):
+                os.makedirs('data/Libraries/SSLProfiles')
 
             _, data = self.get_ssl_profiles_list()
             for item in data:
                 item.pop('cc', None)
-            with open("data/library/config_ssl_profiles.json", "w") as fh:
+            with open("data/Libraries/SSLProfiles/config_ssl_profiles.json", "w") as fh:
                 json.dump(data, fh, indent=4, ensure_ascii=False)
-            print(f'\tСписок "Профили SSL" выгружен в файл "data/library/config_ssl_profiles.json".')
+            print(f'\tСписок "Профили SSL" выгружен в файл "data/Libraries/SSLProfiles/config_ssl_profiles.json".')
 
     def import_ssl_profiles(self):
         """Импортировать список профилей SSL раздела библиотеки"""
         print('Импорт списка "Профили SSL" раздела "Библиотеки":')
         try:
-            with open("data/library/config_ssl_profiles.json", "r") as fh:
+            with open("data/Libraries/SSLProfiles/config_ssl_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили SSL" не импортирован!\n\tНе найден файл "data/library/config_ssl_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили SSL" не импортирован!\n\tНе найден файл "data/Libraries/SSLProfiles/config_ssl_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1342,30 +1461,37 @@ class UTM(UtmXmlRpc):
     def export_ui(self):
         """Выгрузить настройки интерфейса"""
         print('Выгружаются "Настройки интерфейса" веб-консоли раздела "Настройки":')
-        if not os.path.isdir('data/settings'):
-            os.makedirs('data/settings')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
 
         params = ['ui_timezone', 'ui_language', 'web_console_ssl_profile_id', 'response_pages_ssl_profile_id']
         _, data = self.get_settings_params(params)
 
-        if self.version.startswith('6'):
+        status, webui_auth_mode = self.get_webui_auth_mode()
+        if status == 2:
+            print(f"\033[31m{webui_auth_mode}\033[0m")
+            webui_auth_mode = "Error"
+        else:
+            data['webui_auth_mode'] = webui_auth_mode
+
+        if int(self.version[:1]) > 5:
             _, result = self.get_ssl_profiles_list()
             ssl_profiles = {x['id']: x['name'] for x in result}
             data['web_console_ssl_profile_id'] = ssl_profiles[data['web_console_ssl_profile_id']]
             data['response_pages_ssl_profile_id'] = ssl_profiles[data['response_pages_ssl_profile_id']]
 
-        with open("data/settings/config_settings_ui.json", "w") as fh:
+        with open("data/UserGate/GeneralSettings/config_settings_ui.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\t"Настройки интерфейса" веб-консоли выгружены в файл "data/settings/config_settings_ui.json".')
+        print(f'\t"Настройки интерфейса" веб-консоли выгружены в файл "data/UserGate/GeneralSettings/config_settings_ui.json".')
 
     def import_ui(self):
         """Импортировать настройки интерфейса"""
         print('Импорт "Настройки интерфейса" веб-консоли раздела "Настройки":')
         try:
-            with open("data/settings/config_settings_ui.json", "r") as fh:
+            with open("data/UserGate/GeneralSettings/config_settings_ui.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Настройки интерфейса" не импортирован!\n\tНе найден файл "data/settings/config_settings_ui.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Настройки интерфейса" не импортирован!\n\tНе найден файл "data/UserGate/GeneralSettings/config_settings_ui.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         params = {
@@ -1384,76 +1510,160 @@ class UTM(UtmXmlRpc):
             data.pop('response_pages_ssl_profile_id', None)
 
         for key, value in data.items():
-            err, result = self.set_settings_param(key, value)
-            if err == 2:
-                print(f"\033[31m{result}\033[0m")
-            else:
-                print(f'\t{params[key]} - \033[32mUpdated!\033[0m.')
+            if key != 'webui_auth_mode':
+                err, result = self.set_settings_param(key, value)
+                if err == 2:
+                    print(f"\033[31m{result}\033[0m")
+                else:
+                    print(f'\t{params[key]} - \033[32mUpdated!\033[0m.')
 
     def export_ntp(self):
         """Выгрузить настройки NTP"""
         print('Выгружаются "Настройки NTP" раздела "Настройки":')
-        if not os.path.isdir('data/settings'):
-            os.makedirs('data/settings')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
 
         _, data = self.get_ntp_config()
+
         if data:
             data.pop('local_time', None)
             data.pop('timezone', None)
-            data.pop('utc_time', None)
-        with open("data/settings/config_ntp.json", "w") as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tНастройки NTP выгружены в файл "data/settings/config_ntp.json".')
+            data['utc_time'] = dt.strptime(data['utc_time'].value, "%Y%m%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
+        
+            with open("data/UserGate/GeneralSettings/config_ntp.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tНастройки NTP выгружены в файл "data/UserGate/GeneralSettings/config_ntp.json".')
 
     def import_ntp(self):
         """Импортировать настройки NTP"""
         print('Импорт настроек NTP раздела "Настройки":')
         try:
-            with open("data/settings/config_ntp.json", "r") as fh:
-                ntp = json.load(fh)
+            with open("data/UserGate/GeneralSettings/config_ntp.json", "r") as fh:
+                data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mНастройки NTP не импортированы!\n\tНе найден файл "data/settings/config_ntp.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mНастройки NTP не импортированы!\n\tНе найден файл "data/UserGate/GeneralSettings/config_ntp.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
-        err, result = self.add_ntp_config(ntp)
+        data.pop('utc_time', None)
+
+        err, result = self.add_ntp_config(data)
         if err == 2:
             print(f"\033[31m{result}\033[0m")
         else:
             print(f'\tНастройки NTP обновлены.')
 
+    def export_snmp_engine(self):
+        """Выгрузить SNMP Engine ID"""
+        print('Выгружается "SNMP Engine ID" раздела "Настройки" -> "Модули":')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
+
+        data = self.get_snmp_engine_id()
+
+        if data:
+            with open("data/UserGate/GeneralSettings/config_snmp_engine_id.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tНастройки SNMP Engine выгружены в файл "data/UserGate/GeneralSettings/config_snmp_engine_id.json".')
+
+    def export_pcap_settings(self):
+        """Выгрузить настройки pcap"""
+        print('Выгружаются настройки раздела "Настройки" -> "Настройка PCAP":')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
+
+        data = self.get_settings_parameter("pcap_settings")
+
+        if data:
+            with open("data/UserGate/GeneralSettings/config_pcap_settings.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tНастройки pcap выгружены в файл "data/UserGate/GeneralSettings/config_pcap_settings.json".')
+
+    def export_tracker_settings(self):
+        """Выгрузить настройки учёта изменений"""
+        print('Выгружаются настройки раздела "Настройки" -> "Настройка учёта изменений":')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
+
+        data = self.get_settings_parameter("event_tracker")
+
+        if data:
+            with open("data/UserGate/GeneralSettings/config_event_tracker.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tНастройки учёта изменений выгружены в файл "data/UserGate/GeneralSettings/config_event_tracker.json".')
+
+    def export_update_schedule(self):
+        """Выгрузить расписание скачивания обновлений"""
+        print('Выгружаются настройки раздела "Настройки" -> "Расписание скачивания обновлений":')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
+
+        data = self.get_settings_parameter("utm_update_schedule")
+
+        if data:
+            with open("data/UserGate/GeneralSettings/config_utmupdate_schedule.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tРасписание скачивания обновлений выгружено в файл "data/UserGate/GeneralSettings/config_utmupdate_schedule.json".')
+
+    def export_statistics_status(self):
+        """Выгрузить настройки Log Analyzer"""
+        print('Выгружаются настройки раздела "Настройки" -> "Log Analyzer":')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
+
+        data = self.get_statistics_status()
+        
+        if data:
+            with open("data/UserGate/GeneralSettings/config_log_analyzer.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tНастройки Log Analyzer выгружены в файл "data/UserGate/GeneralSettings/config_log_analyzer.json".')
+
+    def export_mc_status(self):
+        """Выгрузить настройки Management Center"""
+        print('Выгружаются настройки раздела "Настройки" -> "Агент UserGate Management Center":')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
+
+        data = self.get_mc_config()
+        
+        if data:
+            with open("data/UserGate/GeneralSettings/config_mc_agent.json", "w") as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            print(f'\tНастройки агента Management Center выгружены в файл "data/UserGate/GeneralSettings/config_mc_agent.json".')
+
+
     def export_settings(self):
         """Выгрузить настройки"""
         print('Выгружаются настройки кэширования HTTP и модулей раздела "Настройки":')
-        if not os.path.isdir('data/settings'):
-            os.makedirs('data/settings')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
 
         params = ["auth_captive", "logout_captive", "block_page_domain", "ftpclient_captive",
                   "ftp_proxy_enabled", "http_cache_mode", "http_cache_docsize_max", "http_cache_precache_size"]
         _, data = self.get_settings_params(params)
-        with open("data/settings/config_settings.json", "w") as fh:
+        with open("data/UserGate/GeneralSettings/config_settings.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tНастройки кэширования HTTP и модулей выгружены в файл "data/settings/config_settings.json".')
+        print(f'\tНастройки кэширования HTTP и модулей выгружены в файл "data/UserGate/GeneralSettings/config_settings.json".')
 
         _, data = self.get_proxy_port()
         if data:
-            with open("data/settings/config_proxy_port.json", "w") as fh:
+            with open("data/UserGate/GeneralSettings/config_proxy_port.json", "w") as fh:
                 json.dump(data, fh, indent=4, ensure_ascii=False)
 
         _, data = self.get_nlist_list('httpcwl')
         for content in data['content']:
             content.pop('id')
-        with open("data/settings/config_proxy_exceptions.json", "w") as fd:
+        with open("data/UserGate/GeneralSettings/config_proxy_exceptions.json", "w") as fd:
             json.dump(data['content'], fd, indent=4, ensure_ascii=False)
-        print(f'\tИсключения кеширования http выгружены в файл data/settings/config_proxy_exceptions.json')
+        print(f'\tИсключения кеширования http выгружены в файл data/UserGate/GeneralSettings/config_proxy_exceptions.json')
 
     def import_settings(self):
         """Импортировать настройки"""
         print('Импорт настроек кэширования HTTP и модулей раздела "Настройки":')
         try:
-            with open("data/settings/config_proxy_port.json", "r") as fh:
+            with open("data/UserGate/GeneralSettings/config_proxy_port.json", "r") as fh:
                 port = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mПорт прокси не импортирован!\n\tНе найден файл "data/settings/config_proxy_port.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mПорт прокси не импортирован!\n\tНе найден файл "data/UserGate/GeneralSettings/config_proxy_port.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         err, result = self.set_proxy_port(port)
@@ -1463,10 +1673,10 @@ class UTM(UtmXmlRpc):
             print(f'\tHTTP(S)-прокси порт - \033[32mUpdated!\033[0m.')
 
         try:
-            with open("data/settings/config_settings.json", "r") as fh:
+            with open("data/UserGate/GeneralSettings/config_settings.json", "r") as fh:
                 settings = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mНастройки кэширования HTTP и модулей не импортированы!\n\tНе найден файл "data/settings/config_settings.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mНастройки кэширования HTTP и модулей не импортированы!\n\tНе найден файл "data/UserGate/GeneralSettings/config_settings.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         params = {
@@ -1488,10 +1698,10 @@ class UTM(UtmXmlRpc):
                 print(f'\t{params[key]} - \033[32mUpdated!\033[0m')
 
         try:
-            with open("data/settings/config_proxy_exceptions.json", "r") as fh:
+            with open("data/UserGate/GeneralSettings/config_proxy_exceptions.json", "r") as fh:
                 settings = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mИсключения кеширования http не импортированы!\n\tНе найден файл "data/settings/config_proxy_exceptions.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mИсключения кеширования http не импортированы!\n\tНе найден файл "data/UserGate/GeneralSettings/config_proxy_exceptions.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         _, data = self.get_nlist_list('httpcwl')
@@ -1507,15 +1717,15 @@ class UTM(UtmXmlRpc):
     def export_proxy_portal(self):
         """Выгрузить настройки веб-портала"""
         print('Выгружаются настройки Веб-портала раздела "UserGate/Настройки":')
-        if not os.path.isdir('data/settings'):
-            os.makedirs('data/settings')
+        if not os.path.isdir('data/UserGate/GeneralSettings'):
+            os.makedirs('data/UserGate/GeneralSettings')
 
         err, result = self.get_certificates_list()
         list_certificates = {x['id']: x['name'] for x in result}
 
         _, data = self.get_proxyportal_config()
 
-        if self.version.startswith('6'):
+        if int(self.version[:1]) > 5:
             _, result = self.get_ssl_profiles_list()
             ssl_profiles = {x['id']: x['name'] for x in result}
             data['ssl_profile_id'] = ssl_profiles[data['ssl_profile_id']]
@@ -1527,18 +1737,18 @@ class UTM(UtmXmlRpc):
         data['proxy_portal_login_template_id'] = self.list_templates.get(data['proxy_portal_login_template_id'], -1)
         data['certificate_id'] = list_certificates.get(data['certificate_id'], -1)
 
-        with open("data/settings/config_proxy_portal.json", "w") as fh:
+        with open("data/UserGate/GeneralSettings/config_proxy_portal.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tНастройки Веб-портала выгружены в файл "data/settings/config_proxy_portal.json".')
+        print(f'\tНастройки Веб-портала выгружены в файл "data/UserGate/GeneralSettings/config_proxy_portal.json".')
 
     def import_proxy_portal(self):
         """Импортировать настройки веб-портала"""
         print('Импорт настроек веб-портала раздела "UserGate/Настройки":')
         try:
-            with open("data/settings/config_proxy_portal.json", "r") as fh:
+            with open("data/UserGate/GeneralSettings/config_proxy_portal.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mНастройки Веб-портала не импортированы!\n\tНе найден файл "data/settings/config_proxy_portal.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mНастройки Веб-портала не импортированы!\n\tНе найден файл "data/UserGate/GeneralSettings/config_proxy_portal.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         err, result = self.get_certificates_list()
@@ -1577,8 +1787,8 @@ class UTM(UtmXmlRpc):
     def export_admin_profiles_list(self):
         """Выгрузить список профилей администраторов"""
         print('Выгружается список "Профили администраторов" раздела "UserGate/Администраторы":')
-        if not os.path.isdir('data/usergate'):
-            os.makedirs('data/usergate')
+        if not os.path.isdir('data/UserGate/Administrators'):
+            os.makedirs('data/UserGate/Administrators')
 
         _, data = self.get_admin_profiles_list()
 
@@ -1586,28 +1796,37 @@ class UTM(UtmXmlRpc):
             item.pop('id', None)
             item.pop('cc', None)
 
-        with open("data/usergate/admin_profiles_list.json", "w") as fh:
+        with open("data/UserGate/Administrators/admin_profiles_list.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили администраторов" выгружен в файл "data/usergate/admin_profiles_list.json".')
+        print(f'\tСписок "Профили администраторов" выгружен в файл "data/UserGate/Administrators/admin_profiles_list.json".')
 
     def import_admin_profiles(self):
         """Импортировать список профилей администраторов"""
         print('Импорт списка "Профили администраторов" раздела "UserGate/Администраторы":')
         try:
-            with open("data/usergate/admin_profiles_list.json", "r") as fh:
+            with open("data/UserGate/Administrators/admin_profiles_list.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили администраторов" не импортирован!\n\tНе найден файл "data/usergate/admin_profiles_list.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили администраторов" не импортирован!\n\tНе найден файл "data/UserGate/Administrators/admin_profiles_list.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
             print("\tНет профилей администраторов для импорта.")
             return
+            
+        webui = {'page_routes', 'page_ospf', 'page_bgp', 'page_byod_devices', 'page_byod_policies', 'page_scada_profiles', 'page_scada_rules'}
+        xmlrpc = {'stat',}
 
         _, result = self.get_admin_profiles_list()
         admin_profiles = {x['name']: x['id'] for x in result}
 
         for item in data:
+            if int(self.version[:1]) > 6:
+                webui_permissions = [x for x in item['webui_permissions'] if x[0] not in webui]
+                item['webui_permissions'] = webui_permissions
+                xmlrpc_permissions = [x for x in item['xmlrpc_permissions'] if x[0] not in xmlrpc]
+                item['xmlrpc_permissions'] = xmlrpc_permissions
+        
             if item['name'] in admin_profiles:
                 print(f'\tПрофиль администраторов "{item["name"]}" уже существует', end= ' - ')
                 err, result = self.update_admin_profile(admin_profiles[item['name']], item)
@@ -1626,23 +1845,23 @@ class UTM(UtmXmlRpc):
     def export_admin_config(self):
         """Выгрузить настройки пароля для администраторов"""
         print('Выгружаются настройки пароля для администраторов раздела "UserGate/Администраторы":')
-        if not os.path.isdir('data/usergate'):
-            os.makedirs('data/usergate')
+        if not os.path.isdir('data/UserGate/Administrators'):
+            os.makedirs('data/UserGate/Administrators')
 
         _, data = self.get_admin_config()
 
-        with open("data/usergate/admin_config.json", "w") as fh:
+        with open("data/UserGate/Administrators/admin_config.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tНастройки пароля для администраторов выгружены в файл "data/usergate/admin_config.json".')
+        print(f'\tНастройки пароля для администраторов выгружены в файл "data/UserGate/Administrators/admin_config.json".')
 
     def import_admin_config(self):
         """Импортировать настройки пароля для администраторов"""
         print('Импорт настроек паролей для администраторов" раздела "UserGate/Администраторы":')
         try:
-            with open("data/usergate/admin_config.json", "r") as fh:
+            with open("data/UserGate/Administrators/admin_config.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили администраторов" не импортирован!\n\tНе найден файл "data/usergate/admin_config.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили администраторов" не импортирован!\n\tНе найден файл "data/UserGate/Administrators/admin_config.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         err, result = self.set_admin_config(data)
@@ -1654,8 +1873,8 @@ class UTM(UtmXmlRpc):
     def export_admins_list(self):
         """Выгрузить список администраторов"""
         print('Выгружается список администраторов раздела "UserGate/Администраторы":')
-        if not os.path.isdir('data/usergate'):
-            os.makedirs('data/usergate')
+        if not os.path.isdir('data/UserGate/Administrators'):
+            os.makedirs('data/UserGate/Administrators')
 
         _, result = self.get_admin_profiles_list()
         admin_profiles = {x['id']: x['name'] for x in result}
@@ -1667,25 +1886,22 @@ class UTM(UtmXmlRpc):
             item.pop('guid', None)
             item.pop('cc', None)
             item['profile_id'] = admin_profiles.get(item['profile_id'], -1)
-            if item['type'] == 'ldap_user':
-                i = item['login'].find('(')
-                item['login'] = item['login'][i+1:len(item['login'])-1]
-            elif item['type'] == 'ldap_group':
+            if int(self.version[:1]) < 7 and item['type'] == 'ldap_group':
                 group_name = [x.split('=') for x in item['login'].split(',')]
-                item['login'] = f'{group_name[-2][1]}.{group_name[-1][1]}\{group_name[0][1]}'
+                item['login'] = f'{group_name[0][1]} ({group_name[-2][1]}.{group_name[-1][1]}\{group_name[0][1]})'
 
-        with open("data/usergate/admins_list.json", "w") as fh:
+        with open("data/UserGate/Administrators/admins_list.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок администраторов выгружен в файл "data/usergate/admins_list.json".')
+        print(f'\tСписок администраторов выгружен в файл "data/UserGate/Administrators/admins_list.json".')
 
     def import_admins(self):
         """Импортировать список администраторов UTM"""
         print('Импорт списка "Администраторы" раздела "UserGate/Администраторы":')
         try:
-            with open("data/usergate/admins_list.json", "r") as fh:
+            with open("data/UserGate/Administrators/admins_list.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Администраторы" не импортирован!\n\tНе найден файл "data/usergate/admins_list.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Администраторы" не импортирован!\n\tНе найден файл "data/UserGate/Administrators/admins_list.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         _, result = self.get_admin_profiles_list()
@@ -1695,19 +1911,25 @@ class UTM(UtmXmlRpc):
 
         for item in data:
             item['profile_id'] = admin_profiles.get(item['profile_id'], -1)
-
+            if int(self.version[:1]) < 7 and item['type'] == "auth_profile":
+                print(f'\t\033[36mАдминистратор "{item["login"]}" не добавлен так как тип аутентификации auth_profile не поддерживается версией ниже 7.\033[0m')
+                continue
             if item['login'] in admins_list:
-                print(f'\tАдминистратор "{item["login"]}" уже существует', end= ' - ')
-                err, result = self.update_admin(admins_list[item['login']], item)
-                if err == 2:
-                    print("\n", f"\033[31m{result}\033[0m")
+                if int(self.version[:1]) > 6 and item['login'] == "Admin":
+                    continue
                 else:
-                    print("\033[32mUpdated!\033[0;0m")
+                    print(f'\tАдминистратор "{item["login"]}" уже существует', end= ' - ')
+                    err, result = self.update_admin(admins_list[item['login']], item)
+                    if err == 2:
+                        print("\n", f"\033[31m{result}\033[0m")
+                    else:
+                        print("\033[32mUpdated!\033[0;0m")
             else:
                 if item['type'] == 'local':
                     item['password'] = 'utm'
                 elif item['type'] in ('ldap_user', 'ldap_group'):
-                    domain, name = item['login'].split('\\')
+                    i = item['login'].find('(')
+                    domain, name = item['login'][i+1:len(item['login'])-1].split('\\')
                     if item['type'] == 'ldap_user':
                         err, guid = self.get_ldap_user_guid(domain, name)
                     else:
@@ -1728,8 +1950,8 @@ class UTM(UtmXmlRpc):
     def export_certivicates_list(self):
         """Выгрузить список сертификатов"""
         print('Выгружаются список "Сертификаты" раздела "UserGate":')
-        if not os.path.isdir('data/usergate/certivicates'):
-            os.makedirs('data/usergate/certivicates')
+        if not os.path.isdir('data/UserGate/Certificates'):
+            os.makedirs('data/UserGate/Certificates')
 
         err, data = self.get_certificates_list()
 
@@ -1737,47 +1959,47 @@ class UTM(UtmXmlRpc):
             self.export_certivicate_details(item['id'], item['name'])
             item.pop('id', None)
             item.pop('cc', None)
-        with open("data/usergate/certivicates/certivicates_list.json", "w") as fh:
+        with open("data/UserGate/Certificates/certificates_list.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Сертификаты" выгружен в файл "data/usergate/certivicates_list.json".')
+        print(f'\tСписок "Сертификаты" выгружен в файл "data/UserGate/Certificates_list.json".')
 
     def export_certivicate_details(self, cert_id, cert_name):
         """Выгрузить детальную информацию по сертификатам"""
 
         data = self.get_certificate_details(cert_id)
 
-        with open(f"data/usergate/certivicates/{cert_name}.json", "w") as fh:
+        with open(f"data/UserGate/Certificates/{cert_name}.json", "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
 
 ################### Пользователи и устройства ################################
     def export_groups_lists(self):
         """Выгружает список групп"""
         print('Выгружается список локальных групп раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/Groups'):
+            os.makedirs('data/UsersAndDevices/Groups')
 
         _, data = self.get_groups_list()
 
         for item in data:
             _, users = self.get_group_users(item['guid'])
             item.pop('cc', None)
-            if self.version.startswith('6'):
-                item['users'] = [x[1] for x in users]
-            else:
+            if self.version.startswith('5'):
                 item['users'] = [x['name'] for x in users]
+            else:
+                item['users'] = [x[1] for x in users]
 
-        with open(f"data/users_and_devices/config_groups.json", "w") as fd:
+        with open(f"data/UsersAndDevices/Groups/config_groups.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок локальных групп выгружен в файл data/users_and_devices/config_groups.json")
+        print(f"\tСписок локальных групп выгружен в файл data/UsersAndDevices/Groups/config_groups.json")
 
     def import_groups_list(self):
         """Импортировать локальные группы"""
         print('Импорт списка локальных групп раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_groups.json", "r") as fh:
+            with open("data/UsersAndDevices/Groups/config_groups.json", "r") as fh:
                 groups = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок локальных групп не импортирован!\n\tНе найден файл "data/users_and_devices/config_groups.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок локальных групп не импортирован!\n\tНе найден файл "data/UsersAndDevices/Groups/config_groups.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for item in groups:
@@ -1798,26 +2020,27 @@ class UTM(UtmXmlRpc):
                 print(f'\tЛокальная группа "{item["name"]}" добавлена.')
 
             for user_name in users:
-                i = user_name.partition("\\")
-                if i[2]:
-                    err, result = self.get_ldap_user_guid(i[0], i[2])
+                user_array = user_name. split(' ')
+                if len(user_array) > 1:
+                    domain, name = user_array[1][1:len(user_array[1])-1].split('\\')
+                    err, result = self.get_ldap_user_guid(domain, name)
                     if err != 0:
                         print(f"\033[31m{result}\033[0m")
                         break
                     elif not result:
-                        print(f'\t\033[31mНет LDAP-коннектора для домена "{i[0]}"!\n\tИмпортируйте и настройте LDAP-коннектор. Затем повторите импорт групп.\033[0m')
+                        print(f'\t\033[31mНет LDAP-коннектора для домена "{domain}"!\n\tИмпортируйте и настройте LDAP-коннектор. Затем повторите импорт групп.\033[0m')
                         break
                     err2, result2 = self.add_user_in_group(self.list_groups[item['name']], result)
                     if err2 != 0:
                         print(f"\033[31m{result2}\033[0m")
                     else:
-                        print(f'\t\tПользователь "{user_name}" добавлен в группу.')
+                        print(f'\t\tПользователь "{user_name}" добавлен в группу "{item["name"]}".')
 
     def export_users_lists(self):
         """Выгружает список локальных пользователей"""
         print('Выгружается список локальных пользователей раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/Users'):
+            os.makedirs('data/UsersAndDevices/Users')
 
         _, data = self.get_users_list()
 
@@ -1831,22 +2054,27 @@ class UTM(UtmXmlRpc):
             if not item['last_name']:
                 item['last_name'] = ""
             item['groups'] = [self.list_groups[guid] for guid in item['groups']]
-        with open(f"data/users_and_devices/config_users.json", "w") as fd:
+        with open(f"data/UsersAndDevices/Users/config_users.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок локальных пользователей выгружен в файл data/users_and_devices/config_users.json")
+        print(f"\tСписок локальных пользователей выгружен в файл data/UsersAndDevices/Users/config_users.json")
 
     def import_users_list(self):
         """Импортировать список локальных пользователей"""
         print('Импорт списка локальных пользователей раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_users.json", "r") as fh:
+            with open("data/UsersAndDevices/Users/config_users.json", "r") as fh:
                 users = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок локальных пользователей не импортирован!\n\tНе найден файл "data/users_and_devices/config_users.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок локальных пользователей не импортирован!\n\tНе найден файл "data/UsersAndDevices/Users/config_users.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for item in users:
-            item['groups'] = [self.list_groups[name] for name in item['groups']]
+            try:
+                item['groups'] = [self.list_groups[name] for name in item['groups']]
+            except KeyError as err:
+                print(f'\t\033[31mНе найдена группа {err} для пользователя {item["name"]}. {item["name"]} не импортирован.\033[0;0m')
+                print(f'\t\033[36m\tИмпортируйте список групп и повторите импорт пользователей.\033[0;0m')
+                continue
             err, result = self.add_user(item)
             if err == 1:
                 print(result, end= ' - ')
@@ -1870,39 +2098,39 @@ class UTM(UtmXmlRpc):
     def export_auth_servers(self):
         """Выгрузить списки серверов авторизации"""
         print('Выгружается список "Cерверы авторизации" раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/AuthServers'):
+            os.makedirs('data/UsersAndDevices/AuthServers')
 
         ldap, radius, tacacs, ntlm, saml = self.get_auth_servers()
 
-        with open("data/users_and_devices/config_ldap_servers.json", "w") as fd:
+        with open("data/UsersAndDevices/AuthServers/config_ldap_servers.json", "w") as fd:
             json.dump(ldap, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок серверов LDAP выгружен в файл 'data/users_and_devices/config_ldap_servers.json'.")
+        print(f"\tСписок серверов LDAP выгружен в файл 'data/UsersAndDevices/AuthServers/config_ldap_servers.json'.")
 
-        with open("data/users_and_devices/config_radius_servers.json", "w") as fd:
+        with open("data/UsersAndDevices/AuthServers/config_radius_servers.json", "w") as fd:
             json.dump(radius, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок серверов RADIUS выгружен в файл 'data/users_and_devices/config_radius_servers.json'.")
+        print(f"\tСписок серверов RADIUS выгружен в файл 'data/UsersAndDevices/AuthServers/config_radius_servers.json'.")
 
-        with open("data/users_and_devices/config_tacacs_servers.json", "w") as fd:
+        with open("data/UsersAndDevices/AuthServers/config_tacacs_servers.json", "w") as fd:
             json.dump(tacacs, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок серверов TACACS выгружен в файл 'data/users_and_devices/config_tacacs_static.json'.")
+        print(f"\tСписок серверов TACACS выгружен в файл 'data/UsersAndDevices/AuthServers/config_tacacs_static.json'.")
 
-        with open("data/users_and_devices/config_ntlm_servers.json", "w") as fd:
+        with open("data/UsersAndDevices/AuthServers/config_ntlm_servers.json", "w") as fd:
             json.dump(ntlm, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок серверов NTLM выгружен в файл 'data/users_and_devices/config_ntlm_servers.json'.")
+        print(f"\tСписок серверов NTLM выгружен в файл 'data/UsersAndDevices/AuthServers/config_ntlm_servers.json'.")
 
-        with open("data/users_and_devices/config_saml_servers.json", "w") as fd:
+        with open("data/UsersAndDevices/AuthServers/config_saml_servers.json", "w") as fd:
             json.dump(saml, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок серверов SAML выгружен в файл 'data/users_and_devices/config_saml_servers.json'.")
+        print(f"\tСписок серверов SAML выгружен в файл 'data/UsersAndDevices/AuthServers/config_saml_servers.json'.")
 
     def import_ldap_server(self):
         """Импортировать список серверов LDAP"""
         print('Импорт списка серверов LDAP раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_ldap_servers.json", "r") as fh:
+            with open("data/UsersAndDevices/AuthServers/config_ldap_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок серверов LDAP не импортирован!\n\tНе найден файл "data/users_and_devices/config_ldap_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок серверов LDAP не импортирован!\n\tНе найден файл "data/UsersAndDevices/AuthServers/config_ldap_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1925,10 +2153,10 @@ class UTM(UtmXmlRpc):
         """Импортировать список серверов NTLM"""
         print('Импорт списка серверов NTLM раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_ntlm_servers.json", "r") as fh:
+            with open("data/UsersAndDevices/AuthServers/config_ntlm_servers.json", "r") as fh:
                 ntlm = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок серверов LDAP не импортирован!\n\tНе найден файл "data/users_and_devices/config_ntlm_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок серверов LDAP не импортирован!\n\tНе найден файл "data/UsersAndDevices/AuthServers/config_ntlm_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not ntlm:
@@ -1948,10 +2176,10 @@ class UTM(UtmXmlRpc):
         """Импортировать список серверов RADIUS"""
         print('Импорт списка серверов RADIUS раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_radius_servers.json", "r") as fh:
+            with open("data/UsersAndDevices/AuthServers/config_radius_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок серверов RADIUS не импортирован!\n\tНе найден файл "data/users_and_devices/config_radius_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок серверов RADIUS не импортирован!\n\tНе найден файл "data/UsersAndDevices/AuthServers/config_radius_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1972,10 +2200,10 @@ class UTM(UtmXmlRpc):
         """Импортировать список серверов TACACS"""
         print('Импорт списка серверов TACACS раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_tacacs_servers.json", "r") as fh:
+            with open("data/UsersAndDevices/AuthServers/config_tacacs_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок серверов TACACS не импортирован!\n\tНе найден файл "data/users_and_devices/config_tacacs_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок серверов TACACS не импортирован!\n\tНе найден файл "data/UsersAndDevices/AuthServers/config_tacacs_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -1996,10 +2224,10 @@ class UTM(UtmXmlRpc):
         """Импортировать список серверов SAML"""
         print('Импорт списка серверов SAML раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_saml_servers.json", "r") as fh:
+            with open("data/UsersAndDevices/AuthServers/config_saml_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок серверов SAML не импортирован!\n\tНе найден файл "data/users_and_devices/config_saml_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок серверов SAML не импортирован!\n\tНе найден файл "data/UsersAndDevices/AuthServers/config_saml_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2019,8 +2247,8 @@ class UTM(UtmXmlRpc):
     def export_2fa_profiles(self):
         """Выгрузить список 2FA профилей"""
         print('Выгружается список "Профили MFA" раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.mkdir('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/MFAProfiles'):
+            os.mkdir('data/UsersAndDevices/MFAProfiles')
 
         _, data = self.get_2fa_profiles()
         for item in data:
@@ -2028,18 +2256,18 @@ class UTM(UtmXmlRpc):
                 item['init_notification_profile_id'] = self.list_notifications.get(item['init_notification_profile_id'], item['init_notification_profile_id'])
             else:
                 item['auth_notification_profile_id'] = self.list_notifications.get(item['auth_notification_profile_id'], item['auth_notification_profile_id'])
-        with open("data/users_and_devices/config_2fa_profiles.json", "w") as fd:
+        with open("data/UsersAndDevices/MFAProfiles/config_2fa_profiles.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили MFA" выгружен в файл "data/users_and_devices/config_2fa_profiles.json".')
+        print(f'\tСписок "Профили MFA" выгружен в файл "data/UsersAndDevices/MFAProfiles/config_2fa_profiles.json".')
 
     def import_2fa_profiles(self):
         """Импортировать список 2FA профилей"""
         print('Импорт списка "Профили MFA" раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_2fa_profiles.json", "r") as fh:
+            with open("data/UsersAndDevices/MFAProfiles/config_2fa_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили MFA" не импортирован!\n\tНе найден файл "data/users_and_devices/config_2fa_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили MFA" не импортирован!\n\tНе найден файл "data/UsersAndDevices/MFAProfiles/config_2fa_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2070,7 +2298,7 @@ class UTM(UtmXmlRpc):
             'radius': 'radius_server_id',
             'tacacs_plus': 'tacacs_plus_server_id',
             'ntlm': 'ntlm_server_id',
-            'saml_idp': 'saml_idp_server_id' if self.version.startswith('6') else 'saml_idp_server'
+            'saml_idp': 'saml_idp_server_id' if int(self.version[:1]) > 5 else 'saml_idp_server'
         }
         name = auth_type[method['type']]
         try:
@@ -2086,8 +2314,8 @@ class UTM(UtmXmlRpc):
     def export_auth_profiles(self):
         """Выгрузить список профилей авторизации"""
         print('Выгружается список "Профили авторизации" раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/AuthProfiles'):
+            os.makedirs('data/UsersAndDevices/AuthProfiles')
 
         _, data = self.get_auth_profiles()
 
@@ -2097,18 +2325,18 @@ class UTM(UtmXmlRpc):
                 if len(auth_method) == 2:
                     self.get_auth_profile_methods(auth_method)
 
-        with open("data/users_and_devices/config_auth_profiles.json", "w") as fd:
+        with open("data/UsersAndDevices/AuthProfiles/config_auth_profiles.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили авторизации" выгружен в файл "data/users_and_devices/config_auth_profiles.json".')
+        print(f'\tСписок "Профили авторизации" выгружен в файл "data/UsersAndDevices/AuthProfiles/config_auth_profiles.json".')
 
     def import_auth_profiles(self):
         """Импортировать список профилей авторизации"""
         print('Импорт списка "Профили авторизации" раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_auth_profiles.json", "r") as fh:
+            with open("data/UsersAndDevices/AuthProfiles/config_auth_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили авторизации" не импортирован!\n\tНе найден файл "data/users_and_devices/config_auth_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили авторизации" не импортирован!\n\tНе найден файл "data/UsersAndDevices/AuthProfiles/config_auth_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2143,8 +2371,8 @@ class UTM(UtmXmlRpc):
     def export_captive_profiles(self):
         """Выгрузить список Captive-профилей"""
         print('Выгружается список "Captive-профили" раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/CaptiveProfiles'):
+            os.makedirs('data/UsersAndDevices/CaptiveProfiles')
 
         _, data = self.get_captive_profiles()
 
@@ -2163,18 +2391,18 @@ class UTM(UtmXmlRpc):
             item.pop('ta_expiration_date', None),
             item.pop('cc', None)
 
-        with open("data/users_and_devices/config_captive_profiles.json", "w") as fd:
+        with open("data/UsersAndDevices/CaptiveProfiles/config_captive_profiles.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Captive-профили" выгружен в файл "data/users_and_devices/config_captive_profiles.json".')
+        print(f'\tСписок "Captive-профили" выгружен в файл "data/UsersAndDevices/CaptiveProfiles/config_captive_profiles.json".')
 
     def import_captive_profiles(self):
         """Импортировать список Captive-профилей"""
         print('Импорт списка "Captive-профили" раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_captive_profiles.json", "r") as fh:
+            with open("data/UsersAndDevices/CaptiveProfiles/config_captive_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Captive-профили" не импортирован!\n\tНе найден файл "data/users_and_devices/config_captive_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Captive-профили" не импортирован!\n\tНе найден файл "data/UsersAndDevices/CaptiveProfiles/config_captive_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2221,8 +2449,8 @@ class UTM(UtmXmlRpc):
     def export_captive_portal_rules(self):
         """Выгрузить список правил Captive-портала"""
         print('Выгружается список "Captive-портал" раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/CaptivePortal'):
+            os.makedirs('data/UsersAndDevices/CaptivePortal')
 
         _, data = self.get_captive_portal_rules()
 
@@ -2237,19 +2465,19 @@ class UTM(UtmXmlRpc):
             self.set_urls_and_categories(item)
             self.set_time_restrictions(item)
 
-        with open("data/users_and_devices/config_captive_portal_rules.json", "w") as fd:
+        with open("data/UsersAndDevices/CaptivePortal/config_captive_portal_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Captive-портал" выгружен в файл "data/users_and_devices/config_captive_portal_rules.json".')
+        print(f'\tСписок "Captive-портал" выгружен в файл "data/UsersAndDevices/CaptivePortal/config_captive_portal_rules.json".')
 
 
     def import_captive_portal_rules(self):
         """Импортировать список правил Captive-портала"""
         print('Импорт списка правил "Captive-портала" раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_captive_portal_rules.json", "r") as fh:
+            with open("data/UsersAndDevices/CaptivePortal/config_captive_portal_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Captive-портал" не импортирован!\n\tНе найден файл "data/users_and_devices/config_captive_portal_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Captive-портал" не импортирован!\n\tНе найден файл "data/UsersAndDevices/CaptivePortal/config_captive_portal_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2270,6 +2498,7 @@ class UTM(UtmXmlRpc):
             err, result = self.add_captive_portal_rules(item)
             if err == 1:
                 print(result, end= ' - ')
+                item.pop('position', None)
                 err1, result1 = self.update_captive_portal_rule(item)
                 if err1 != 0:
                     print("\n", f"\033[31m{result1}\033[0m")
@@ -2282,9 +2511,12 @@ class UTM(UtmXmlRpc):
 
     def export_byod_policy(self):
         """Выгрузить список Политики BYOD"""
+        if self.version.startswith('7'):
+            return
+
         print('Выгружается список "Политики BYOD" раздела "Пользователи и устройства":')
-        if not os.path.isdir('data/users_and_devices'):
-            os.makedirs('data/users_and_devices')
+        if not os.path.isdir('data/UsersAndDevices/BYODPolicies'):
+            os.makedirs('data/UsersAndDevices/BYODPolicies')
 
         _, data = self.get_byod_policy()
 
@@ -2295,18 +2527,21 @@ class UTM(UtmXmlRpc):
             item.pop('deleted_users', None)
             self.get_names_users_and_groups(item)
 
-        with open("data/users_and_devices/config_byod_policy.json", "w") as fd:
+        with open("data/UsersAndDevices/BYODPolicies/config_byod_policy.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Политики BYOD" выгружен в файл "data/users_and_devices/config_byod_policy.json".')
+        print(f'\tСписок "Политики BYOD" выгружен в файл "data/UsersAndDevices/BYODPolicies/config_byod_policy.json".')
 
     def import_byod_policy(self):
         """Импортировать список Политики BYOD"""
+        if self.version.startswith('7'):
+            return
+
         print('Импорт списка "Политики BYOD" раздела "Пользователи и устройства":')
         try:
-            with open("data/users_and_devices/config_byod_policy.json", "r") as fh:
+            with open("data/UsersAndDevices/BYODPolicies/config_byod_policy.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Политики BYOD" не импортирован!\n\tНе найден файл "data/users_and_devices/config_byod_policy.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Политики BYOD" не импортирован!\n\tНе найден файл "data/UsersAndDevices/BYODPolicies/config_byod_policy.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2331,11 +2566,12 @@ class UTM(UtmXmlRpc):
             else:
                 print(f'\tПравило BYOD "{item["name"]}" добавлено.')
 
+####################################### Политики сети  #####################################
     def export_firewall_rules(self):
         """Выгрузить список правил межсетевого экрана"""
         print('Выгружается список "Межсетевой экран" раздела "Политики сети":')
-        if not os.path.isdir('data/network_policies'):
-            os.makedirs('data/network_policies')
+        if not os.path.isdir('data/NetworkPolicies/Firewall'):
+            os.makedirs('data/NetworkPolicies/Firewall')
 
         duplicate = {}
         _, data = self.get_firewall_rules()
@@ -2360,21 +2596,21 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.set_time_restrictions(item)
-            item['services'] = [self.services[x] for x in item['services']]
+            item['services'] = self.get_services(item['name'], item['services'])
             self.get_apps(item['apps'])
 
-        with open("data/network_policies/config_firewall_rules.json", "w") as fd:
+        with open("data/NetworkPolicies/Firewall/config_firewall_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Межсетевой экран" выгружен в файл "data/network_policies/config_firewall_rules.json".')
+        print(f'\tСписок "Межсетевой экран" выгружен в файл "data/NetworkPolicies/Firewall/config_firewall_rules.json".')
 
     def import_firewall_rules(self):
         """Импортировать список правил межсетевого экрана"""
         print('Импорт списка "Межсетевой экран" раздела "Политики сети":')
         try:
-            with open("data/network_policies/config_firewall_rules.json", "r") as fh:
+            with open("data/NetworkPolicies/Firewall/config_firewall_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Межсетевой экран" не импортирован!\n\tНе найден файл "data/network_policies/config_firewall_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Межсетевой экран" не импортирован!\n\tНе найден файл "data/NetworkPolicies/Firewall/config_firewall_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2385,6 +2621,8 @@ class UTM(UtmXmlRpc):
         self.firewall_rules = {x['name']: x['id'] for x in firewall if total}
 
         for item in data:
+            item.pop('time_created', None)
+            item.pop('time_updated', None)
             if item['scenario_rule_id']:
                 try:
                     item['scenario_rule_id'] = self.scenarios_rules[item['scenario_rule_id']]
@@ -2395,11 +2633,10 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.set_time_restrictions(item)
-            try:
-                item['services'] = [self.services[x] for x in item['services']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-                item['services'] = []
+            if int(self.version[:1]) == 6:
+                item['services'] = self.get_services_for_v6(item['name'], item['services'])
+            else:
+                item['services'] = self.get_services(item['name'], item['services'])
             try:
                 self.get_apps(item['apps'])
             except KeyError as err:
@@ -2422,8 +2659,8 @@ class UTM(UtmXmlRpc):
     def export_nat_rules(self):
         """Выгрузить список правил NAT"""
         print('Выгружается список "NAT и маршрутизация" раздела "Политики сети":')
-        if not os.path.isdir('data/network_policies'):
-            os.makedirs('data/network_policies')
+        if not os.path.isdir('data/NetworkPolicies/NATandRouting'):
+            os.makedirs('data/NetworkPolicies/NATandRouting')
 
         _, data = self.get_traffic_rules()
 
@@ -2438,28 +2675,24 @@ class UTM(UtmXmlRpc):
             item['log_session_start'] = True
             if item['scenario_rule_id']:
                 item['scenario_rule_id'] = self.scenarios_rules[item['scenario_rule_id']]
-            if self.version.startswith('6'):
+            if int(self.version[:1]) > 5:
                 self.get_names_users_and_groups(item)
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            try:
-                item['service'] = [self.services[x] for x in item['service']]
-            except TypeError as err:
-                print(f'\t\033[33mНе найден сервис для правила "{item["name"]}".\n\t{item["service"]}\033[0m')
-                item['service'] = []
+            item['service'] = self.get_services(item['name'], item['service'])
 
-        with open("data/network_policies/config_nat_rules.json", "w") as fd:
+        with open("data/NetworkPolicies/NATandRouting/config_nat_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "NAT и маршрутизация" выгружен в файл "data/network_policies/config_nat_rules.json".')
+        print(f'\tСписок "NAT и маршрутизация" выгружен в файл "data/NetworkPolicies/NATandRouting/config_nat_rules.json".')
 
     def import_nat_rules(self):
         """Импортировать список правил NAT"""
         print('Импорт списка "NAT и маршрутизация" раздела "Политики сети":')
         try:
-            with open("data/network_policies/config_nat_rules.json", "r") as fh:
+            with open("data/NetworkPolicies/NATandRouting/config_nat_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "NAT и маршрутизация" не импортирован!\n\tНе найден файл "data/network_policies/config_nat_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "NAT и маршрутизация" не импортирован!\n\tНе найден файл "data/NetworkPolicies/NATandRouting/config_nat_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2476,15 +2709,14 @@ class UTM(UtmXmlRpc):
                 except KeyError as err:
                     print(f'\t\033[33mНе найден сценарий {err} для правила "{item["name"]}".\n\tЗагрузите сценарии и повторите попытку.\033[0m')
                     item['scenario_rule_id'] = False
-            if self.version.startswith('6'):
+            if int(self.version[:1]) > 5:
                 self.get_guids_users_and_groups(item)
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            try:
-                item['service'] = [self.services[x] for x in item['service']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-                item['service'] = []
+            if int(self.version[:1]) == 6:
+                item['service'] = self.get_services_for_v6(item['name'], item['service'])
+            else:
+                item['service'] = self.get_services(item['name'], item['service'])
             if item['action'] == 'route':
                 print(f'\t\033[33mПроверьте шлюз для правила ПБР "{item["name"]}".\n\tВ случае отсутствия, установите вручную.\033[0m')
 
@@ -2504,8 +2736,8 @@ class UTM(UtmXmlRpc):
     def export_icap_servers(self):
         """Выгрузить список серверов ICAP"""
         print('Выгружается список "ICAP-серверы" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/ICAPServers'):
+            os.makedirs('data/SecurityPolicies/ICAPServers')
 
         _, data = self.get_icap_servers()
 
@@ -2513,19 +2745,19 @@ class UTM(UtmXmlRpc):
             item.pop('id', None)
             item.pop('cc', None)
 
-        with open("data/security_policies/config_icap_servers.json", "w") as fd:
+        with open("data/SecurityPolicies/ICAPServers/config_icap_servers.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "ICAP-серверы" выгружен в файл "data/security_policies/config_icap_servers.json".')
+        print(f'\tСписок "ICAP-серверы" выгружен в файл "data/SecurityPolicies/ICAPServers/config_icap_servers.json".')
 
 
     def import_icap_servers(self):
         """Импортировать список серверов ICAP"""
         print('Импорт списка "ICAP-серверы" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_icap_servers.json", "r") as fh:
+            with open("data/SecurityPolicies/ICAPServers/config_icap_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "ICAP-серверы" не импортирован!\n\tНе найден файл "data/security_policies/config_icap_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "ICAP-серверы" не импортирован!\n\tНе найден файл "data/SecurityPolicies/ICAPServers/config_icap_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if data:
@@ -2551,8 +2783,8 @@ class UTM(UtmXmlRpc):
     def export_loadbalancing_rules(self):
         """Выгрузить список правил балансировки нагрузки"""
         print('Выгружается список "Балансировка нагрузки" раздела "Политики сети":')
-        if not os.path.isdir('data/network_policies'):
-            os.makedirs('data/network_policies')
+        if not os.path.isdir('data/NetworkPolicies/LoadBalancing'):
+            os.makedirs('data/NetworkPolicies/LoadBalancing')
 
         total, data = self.get_icap_servers()
         self.icap_servers = {x['id']: x['name'] for x in data if total}
@@ -2569,17 +2801,17 @@ class UTM(UtmXmlRpc):
             item.pop('id', None)
             item['profiles'] = [self.reverse_servers[x] for x in item['profiles']]
 
-        with open("data/network_policies/config_loadbalancing_tcpudp.json", "w") as fd:
+        with open("data/NetworkPolicies/LoadBalancing/config_loadbalancing_tcpudp.json", "w") as fd:
             json.dump(tcpudp, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок балансировщиков TCP/UDP выгружен в файл "data/network_policies/config_loadbalancing_tcpudp.json".')
+        print(f'\tСписок балансировщиков TCP/UDP выгружен в файл "data/NetworkPolicies/LoadBalancing/config_loadbalancing_tcpudp.json".')
 
-        with open("data/network_policies/config_loadbalancing_icap.json", "w") as fd:
+        with open("data/NetworkPolicies/LoadBalancing/config_loadbalancing_icap.json", "w") as fd:
             json.dump(icap, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок балансировщиков ICAP выгружен в файл "data/network_policies/config_loadbalancing_icap.json".')
+        print(f'\tСписок балансировщиков ICAP выгружен в файл "data/NetworkPolicies/LoadBalancing/config_loadbalancing_icap.json".')
 
-        with open("data/network_policies/config_loadbalancing_reverse.json", "w") as fd:
+        with open("data/NetworkPolicies/LoadBalancing/config_loadbalancing_reverse.json", "w") as fd:
             json.dump(reverse, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок балансировщиков reverse-прокси выгружен в файл "data/network_policies/config_loadbalancing_reverse.json".')
+        print(f'\tСписок балансировщиков reverse-прокси выгружен в файл "data/NetworkPolicies/LoadBalancing/config_loadbalancing_reverse.json".')
 
     def import_loadbalancing_rules(self):
         """Импортировать список правил балансировки нагрузки"""
@@ -2590,10 +2822,10 @@ class UTM(UtmXmlRpc):
         self.reverse_rules = {x['name']: x['id'] for x in reverse}
 
         try:
-            with open("data/network_policies/config_loadbalancing_tcpudp.json", "r") as fh:
+            with open("data/NetworkPolicies/LoadBalancing/config_loadbalancing_tcpudp.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок балансировщиков TCP/UDP не импортирован!\n\tНе найден файл "data/network_policies/config_loadbalancing_tcpudp.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок балансировщиков TCP/UDP не импортирован!\n\tНе найден файл "data/NetworkPolicies/LoadBalancing/config_loadbalancing_tcpudp.json" с сохранённой конфигурацией!\033[0;0m')
         else:
             if data:
                 for item in data:
@@ -2613,10 +2845,10 @@ class UTM(UtmXmlRpc):
                 print('\tНет правил в списке балансировщиков TCP/UDP для импорта.')
 
         try:
-            with open("data/network_policies/config_loadbalancing_icap.json", "r") as fh:
+            with open("data/NetworkPolicies/LoadBalancing/config_loadbalancing_icap.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок балансировщиков ICAP не импортирован!\n\tНе найден файл "data/network_policies/config_loadbalancing_icap.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок балансировщиков ICAP не импортирован!\n\tНе найден файл "data/NetworkPolicies/LoadBalancing/config_loadbalancing_icap.json" с сохранённой конфигурацией!\033[0;0m')
         else:
             total, icap = self.get_icap_servers()
             self.icap_servers = {x['name']: x['id'] for x in icap if total}
@@ -2644,10 +2876,10 @@ class UTM(UtmXmlRpc):
                 print('\tНет правил в списке балансировщиков ICAP для импорта.')
 
         try:
-            with open("data/network_policies/config_loadbalancing_reverse.json", "r") as fh:
+            with open("data/NetworkPolicies/LoadBalancing/config_loadbalancing_reverse.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок балансировщиков reverse-proxy не импортирован!\n\tНе найден файл "data/network_policies/config_loadbalancing_reverse.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок балансировщиков reverse-proxy не импортирован!\n\tНе найден файл "data/NetworkPolicies/LoadBalancing/config_loadbalancing_reverse.json" с сохранённой конфигурацией!\033[0;0m')
         else:
             if data:
                 for item in data:
@@ -2674,11 +2906,8 @@ class UTM(UtmXmlRpc):
     def export_shaper_rules(self):
         """Выгрузить список правил пропускной способности"""
         print('Выгружается список "Пропускная способность" раздела "Политики сети":')
-        if not os.path.isdir('data/network_policies'):
-            os.makedirs('data/network_policies')
-
-        total, data = self.get_shaper_list()
-        self.shaper = {x['id']: x['name'] for x in data if total}
+        if not os.path.isdir('data/NetworkPolicies/TrafficShaping'):
+            os.makedirs('data/NetworkPolicies/TrafficShaping')
 
         _, data = self.get_shaper_rules()
 
@@ -2693,23 +2922,23 @@ class UTM(UtmXmlRpc):
             self.get_names_users_and_groups(item)
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            item['services'] = [self.services[x] for x in item['services']]
+            item['services'] = self.get_services(item['name'], item['services'])
             self.get_apps(item['apps'])
             self.set_time_restrictions(item)
             item['pool'] = self.shaper[item['pool']]
 
-        with open("data/network_policies/config_shaper_rules.json", "w") as fd:
+        with open("data/NetworkPolicies/TrafficShaping/config_shaper_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Пропускная способность" выгружен в файл "data/network_policies/config_shaper_rules.json".')
+        print(f'\tСписок "Пропускная способность" выгружен в файл "data/NetworkPolicies/TrafficShaping/config_shaper_rules.json".')
 
     def import_shaper_rules(self):
         """Импортировать список правил пропускной способности"""
         print('Импорт списка "Пропускная способность" раздела "Политики сети":')
         try:
-            with open("data/network_policies/config_shaper_rules.json", "r") as fh:
+            with open("data/NetworkPolicies/TrafficShaping/config_shaper_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Пропускная способность" не импортирован!\n\tНе найден файл "data/network_policies/config_shaper_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Пропускная способность" не импортирован!\n\tНе найден файл "data/NetworkPolicies/TrafficShaping/config_shaper_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2729,11 +2958,10 @@ class UTM(UtmXmlRpc):
             self.get_guids_users_and_groups(item)
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            try:
-                item['services'] = [self.services[x] for x in item['services']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-                item['service'] = []
+            if int(self.version[:1]) == 6:
+                item['services'] = self.get_services_for_v6(item['name'], item['services'])
+            else:
+                item['services'] = self.get_services(item['name'], item['services'])
             try:
                 self.get_apps(item['apps'])
             except KeyError as err:
@@ -2749,6 +2977,7 @@ class UTM(UtmXmlRpc):
             err, result = self.add_shaper_rule(shaper_rules, item)
             if err == 1:
                 print(result, end= ' - ')
+                item.pop('position', None)
                 err1, result1 = self.update_shaper_rule(shaper_rules[item['name']], item)
                 if err1 != 0:
                     print("\n", f"\033[31m{result1}\033[0m")
@@ -2759,11 +2988,12 @@ class UTM(UtmXmlRpc):
             else:
                 print(f'\tПравило пропускной способности "{item["name"]}" добавлено.')
 
+####################################### Политики безопасности  #####################################
     def export_content_rules(self):
         """Выгрузить список правил фильтрации контента"""
         print('Выгружается список "Фильтрация контента" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/ContentFiltering'):
+            os.makedirs('data/SecurityPolicies/ContentFiltering')
 
         result = self._server.v2.nlists.list(self._auth_token, 'morphology', 0, 1000, {})
         self.list_morph = {x['id']: x['name'] for x in result['items'] if result['count']}
@@ -2808,18 +3038,18 @@ class UTM(UtmXmlRpc):
                     print(f'\t\033[33mНе найдена группа URL-категорий {err} для правила "{item["name"]}".\n\tЗагрузите ктегории URL и повторите попытку.\033[0m')
                     item['referer_categories'] = []
 
-        with open("data/security_policies/config_content_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/ContentFiltering/config_content_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Фильтрация контента" выгружен в файл "data/security_policies/config_content_rules.json".')
+        print(f'\tСписок "Фильтрация контента" выгружен в файл "data/SecurityPolicies/ContentFiltering/config_content_rules.json".')
 
     def import_content_rules(self):
         """Импортировать список правил фильтрации контента"""
         print('Импорт списка "Фильтрация контента" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_content_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/ContentFiltering/config_content_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Фильтрация контента" не импортирован!\n\tНе найден файл "data/security_policies/config_content_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Фильтрация контента" не импортирован!\n\tНе найден файл "data/SecurityPolicies/ContentFiltering/config_content_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2876,6 +3106,7 @@ class UTM(UtmXmlRpc):
 
             if item['name'] in content_rules:
                 print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
+                item.pop('position', None)
                 err1, result1 = self.update_content_rule(content_rules[item['name']], item)
                 if err1 == 2:
                     print("\n", f"\033[31m{result1}\033[0m")
@@ -2892,8 +3123,8 @@ class UTM(UtmXmlRpc):
     def export_safebrowsing_rules(self):
         """Выгрузить список правил веб-безопасности"""
         print('Выгружается список "Веб-безопасность" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/SafeBrowsing'):
+            os.makedirs('data/SecurityPolicies/SafeBrowsing')
 
         _, data = self.get_safebrowsing_rules()
 
@@ -2908,18 +3139,18 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             item['url_list_exclusions'] = [self.list_url[x] for x in item['url_list_exclusions']]
 
-        with open("data/security_policies/config_safebrowsing_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/SafeBrowsing/config_safebrowsing_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Веб-безопасность" выгружен в файл "data/security_policies/config_safebrowsing_rules.json".')
+        print(f'\tСписок "Веб-безопасность" выгружен в файл "data/SecurityPolicies/SafeBrowsing/config_safebrowsing_rules.json".')
 
     def import_safebrowsing_rules(self):
         """Импортировать список правил веб-безопасности"""
         print('Импорт списка "Веб-безопасность" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_safebrowsing_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/SafeBrowsing/config_safebrowsing_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Веб-безопасность" не импортирован!\n\tНе найден файл "data/security_policies/config_safebrowsing_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Веб-безопасность" не импортирован!\n\tНе найден файл "data/SecurityPolicies/SafeBrowsing/config_safebrowsing_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -2954,13 +3185,74 @@ class UTM(UtmXmlRpc):
                     safebrowsing_rules[item['name']] = result
                     print(f'\tПравило "{item["name"]}" добавлено.')
 
+    def export_tunnel_inspection_rules(self):
+        """Выгрузить список правил инспектирования туннелей"""
+        if int(self.version[:1]) < 7:
+            return
+
+        print('Выгружается список "Инспектирование туннелей" раздела "Политики безопасности":')
+        if not os.path.isdir('data/SecurityPolicies/TunnelInspection'):
+            os.makedirs('data/SecurityPolicies/TunnelInspection')
+
+        _, data = self.get_tunnel_inspection_rules()
+
+        for item in data:
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('position_layer', None)
+            self.set_src_zone_and_ips(item)
+            self.set_dst_zone_and_ips(item)
+
+        with open("data/SecurityPolicies/TunnelInspection/config_tunnelinspection_rules.json", "w") as fd:
+            json.dump(data, fd, indent=4, ensure_ascii=False)
+        print(f'\tСписок "Инспектирование туннелей" выгружен в файл "data/SecurityPolicies/TunnelInspection/config_tunnelinspection_rules.json".')
+
+    def import_tunnel_inspection_rules(self):
+        """Импортировать список правил инспектирования туннелей"""
+        if int(self.version[:1]) < 7:
+            return
+
+        print('Импорт списка "Инспектирование туннелей" раздела "Политики безопасности":')
+        try:
+            with open("data/SecurityPolicies/TunnelInspection/config_tunnelinspection_rules.json", "r") as fh:
+                data = json.load(fh)
+        except FileNotFoundError as err:
+            print(f'\t\033[31mСписок "Инспектирование туннелей" не импортирован!\n\tНе найден файл "data/SecurityPolicies/TunnelInspection/config_tunnelinspection_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            return
+
+        if not data:
+            print("\tНет правил инспектирования туннелей для импорта.")
+            return
+
+        _, rules = self.get_tunnel_inspection_rules()
+        tunnel_inspect_rules = {x['name']: x['id'] for x in rules}
+
+        for item in data:
+            self.set_src_zone_and_ips(item)
+            self.set_dst_zone_and_ips(item)
+
+            if item['name'] in tunnel_inspect_rules:
+                print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
+                err1, result1 = self.update_tunnel_inspection_rule(tunnel_inspect_rules[item['name']], item)
+                if err1 == 2:
+                    print("\n", f"\033[31m{result1}\033[0m")
+                else:
+                    print("\033[32mUpdated!\033[0;0m")
+            else:
+                err, result = self.add_tunnel_inspection_rule(item)
+                if err == 2:
+                    print(f"\033[31m{result}\033[0m")
+                else:
+                    tunnel_inspect_rules[item['name']] = result
+                    print(f'\tПравило "{item["name"]}" добавлено.')
+
     def export_ssldecrypt_rules(self):
         """Выгрузить список правил инспектирования SSL"""
         print('Выгружается список "Инспектирование SSL" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/SSLInspection'):
+            os.makedirs('data/SecurityPolicies/SSLInspection')
 
-        if self.version.startswith('6'):
+        if int(self.version[:1]) > 5:
             _, data = self.get_ssl_profiles_list()
             self.list_ssl_profiles = {x['id']: x['name'] for x in data}
 
@@ -2979,18 +3271,18 @@ class UTM(UtmXmlRpc):
             self.set_time_restrictions(item)
             item['ssl_profile_id'] = self.list_ssl_profiles[item['ssl_profile_id']] if 'ssl_profile_id' in item else 'Default SSL profile'
 
-        with open("data/security_policies/config_ssldecrypt_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/SSLInspection/config_ssldecrypt_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Инспектирование SSL" выгружен в файл "data/security_policies/config_ssldecrypt_rules.json".')
+        print(f'\tСписок "Инспектирование SSL" выгружен в файл "data/SecurityPolicies/SSLInspection/config_ssldecrypt_rules.json".')
 
     def import_ssldecrypt_rules(self):
         """Импортировать список правил инспектирования SSL"""
         print('Импорт списка "Инспектирование SSL" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_ssldecrypt_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/SSLInspection/config_ssldecrypt_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Инспектирование SSL" не импортирован!\n\tНе найден файл "data/security_policies/config_ssldecrypt_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Инспектирование SSL" не импортирован!\n\tНе найден файл "data/SecurityPolicies/SSLInspection/config_ssldecrypt_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3029,10 +3321,10 @@ class UTM(UtmXmlRpc):
 
     def export_sshdecrypt_rules(self):
         """Выгрузить список правил инспектирования SSH"""
-        if self.version.startswith('6'):
+        if int(self.version[:1]) > 5:
             print('Выгружается список "Инспектирование SSH" раздела "Политики безопасности":')
-            if not os.path.isdir('data/security_policies'):
-                os.makedirs('data/security_policies')
+            if not os.path.isdir('data/SecurityPolicies/SSHInspection'):
+                os.makedirs('data/SecurityPolicies/SSHInspection')
 
             _, data = self.get_sshdecrypt_rules()
 
@@ -3045,20 +3337,20 @@ class UTM(UtmXmlRpc):
                 self.set_src_zone_and_ips(item)
                 self.set_dst_zone_and_ips(item)
                 self.set_time_restrictions(item)
-                item['protocols'] = [self.services[x] for x in item['protocols']]
+                item['protocols'] = self.get_services(item['name'], item['protocols'])
 
-            with open("data/security_policies/config_sshdecrypt_rules.json", "w") as fd:
+            with open("data/SecurityPolicies/SSHInspection/config_sshdecrypt_rules.json", "w") as fd:
                 json.dump(data, fd, indent=4, ensure_ascii=False)
-            print(f'\tСписок "Инспектирование SSH" выгружен в файл "data/security_policies/config_sshdecrypt_rules.json".')
+            print(f'\tСписок "Инспектирование SSH" выгружен в файл "data/SecurityPolicies/SSHInspection/config_sshdecrypt_rules.json".')
 
     def import_sshdecrypt_rules(self):
         """Импортировать список правил инспектирования SSH"""
         print('Импорт списка "Инспектирование SSH" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_sshdecrypt_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/SSHInspection/config_sshdecrypt_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Инспектирование SSH" не импортирован!\n\tНе найден файл "data/security_policies/config_sshdecrypt_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Инспектирование SSH" не импортирован!\n\tНе найден файл "data/SecurityPolicies/SSHInspection/config_sshdecrypt_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3073,11 +3365,10 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.set_time_restrictions(item)
-            try:
-                item['protocols'] = [self.services[x] for x in item['protocols']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите список сервисов и повторите попытку.\033[0m')
-                item['protocols'] = []
+            if int(self.version[:1]) == 6:
+                item['protocols'] = self.get_services_for_v6(item['name'], item['protocols'])
+            else:
+                item['protocols'] = self.get_services(item['name'], item['protocols'])
 
             if item['name'] in sshdecrypt_rules:
                 print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
@@ -3097,8 +3388,8 @@ class UTM(UtmXmlRpc):
     def export_idps_rules(self):
         """Выгрузить список правил СОВ"""
         print('Выгружается список "СОВ" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/IntrusionPrevention'):
+            os.makedirs('data/SecurityPolicies/IntrusionPrevention')
 
         result = self._server.v2.nlists.list(self._auth_token, 'ipspolicy', 0, 1000, {})
         idps_profiles = {x['id']: x['name'] for x in result['items']}
@@ -3111,19 +3402,17 @@ class UTM(UtmXmlRpc):
             item.pop('position_layer', None)
             item.pop('apps', None)
             item.pop('cc', None)
+            if item['action'] == 'drop':   # Для версий < 7
+                item['action'] = 'reset'
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            try:
-                item['services'] = [self.services[x] for x in item['services']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tПроверьте список сервисов этого правила.\033[0m')
-                item['services'] = []
+            item['services'] = self.get_services(item['name'], item['services'])
             try:
                 item['idps_profiles'] = [idps_profiles[x] for x in item['idps_profiles']]
             except KeyError as err:
                 print(f'\t\033[33mНе найден профиль СОВ {err} для правила "{item["name"]}".\n\tПроверьте профиль СОВ этого правила.\033[0m')
                 item['idps_profiles'] = []
-            if self.version.startswith('6'):
+            if int(self.version[:1]) > 5:
                 try:
                     item['idps_profiles_exclusions'] = [idps_profiles[x] for x in item['idps_profiles_exclusions']]
                 except KeyError as err:
@@ -3132,18 +3421,18 @@ class UTM(UtmXmlRpc):
             else:
                 item['idps_profiles_exclusions'] = []
 
-        with open("data/security_policies/config_idps_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/IntrusionPrevention/config_idps_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "СОВ" выгружен в файл "data/security_policies/config_idps_rules.json".')
+        print(f'\tСписок "СОВ" выгружен в файл "data/SecurityPolicies/IntrusionPrevention/config_idps_rules.json".')
 
     def import_idps_rules(self):
         """Импортировать список правил СОВ"""
         print('Импорт списка "СОВ" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_idps_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/IntrusionPrevention/config_idps_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "СОВ" не импортирован!\n\tНе найден файл "data/security_policies/config_idps_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "СОВ" не импортирован!\n\tНе найден файл "data/SecurityPolicies/IntrusionPrevention/config_idps_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3157,13 +3446,14 @@ class UTM(UtmXmlRpc):
         idps_rules = {x['name']: x['id'] for x in rules}
 
         for item in data:
+            if int(self.version[:1]) == 6 and item['action'] == 'reset':
+                item['action'] == 'drop'
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
-            try:
-                item['services'] = [self.services[x] for x in item['services']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите список сервисов и повторите попытку.\033[0m')
-                item['services'] = []
+            if int(self.version[:1]) == 6:
+                item['services'] = self.get_services_for_v6(item['name'], item['services'])
+            else:
+                item['services'] = self.get_services(item['name'], item['services'])
             try:
                 item['idps_profiles'] = [idps_profiles[x] for x in item['idps_profiles']]
             except KeyError as err:
@@ -3192,9 +3482,12 @@ class UTM(UtmXmlRpc):
 
     def export_scada_rules(self):
         """Выгрузить список правил АСУ ТП"""
+        if self.version.startswith('7'):
+            return
+
         print('Выгружается список "Правила АСУ ТП" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/SCADARules'):
+            os.makedirs('data/SecurityPolicies/SCADARules')
 
         _, result = self.get_scada_list()
         scada_profiles = {x['id']: x['name'] for x in result}
@@ -3211,18 +3504,21 @@ class UTM(UtmXmlRpc):
             item['services'] = [self.services[x] for x in item['services']]
             item['scada_profiles'] = [scada_profiles[x] for x in item['scada_profiles']]
 
-        with open("data/security_policies/config_scada_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/SCADARules/config_scada_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Правила АСУ ТП" выгружен в файл "data/security_policies/config_scada_rules.json".')
+        print(f'\tСписок "Правила АСУ ТП" выгружен в файл "data/SecurityPolicies/SCADARules/config_scada_rules.json".')
 
     def import_scada_rules(self):
         """Импортировать список правил АСУ ТП"""
+        if self.version.startswith('7'):
+            return
+
         print('Импорт списка "Правила АСУ ТП" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_scada_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/SCADARules/config_scada_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Правила АСУ ТП" не импортирован!\n\tНе найден файл "data/security_policies/config_scada_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Правила АСУ ТП" не импортирован!\n\tНе найден файл "data/SecurityPolicies/SCADARules/config_scada_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3264,8 +3560,8 @@ class UTM(UtmXmlRpc):
     def export_scenarios(self):
         """Выгрузить список сценариев"""
         print('Выгружается список "Сценарии" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/Scenarios'):
+            os.makedirs('data/SecurityPolicies/Scenarios')
 
         _, data = self.get_scenarios_rules()
 
@@ -3284,18 +3580,18 @@ class UTM(UtmXmlRpc):
                 elif condition['kind'] == 'url_category':
                     condition['url_categories'] = [[x[0], self.list_urlcategorygroup[x[1]] if x[0] == 'list_id' else self._categories[x[1]]] for x in condition['url_categories']]
 
-        with open("data/security_policies/config_scenarios.json", "w") as fd:
+        with open("data/SecurityPolicies/Scenarios/config_scenarios.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Сценарии" выгружен в файл "data/security_policies/config_scenarios.json".')
+        print(f'\tСписок "Сценарии" выгружен в файл "data/SecurityPolicies/Scenarios/config_scenarios.json".')
 
     def import_scenarios(self):
         """Импортировать список сценариев"""
         print('Импорт списка "Сценарии" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_scenarios.json", "r") as fh:
+            with open("data/SecurityPolicies/Scenarios/config_scenarios.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Сценарии" не импортирован!\n\tНе найден файл "data/security_policies/config_scenarios.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Сценарии" не импортирован!\n\tНе найден файл "data/SecurityPolicies/Scenarios/config_scenarios.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3339,8 +3635,8 @@ class UTM(UtmXmlRpc):
     def export_mailsecurity_rules(self):
         """Выгрузить список правил защиты почтового трафика"""
         print('Выгружается список "Защита почтового трафика" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/MailSecurity'):
+            os.makedirs('data/SecurityPolicies/MailSecurity')
 
         _, result = self.get_nlist_list('emailgroup')
         email = {x['id']: x['name'] for x in result}
@@ -3356,18 +3652,18 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.get_names_users_and_groups(item)
-            if self.version.startswith('6'):
-                item['services'] = [self.services[x] for x in item['services']]
-            else:
-                item['services'] = ["POP3" if x == 'pop' else x.upper() for x in item.pop('protocol')]
+            if self.version.startswith('5'):
+                item['services'] = [['service', "POP3" if x == 'pop' else x.upper()] for x in item.pop('protocol')]
                 item['envelope_from_negate'] = False
                 item['envelope_to_negate'] = False
+            else:
+                item['services'] = self.get_services(item['name'], item['services'])
             item['envelope_from'] = [[x[0], email[x[1]]] for x in item['envelope_from']]
             item['envelope_to'] = [[x[0], email[x[1]]] for x in item['envelope_to']]
 
-        with open("data/security_policies/config_mailsecurity_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/MailSecurity/config_mailsecurity_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Защита почтового трафика" выгружен в файл "data/security_policies/config_mailsecurity_rules.json".')
+        print(f'\tСписок "Защита почтового трафика" выгружен в файл "data/SecurityPolicies/MailSecurity/config_mailsecurity_rules.json".')
 
         dnsbl, batv = self.get_mailsecurity_dnsbl()
 
@@ -3378,22 +3674,22 @@ class UTM(UtmXmlRpc):
             if x[0] == 'list_id':
                 x[1] = self.list_IP[x[1]]
 
-        with open("data/security_policies/config_mailsecurity_dnsbl.json", "w") as fd:
+        with open("data/SecurityPolicies/MailSecurity/config_mailsecurity_dnsbl.json", "w") as fd:
             json.dump(dnsbl, fd, indent=4, ensure_ascii=False)
-        print(f'\tНастройки DNSBL выгружены в файл "data/security_policies/config_mailsecurity_dnsbl.json".')
+        print(f'\tНастройки DNSBL выгружены в файл "data/SecurityPolicies/MailSecurity/config_mailsecurity_dnsbl.json".')
 
-        with open("data/security_policies/config_mailsecurity_batv.json", "w") as fd:
+        with open("data/SecurityPolicies/MailSecurity/config_mailsecurity_batv.json", "w") as fd:
             json.dump(batv, fd, indent=4, ensure_ascii=False)
-        print(f'\tНастройки BATV выгружены в файл "data/security_policies/config_mailsecurity_batv.json".')
+        print(f'\tНастройки BATV выгружены в файл "data/SecurityPolicies/MailSecurity/config_mailsecurity_batv.json".')
 
     def import_mailsecurity_rules(self):
         """Импортировать список правил защиты почтового трафика"""
         print('Импорт списка "Защита почтового трафика" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_mailsecurity_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/MailSecurity/config_mailsecurity_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Защита почтового трафика" не импортирован!\n\tНе найден файл "data/security_policies/config_mailsecurity_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Защита почтового трафика" не импортирован!\n\tНе найден файл "data/SecurityPolicies/MailSecurity/config_mailsecurity_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3410,11 +3706,10 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.get_guids_users_and_groups(item)
-            try:
-                item['services'] = [self.services[x] for x in item['services']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите список сервисов и повторите попытку.\033[0m')
-                item['services'] = []
+            if int(self.version[:1]) == 6:
+                item['services'] = self.get_services_for_v6(item['name'], item['services'])
+            else:
+                item['services'] = self.get_services(item['name'], item['services'])
             try:
                 item['envelope_from'] = [[x[0], email[x[1]]] for x in item['envelope_from']]
             except KeyError as err:
@@ -3445,10 +3740,10 @@ class UTM(UtmXmlRpc):
         """Импортировать dnsbl и batv защиты почтового трафика"""
         print('Импорт списка DNSBL защиты почтового трафика:')
         try:
-            with open("data/security_policies/config_mailsecurity_dnsbl.json", "r") as fh:
+            with open("data/SecurityPolicies/MailSecurity/config_mailsecurity_dnsbl.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок DNSBL не импортирован!\n\tНе найден файл "data/security_policies/config_mailsecurity_dnsbl.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок DNSBL не импортирован!\n\tНе найден файл "data/SecurityPolicies/MailSecurity/config_mailsecurity_dnsbl.json" с сохранённой конфигурацией!\033[0;0m')
         else:
             if data:
                 try:
@@ -3473,10 +3768,10 @@ class UTM(UtmXmlRpc):
 
         print('Импорт настройки BATV защиты почтового трафика:')
         try:
-            with open("data/security_policies/config_mailsecurity_batv.json", "r") as fh:
+            with open("data/SecurityPolicies/MailSecurity/config_mailsecurity_batv.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mНастройка BATV не импортированы!\n\tНе найден файл "data/security_policies/config_mailsecurity_batv.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mНастройка BATV не импортированы!\n\tНе найден файл "data/SecurityPolicies/MailSecurity/config_mailsecurity_batv.json" с сохранённой конфигурацией!\033[0;0m')
         else:
             if data:
                 err, result = self.set_mailsecurity_batv(data)
@@ -3490,8 +3785,8 @@ class UTM(UtmXmlRpc):
     def export_icap_rules(self):
         """Выгрузить список правил ICAP"""
         print('Выгружается список "ICAP-правила" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/ICAPRules'):
+            os.makedirs('data/SecurityPolicies/ICAPRules')
 
         total, icapservers = self.get_icap_servers()
         self.icap_servers = {x['id']: x['name'] for x in icapservers if total}
@@ -3522,18 +3817,18 @@ class UTM(UtmXmlRpc):
             self.set_urls_and_categories(item)
             item['content_types'] = [self.list_mime[x] for x in item['content_types']]
 
-        with open("data/security_policies/config_icap_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/ICAPRules/config_icap_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "ICAP-правила" выгружен в файл "data/security_policies/config_icap_rules.json".')
+        print(f'\tСписок "ICAP-правила" выгружен в файл "data/SecurityPolicies/ICAPRules/config_icap_rules.json".')
 
     def import_icap_rules(self):
         """Импортировать список правил ICAP"""
         print('Импорт списка "ICAP-правила" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_icap_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/ICAPRules/config_icap_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "ICAP-правила" не импортирован!\n\tНе найден файл "data/security_policies/config_icap_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "ICAP-правила" не импортирован!\n\tНе найден файл "data/SecurityPolicies/ICAPRules/config_icap_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3548,19 +3843,22 @@ class UTM(UtmXmlRpc):
         icap_rules = {x['name']: x['id'] for x in icaprules if total}
 
         for item in data:
+            bad_servers = []
             for server in item['servers']:
                 if server[0] == 'lbrule':
                     try:
                         server[1] = self.icap_loadbalancing[server[1]]
                     except KeyError as err:
                         print(f'\t\033[33mНе найден балансировщик серверов ICAP {err} для правила "{item["name"]}".\n\tИмпортируйте балансировщики ICAP и повторите попытку.\033[0m')
-                        item['servers'] = []
+                        bad_servers.append(server)
                 elif server[0] == 'profile':
                     try:
                         server[1] = self.icap_servers[server[1]]
                     except KeyError as err:
                         print(f'\t\033[33mНе найден сервер ICAP {err} для правила "{item["name"]}".\n\tИмпортируйте сервера ICAP и повторите попытку.\033[0m')
-                        item['servers'] = []
+                        bad_servers.append(server)
+            for server in bad_servers:
+                item['servers'].remove(server)
             self.get_guids_users_and_groups(item)
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
@@ -3583,8 +3881,8 @@ class UTM(UtmXmlRpc):
     def export_dos_profiles(self):
         """Выгрузить список профилей DoS"""
         print('Выгружается список "Профили DoS" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/DoSProfiles'):
+            os.makedirs('data/SecurityPolicies/DoSProfiles')
 
         _, data = self.get_dos_profiles()
 
@@ -3593,18 +3891,18 @@ class UTM(UtmXmlRpc):
             item.pop('guid', None)
             item.pop('cc', None)
 
-        with open("data/security_policies/config_dos_profiles.json", "w") as fd:
+        with open("data/SecurityPolicies/DoSProfiles/config_dos_profiles.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили DoS" выгружен в файл "data/security_policies/config_dos_profiles.json".')
+        print(f'\tСписок "Профили DoS" выгружен в файл "data/SecurityPolicies/DoSProfiles/config_dos_profiles.json".')
 
     def import_dos_profiles(self):
         """Импортировать список профилей DoS"""
         print('Импорт списка "Профили DoS" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_dos_profiles.json", "r") as fh:
+            with open("data/SecurityPolicies/DoSProfiles/config_dos_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили DoS" не импортирован!\n\tНе найден файл "data/security_policies/config_dos_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили DoS" не импортирован!\n\tНе найден файл "data/SecurityPolicies/DoSProfiles/config_dos_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3633,8 +3931,8 @@ class UTM(UtmXmlRpc):
     def export_dos_rules(self):
         """Выгрузить список правил защиты DoS"""
         print('Выгружается список "Правила защиты DoS" раздела "Политики безопасности":')
-        if not os.path.isdir('data/security_policies'):
-            os.makedirs('data/security_policies')
+        if not os.path.isdir('data/SecurityPolicies/DoSRules'):
+            os.makedirs('data/SecurityPolicies/DoSRules')
 
         total, dos = self.get_dos_profiles()
         dos_profiles = {x['id']: x['name'] for x in dos if total}
@@ -3649,24 +3947,24 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.get_names_users_and_groups(item)
-            item['services'] = [self.services[x] for x in item['services']]
+            item['services'] = self.get_services(item['name'], item['services'])
             self.set_time_restrictions(item)
             item['dos_profile'] = dos_profiles[item['dos_profile']]
             if item['scenario_rule_id']:
                 item['scenario_rule_id'] = self.scenarios_rules[item['scenario_rule_id']]
 
-        with open("data/security_policies/config_dos_rules.json", "w") as fd:
+        with open("data/SecurityPolicies/DoSRules/config_dos_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Правила защиты DoS" выгружен в файл "data/security_policies/config_dos_rules.json".')
+        print(f'\tСписок "Правила защиты DoS" выгружен в файл "data/SecurityPolicies/DoSRules/config_dos_rules.json".')
 
     def import_dos_rules(self):
         """Импортировать список правил защиты DoS"""
         print('Импорт списка "Правила защиты DoS" раздела "Политики безопасности":')
         try:
-            with open("data/security_policies/config_dos_rules.json", "r") as fh:
+            with open("data/SecurityPolicies/DoSRules/config_dos_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Правила защиты DoS" не импортирован!\n\tНе найден файл "data/security_policies/config_dos_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Правила защиты DoS" не импортирован!\n\tНе найден файл "data/SecurityPolicies/DoSRules/config_dos_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3684,11 +3982,10 @@ class UTM(UtmXmlRpc):
             self.set_src_zone_and_ips(item)
             self.set_dst_zone_and_ips(item)
             self.set_time_restrictions(item)
-            try:
-                item['services'] = [self.services[x] for x in item['services']]
-            except KeyError as err:
-                print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите список сервисов и повторите попытку.\033[0m')
-                item['services'] = []
+            if int(self.version[:1]) == 6:
+                item['services'] = self.get_services_for_v6(item['name'], item['services'])
+            else:
+                item['services'] = self.get_services(item['name'], item['services'])
             try:
                 item['dos_profile'] = dos_profiles[item['dos_profile']]
             except KeyError as err:
@@ -3716,13 +4013,14 @@ class UTM(UtmXmlRpc):
                     dos_rules[item['name']] = result
                     print(f'\tПравило "{item["name"]}" добавлено.')
 
+####################################### Глобальный портал  #####################################
     def export_proxyportal_rules(self):
         """Выгрузить список URL-ресурсов веб-портала"""
         print('Выгружается список "Веб-портал" раздела "Глобальный портал":')
-        if not os.path.isdir('data/proxy_portal'):
-            os.makedirs('data/proxy_portal')
+        if not os.path.isdir('data/GlobalPortal/WebPortal'):
+            os.makedirs('data/GlobalPortal/WebPortal')
 
-        if self.version.startswith('6'):
+        if int(self.version[:1]) > 5:
             _, result = self.get_ssl_profiles_list()
             ssl_profiles = {x['id']: x['name'] for x in result}
             err, result = self.get_certificates_list()
@@ -3735,27 +4033,27 @@ class UTM(UtmXmlRpc):
             item.pop('rownumber', None)
             item.pop('position_layer', None)
             self.get_names_users_and_groups(item)
-            if self.version.startswith('6'):
+            if self.version.startswith('5'):
+                item['mapping_url_ssl_profile_id'] = 0
+                item['mapping_url_certificate_id'] = 0
+            else:
                 if item['mapping_url_ssl_profile_id']:
                     item['mapping_url_ssl_profile_id'] = ssl_profiles[item['mapping_url_ssl_profile_id']]
                 if item['mapping_url_certificate_id']:
                     item['mapping_url_certificate_id'] = ssl_certificates[item['mapping_url_certificate_id']]
-            else:
-                item['mapping_url_ssl_profile_id'] = 0
-                item['mapping_url_certificate_id'] = 0
 
-        with open("data/proxy_portal/config_web_portal.json", "w") as fd:
+        with open("data/GlobalPortal/WebPortal/config_web_portal.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Веб-портал" выгружен в файл "data/proxy_portal/config_web_portal.json".')
+        print(f'\tСписок "Веб-портал" выгружен в файл "data/GlobalPortal/WebPortal/config_web_portal.json".')
 
     def import_proxyportal_rules(self):
         """Импортировать список URL-ресурсов веб-портала"""
         print('Импорт списка "Веб-портал" раздела "Глобальный портал":')
         try:
-            with open("data/proxy_portal/config_web_portal.json", "r") as fh:
+            with open("data/GlobalPortal/WebPortal/config_web_portal.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Веб-портал" не импортирован!\n\tНе найден файл "data/proxy_portal/config_web_portal.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Веб-портал" не импортирован!\n\tНе найден файл "data/GlobalPortal/WebPortal/config_web_portal.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3800,8 +4098,8 @@ class UTM(UtmXmlRpc):
     def export_reverseproxy_servers(self):
         """Выгрузить список серверов reverse-прокси"""
         print('Выгружается список "Серверы reverse-прокси" раздела "Глобальный портал":')
-        if not os.path.isdir('data/proxy_portal'):
-            os.makedirs('data/proxy_portal')
+        if not os.path.isdir('data/GlobalPortal/ReverseProxyServers'):
+            os.makedirs('data/GlobalPortal/ReverseProxyServers')
 
         _, data = self.get_reverseproxy_servers()
 
@@ -3810,18 +4108,18 @@ class UTM(UtmXmlRpc):
             item.pop('guid', None)
             item.pop('cc', None)
 
-        with open("data/proxy_portal/config_reverseproxy_servers.json", "w") as fd:
+        with open("data/GlobalPortal/ReverseProxyServers/config_reverseproxy_servers.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Серверы reverse-прокси" выгружен в файл "data/proxy_portal/config_reverseproxy_servers.json".')
+        print(f'\tСписок "Серверы reverse-прокси" выгружен в файл "data/GlobalPortal/ReverseProxyServers/config_reverseproxy_servers.json".')
 
     def import_reverseproxy_servers(self):
         """Импортировать список серверов reverse-прокси"""
         print('Импорт списка "Серверы reverse-прокси" раздела "Глобальный портал":')
         try:
-            with open("data/proxy_portal/config_reverseproxy_servers.json", "r") as fh:
+            with open("data/GlobalPortal/ReverseProxyServers/config_reverseproxy_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Серверы reverse-прокси" не импортирован!\n\tНе найден файл "data/proxy_portal/config_reverseproxy_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Серверы reverse-прокси" не импортирован!\n\tНе найден файл "data/GlobalPortal/ReverseProxyServers/config_reverseproxy_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3847,8 +4145,8 @@ class UTM(UtmXmlRpc):
     def export_reverseproxy_rules(self):
         """Выгрузить список правил reverse-прокси"""
         print('Выгружается список "Правила reverse-прокси" раздела "Глобальный портал":')
-        if not os.path.isdir('data/proxy_portal'):
-            os.makedirs('data/proxy_portal')
+        if not os.path.isdir('data/GlobalPortal/ReverseProxyRules'):
+            os.makedirs('data/GlobalPortal/ReverseProxyRules')
 
         result = self._server.v2.nlists.list(self._auth_token, 'useragent', 0, 1000, {})
         self.list_useragent = {x['id']: x['name'] for x in result['items'] if result['count']}
@@ -3856,7 +4154,7 @@ class UTM(UtmXmlRpc):
         _, _, reverse = self.get_loadbalancing_rules()
         self.reverse_rules = {x['id']: x['name'] for x in reverse}
 
-        if self.version.startswith('6'):
+        if int(self.version[:1]) > 5:
             _, result = self.get_ssl_profiles_list()
             ssl_profiles = {x['id']: x['name'] for x in result}
 
@@ -3875,20 +4173,20 @@ class UTM(UtmXmlRpc):
             self.set_dst_zone_and_ips(item)
             self.get_names_users_and_groups(item)
             try:
-                if item['certificate_id'] != -1:
+                if item['certificate_id'] not in (-1, 0):
                     item['certificate_id'] = ssl_certificates[item['certificate_id']]
             except KeyError:
                 print(f'\t\033[33mВ правиле "{item["name"]}" указан несуществующий сертификат.\033[0m')
-                item['certificate_id'] = -1
-                item['is_https'] = False                
-            if self.version.startswith('6'):
+                item['certificate_id'] = 0
+                item['is_https'] = False
+            if int(self.version[:1]) > 5:
                 try:
                     if item['ssl_profile_id']:
                         item['ssl_profile_id'] = ssl_profiles[item['ssl_profile_id']]
                 except KeyError:
                     print(f'\t\033[33mВ правиле "{item["name"]}" указан несуществующий профиль SSL.\033[0m')
                     item['ssl_profile_id'] = 0
-                    item['is_https'] = False                
+                    item['is_https'] = False
             else:
                 item['ssl_profile_id'] = 0
             try:
@@ -3906,18 +4204,18 @@ class UTM(UtmXmlRpc):
                     print(f'\t\t\033[33mУстановлено значение по умолчанию.\033[0m')
                     x = ['profile', 'Example reverse proxy server']
 
-        with open("data/proxy_portal/config_reverseproxy_rules.json", "w") as fd:
+        with open("data/GlobalPortal/ReverseProxyRules/config_reverseproxy_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Правила reverse-прокси" выгружен в файл "data/proxy_portal/config_reverseproxy_rules.json".')
+        print(f'\tСписок "Правила reverse-прокси" выгружен в файл "data/GlobalPortal/ReverseProxyRules/config_reverseproxy_rules.json".')
 
     def import_reverseproxy_rules(self):
         """Импортировать список правил reverse-прокси"""
         print('Импорт списка "Правила reverse-прокси" раздела "Глобальный портал":')
         try:
-            with open("data/proxy_portal/config_reverseproxy_rules.json", "r") as fh:
+            with open("data/GlobalPortal/ReverseProxyRules/config_reverseproxy_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Правила reverse-прокси" не импортирован!\n\tНе найден файл "data/proxy_portal/config_reverseproxy_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Правила reverse-прокси" не импортирован!\n\tНе найден файл "data/GlobalPortal/ReverseProxyRules/config_reverseproxy_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -3943,13 +4241,16 @@ class UTM(UtmXmlRpc):
             except KeyError as err:
                 print(f'\t\033[33mНе найден сервер reverse-прокси или балансировщик {err} для правила "{item["name"]}".\n\tИмпортируйте reverse-прокси или балансировщик и повторите попытку.\033[0m')
                 continue
-            if item['certificate_id'] != -1:
+            if item['certificate_id'] not in (-1, 0):
                 try:
                     item['certificate_id'] = ssl_certificates[item['certificate_id']]
                 except KeyError as err:
                     print(f'\t\033[33mНе найден сертификат {err} для правила "{item["name"]}".\n\tСоздайте сертификат и повторите попытку.\033[0m')
                     item['certificate_id'] = -1
                     item['is_https'] = False
+            elif not item['certificate_id']:
+                item['certificate_id'] = -1
+                item['is_https'] = False
             if item['ssl_profile_id']:
                 try:
                     item['ssl_profile_id'] = self.list_ssl_profiles[item['ssl_profile_id']]
@@ -3979,13 +4280,14 @@ class UTM(UtmXmlRpc):
                 else:
                     reverseproxy_rules[item['name']] = result
                     print(f'\tПравило reverse-прокси "{item["name"]}" добавлено.')
-        print(f'\t\033[33mПроверьте флаг "Использовать HTTPS" во всех импортированных правилах!\n\tЕсли не установлен профиль SSL, выберите нужный.\033[0;0m')
+        print(f'\t\033[36mПроверьте флаг "Использовать HTTPS" во всех импортированных правилах!\n\tЕсли не установлен профиль SSL, выберите нужный.\033[0;0m')
 
+####################################### VPN  ########################################
     def export_vpn_security_profiles(self):
         """Выгрузить список профилей безопасности VPN"""
         print('Выгружается список "Профили безопасности VPN" раздела "VPN":')
-        if not os.path.isdir('data/vpn'):
-            os.makedirs('data/vpn')
+        if not os.path.isdir('data/VPN/SecurityProfiles'):
+            os.makedirs('data/VPN/SecurityProfiles')
 
         _, data = self.get_vpn_security_profiles()
 
@@ -3993,18 +4295,18 @@ class UTM(UtmXmlRpc):
             item.pop('id', None)
             item.pop('cc', None)
 
-        with open("data/vpn/config_vpn_security_profiles.json", "w") as fd:
+        with open("data/VPN/SecurityProfiles/config_vpn_security_profiles.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Профили безопасности VPN" выгружен в файл "data/vpn/config_vpn_security_profiles.json".')
+        print(f'\tСписок "Профили безопасности VPN" выгружен в файл "data/VPN/SecurityProfiles/config_vpn_security_profiles.json".')
 
     def import_vpn_security_profiles(self):
         """Импортировать список профилей безопасности VPN"""
         print('Импорт списка "Профили безопасности VPN" раздела "VPN":')
         try:
-            with open("data/vpn/config_vpn_security_profiles.json", "r") as fh:
+            with open("data/VPN/SecurityProfiles/config_vpn_security_profiles.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Профили безопасности VPN" не импортирован!\n\tНе найден файл "data/vpn/config_vpn_security_profiles.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Профили безопасности VPN" не импортирован!\n\tНе найден файл "data/VPN/SecurityProfiles/config_vpn_security_profiles.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -4033,8 +4335,8 @@ class UTM(UtmXmlRpc):
     def export_vpn_networks(self):
         """Выгрузить список сетей VPN"""
         print('Выгружается список "Сети VPN" раздела "VPN":')
-        if not os.path.isdir('data/vpn'):
-            os.makedirs('data/vpn')
+        if not os.path.isdir('data/VPN/VPNNetworks'):
+            os.makedirs('data/VPN/VPNNetworks')
 
         _, data = self.get_vpn_networks()
 
@@ -4045,18 +4347,18 @@ class UTM(UtmXmlRpc):
                 if x[0] == 'list_id':
                     x[1] = self.list_IP[x[1]]
 
-        with open("data/vpn/config_vpn_networks.json", "w") as fd:
+        with open("data/VPN/VPNNetworks/config_vpn_networks.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Сети VPN" выгружен в файл "data/vpn/config_vpn_networks.json".')
+        print(f'\tСписок "Сети VPN" выгружен в файл "data/VPN/VPNNetworks/config_vpn_networks.json".')
 
     def import_vpn_networks(self):
         """Импортировать список сетей VPN"""
         print('Импорт списка "Сети VPN" раздела "VPN":')
         try:
-            with open("data/vpn/config_vpn_networks.json", "r") as fh:
+            with open("data/VPN/VPNNetworks/config_vpn_networks.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Сети VPN" не импортирован!\n\tНе найден файл "data/vpn/config_vpn_networks.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Сети VPN" не импортирован!\n\tНе найден файл "data/VPN/VPNNetworks/config_vpn_networks.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -4089,8 +4391,8 @@ class UTM(UtmXmlRpc):
     def export_vpn_server_rules(self):
         """Выгрузить список серверных правил VPN"""
         print('Выгружается список "Серверные правила" раздела "VPN":')
-        if not os.path.isdir('data/vpn'):
-            os.makedirs('data/vpn')
+        if not os.path.isdir('data/VPN/ServerRules'):
+            os.makedirs('data/VPN/ServerRules')
 
         _, result = self.get_vpn_security_profiles()
         security_profiles = {x['id']: x['name'] for x in result}
@@ -4123,18 +4425,18 @@ class UTM(UtmXmlRpc):
             item['tunnel_id'] = vpn_networks[item['tunnel_id']]
             item['auth_profile_id'] = self.auth_profiles[item['auth_profile_id']]
 
-        with open("data/vpn/config_vpn_server_rules.json", "w") as fd:
+        with open("data/VPN/ServerRules/config_vpn_server_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Серверные правила" выгружен в файл "data/vpn/config_vpn_server_rules.json".')
+        print(f'\tСписок "Серверные правила" выгружен в файл "data/VPN/ServerRules/config_vpn_server_rules.json".')
 
     def import_vpn_server_rules(self):
         """Импортировать список серверных правил VPN"""
         print('Импорт списка "Серверные правила" раздела "VPN":')
         try:
-            with open("data/vpn/config_vpn_server_rules.json", "r") as fh:
+            with open("data/VPN/ServerRules/config_vpn_server_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Серверные правила" не импортирован!\n\tНе найден файл "data/vpn/config_vpn_server_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Серверные правила" не импортирован!\n\tНе найден файл "data/VPN/ServerRules/config_vpn_server_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -4210,8 +4512,8 @@ class UTM(UtmXmlRpc):
     def export_vpn_client_rules(self):
         """Выгрузить список клиентских правил VPN"""
         print('Выгружается список "Клиентские правила" раздела "VPN":')
-        if not os.path.isdir('data/vpn'):
-            os.makedirs('data/vpn')
+        if not os.path.isdir('data/VPN/ClientRules'):
+            os.makedirs('data/VPN/ClientRules')
 
         _, result = self.get_vpn_security_profiles()
         vpn_security_profiles = {x['id']: x['name'] for x in result}
@@ -4224,18 +4526,18 @@ class UTM(UtmXmlRpc):
             item.pop('cc', None)
             item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
 
-        with open("data/vpn/config_vpn_client_rules.json", "w") as fd:
+        with open("data/VPN/ClientRules/config_vpn_client_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Клиентские правила" выгружен в файл "data/vpn/config_vpn_client_rules.json".')
+        print(f'\tСписок "Клиентские правила" выгружен в файл "data/VPN/ClientRules/config_vpn_client_rules.json".')
 
     def import_vpn_client_rules(self):
         """Импортировать список клиентских правил VPN"""
         print('Импорт списка "Клиентские правила" раздела "VPN":')
         try:
-            with open("data/vpn/config_vpn_client_rules.json", "r") as fh:
+            with open("data/VPN/ClientRules/config_vpn_client_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Клиентские правила" не импортирован!\n\tНе найден файл "data/vpn/config_vpn_client_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Клиентские правила" не импортирован!\n\tНе найден файл "data/VPN/ClientRules/config_vpn_client_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -4274,22 +4576,22 @@ class UTM(UtmXmlRpc):
     def export_zones_list(self):
         """Выгрузить список зон"""
         print('Выгружается список "Зоны" раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/Zones'):
+            os.makedirs('data/Network/Zones')
 
         _, data = self.get_zones_list()
-        with open("data/network/config_zones.json", "w") as fd:
+        with open("data/Network/Zones/config_zones.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок зон выгружен в файл 'data/network/config_zones.json'.")
+        print(f"\tСписок зон выгружен в файл 'data/Network/Zones/config_zones.json'.")
 
     def import_zones(self):
         """Импортировать зоны на UTM"""
         print('Импорт списка "Зоны" раздела "Сеть":')
         try:
-            with open("data/network/config_zones.json", "r") as fd:
+            with open("data/Network/Zones/config_zones.json", "r") as fd:
                 zones = json.load(fd)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Зоны" не импортирован!\n\tНе найден файл "data/network/config_zones.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Зоны" не импортирован!\n\tНе найден файл "data/Network/Zones/config_zones.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for item in zones:
@@ -4311,8 +4613,8 @@ class UTM(UtmXmlRpc):
     def export_gateways_list(self):
         """Выгрузить список шлюзов"""
         print('Выгружается список "Шлюзы" раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/Gateways'):
+            os.makedirs('data/Network/Gateways')
 
         _, data = self.get_interfaces_list()
         iface_name = self.translate_iface_name(data)
@@ -4334,18 +4636,18 @@ class UTM(UtmXmlRpc):
                 item['is_automatic'] = False
                 item['vrf'] = 'default'
 
-        with open("data/network/config_gateways.json", "w") as fd:
+        with open("data/Network/Gateways/config_gateways.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Шлюзы" выгружен в файл "data/network/config_gateways.json".')
+        print(f'\tСписок "Шлюзы" выгружен в файл "data/Network/Gateways/config_gateways.json".')
 
     def import_gateways_list(self):
         """Импортировать список шлюзов"""
         print('Импорт списка "Шлюзы" раздела "Сеть":')
         try:
-            with open("data/network/config_gateways.json", "r") as fh:
+            with open("data/Network/Gateways/config_gateways.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Шлюзы" не импортирован!\n\tНе найден файл "data/network/config_gateways.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Шлюзы" не импортирован!\n\tНе найден файл "data/Network/Gateways/config_gateways.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -4375,23 +4677,23 @@ class UTM(UtmXmlRpc):
     def export_gateway_failover(self):
         """Выгрузить настройки проверки сети шлюзов"""
         print('Выгружаются настройки "Проверка сети" раздела "Сеть/Шлюзы":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/Gateways'):
+            os.makedirs('data/Network/Gateways')
 
         _, data = self.get_gateway_failover()
 
-        with open("data/network/config_gateway_failover.json", "w") as fd:
+        with open("data/Network/Gateways/config_gateway_failover.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tНастройки "Проверка сети" выгружены в файл "data/network/config_gateway_failover.json".')
+        print(f'\tНастройки "Проверка сети" выгружены в файл "data/Network/Gateways/config_gateway_failover.json".')
 
     def import_gateway_failover(self):
         """Импортировать список шлюзов"""
         print('Импорт настроек "Проверка сети" раздела "Сеть/Шлюзы":')
         try:
-            with open("data/network/config_gateway_failover.json", "r") as fh:
+            with open("data/Network/Gateways/config_gateway_failover.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mНастройки "Проверка сети" не импортированы!\n\tНе найден файл "data/network/config_gateway_failover.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mНастройки "Проверка сети" не импортированы!\n\tНе найден файл "data/Network/Gateways/config_gateway_failover.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         err, result = self.set_gateway_failover(data)
@@ -4403,8 +4705,8 @@ class UTM(UtmXmlRpc):
     def export_interfaces_list(self):
         """Выгрузить список интерфейсов"""
         print('Выгружается список "Интерфейсы" раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/Interfaces'):
+            os.makedirs('data/Network/Interfaces')
 
         _, result = self.get_netflow_profiles_list()
         self.list_netflow = {x['id']: x['name'] for x in result}
@@ -4468,18 +4770,18 @@ class UTM(UtmXmlRpc):
                         item['dhcp_relay'].pop('iface_id', None)
         data.sort(key=lambda x: x['name'])
 
-        with open("data/network/config_interfaces.json", "w") as fd:
+        with open("data/Network/Interfaces/config_interfaces.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок интерфейсов выгружен в файл "data/network/config_interfaces.json".')
+        print(f'\tСписок интерфейсов выгружен в файл "data/Network/Interfaces/config_interfaces.json".')
 
     def import_interfaces(self):
         """Импортировать интерфесы"""
         print('Импорт списка "Интерфейсы" раздела "Сеть":')
         try:
-            with open("data/network/config_interfaces.json", "r") as fh:
+            with open("data/Network/Interfaces/config_interfaces.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "Интерфейсы" не импортированы!\n\tНе найден файл "data/network/config_interfaces.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "Интерфейсы" не импортированы!\n\tНе найден файл "data/Network/Interfaces/config_interfaces.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         management_port = ''
@@ -4672,8 +4974,8 @@ class UTM(UtmXmlRpc):
     def export_dhcp_subnets(self):
         """Выгрузить список DHCP"""
         print('Выгружается список "DHCP" раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/DHCP'):
+            os.makedirs('data/Network/DHCP')
 
         _, data = self.get_interfaces_list()
         iface_name = self.translate_iface_name(data)
@@ -4683,18 +4985,18 @@ class UTM(UtmXmlRpc):
         for item in data:
             item['iface_id'] = iface_name[item['iface_id']]
 
-        with open("data/network/config_dhcp_subnets.json", "w") as fd:
+        with open("data/Network/DHCP/config_dhcp_subnets.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок подсетей DHCP выгружен в файл 'data/network/config_dhcp_subnets.json'.")
+        print(f"\tСписок подсетей DHCP выгружен в файл 'data/Network/DHCP/config_dhcp_subnets.json'.")
 
     def import_dhcp_subnets(self):
         """Добавить DHCP subnets на UTM"""
         print("Импорт DHCP subnets:")
         try:
-            with open("data/network/config_dhcp_subnets.json", "r") as fd:
+            with open("data/Network/DHCP/config_dhcp_subnets.json", "r") as fd:
                 subnets = json.load(fd)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок "DHCP" не импортирован!\n\tНе найден файл "data/network/config_dhcp_subnets.json.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок "DHCP" не импортирован!\n\tНе найден файл "data/Network/DHCP/config_dhcp_subnets.json.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         _, data = self.get_interfaces_list()
@@ -4730,8 +5032,8 @@ class UTM(UtmXmlRpc):
     def export_dns_config(self):
         """Выгрузить настройки DNS"""
         print('Выгружаются настройки DNS раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/DNS'):
+            os.makedirs('data/Network/DNS')
         params = (
             'use_cache_enabled',
             'enable_dns_filtering',
@@ -4745,31 +5047,31 @@ class UTM(UtmXmlRpc):
 
         dns_servers, dns_rules, static_records = self.get_dns_config()
 
-        with open("data/network/config_dns_servers.json", "w") as fd:
+        with open("data/Network/DNS/config_dns_servers.json", "w") as fd:
             json.dump(dns_servers, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок системных DNS серверов выгружен в файл 'data/network/config_dns_servers.json'.")
+        print(f"\tСписок системных DNS серверов выгружен в файл 'data/Network/DNS/config_dns_servers.json'.")
 
-        with open("data/network/config_dns_rules.json", "w") as fd:
+        with open("data/Network/DNS/config_dns_rules.json", "w") as fd:
             json.dump(dns_rules, fd, indent=4, ensure_ascii=False)
-        print(f"\tСписок правил DNS прокси выгружен в файл 'data/network/config_dns_rules.json'.")
+        print(f"\tСписок правил DNS прокси выгружен в файл 'data/Network/DNS/config_dns_rules.json'.")
 
-        with open("data/network/config_dns_static.json", "w") as fd:
+        with open("data/Network/DNS/config_dns_static.json", "w") as fd:
             json.dump(static_records, fd, indent=4, ensure_ascii=False)
-        print(f"\tСтатические записи DNS прокси выгружены в файл 'data/network/config_dns_static.json'.")
+        print(f"\tСтатические записи DNS прокси выгружены в файл 'data/Network/DNS/config_dns_static.json'.")
 
         _, data = self.get_settings_params(params)
-        with open("data/network/config_dns_proxy.json", "w") as fd:
+        with open("data/Network/DNS/config_dns_proxy.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f"\tНастройки DNS-прокси выгружены в файл 'data/network/config_dns_proxy.json'.")
+        print(f"\tНастройки DNS-прокси выгружены в файл 'data/Network/DNS/config_dns_proxy.json'.")
 
     def import_dns_proxy(self):
         """Импортировать настройки DNS прокси"""
         print('Импорт настроек DNS-прокси раздела "Сеть":')
         try:
-            with open("data/network/config_dns_proxy.json", "r") as fh:
+            with open("data/Network/DNS/config_dns_proxy.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mНастройки DNS-прокси не импортированы!\n\tНе найден файл "data/network/config_dns_proxy.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mНастройки DNS-прокси не импортированы!\n\tНе найден файл "data/Network/DNS/config_dns_proxy.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for key, value in data.items():
@@ -4782,10 +5084,10 @@ class UTM(UtmXmlRpc):
         """Импортировать список системных DNS серверов"""
         print('Импорт системных DNS серверов раздела "Сеть":')
         try:
-            with open("data/network/config_dns_servers.json", "r") as fh:
+            with open("data/Network/DNS/config_dns_servers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок системных DNS серверов не импортирован!\n\tНе найден файл "data/network/config_dns_servers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок системных DNS серверов не импортирован!\n\tНе найден файл "data/Network/DNS/config_dns_servers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for item in data:
@@ -4801,10 +5103,10 @@ class UTM(UtmXmlRpc):
         """Импортировать список правил DNS прокси"""
         print('Импорт списка правил DNS-прокси раздела "Сеть":')
         try:
-            with open("data/network/config_dns_rules.json", "r") as fh:
+            with open("data/Network/DNS/config_dns_rules.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок правил DNS прокси не импортирован!\n\tНе найден файл "data/network/config_dns_rules.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок правил DNS прокси не импортирован!\n\tНе найден файл "data/Network/DNS/config_dns_rules.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         dns_rules = [x['name'] for x in self._server.v1.dns.rules.list(self._auth_token, 0, 1000, {})['items']]
@@ -4824,10 +5126,10 @@ class UTM(UtmXmlRpc):
         """Импортировать статические записи DNS прокси"""
         print('Импорт статических записей DNS-прокси раздела "Сеть":')
         try:
-            with open("data/network/config_dns_static.json", "r") as fh:
+            with open("data/Network/DNS/config_dns_static.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСтатические записи DNS прокси не импортированы!\n\tНе найден файл "data/network/config_dns_static.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСтатические записи DNS прокси не импортированы!\n\tНе найден файл "data/Network/DNS/config_dns_static.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         for item in data:
@@ -4851,8 +5153,8 @@ class UTM(UtmXmlRpc):
     def export_wccp_list(self):
         """Выгрузить список правил WCCP"""
         print('Выгружается список "WCCP" раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/WCCP'):
+            os.makedirs('data/Network/WCCP')
 
         err, data = self.get_wccp_list()
         if err == 1:
@@ -4866,18 +5168,18 @@ class UTM(UtmXmlRpc):
                 for x in item['routers']:
                     x[1] = self.list_IP[x[1]] if x[0] == 'list_id' else x[1]
 
-        with open("data/network/config_wccp.json", "w") as fd:
+        with open("data/Network/WCCP/config_wccp.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "WCCP" выгружен в файл "data/network/config_wccp.json".')
+        print(f'\tСписок "WCCP" выгружен в файл "data/Network/WCCP/config_wccp.json".')
 
     def import_wccp_rules(self):
         """Импортировать список правил WCCP"""
         print('Импорт списка правил WCCP раздела "Сеть":')
         try:
-            with open("data/network/config_wccp.json", "r") as fh:
+            with open("data/Network/WCCP/config_wccp.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mСписок правил WCCP не импортирован!\n\tНе найден файл "data/network/config_wccp.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mСписок правил WCCP не импортирован!\n\tНе найден файл "data/Network/WCCP/config_wccp.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
@@ -4921,8 +5223,8 @@ class UTM(UtmXmlRpc):
             print('Выгружается список "Маршруты" раздела "Сеть":')
         else:
             print('Выгружается список "Виртуальные маршрутизаторы" раздела "Сеть":')
-        if not os.path.isdir('data/network'):
-            os.makedirs('data/network')
+        if not os.path.isdir('data/Network/VRF'):
+            os.makedirs('data/Network/VRF')
 
         _, data = self.get_interfaces_list()
         iface_name = self.translate_iface_name(data)
@@ -4943,6 +5245,8 @@ class UTM(UtmXmlRpc):
                 item['ifname'] = iface_name[item['iface_id']] if item['iface_id'] else 'undefined'
                 item.pop('iface_id', None)
             else:
+                if item['bgp']['as_number'] == "null":
+                    item['bgp']['as_number'] = 0
                 if item['routes']:
                     for x in item['routes']:
                         x.pop('id', None)
@@ -4960,9 +5264,9 @@ class UTM(UtmXmlRpc):
         else:
             routers = data
 
-        with open("data/network/config_routers.json", "w") as fd:
+        with open("data/Network/VRF/config_routers.json", "w") as fd:
             json.dump(routers, fd, indent=4, ensure_ascii=False)
-        print(f'\tСписок "Статические маршруты" выгружен в файл "data/network/config_routers.json".')
+        print(f'\tСписок "Статические маршруты" выгружен в файл "data/Network/VRF/config_routers.json".')
 
     def export_ospf_config(self):
         """Выгрузить конфигурацию OSPF (только для v.5)"""
@@ -4978,11 +5282,11 @@ class UTM(UtmXmlRpc):
                     'rip': {},
                     'pimsm': {},
                 },]
-            if not os.path.isdir('data/network'):
-                os.makedirs('data/network')
+            if not os.path.isdir('data/Network/VRF'):
+                os.makedirs('data/Network/VRF')
             else:
                 try:
-                    with open("data/network/config_routers.json", "r") as fh:
+                    with open("data/Network/VRF/config_routers.json", "r") as fh:
                         data = json.load(fh)
                 except FileNotFoundError as err:
                     pass
@@ -5004,9 +5308,9 @@ class UTM(UtmXmlRpc):
             for item in data:
                 if item['name'] == 'default':
                     item['ospf'] = ospf
-                    with open("data/network/config_routers.json", "w") as fd:
+                    with open("data/Network/VRF/config_routers.json", "w") as fd:
                         json.dump(data, fd, indent=4, ensure_ascii=False)
-                    print(f'\tКонфигурация OSPF выгружена в файл "data/network/config_routers.json".')
+                    print(f'\tКонфигурация OSPF выгружена в файл "data/Network/VRF/config_routers.json".')
                     break
 
     def export_bgp_config(self):
@@ -5021,11 +5325,11 @@ class UTM(UtmXmlRpc):
                     'rip': {},
                     'pimsm': {},
                 },]
-            if not os.path.isdir('data/network'):
-                os.makedirs('data/network')
+            if not os.path.isdir('data/Network/VRF'):
+                os.makedirs('data/Network/VRF')
             else:
                 try:
-                    with open("data/network/config_routers.json", "r") as fh:
+                    with open("data/Network/VRF/config_routers.json", "r") as fh:
                         data = json.load(fh)
                 except FileNotFoundError as err:
                     pass
@@ -5050,23 +5354,23 @@ class UTM(UtmXmlRpc):
             for item in data:
                 if item['name'] == 'default':
                     item['bgp'] = bgp
-                    with open("data/network/config_routers.json", "w") as fd:
+                    with open("data/Network/VRF/config_routers.json", "w") as fd:
                         json.dump(data, fd, indent=4, ensure_ascii=False)
-                    print(f'\tКонфигурация BGP выгружена в файл "data/network/config_routers.json".')
+                    print(f'\tКонфигурация BGP выгружена в файл "data/Network/VRF/config_routers.json".')
                     break
 
     def import_virt_routes(self):
         """Импортировать список виртуальных маршрутизаторов"""
         print(f'Импорт списка "Виртуальные маршрутизаторы" раздела "Сеть":')
         try:
-            with open("data/network/config_routers.json", "r") as fh:
+            with open("data/Network/VRF/config_routers.json", "r") as fh:
                 data = json.load(fh)
         except FileNotFoundError as err:
-            print(f'\t\033[31mВиртуальные маршрутизаторы не импортированы!\n\tНе найден файл "data/network/config_routers.json" с сохранённой конфигурацией!\033[0;0m')
+            print(f'\t\033[31mВиртуальные маршрутизаторы не импортированы!\n\tНе найден файл "data/Network/VRF/config_routers.json" с сохранённой конфигурацией!\033[0;0m')
             return
 
         if not data:
-            print('\tНет данных для импорта. Файл "data/network/config_routers.json" пуст.')
+            print('\tНет данных для импорта. Файл "data/Network/VRF/config_routers.json" пуст.')
             return
 
         virt_routers = {x['name']: x['id'] for x in self.get_routers_list()}
@@ -5126,7 +5430,7 @@ class UTM(UtmXmlRpc):
                     print(f'\033[31m{result}\033[0m')
                 else:
                     print(f'\tСоздано правило SNMP "{item["name"]}".')
-            if item['auth_type']:
+            if item['version'] == 3:
                 print(f'\t\033[36mВ правиле "{item["name"]}" используется SNMP v3.\n\tПароли не переносятся, поэтому заново введите пароль для аутентификации и шифрования.\033[0m')
 
     def export_notification_alert_rules(self):
@@ -5202,6 +5506,33 @@ class UTM(UtmXmlRpc):
                         print(f'\tСоздано правило оповещения "{item["name"]}".')
 
 ################################## Служебные функции ###################################
+    def get_services_for_v6(self, rule_name, service_list):
+        new_service_list = []
+        if int(self.version[:1]) < 7:
+            for item in service_list:
+                try:
+                    if item[0] == 'service':
+                        new_service_list.append(self.services[item[1]])
+                except KeyError as err:
+                    print(f'\t\033[33mНе найден сервис {item} для правила "{rule_name}".\033[0m')
+        return new_service_list
+
+    def get_services(self, rule_name, service_list):
+        new_service_list = []
+        if int(self.version[:1]) < 7:
+            for item in service_list:
+                try:
+                    new_service_list.append(['service', self.services[item]])
+                except KeyError as err:
+                    print(f'\t\033[33mНе найден сервис {item} для правила "{rule_name}".\033[0m')
+        else:
+            for item in service_list:
+                try:
+                    new_service_list.append(['service', self.services[item[1]]] if item[0] == 'service' else ['list_id', self.services_groups[item[1]]])
+                except KeyError as err:
+                    print(f'\t\033[33mНе найден сервис {item} для правила "{rule_name}".\033[0m')
+        return new_service_list
+
     def translate_iface_name(self, data):
         if self.version.startswith('5'):
             iface_name = {x['name']: x['name'].replace('eth', 'port', 1) if x['name'].startswith('eth') else x['name'].replace('rename', 'port', 1) for x in data}
@@ -5292,11 +5623,12 @@ class UTM(UtmXmlRpc):
             try:
                 item['time_restrictions'] = [self.list_calendar[x] for x in item['time_restrictions']]
             except KeyError as err:
-                print(f'\t\033[33mНе найден календарь {err} для правила "{item["name"]}".\n\tЗагрузите списки URL и повторите попытку.\033[0m')
+                print(f'\t\033[33mНе найден календарь {err} для правила "{item["name"]}".\n\tЗагрузите календари в библиотеку и повторите попытку.\033[0m')
                 item['time_restrictions'] = []
 
     def get_apps(self, array_apps):
         """Определяем имя приложения по ID при экспорте и ID приложения по имени при импорте"""
+        list_bad_app = []
         for app in array_apps:
             if app[0] == 'ro_group':
                 if app[1] == 0:
@@ -5314,10 +5646,16 @@ class UTM(UtmXmlRpc):
                 except KeyError as err:
                     print(f'\t\033[33mНе найдена группа приложений №{err}.\n\tЗагрузите приложения и повторите попытку.\033[0m')
             elif app[0] == 'app':
-                try:
-                    app[1] = self.l7_apps[app[1]]
-                except KeyError as err:
-                    print(f'\t\033[33mНе найдено приложение №{err}.\n\tВозможно нет лицензии, и UTM не получил список приложений l7.\n\tЗагрузите приложения или установите лицензию и повторите попытку.\033[0m')
+                if int(self.version[:1]) < 7:
+                    try:
+                        app[1] = self.l7_apps[app[1]]
+                    except KeyError as err:
+                        print(f'\t\033[33mНе найдено приложение №{err}.\n\tВозможно нет лицензии, и UTM не получил список приложений l7.\n\tЗагрузите приложения или установите лицензию и повторите попытку.\033[0m')
+                else:
+                    list_bad_app.append(app)
+                    print(f'\t\033[33mПриложение {app[1]} не добавлено так как отдельное приложение добавить нельзя.\n\t\tСоздайте группу для данного приложения и повторите попытку.\033[0m')
+        for app in list_bad_app:
+            array_apps.remove(app)
 
     def get_names_users_and_groups(self, item):
         """
@@ -5427,8 +5765,8 @@ def menu2(utm, mode):
     print(f"Выберите раздел для {'экспорта' if mode == 1 else 'импорта'}.\n")
     print("1   - Библиотека")
     print("2   - Сеть")
-    print("3   - Настройки")
-    print("4   - Пользователи и устройства")
+    print("3   - Пользователи и устройства")
+    print("4   - Настройки")
     print("5   - Политики сети")
     print("6   - Политики безопасности")
     print("7   - Глобальный портал")
@@ -5461,24 +5799,27 @@ def menu3(utm, mode, section):
         if section == 1:
             print('1   - Экспортировать список "Морфология" раздела "Библиотеки".')
             print('2   - Экспортировать список "Сервисы" раздела "Библиотеки".')
-            print('3   - Экспортировать список "IP-адреса" раздела "Библиотеки".')
-            print('4   - Экспортировать список "UserAgent браузеров" раздела "Библиотеки".')
-            print('5   - Экспортировать список "Типы контента" раздела "Библиотеки".')
-            print('6   - Экспортировать список "Списки URL" раздела "Библиотеки".')
-            print('7   - Экспортировать список "Календари" раздела "Библиотеки".')
-            print('8   - Экспортировать список "Полосы пропускания" раздела "Библиотеки".')
-            print('9   - Экспортировать список "Профили АСУ ТП" раздела "Библиотеки".')
-            print('10  - Экспортировать список "Шаблоны страниц" раздела "Библиотеки".')
-            print('11  - Экспортировать список "Категории URL" раздела "Библиотеки".')
-            print('12  - Экспортировать список "Изменённые категории URL" раздела "Библиотеки".')
-            print('13  - Экспортировать список "Приложения" раздела "Библиотеки".')
-            print('14  - Экспортировать список "Почтовые адреса" раздела "Библиотеки".')
-            print('15  - Экспортировать список "Номера телефонов" раздела "Библиотеки".')
-            print('16  - Экспортировать список "Профили СОВ" раздела "Библиотеки".')
-            print('17  - Экспортировать список "Профили оповещений" раздела "Библиотеки".')
-            print('18  - Экспортировать список "Профили netflow" раздела "Библиотеки".')
-            if utm.version.startswith('6'):
-                print('19  - Экспортировать список "Профили SSL" раздела "Библиотеки".')
+            if int(utm.version[:1]) > 6:
+                print('3   - Экспортировать списки "Группы сервисов" раздела "Библиотеки".')
+            print('4   - Экспортировать список "IP-адреса" раздела "Библиотеки".')
+            print('5   - Экспортировать список "UserAgent браузеров" раздела "Библиотеки".')
+            print('6   - Экспортировать список "Типы контента" раздела "Библиотеки".')
+            print('7   - Экспортировать список "Списки URL" раздела "Библиотеки".')
+            print('8   - Экспортировать список "Календари" раздела "Библиотеки".')
+            print('9   - Экспортировать список "Полосы пропускания" раздела "Библиотеки".')
+            if int(utm.version[:1]) < 7:
+                print('10  - Экспортировать список "Профили АСУ ТП" раздела "Библиотеки".')
+            print('11  - Экспортировать список "Шаблоны страниц" раздела "Библиотеки".')
+            print('12  - Экспортировать список "Категории URL" раздела "Библиотеки".')
+            print('13  - Экспортировать список "Изменённые категории URL" раздела "Библиотеки".')
+            print('14  - Экспортировать список "Приложения" раздела "Библиотеки".')
+            print('15  - Экспортировать список "Почтовые адреса" раздела "Библиотеки".')
+            print('16  - Экспортировать список "Номера телефонов" раздела "Библиотеки".')
+            print('17  - Экспортировать список "Профили СОВ" раздела "Библиотеки".')
+            print('18  - Экспортировать список "Профили оповещений" раздела "Библиотеки".')
+            print('19  - Экспортировать список "Профили netflow" раздела "Библиотеки".')
+            if int(utm.version[:1]) > 5:
+                print('20  - Экспортировать список "Профили SSL" раздела "Библиотеки".')
             print('\033[36m99  - Экспортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
@@ -5500,6 +5841,19 @@ def menu3(utm, mode, section):
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
         elif section == 3:
+            print("1   - Экспортировать список локальных групп.")
+            print("2   - Экспортировать список локальных пользователей.")
+            print('3   - Экспортировать список "Профили MFA".')
+            print('4   - Экспортировать список "Серверы авторизации".')
+            print('5   - Экспортировать список "Профили авторизации".')
+            print('6   - Экспортировать список "Captive-профили".')
+            print('7   - Экспортировать список "Captive-портал".')
+            if int(utm.version[:1]) < 7:
+                print('8   - Экспортировать список "Политики BYOD".')
+            print('\033[36m99  - Экспортировать всё.\033[0m')
+            print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
+            print("\033[33m0   - Выход.\033[0m")
+        elif section == 4:
             print('1   - Экспортировать настройки интерфейса веб-консоли раздела "UserGate/Настройки".')
             print('2   - Экспортировать настройки NTP раздела "UserGate/Настройки".')
             print('3   - Экспортировать настройки Модулей и кэширования HTTP раздела "UserGate/Настройки".')
@@ -5508,18 +5862,6 @@ def menu3(utm, mode, section):
             print('6   - Экспортировать настройки паролей администраторов раздела "UserGate/Администраторы".')
             print('7   - Экспортировать список администраторов раздела "UserGate/Администраторы".')
             print('8   - Экспортировать список "Сертификаты" раздела "UserGate".')
-            print('\033[36m99  - Экспортировать всё.\033[0m')
-            print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
-            print("\033[33m0   - Выход.\033[0m")
-        elif section == 4:
-            print("1   - Экспортировать список локальных групп.")
-            print("2   - Экспортировать список локальных пользователей.")
-            print('3   - Экспортировать список "Профили MFA".')
-            print('4   - Экспортировать список "Серверы авторизации".')
-            print('5   - Экспортировать список "Профили авторизации".')
-            print('6   - Экспортировать список "Captive-профили".')
-            print('7   - Экспортировать список "Captive-портал".')
-            print('8   - Экспортировать список "Политики BYOD".')
             print('\033[36m99  - Экспортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
@@ -5534,17 +5876,20 @@ def menu3(utm, mode, section):
         elif section == 6:
             print("1   - Экспортировать правила фильтрации контента.")
             print("2   - Экспортировать правила веб-безопасности.")
-            print("3   - Экспортировать правила инспектирования SSL.")
-            if utm.version.startswith('6'):
-                print("4   - Экспортировать правила инспектирования SSH.")
-            print("5   - Экспортировать правила СОВ.")
-            print("6   - Экспортировать правила АСУ ТП.")
-            print("7   - Экспортировать сценарии.")
-            print('8   - Экспортировать список "Защита почтового трафика".')
-            print('9   - Экспортировать список "ICAP-серверы".')
-            print('10   - Экспортировать список "ICAP-правила".')
-            print('11   - Экспортировать список "Профили DoS".')
-            print('12   - Экспортировать список "Правила защиты DoS".')
+            if int(utm.version[:1]) > 6:
+                print("3   - Экспортировать правила инспектирования туннелей.")
+            print("4   - Экспортировать правила инспектирования SSL.")
+            if int(utm.version[:1]) > 5:
+                print("5   - Экспортировать правила инспектирования SSH.")
+            print("6   - Экспортировать правила СОВ.")
+            if int(utm.version[:1]) < 7:
+                print("7   - Экспортировать правила АСУ ТП.")
+            print("8   - Экспортировать сценарии.")
+            print('9   - Экспортировать список "Защита почтового трафика".')
+            print('10  - Экспортировать список "ICAP-серверы".')
+            print('11  - Экспортировать список "ICAP-правила".')
+            print('12  - Экспортировать список "Профили DoS".')
+            print('13  - Экспортировать список "Правила защиты DoS".')
             print('\033[36m99  - Экспортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
@@ -5573,24 +5918,27 @@ def menu3(utm, mode, section):
         if section == 1:
             print("1   - Импортировать списки морфологии.")
             print('2   - Импортировать список "Сервисы" раздела "Библиотеки".')
-            print('3   - Импортировать список "IP-адреса" раздела "Библиотеки".')
-            print('4   - Импортировать список "UserAgent браузеров" раздела "Библиотеки".')
-            print('5   - Импортировать список "Типы контента" раздела "Библиотеки".')
-            print('6   - Импортировать "Список URL" раздела "Библиотеки".')
-            print('7   - Импортировать список "Календари" раздела "Библиотеки".')
-            print('8   - Импортировать список "Полосы пропускания" раздела "Библиотеки".')
-            print('9   - Импортировать список "Профили АСУ ТП" раздела "Библиотеки".')
-            print('10  - Импортировать список "Шаблоны страниц" раздела "Библиотеки".')
-            print('11  - Импортировать список "Категории URL" раздела "Библиотеки".')
-            print('12  - Импортировать список "Изменённые категории URL" раздела "Библиотеки".')
-            print('13  - Импортировать список "Приложения" раздела "Библиотеки".')
-            print('14  - Импортировать список "Почтовые адреса" раздела "Библиотеки".')
-            print('15  - Импортировать список "Номера телефонов" раздела "Библиотеки".')
-            print('16  - Импортировать список "Профили СОВ" раздела "Библиотеки".')
-            print('17  - Импортировать список "Профили оповещений" раздела "Библиотеки".')
-            print('18  - Импортировать список "Профили netflow" раздела "Библиотеки".')
-            if utm.version.startswith('6'):
-                print('19  - Импортировать список "Профили SSL" раздела "Библиотеки".')
+            if int(utm.version[:1]) > 6:
+                print('3   - Импортировать списки "Группы сервисов" раздела "Библиотеки".')
+            print('4   - Импортировать список "IP-адреса" раздела "Библиотеки".')
+            print('5   - Импортировать список "UserAgent браузеров" раздела "Библиотеки".')
+            print('6   - Импортировать список "Типы контента" раздела "Библиотеки".')
+            print('7   - Импортировать "Список URL" раздела "Библиотеки".')
+            print('8   - Импортировать список "Календари" раздела "Библиотеки".')
+            print('9   - Импортировать список "Полосы пропускания" раздела "Библиотеки".')
+            if int(utm.version[:1]) < 7:
+                print('10   - Импортировать список "Профили АСУ ТП" раздела "Библиотеки".')
+            print('11  - Импортировать список "Шаблоны страниц" раздела "Библиотеки".')
+            print('12  - Импортировать список "Категории URL" раздела "Библиотеки".')
+            print('13  - Импортировать список "Изменённые категории URL" раздела "Библиотеки".')
+            print('14  - Импортировать список "Приложения" раздела "Библиотеки".')
+            print('15  - Импортировать список "Почтовые адреса" раздела "Библиотеки".')
+            print('16  - Импортировать список "Номера телефонов" раздела "Библиотеки".')
+            print('17  - Импортировать список "Профили СОВ" раздела "Библиотеки".')
+            print('18  - Импортировать список "Профили оповещений" раздела "Библиотеки".')
+            print('19  - Импортировать список "Профили netflow" раздела "Библиотеки".')
+            if int(utm.version[:1]) > 5:
+                print('20  - Импортировать список "Профили SSL" раздела "Библиотеки".')
             print('\033[36m99  - Импортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
@@ -5607,28 +5955,30 @@ def menu3(utm, mode, section):
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
         elif section == 3:
-            print('1   - Импортировать настройки интерфейса веб-консоли раздела "UserGate/Настройки".')
-            print('2   - Импортировать настройки NTP раздела "UserGate/Настройки".')
-            print('3   - Импортировать настройки Модулей и кэширования HTTP раздела "UserGate/Настройки".')
-            print('4   - Импортировать список "Профили администраторов" раздела "UserGate/Администраторы".')
-            print('5   - Импортировать настройки паролей администраторов раздела "UserGate/Администраторы".')
-            print('6   - Импортировать список администраторов раздела "UserGate/Администраторы".')
+            print("1   - Импортировать список серверов авторизации LDAP.")
+            print("2   - Импортировать список серверов авторизации NTLM.")
+            print("3   - Импортировать список серверов авторизации RADIUS.")
+            print("4   - Импортировать список серверов авторизации TACACS.")
+            print("5   - Импортировать список серверов авторизации SAML.")
+            print('6   - Импортировать список "Профили авторизации".')
+            print('7   - Импортировать список "Captive-профили".')
+            print('8   - Импортировать список "Captive-портал".')
+            print("9   - Импортировать список локальных групп.")
+            print("10  - Импортировать список локальных пользователей.")
+            print('11  - Импортировать список "Профили MFA".')
+            if int(utm.version[:1]) < 7:
+                print('12  - Импортировать список "Политики BYOD".')
             print('\033[36m99  - Импортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
         elif section == 4:
-            print("1   - Импортировать список локальных групп.")
-            print("2   - Импортировать список локальных пользователей.")
-            print('3   - Импортировать список "Профили MFA".')
-            print("4   - Импортировать список серверов авторизации LDAP.")
-            print("5   - Импортировать список серверов авторизации NTLM.")
-            print("6   - Импортировать список серверов авторизации RADIUS.")
-            print("7   - Импортировать список серверов авторизации TACACS.")
-            print("8   - Импортировать список серверов авторизации SAML.")
-            print('9   - Импортировать список "Профили авторизации".')
-            print('10  - Импортировать список "Captive-профили".')
-            print('11  - Импортировать список "Captive-портал".')
-            print('12  - Импортировать список "Политики BYOD".')
+            print('1   - Импортировать настройки интерфейса веб-консоли раздела "UserGate/Настройки".')
+            print('2   - Импортировать настройки NTP раздела "UserGate/Настройки".')
+            print('3   - Импортировать настройки Модулей и кэширования HTTP раздела "UserGate/Настройки".')
+            print('4   - Импортировать настройки Веб-портала раздела "UserGate/Настройки".')
+            print('5   - Импортировать настройки паролей администраторов раздела "UserGate/Администраторы".')
+            print('6   - Импортировать список "Профили администраторов" раздела "UserGate/Администраторы".')
+            print('7   - Импортировать список администраторов раздела "UserGate/Администраторы".')
             print('\033[36m99  - Импортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
@@ -5636,7 +5986,8 @@ def menu3(utm, mode, section):
             print("1   - Импортировать Сценарии.")
             print("2   - Импортировать правила межсетевого экрана.")
             print("3   - Импортировать правила NAT.")
-            print('4   - Импортировать список "ICAP-серверы".')
+            print('4   - Импортировать список "ICAP-серверы" из раздела "Политики безопасности".')
+            print('5   - Импортировать список "Серверы reverse-прокси" раздела "Глобальный портал".')
             print("6   - Импортировать правила балансировки нагрузки.")
             print("7   - Импортировать правила пропускной способности.")
             print('\033[36m99  - Импортировать всё.\033[0m')
@@ -5645,14 +5996,19 @@ def menu3(utm, mode, section):
         elif section == 6:
             print('1   - Импортировать список "Фильтрация контента".')
             print('2   - Импортировать список "Веб-безопасность".')
-            print('3   - Импортировать список "Инспектирование SSL".')
-            print('4   - Импортировать список "Инспектирование SSH".')
-            print('5   - Импортировать правила "СОВ".')
-            print('6   - Импортировать список "Правила АСУ ТП".')
-            print('7   - Импортировать список "Защита почтового трафика".')
-            print('8   - Импортировать список "ICAP-правила".')
-            print('9   - Импортировать список "Профили DoS".')
-            print('10  - Импортировать список "Правила защиты DoS".')
+            if int(utm.version[:1]) > 6:
+                print('3   - Импортировать список "Инспектирование туннелей".')
+            print('4   - Импортировать список "Инспектирование SSL".')
+            print('5   - Импортировать список "Инспектирование SSH".')
+            print('6   - Импортировать правила "СОВ".')
+            if int(utm.version[:1]) < 7:
+                print('7   - Импортировать список "Правила АСУ ТП".')
+            print("8   - Импортировать Сценарии.")
+            print('9   - Импортировать список "Защита почтового трафика".')
+            print('10  - Импортировать список "ICAP-серверы".')
+            print('11  - Импортировать список "ICAP-правила".')
+            print('12  - Импортировать список "Профили DoS".')
+            print('13  - Импортировать список "Правила защиты DoS".')
             print('\033[36m99  - Импортировать всё.\033[0m')
             print('\033[35m999 - Вверх (вернуться в предыдущее меню).\033[0m')
             print("\033[33m0   - Выход.\033[0m")
@@ -5683,7 +6039,7 @@ def menu3(utm, mode, section):
         try:
             command = int(input("\nВведите номер нужной операции: "))
             print("")
-            if command not in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 99, 999]:
+            if command not in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 99, 999]:
                 print("Вы ввели несуществующую команду.")
             elif command == 0:
                 utm.logout()
@@ -5707,42 +6063,45 @@ def executor(utm, mode, section, command):
             elif command == 102:
                 utm.export_services_list()
             elif command == 103:
-                utm.export_IP_lists()
+                utm.export_services_groups()
             elif command == 104:
-                utm.export_useragent_lists()
+                utm.export_IP_lists()
             elif command == 105:
-                utm.export_mime_lists()
+                utm.export_useragent_lists()
             elif command == 106:
-                utm.export_url_lists()
+                utm.export_mime_lists()
             elif command == 107:
-                utm.export_time_restricted_lists()
+                utm.export_url_lists()
             elif command == 108:
-                utm.export_shaper_list()
+                utm.export_time_restricted_lists()
             elif command == 109:
-                utm.export_scada_list()
+                utm.export_shaper_list()
             elif command == 110:
-                utm.export_templates_list()
+                utm.export_scada_list()
             elif command == 111:
-                utm.export_categories_groups()
+                utm.export_templates_list()
             elif command == 112:
-                utm.export_custom_url_list()
+                utm.export_categories_groups()
             elif command == 113:
-                utm.export_application_groups()
+                utm.export_custom_url_list()
             elif command == 114:
-                utm.export_nlist_groups('emailgroup')
+                utm.export_application_groups()
             elif command == 115:
-                utm.export_nlist_groups('phonegroup')
+                utm.export_nlist_groups('emailgroup')
             elif command == 116:
-                utm.export_ips_profiles()
+                utm.export_nlist_groups('phonegroup')
             elif command == 117:
-                utm.export_notification_profiles_list()
+                utm.export_ips_profiles()
             elif command == 118:
-                utm.export_netflow_profiles_list()
+                utm.export_notification_profiles_list()
             elif command == 119:
+                utm.export_netflow_profiles_list()
+            elif command == 120:
                 utm.export_ssl_profiles_list()
             elif command == 199:
                 utm.export_morphology_lists()
                 utm.export_services_list()
+                utm.export_services_groups()
                 utm.export_IP_lists()
                 utm.export_useragent_lists()
                 utm.export_mime_lists()
@@ -5794,56 +6153,68 @@ def executor(utm, mode, section, command):
                 utm.export_wccp_list()
 
             elif command == 301:
-                utm.export_ui()
+                utm.export_groups_lists()
             elif command == 302:
-                utm.export_ntp()
+                utm.export_users_lists()
             elif command == 303:
-                utm.export_settings()
+                utm.export_2fa_profiles()
             elif command == 304:
-                utm.export_proxy_portal()
+                utm.export_auth_servers()
             elif command == 305:
-                utm.export_admin_profiles_list()
+                utm.export_auth_profiles()
             elif command == 306:
-                utm.export_admin_config()
+                utm.export_captive_profiles()
             elif command == 307:
-                utm.export_admins_list()
+                utm.export_captive_portal_rules()
             elif command == 308:
-                utm.export_certivicates_list()
+                utm.export_byod_policy()
             elif command == 399:
-                utm.export_ui()
-                utm.export_ntp()
-                utm.export_settings()
-                utm.export_proxy_portal()
-                utm.export_admin_profiles_list()
-                utm.export_admin_config()
-                utm.export_admins_list()
-                utm.export_certivicates_list()
+                utm.export_groups_lists()
+                utm.export_users_lists()
+                utm.export_2fa_profiles()
+                utm.export_auth_servers()
+                utm.export_auth_profiles()
+                utm.export_captive_profiles()
+                utm.export_captive_portal_rules()
+                utm.export_byod_policy()
 
             elif command == 401:
-                utm.export_groups_lists()
+                utm.export_ui()
             elif command == 402:
-                utm.export_users_lists()
+                utm.export_ntp()
             elif command == 403:
-                utm.export_2fa_profiles()
+                utm.export_settings()
+                utm.export_snmp_engine()
+                utm.export_pcap_settings()
+                utm.export_tracker_settings()
+                utm.export_statistics_status()
+                utm.export_mc_status()
+                utm.export_update_schedule()
             elif command == 404:
-                utm.export_auth_servers()
+                utm.export_proxy_portal()
             elif command == 405:
-                utm.export_auth_profiles()
+                utm.export_admin_profiles_list()
             elif command == 406:
-                utm.export_captive_profiles()
+                utm.export_admin_config()
             elif command == 407:
-                utm.export_captive_portal_rules()
+                utm.export_admins_list()
             elif command == 408:
-                utm.export_byod_policy()
+                utm.export_certivicates_list()
             elif command == 499:
-                utm.export_groups_lists()
-                utm.export_users_lists()
-                utm.export_2fa_profiles()
-                utm.export_auth_servers()
-                utm.export_auth_profiles()
-                utm.export_captive_profiles()
-                utm.export_captive_portal_rules()
-                utm.export_byod_policy()
+                utm.export_ui()
+                utm.export_ntp()
+                utm.export_settings()
+                utm.export_snmp_engine()
+                utm.export_pcap_settings()
+                utm.export_tracker_settings()
+                utm.export_statistics_status()
+                utm.export_mc_status()
+                utm.export_update_schedule()
+                utm.export_proxy_portal()
+                utm.export_admin_profiles_list()
+                utm.export_admin_config()
+                utm.export_admins_list()
+                utm.export_certivicates_list()
 
             elif command == 501:
                 utm.export_firewall_rules()
@@ -5864,28 +6235,31 @@ def executor(utm, mode, section, command):
             elif command == 602:
                 utm.export_safebrowsing_rules()
             elif command == 603:
-                utm.export_ssldecrypt_rules()
+                utm.export_tunnel_inspection_rules()
             elif command == 604:
-                utm.export_sshdecrypt_rules()
+                utm.export_ssldecrypt_rules()
             elif command == 605:
-                utm.export_idps_rules()
+                utm.export_sshdecrypt_rules()
             elif command == 606:
-                utm.export_scada_rules()
+                utm.export_idps_rules()
             elif command == 607:
-                utm.export_scenarios()
+                utm.export_scada_rules()
             elif command == 608:
-                utm.export_mailsecurity_rules()
+                utm.export_scenarios()
             elif command == 609:
-                utm.export_icap_servers()
+                utm.export_mailsecurity_rules()
             elif command == 610:
-                utm.export_icap_rules()
+                utm.export_icap_servers()
             elif command == 611:
-                utm.export_dos_profiles()
+                utm.export_icap_rules()
             elif command == 612:
+                utm.export_dos_profiles()
+            elif command == 613:
                 utm.export_dos_rules()
             elif command == 699:
                 utm.export_content_rules()
                 utm.export_safebrowsing_rules()
+                utm.export_tunnel_inspection_rules()
                 utm.export_ssldecrypt_rules()
                 utm.export_sshdecrypt_rules()
                 utm.export_idps_rules()
@@ -5933,6 +6307,7 @@ def executor(utm, mode, section, command):
             elif command == 9999:
                 utm.export_morphology_lists()
                 utm.export_services_list()
+                utm.export_services_groups()
                 utm.export_IP_lists()
                 utm.export_useragent_lists()
                 utm.export_mime_lists()
@@ -5960,14 +6335,6 @@ def executor(utm, mode, section, command):
                 utm.export_ospf_config()
                 utm.export_bgp_config()
                 utm.export_wccp_list()
-                utm.export_ui()
-                utm.export_ntp()
-                utm.export_settings()
-                utm.export_proxy_portal()
-                utm.export_admin_profiles_list()
-                utm.export_admin_config()
-                utm.export_admins_list()
-                utm.export_certivicates_list()
                 utm.export_groups_lists()
                 utm.export_users_lists()
                 utm.export_2fa_profiles()
@@ -5976,12 +6343,27 @@ def executor(utm, mode, section, command):
                 utm.export_captive_profiles()
                 utm.export_captive_portal_rules()
                 utm.export_byod_policy()
+                utm.export_ui()
+                utm.export_ntp()
+                utm.export_settings()
+                utm.export_snmp_engine()
+                utm.export_pcap_settings()
+                utm.export_tracker_settings()
+                utm.export_statistics_status()
+                utm.export_mc_status()
+                utm.export_update_schedule()
+                utm.export_proxy_portal()
+                utm.export_admin_profiles_list()
+                utm.export_admin_config()
+                utm.export_admins_list()
+                utm.export_certivicates_list()
                 utm.export_firewall_rules()
                 utm.export_nat_rules()
                 utm.export_loadbalancing_rules()
                 utm.export_shaper_rules()
                 utm.export_content_rules()
                 utm.export_safebrowsing_rules()
+                utm.export_tunnel_inspection_rules()
                 utm.export_ssldecrypt_rules()
                 utm.export_sshdecrypt_rules()
                 utm.export_idps_rules()
@@ -6016,7 +6398,7 @@ def executor(utm, mode, section, command):
                 if input_value == " ":
                     break
     else:
-        if utm.version.startswith('6'):
+        if int(utm.version[:1]) > 5:
             utm.init_struct_for_import()
             try:
                 if command == 101:
@@ -6024,42 +6406,45 @@ def executor(utm, mode, section, command):
                 elif command == 102:
                     utm.import_services()
                 elif command == 103:
-                    utm.import_IP_lists()
+                    utm.import_services_groups()
                 elif command == 104:
-                    utm.import_useragent_lists()
+                    utm.import_IP_lists()
                 elif command == 105:
-                    utm.import_mime_lists()
+                    utm.import_useragent_lists()
                 elif command == 106:
-                    utm.import_url_lists()
+                    utm.import_mime_lists()
                 elif command == 107:
-                    utm.import_time_restricted_lists()
+                    utm.import_url_lists()
                 elif command == 108:
-                    utm.import_shaper()
+                    utm.import_time_restricted_lists()
                 elif command == 109:
-                    utm.import_scada_list()
+                    utm.import_shaper()
                 elif command == 110:
-                    utm.import_templates_list()
+                    utm.import_scada_list()
                 elif command == 111:
-                    utm.import_categories_groups()
+                    utm.import_templates_list()
                 elif command == 112:
-                    utm.import_custom_url_list()
+                    utm.import_categories_groups()
                 elif command == 113:
-                    utm.import_application_groups()
+                    utm.import_custom_url_list()
                 elif command == 114:
-                    utm.import_nlist_groups('emailgroup')
+                    utm.import_application_groups()
                 elif command == 115:
-                    utm.import_nlist_groups('phonegroup')
+                    utm.import_nlist_groups('emailgroup')
                 elif command == 116:
-                    utm.import_ips_profiles()
+                    utm.import_nlist_groups('phonegroup')
                 elif command == 117:
-                    utm.import_notification_profiles()
+                    utm.import_ips_profiles()
                 elif command == 118:
-                    utm.import_netflow_profiles()
+                    utm.import_notification_profiles()
                 elif command == 119:
+                    utm.import_netflow_profiles()
+                elif command == 120:
                     utm.import_ssl_profiles()
                 elif command == 199:
                     utm.import_morphology()
                     utm.import_services()
+                    utm.import_services_groups()
                     utm.import_IP_lists()
                     utm.import_useragent_lists()
                     utm.import_mime_lists()
@@ -6105,63 +6490,66 @@ def executor(utm, mode, section, command):
                     utm.import_wccp_rules()
 
                 elif command == 301:
-                    utm.import_ui()
+                    utm.import_ldap_server()
                 elif command == 302:
-                    utm.import_ntp()
+                    utm.import_ntlm_server()
                 elif command == 303:
-                    utm.import_settings()
+                    utm.import_radius_server()
                 elif command == 304:
-                    utm.import_admin_profiles()
+                    utm.import_tacacs_server()
                 elif command == 305:
-                    utm.import_admin_config()
+                    utm.import_saml_server()
                 elif command == 306:
-                    utm.import_admins()
+                    utm.import_auth_profiles()
+                elif command == 307:
+                    utm.import_captive_profiles()
+                elif command == 308:
+                    utm.import_captive_portal_rules()
+                elif command == 309:
+                    utm.import_groups_list()
+                elif command == 310:
+                    utm.import_users_list()
+                elif command == 311:
+                    utm.import_2fa_profiles()
+                elif command == 312:
+                    utm.import_byod_policy()
                 elif command == 399:
+                    utm.import_ldap_server()
+                    utm.import_ntlm_server()
+                    utm.import_radius_server()
+                    utm.import_tacacs_server()
+                    utm.import_saml_server()
+                    utm.import_auth_profiles()
+                    utm.import_captive_profiles()
+                    utm.import_captive_portal_rules()
+                    utm.import_groups_list()
+                    utm.import_users_list()
+                    utm.import_2fa_profiles()
+                    utm.import_byod_policy()
+                       
+                elif command == 401:
+                    utm.import_ui()
+                elif command == 402:
+                    utm.import_ntp()
+                elif command == 403:
+                    utm.import_settings()
+                elif command == 404:
+                    utm.import_proxy_portal()
+                elif command == 405:
+                    utm.import_admin_config()
+                elif command == 406:
+                    utm.import_admin_profiles()
+                elif command == 407:
+                    utm.import_admins()
+                elif command == 499:
                     utm.import_ui()
                     utm.import_ntp()
                     utm.import_settings()
-                    utm.import_admin_profiles()
+                    utm.import_proxy_portal()
                     utm.import_admin_config()
+                    utm.import_admin_profiles()
                     utm.import_admins()
 
-                elif command == 401:
-                    utm.import_groups_list()
-                elif command == 402:
-                    utm.import_users_list()
-                elif command == 403:
-                    utm.import_2fa_profiles()
-                elif command == 404:
-                    utm.import_ldap_server()
-                elif command == 405:
-                    utm.import_ntlm_server()
-                elif command == 406:
-                    utm.import_radius_server()
-                elif command == 407:
-                    utm.import_tacacs_server()
-                elif command == 408:
-                    utm.import_saml_server()
-                elif command == 409:
-                    utm.import_auth_profiles()
-                elif command == 410:
-                    utm.import_captive_profiles()
-                elif command == 411:
-                    utm.import_captive_portal_rules()
-                elif command == 412:
-                    utm.import_byod_policy()
-                elif command == 499:
-                    utm.import_groups_list()
-                    utm.import_users_list()
-                    utm.import_2fa_profiles()
-                    utm.import_ldap_server()
-                    utm.import_ntlm_server()
-                    utm.import_radius_server()
-                    utm.import_tacacs_server()
-                    utm.import_saml_server()
-                    utm.import_auth_profiles()
-                    utm.import_captive_profiles()
-                    utm.import_captive_portal_rules()
-                    utm.import_byod_policy()
-                        
                 elif command == 501:
                     utm.import_scenarios()
                 elif command == 502:
@@ -6170,6 +6558,8 @@ def executor(utm, mode, section, command):
                     utm.import_nat_rules()
                 elif command == 504:
                     utm.import_icap_servers()
+                elif command == 505:
+                    utm.import_reverseproxy_servers()
                 elif command == 506:
                     utm.import_loadbalancing_rules()
                 elif command == 507:
@@ -6179,6 +6569,7 @@ def executor(utm, mode, section, command):
                     utm.import_firewall_rules()
                     utm.import_nat_rules()
                     utm.import_icap_servers()
+                    utm.import_reverseproxy_servers()
                     utm.import_loadbalancing_rules()
                     utm.import_shaper_rules()
 
@@ -6187,31 +6578,40 @@ def executor(utm, mode, section, command):
                 elif command == 602:
                     utm.import_safebrowsing_rules()
                 elif command == 603:
-                    utm.import_ssldecrypt_rules()
+                    utm.import_tunnel_inspection_rules()
                 elif command == 604:
-                    utm.import_sshdecrypt_rules()
+                    utm.import_ssldecrypt_rules()
                 elif command == 605:
-                    utm.import_idps_rules()
+                    utm.import_sshdecrypt_rules()
                 elif command == 606:
-                    utm.import_scada_rules()
+                    utm.import_idps_rules()
                 elif command == 607:
+                    utm.import_scada_rules()
+                elif command == 608:
+                    utm.import_scenarios()
+                elif command == 609:
                     utm.import_mailsecurity_rules()
                     utm.import_mailsecurity_dnsbl()
-                elif command == 608:
-                    utm.import_icap_rules()
-                elif command == 609:
-                    utm.import_dos_profiles()
                 elif command == 610:
+                    utm.import_icap_servers()
+                elif command == 611:
+                    utm.import_icap_rules()
+                elif command == 612:
+                    utm.import_dos_profiles()
+                elif command == 613:
                     utm.import_dos_rules()
                 elif command == 699:
                     utm.import_content_rules()
                     utm.import_safebrowsing_rules()
+                    utm.import_tunnel_inspection_rules()
                     utm.import_ssldecrypt_rules()
                     utm.import_sshdecrypt_rules()
                     utm.import_idps_rules()
                     utm.import_scada_rules()
+                    utm.import_scenarios()
                     utm.import_mailsecurity_rules()
                     utm.import_mailsecurity_dnsbl()
+                    utm.import_icap_servers()
                     utm.import_icap_rules()
                     utm.import_dos_profiles()
                     utm.import_dos_rules()
@@ -6255,6 +6655,7 @@ def executor(utm, mode, section, command):
                 elif command == 9999:
                     utm.import_morphology()
                     utm.import_services()
+                    utm.import_services_groups()
                     utm.import_IP_lists()
                     utm.import_useragent_lists()
                     utm.import_mime_lists()
@@ -6280,15 +6681,6 @@ def executor(utm, mode, section, command):
                     utm.import_dns_config()
                     utm.import_virt_routes()
                     utm.import_wccp_rules()
-                    utm.import_ui()
-                    utm.import_ntp()
-                    utm.import_settings()
-                    utm.import_admin_profiles()
-                    utm.import_admin_config()
-                    utm.import_admins()
-                    utm.import_groups_list()
-                    utm.import_users_list()
-                    utm.import_2fa_profiles()
                     utm.import_ldap_server()
                     utm.import_ntlm_server()
                     utm.import_radius_server()
@@ -6297,15 +6689,26 @@ def executor(utm, mode, section, command):
                     utm.import_auth_profiles()
                     utm.import_captive_profiles()
                     utm.import_captive_portal_rules()
+                    utm.import_groups_list()
+                    utm.import_users_list()
+                    utm.import_2fa_profiles()
                     utm.import_byod_policy()
+                    utm.import_ui()
+                    utm.import_ntp()
+                    utm.import_settings()
+                    utm.import_admin_config()
+                    utm.import_admin_profiles()
+                    utm.import_admins()
                     utm.import_scenarios()
                     utm.import_firewall_rules()
                     utm.import_nat_rules()
                     utm.import_icap_servers()
+                    utm.import_reverseproxy_servers()
                     utm.import_loadbalancing_rules()
                     utm.import_shaper_rules()
                     utm.import_content_rules()
                     utm.import_safebrowsing_rules()
+                    utm.import_tunnel_inspection_rules()
                     utm.import_ssldecrypt_rules()
                     utm.import_sshdecrypt_rules()
                     utm.import_idps_rules()
@@ -6317,7 +6720,6 @@ def executor(utm, mode, section, command):
                     utm.import_dos_rules()
                     utm.import_proxy_portal()
                     utm.import_proxyportal_rules()
-                    utm.import_reverseproxy_servers()
                     utm.import_reverseproxy_rules()
                     utm.import_vpn_security_profiles()
                     utm.import_vpn_networks()
@@ -6344,7 +6746,7 @@ def executor(utm, mode, section, command):
                     if input_value == " ":
                         break
         else:
-            print("\033[31mВы подключились к UTM 5-ой версии. Импорт конфигурации доступен только на версию 6.\033[0m")
+            print("\033[31mВы подключились к UTM 5-ой версии. Импорт конфигурации доступен только для версий 6 и 7.\033[0m")
             while True:
                 input_value = input("\n\nНажмите пробел для возврата в меню: ")
                 if input_value == " ":

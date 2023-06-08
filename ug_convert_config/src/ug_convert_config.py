@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 3.0
+# Версия 3.1
 # Программа предназначена для переноса конфигурации с UTM версии 5 и 6 на версии 6 и 7
 # или между устройствами 6-ой версии.
 #
@@ -789,9 +789,6 @@ class UTM(UtmXmlRpc):
             item.pop('last_update', None)
             for content in item['content']:
                 content.pop('id', None)
-                content.pop('fixed_date_from', None)
-                content.pop('fixed_date_to', None)
-                content.pop('fixed_date', None)
         with open("data/Libraries/TimeSets/config_calendars.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
         print(f'\tСписок "Календари" выгружен в файл "data/Libraries/TimeSets/config_calendars.json".')

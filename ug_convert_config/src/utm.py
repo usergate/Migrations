@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.0
+# Версия 3.1
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -337,6 +337,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 1, f"\tЗона: {zone['name']} уже существует. Проверка параметров..."
+            elif err.faultCode == 111:
+                return 2, f"\tЗона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
             else:
                 return 2, f"Ошибка utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:

@@ -1,7 +1,7 @@
 # Migrations
 Различные утилиты миграции конфигураций.
 
-<b>asa-гп7_convert_config</b> - Конвертация конфигурации Cisco ASA на NGFW UserGate версии 7.<br>
+<b>asa-ug7_convert_config</b> - Конвертация конфигурации Cisco ASA на NGFW UserGate версии 7.<br>
 <b>asa_convert_config</b> - Конвертация конфигурации Cisco ASA на NGFW UserGate версии 6.<br>
 <b>convert_checkpoint_config</b> - Конвертация конфигурации Check Point на NGFW UserGate.<br>
 <b>dhcp_subnet</b> - Перенос настроек DHCP с одного узла на другой.<br>

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.1
+# Версия 2.2
 #
 
 import os, sys, json
@@ -1413,15 +1413,18 @@ def import_url_lists(utm):
                     continue
                 else:
                     list_url[url_list['name']] = result
-                    print(f'\t\tСписок URL: "{url_list["name"]}" добавлен.')
+                    print(f'\tСписок URL: "{url_list["name"]}" добавлен.')
                 if content:
                     for item in content:
-                        print(f"\t\tURL '{item['value']}' добавляется в список.")
                         err2, result2 = utm.add_nlist_item(result, item)
                         if err2 == 2:
                             print(f"\033[31m\t\tURL '{item['value']}' не добавлен.\033[0m")
                             print(f"\033[31m{result2}\033[0m")
-                    print(f'\t\tСодержимое списка "{url_list["name"]}" обновлено.')
+                        elif err2 == 1:
+                            print(f"\t\tURL '{item['value']}' уже существует.")
+                        else:
+                            print(f"\t\tURL '{item['value']}' добавлен в список.")
+#                    print(f'\t\tСодержимое списка "{url_list["name"]}" обновлено.')
                 else:
                     print(f'\t\tСписок "{url_list["name"]}" пуст.')
         else:
@@ -2130,6 +2133,45 @@ def menu():
         except ValueError:
             print("Ошибка! Введите число.")
 
+def menu_import():
+    print("\033c")
+    print(f"\033[1;36;43mUserGate\033[1;37;43m                    Конвертация конфигурации с Cisco ASA на NGFW                   \033[1;36;43mUserGate\033[0m\n")
+    print("\033[32mЭкспорт подготовленной конфигурации из каталога 'data' в текущей директории на NGFW UserGate v7.\033[0m\n")
+    print("Выберите раздел для импорта.\n")
+    print('   1  - Списки IP-адресов        - "Библиотеки/IP-адреса"')
+    print('   2  - Списки URL               - "Библиотеки/Списки URL"')
+    print('   3  - Сервисы                  - "Библиотеки/Сервисы"')
+    print('   4  - Временные интервалы      - "Библиотеки/Календари"')
+    print('   5  - Часовой пояс             - "UserGate/Настойки/Настройки интерфейса"')
+    print('   6  - Настройка NTP            - "UserGate/Настойки/Настройка времени сервера"')
+    print('   7  - Модули                   - "UserGate/Настойки/Модули"')
+    print('   8  - Зоны                     - "Сеть/Зоны"')
+    print('   9  - Интерфейсы VLAN          - "Сеть/Интерфейсы"')
+    print('  10  - Шлюзы                    - "Сеть/Шлюзы"')
+    print('  11  - DHCP                     - "Сеть/DHCP"')
+    print('  12  - DNS                      - "Сеть/DNS"')
+    print('  13  - Статические маршруты     - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"')
+    print('  14  - Radius                   - "Пользователи и устройства/Серверы аутентификации"')
+    print('  15  - Tacacs                   - "Пользователи и устройства/Серверы аутентификации"')
+    print('  16  - LDAP                     - "Пользователи и устройства/Серверы аутентификации"')
+    print('  17  - Пользователи             - "Пользователи и устройства/Пользователи"')
+    print('  18  - Группы пользователей     - "Пользователи и устройства/Группы"')
+    print("\n")   
+    print("  99  - Импортировать всё.")
+    print("  \033[33m 0  - Вверх (вернуться в предыдущее меню).\033[0m")
+
+    while True:
+        try:
+            mode = int(input("\nВведите номер нужной операции: "))
+            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 99):
+                print("Вы ввели несуществующую команду.")
+#            elif mode == 0:
+#                sys.exit()
+            else:
+                return mode
+        except ValueError:
+            print("Ошибка! Введите число.")
+
 def main():
     print("\033c")
     print("\033[1;36;43mUserGate\033[1;37;43m                     Конвертация конфигурации с Cisco ASA на NGFW                   \033[1;36;43mUserGate\033[0m\n")
@@ -2166,48 +2208,85 @@ def main():
                             utm.logout()
                             break
             elif mode == 2:
-                if not server_ip:
-                    server_ip = input("\033[36m\nВведите IP-адрес UTM:\033[0m ")
-                    login = input("\033[36mВведите логин администратора UTM:\033[0m ")
-                    password = stdiomask.getpass("\033[36mВведите пароль:\033[0m ")
-                utm = UtmXmlRpc(server_ip, login, password)
-                utm._connect()
-                print()
-                ldap, radius, tacacs, _, _ = utm.get_auth_servers()
-                utm.auth_servers = {x['name']: x['id'] for x in [*ldap, *radius, *tacacs]}
-
-#                try:
-#                    import_IP_lists(utm)
-#                    import_url_lists(utm)
-#                    import_services(utm)
-#                    import_time_restricted_lists(utm)
-#                    import_ui(utm)
-#                    import_ntp(utm)
-#                    import_settings(utm)
-#                    import_zones(utm)
-#                    import_interfaces(utm)
-#                    import_gateways_list(utm)
-#                    import_dhcp_subnets(utm)
-#                    import_dns_servers(utm)
-#                    import_dns_rules(utm)
-#                    import_virt_routes(utm)
-#                    import_radius_server(utm)
-#                    import_tacacs_server(utm)
-                import_ldap_server(utm)
-                import_users(utm)
-                import_local_groups(utm)
-#                except Exception as err:
-#                    print(f'\n\033[31mОшибка: {err}\033[0m')
-#                    utm.logout()
-#                    sys.exit(1)
-#                else:
-                utm.logout()
-                print("\n\033[32mИмпорт конфигурации Cisco ASA на NGFW UserGate завершён.\033[0m\n")
                 while True:
-                    input_value = input("\nНажмите пробел для возврата в меню: ")
-                    if input_value == " ":
-#                        utm.logout()
+                    section = menu_import()
+                    if not section:
                         break
+                    if not server_ip:
+                        server_ip = input("\033[36m\nВведите IP-адрес UTM:\033[0m ")
+                        login = input("\033[36mВведите логин администратора UTM:\033[0m ")
+                        password = stdiomask.getpass("\033[36mВведите пароль:\033[0m ")
+                    utm = UtmXmlRpc(server_ip, login, password)
+                    utm._connect()
+                    print()
+                    ldap, radius, tacacs, _, _ = utm.get_auth_servers()
+                    utm.auth_servers = {x['name']: x['id'] for x in [*ldap, *radius, *tacacs]}
+
+                    match section:
+                        case 99:
+                            import_IP_lists(utm)
+                            import_url_lists(utm)
+                            import_services(utm)
+                            import_time_restricted_lists(utm)
+                            import_ui(utm)
+                            import_ntp(utm)
+                            import_settings(utm)
+                            import_zones(utm)
+                            import_interfaces(utm)
+                            import_gateways_list(utm)
+                            import_dhcp_subnets(utm)
+                            import_dns_servers(utm)
+                            import_dns_rules(utm)
+                            import_virt_routes(utm)
+                            import_radius_server(utm)
+                            import_tacacs_server(utm)
+                            import_ldap_server(utm)
+                            import_users(utm)
+                            import_local_groups(utm)
+                        case 1:
+                            import_IP_lists(utm)
+                        case 2:
+                            import_url_lists(utm)
+                        case 3:
+                            import_services(utm)
+                        case 4:
+                            import_time_restricted_lists(utm)
+                        case 5:
+                            import_ui(utm)
+                        case 6:
+                            import_ntp(utm)
+                        case 7:
+                            import_settings(utm)
+                        case 8:
+                            import_zones(utm)
+                        case 9:
+                            import_interfaces(utm)
+                        case 10:
+                            import_gateways_list(utm)
+                        case 11:
+                            import_dhcp_subnets(utm)
+                        case 12:
+                            import_dns_servers(utm)
+                            import_dns_rules(utm)
+                        case 13:
+                            import_virt_routes(utm)
+                        case 14:
+                            import_radius_server(utm)
+                        case 15:
+                            import_tacacs_server(utm)
+                        case 16:
+                            import_ldap_server(utm)
+                        case 17:
+                            import_users(utm)
+                        case 18:
+                            import_local_groups(utm)
+                    utm.logout()
+                    print("\n\033[32mИмпорт конфигурации Cisco ASA на NGFW UserGate завершён.\033[0m\n")
+                    while True:
+                        input_value = input("\nНажмите пробел для возврата в меню: ")
+                        if input_value == " ":
+#                            utm.logout()
+                            break
 
     except KeyboardInterrupt:
         print("\nПрограмма принудительно завершена пользователем.")

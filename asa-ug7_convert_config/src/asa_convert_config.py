@@ -21,13 +21,15 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.2
+# Версия 2.3
 #
 
 import os, sys, json
 import stdiomask
 import ipaddress
+import copy
 from datetime import datetime as dt
+from collections import deque
 from services import character_map, character_map_for_users, character_map_for_name, service_ports
 from utm import UtmXmlRpc
 
@@ -43,6 +45,7 @@ def convert_file(utm, file_name):
         print(err)
         sys.exit()
     dhcp_enabled = 0
+    rule_number = 0
     ip_protocol_list = protocol_names
     zones = {}
     iface_mtu = {}
@@ -59,6 +62,8 @@ def convert_file(utm, file_name):
     services = {}
     ip_dict = {}
     url_dict = {}
+    direction = {}
+    fw_rules = []
     default_vrf = {
         "name": "default",
         "descriprion": "",
@@ -1041,6 +1046,233 @@ def convert_file(utm, file_name):
         }
         data['services'][name] = service
 
+    def convert_access_group(x):
+        """
+        Конвертируе access-group. Сопоставляем имя access-list с зоной интерфейса и определяем источник это или назначение.
+        """
+        if x[0] not in direction:
+            direction[x[0]] = {
+                "src_zones": [],
+                "dst_zones": []
+            }
+        match x:
+            case [access_list_name, 'in', 'interface', zone_name]:
+                direction[access_list_name]['src_zones'].append(zone_name.translate(trans_name))
+            case [access_list_name, 'out', 'interface', zone_name]:
+                direction[access_list_name]['dst_zones'].append(zone_name.translate(trans_name))
+            case [access_list_name, 'interface', ifname, 'global']:
+                pass
+            case _:
+                direction.pop(x[0], None)
+
+    def create_ip_list(ip, mask=None):
+        """Возвращает имя IP листа в функцию get_ips()"""
+        ip_list = {
+            "name": f"host {ip}",
+            "description": "",
+            "type": "network",
+            "url": "",
+            "attributes": {"thread_level": 3},
+            "content": []
+        }
+        if mask:
+            subnet = ipaddress.ip_network(f'{ip}/{mask}')
+            ip_list['content'].append({"value": f'{ip}/{subnet.prefixlen}'})
+            ip_list['name'] = f'subnet {ip}_{subnet.prefixlen}'
+        else:
+            ip_list['content'].append({"value": ip})
+
+        ip_dict[ip_list['name']] = ip_list
+        return ["list_id", ip_list['name']]
+
+    def get_ips(ips_mode, address, rule, deq):
+        match address:
+            case 'any'|'any4'|'any6':
+                pass
+            case 'object'|'object-group':
+                ip_or_service_list = deq.popleft()
+                if ip_or_service_list in ip_dict:
+                    rule[ips_mode].append(["list_id", ip_or_service_list])
+                elif ip_or_service_list in url_dict:
+                    rule[ips_mode].append(["urllist_id", ip_or_service_list])
+                elif ip_or_service_list in services:
+                    rule['services'].clear()
+                    rule['services'].append(["service", ip_or_service_list])
+            case 'host':
+                ip = deq.popleft()
+                rule[ips_mode].append(create_ip_list(ip))
+            case 'interface':
+                ip = deq.popleft()
+            case _:
+                try:
+                    mask = deq.popleft()
+                    rule[ips_mode].append(create_ip_list(address, mask))
+                except IndexError:
+                    pass
+
+    def create_service(name, ips_mode, protocol, port1, port2=None):
+        """Для ACE. Создаём сервис, заданный непосредственно в правиле, а не в сервисной группе."""
+        if port2:
+            port = f'{get_service_number(port1)}-{get_service_number(port2)}'
+        else:
+            port = get_service_number(port1)
+        if protocol in {'tcp', 'udp','sctp'}:
+                service = {
+                    "name": name,
+                    "description": "",
+                    "protocols": [
+                        {
+                            "proto": protocol,
+                            "port": "",
+                            "source_port": ""
+                        }
+                    ]
+                }
+                if ips_mode == 'src_ips':
+                    service['protocols'][0]['source_port'] = port
+                else:
+                    service['protocols'][0]['port'] = port
+        elif protocol in services:
+            service = copy.deepcopy(services[protocol])
+            service['name'] = name
+            for item in service['protocols']:
+                if ips_mode == 'src_ips':
+                    item['source_port'] = port
+                else:
+                    item['port'] = port
+
+        services[name] = service
+
+    def convert_ace(acs_name, rule_block, remark):
+        """
+        Конвертируем ACE в правило МЭ.
+        Не активные ACE пропускаются. ACE не назначенные интерфейсам пропускаются.
+        ACE с именами ASA интерфейсов пропускаются.
+        """
+        if (acs_name not in direction) or ('inactive' in rule_block) or ('interface' in rule_block):
+            return
+
+        nonlocal rule_number
+        rule_number += 1
+        deq = deque(rule_block)
+        rule = {
+            "name": f"Rule {rule_number} ({acs_name})",
+            "description": ", ".join(remark),
+            "action": "drop" if deq.popleft() == 'deny' else "accept",
+            "position": "last",
+            "scenario_rule_id": False,     # При импорте заменяется на UID или "0". 
+            "src_zones": [],
+            "dst_zones": [],
+            "src_ips": [],
+            "dst_ips": [],
+            "services": [],
+            "apps": [],
+            "users": [],
+            "enabled": False,
+            "limit": True,
+            "limit_value": "3/h",
+            "limit_burst": 5,
+            "log": False,
+            "log_session_start": True,
+            "src_zones_negate": False,
+            "dst_zones_negate": False,
+            "src_ips_negate": False,
+            "dst_ips_negate": False,
+            "services_negate": False,
+            "apps_negate": False,
+            "fragmented": "ignore",
+            "time_restrictions": [],
+            "send_host_icmp": "",
+        }
+        rule['src_zones'].extend(direction[acs_name]['src_zones'])
+        rule['dst_zones'].extend(direction[acs_name]['dst_zones'])
+
+        protocol = deq.popleft()
+        match protocol:
+            case 'object'|'object-group':
+                protocol = deq.popleft()
+                rule['services'].append(["service", protocol])
+            case 'ip':
+                pass
+            case 'icmp':
+                rule['services'].append(["service", "Any ICMP"])
+            case 'tcp':
+                rule['services'].append(["service", "Any TCP"])
+            case 'udp':
+                rule['services'].append(["service", "Any UDP"])
+            case 'sctp':
+                if 'Any SCTP' not in services:
+                    service = {
+                        "name": 'Any SCTP',
+                        "description": "",
+                        "protocols": [{"proto": "sctp", "port": "", "source_port": ""}]
+                    }
+                    services['Any SCTP'] = service
+                rule['services'].append(["service", "Any SCTP"])
+
+        argument = deq.popleft()
+        match argument:
+            case 'object-group-user':
+                rule['users'].append(['group', deq.popleft()])
+            case 'user':
+                user = deq.popleft()
+                match user:
+                    case 'any':
+                        rule['users'].append(['special', 'known_user'])
+                    case 'none':
+                        rule['users'].append(['special', 'unknown_user'])
+                    case _:
+                        user_list = user.split("\\")
+                        if user_list[0] == 'LOCAL' and user_list[1] in users:
+                            rule['users'].append(['user', user_list[1]])
+                        elif user_list[0] in identity_domains:
+                            rule['users'].append(["user", f"{identity_domains[user_list[0]]}\\{user_list[1]}"])
+            case 'user-group':
+                group = deq.popleft()
+                group_list = group.split("\\\\")
+#                print('group_list', group_list)
+                if group_list[0] in identity_domains:
+                    rule['users'].append(["group", f"{identity_domains[group_list[0]]}\\{group_list[1]}"])
+            case _:
+                ips_mode = 'src_ips'
+                get_ips(ips_mode, argument, rule, deq)
+        while deq:
+            argument = deq.popleft()
+            match argument:
+                case 'lt'|'gt'|'neq':
+                    return
+                case 'eq':
+                    port = deq.popleft()
+#                    print(rule_block)
+                    service_name = f'Eq {port} (Rule {rule_number})'
+                    create_service(service_name, ips_mode, protocol, port)
+                    rule['services'].clear()
+                    rule['services'].append(["service", service_name])
+                case 'range':
+#                    print(rule_block)
+                    port1 = deq.popleft()
+                    port2 = deq.popleft()
+                    service_name = f'Range {port1}-{port2} (Rule {rule_number})'
+                    create_service(service_name, ips_mode, protocol, port1, port2)
+                    rule['services'].clear()
+                    rule['services'].append(["service", service_name])
+                case 'object-group':
+                    ips_mode = 'dst_ips'
+                    get_ips(ips_mode, argument, rule, deq)
+                case 'log':
+                    other = list(deq)
+                    deq.clear()
+                    if 'time-range' in other:
+                        time_object = other.index('time-range') + 1
+                        rule['time_restrictions'].append(time_object)
+                case 'time-range':
+                    rule['time_restrictions'].append(deq.popleft())
+                case _:
+                    ips_mode = 'dst_ips'
+                    get_ips(ips_mode, argument, rule, deq)
+
+        fw_rules.append(rule)
+
     def make_block_of_line(fh):
         """Читаем файл и создаём блок записей для раздела конфигурации"""
         block = []
@@ -1143,6 +1375,41 @@ def convert_file(utm, file_name):
                             case 'icmp-type':
                                 line, tmp_block = make_block_of_line(fh)
                                 convert_icmp_object_group(x[2])
+                    case 'access-group':
+                        convert_access_group(x[1:])
+                        line = fh.readline()
+                    case _:
+                        line = fh.readline()
+
+        with open(f"data_ca/{file_name}.txt", "r") as fh:
+            remark = []
+            line = fh.readline()
+            while line:
+                if line[:1] in {':', '!'}:
+                    line = fh.readline()
+                    continue
+                x = line.translate(trans_table).rstrip().split(' ')
+                match x[0]:
+                    case 'access-list':
+                        match x[2]:
+                            case 'remark':
+                                line = fh.readline()
+                                y = line.translate(trans_table).rstrip().split(' ')
+                                if y[1] == x[1]:
+                                    remark.append(' '.join(x[3:]))
+                            case 'extended':
+                                convert_ace(x[1], x[3:], remark)
+                                remark.clear()
+                                line = fh.readline()
+                            case 'line':
+                                if x[4] == 'extended':
+                                    convert_ace(x[1], x[5:], remark)
+                                remark.clear()
+                                line = fh.readline()
+                            case _:
+                                string = line.rstrip('\n')
+                                print(f"\033[36mACE: {string} - не обработано.\033[0m")
+                                line = fh.readline()
                     case _:
                         line = fh.readline()
 
@@ -1243,6 +1510,13 @@ def convert_file(utm, file_name):
         with open(f'data/Libraries/IPAddresses/{list_name}.json', 'w') as fh:
             json.dump(value, fh, indent=4, ensure_ascii=False)
 
+    if not os.path.isdir('data/NetworkPolicies/Firewall'):
+        os.makedirs('data/NetworkPolicies/Firewall')
+    with open('data/NetworkPolicies/Firewall/config_firewall_rules.json', 'w') as fh:
+        json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
+
+#    aaa = set(zones.keys())
+#    print(aaa)
 #    json_string = json.dumps([x for x in zones.values()], indent=4, ensure_ascii=False)
 #    print(json_string, "\n")
             
@@ -1914,102 +2188,50 @@ def import_local_groups(utm):
             else:
                 print(f'\t\tПользователь "{name}@{domain}" добавлен в группу "{item["name"]}".')
 
-def import_firewall_rules(number, file_rules, utm):
+def import_firewall_rules(utm):
     """Импортировать список правил межсетевого экрана"""
-    print(f'Импорт списка №{number} "Межсетевой экран" раздела "Политики сети":')
+    print('Импорт списка "Межсетевой экран" раздела "Политики сети":')
     try:
-        with open(f"data_ug/network_policies/{file_rules}", "r") as fh:
+        with open("data/NetworkPolicies/Firewall/config_firewall_rules.json", "r") as fh:
             data = json.load(fh)
     except FileNotFoundError as err:
-        print(f'\t\033[31mСписок №{number} "Межсетевой экран" не импортирован!\n\tНе найден файл "data_ug/network_policies/{file_rules}" с сохранённой конфигурацией!\033[0;0m')
+        print(f'\t\033[31mСписок "Межсетевой экран" не импортирован!\n\tНе найден файл "data/NetworkPolicies/Firewall/config_firewall_rules.json" с сохранённой конфигурацией!\033[0;0m')
         return
 
     if not data:
-        print("\tНет правил №{number} межсетевого экрана для импорта.")
+        print("\tНет правил межсетевого экрана для импорта.")
         return
 
-    firewall_rules = utm.get_firewall_rules()
-    services_list = utm.get_services_list()
-    l7_categories = utm.get_l7_categories()
-    applicationgroup = utm.get_nlists_list('applicationgroup')
-    l7_apps = utm.get_l7_apps()
-    zones = utm.get_zones_list()
-    list_ip = utm.get_nlists_list('network')
-    list_users = utm.get_users_list()
-    list_groups = utm.get_groups_list()
+    total, firewall = utm.get_firewall_rules()
+    utm.firewall_rules = {x['name']: x['id'] for x in firewall}
 
     for item in data:
-        get_guids_users_and_groups(utm, item, list_users, list_groups)
-        set_src_zone_and_ips(item, zones, list_ip)
-        set_dst_zone_and_ips(item, zones, list_ip)
-        try:
-            item['services'] = [services_list[x] for x in item['services']]
-        except KeyError as err:
-            print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-            item['services'] = []
-        try:
-            set_apps(item['apps'], l7_categories, applicationgroup, l7_apps)
-        except KeyError as err:
-            print(f'\t\033[33mНе найдено приложение {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-            item['apps'] = []
+        get_guids_users_and_groups(utm, item)
+        set_src_zone_and_ips(utm, item)
+        set_dst_zone_and_ips(utm, item)
+        set_time_restrictions(utm, item)
+        item['services'] = get_services(utm, item)
 
-        if item['name'] in firewall_rules:
-            print(f'\tПравило МЭ "{item["name"]}" уже существует', end= ' - ')
-            err1, result1 = utm.update_firewall_rule(firewall_rules[item['name']], item)
+        err, result = utm.add_firewall_rule(item)
+        if err == 1:
+            print(result, end= ' - ')
+            err1, result1 = utm.update_firewall_rule(item)
             if err1 != 0:
                 print("\n", f"\033[31m{result1}\033[0m")
             else:
                 print("\033[32mUpdated!\033[0;0m")
+        elif err == 2:
+            print(f"\033[31m{result}\033[0m")
         else:
-            err, result = utm.add_firewall_rule(item)
-            if err != 0:
-                print(f"\033[31m{result}\033[0m")
-            else:
-                firewall_rules[item["name"]] = result
-                print(f'\tПравило МЭ "{item["name"]}" добавлено.')
+            print(f'\tПравило МЭ "{item["name"]}" добавлено.')
 
-def set_src_zone_and_ips(item, zones, list_ip={}, list_url={}):
-    if item['src_zones']:
-        try:
-            item['src_zones'] = [zones[x] for x in item['src_zones']]
-        except KeyError as err:
-            print(f'\t\033[33mИсходная зона {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-            item['src_zones'] = []
-    if item['src_ips']:
-        try:
-            for x in item['src_ips']:
-                if x[0] == 'list_id':
-                    x[1] = list_ip[x[1]]
-                elif x[0] == 'urllist_id':
-                    x[1] = list_url[x[1]]
-        except KeyError as err:
-            print(f'\t\033[33mНе найден адрес источника {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-            item['src_ips'] = []
-
-def set_dst_zone_and_ips(item, zones, list_ip={}, list_url={}):
-    if item['dst_zones']:
-        try:
-            item['dst_zones'] = [zones[x] for x in item['dst_zones']]
-        except KeyError as err:
-            print(f'\t\033[33mЗона назначения {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-            item['dst_zones'] = []
-    if item['dst_ips']:
-        try:
-            for x in item['dst_ips']:
-                if x[0] == 'list_id':
-                    x[1] = list_ip[x[1]]
-                elif x[0] == 'urllist_id':
-                    x[1] = list_url[x[1]]
-        except KeyError as err:
-            print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-            item['dst_ips'] = []
-
-def get_guids_users_and_groups(utm, item, list_users, list_groups):
+############################################# Служебные функции ###################################################
+def get_guids_users_and_groups(utm, item):
     """
     Получить GUID-ы групп и пользователей по их именам.
     Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
     """
-    if 'users' in item.keys() and item['users']:
+    if item['users']:
         users = []
         for x in item['users']:
             if x[0] == 'user' and x[1]:
@@ -2024,8 +2246,12 @@ def get_guids_users_and_groups(utm, item, list_users, list_groups):
                         x[1] = result
                         users.append(x)
                 else:
-                    x[1] = list_users[x[1]]
-                    users.append(x)
+                    try:
+                        x[1] = utm.list_users[x[1]]
+                    except KeyError:
+                        print(f'\t\033[31mНе найден пользователь "{x[1]}" для правила "{item["name"]}".\n\tИмпортируйте локальных пользователей и повторите импорт правил.\033[0m')
+                    else:
+                        users.append(x)
 
             elif x[0] == 'group' and x[1]:
                 i = x[1].partition("\\")
@@ -2039,55 +2265,68 @@ def get_guids_users_and_groups(utm, item, list_users, list_groups):
                         x[1] = result
                         users.append(x)
                 else:
-                    x[1] = list_groups[x[1]]
-                    users.append(x)
+                    try:
+                        x[1] = utm.list_groups[x[1]]
+                    except KeyError:
+                        print(f'\t\033[31mНе найдена группа "{x[1]}" для правила "{item["name"]}".\n\tИмпортируйте локальные группы и повторите импорт правил.\033[0m')
+                    else:
+                        users.append(x)
             elif x[0] == 'special' and x[1]:
                 users.append(x)
         item['users'] = users
-    else:
-        item['users'] = []
 
-def set_apps(array_apps, l7_categories, applicationgroup, l7_apps):
-    """Определяем ID приложения по имени при импорте"""
-    for app in array_apps:
-        if app[0] == 'ro_group':
-            if app[1] == 0:
-                app[1] = "All"
-            elif app[1] == "All":
-                app[1] = 0
-            else:
-                try:
-                    app[1] = l7_categories[app[1]]
-                except KeyError as err:
-                    print(f'\t\033[33mНе найдена категория l7 №{err}.\n\tВозможно нет лицензии, и UTM не получил список категорий l7.\n\tУстановите лицензию и повторите попытку.\033[0m')
-        elif app[0] == 'group':
-            try:
-                app[1] = applicationgroup[app[1]]
-            except KeyError as err:
-                print(f'\t\033[33mНе найдена группа приложений №{err}.\n\tЗагрузите приложения и повторите попытку.\033[0m')
-        elif app[0] == 'app':
-            try:
-                app[1] = l7_apps[app[1]]
-            except KeyError as err:
-                print(f'\t\033[33mНе найдено приложение №{err}.\n\tВозможно нет лицензии, и UTM не получил список приложений l7.\n\tЗагрузите приложения или установите лицензию и повторите попытку.\033[0m')
-
-def set_urls_and_categories(item, list_url, list_urlcategorygroup, url_category):
-    if item['urls']:
+def set_src_zone_and_ips(utm, item):
+    if item['src_zones']:
         try:
-            item['urls'] = [list_url[x] for x in item['urls']]
+            item['src_zones'] = [utm.zones[x] for x in item['src_zones']]
         except KeyError as err:
-            print(f'\t\033[33mНе найден URL {err} для правила "{item["name"]}".\n\tЗагрузите списки URL и повторите попытку.\033[0m')
-            item['urls'] = []
-    if item['url_categories']:
+            print(f'\t\033[33mИсходная зона {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
+            item['src_zones'] = []
+    if item['src_ips']:
         try:
-            for x in item['url_categories']:
+            for x in item['src_ips']:
                 if x[0] == 'list_id':
-                    x[1] = list_urlcategorygroup[x[1]]
-                elif x[0] == 'category_id':
-                    x[1] = url_category[x[1]]
+                    x[1] = utm.list_ip[x[1]]
+                elif x[0] == 'urllist_id':
+                    x[1] = utm.list_url[x[1]]
         except KeyError as err:
-            print(f'\t\033[33mНе найдена группа URL-категорий {err} для правила "{item["name"]}".\n\tЗагрузите категории URL и повторите попытку.\033[0m')
-            item['url_categories'] = []
+            print(f'\t\033[33mНе найден адрес источника {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
+            item['src_ips'] = []
+
+def set_dst_zone_and_ips(utm, item):
+    if item['dst_zones']:
+        try:
+            item['dst_zones'] = [utm.zones[x] for x in item['dst_zones']]
+        except KeyError as err:
+            print(f'\t\033[33mЗона назначения {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
+            item['dst_zones'] = []
+    if item['dst_ips']:
+        try:
+            for x in item['dst_ips']:
+                if x[0] == 'list_id':
+                    x[1] = utm.list_ip[x[1]]
+                elif x[0] == 'urllist_id':
+                    x[1] = utm.list_url[x[1]]
+        except KeyError as err:
+            print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
+            item['dst_ips'] = []
+
+def set_time_restrictions(utm, item):
+    if item['time_restrictions']:
+        try:
+            item['time_restrictions'] = [utm.list_calendar[x] for x in item['time_restrictions']]
+        except KeyError as err:
+            print(f'\t\033[33mНе найден календарь {err} для правила "{item["name"]}".\n\tЗагрузите календари в библиотеку и повторите попытку.\033[0m')
+            item['time_restrictions'] = []
+
+def get_services(utm, item):
+    new_service_list = []
+    for service in item['services']:
+        try:
+            new_service_list.append(['service', utm.services[service[1]]])
+        except KeyError as err:
+            print(f'\t\033[33mНе найден сервис {item} для правила "{rule_name}".\033[0m')
+    return new_service_list
 
 def menu():
     print("\033c")
@@ -2114,7 +2353,8 @@ def menu():
     print('\tШлюзы                          - "Сеть/Шлюзы"')
     print('\tDHCP                           - "Сеть/DHCP"')
     print('\tDNS                            - "Сеть/DNS"')
-    print('\tСтатические маршруты           - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"\033[0m')
+    print('\tСтатические маршруты           - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"')
+    print('\tAccess-lists                   - "Политики сети/Межсетевой экран"\033[0m')
 
     print("\n")   
     print("1  - Экспорт конфигурации из файла.")
@@ -2156,6 +2396,7 @@ def menu_import():
     print('  16  - LDAP                     - "Пользователи и устройства/Серверы аутентификации"')
     print('  17  - Пользователи             - "Пользователи и устройства/Пользователи"')
     print('  18  - Группы пользователей     - "Пользователи и устройства/Группы"')
+    print('  19  - Access-lists             - "Политики сети/Межсетевой экран"')
     print("\n")   
     print("  99  - Импортировать всё.")
     print("  \033[33m 0  - Вверх (вернуться в предыдущее меню).\033[0m")
@@ -2163,7 +2404,7 @@ def menu_import():
     while True:
         try:
             mode = int(input("\nВведите номер нужной операции: "))
-            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 99):
+            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 99):
                 print("Вы ввели несуществующую команду.")
 #            elif mode == 0:
 #                sys.exit()
@@ -2222,6 +2463,27 @@ def main():
                     ldap, radius, tacacs, _, _ = utm.get_auth_servers()
                     utm.auth_servers = {x['name']: x['id'] for x in [*ldap, *radius, *tacacs]}
 
+                    _, local_users = utm.get_users_list()
+                    utm.list_users = {x['name']: x['guid'] for x in local_users}
+
+                    _, local_groups = utm.get_groups_list()
+                    utm.list_groups = {x['name']: x['guid'] for x in local_groups}
+
+                    _, result = utm.get_zones_list()
+                    utm.zones = {x['name']: x['id'] for x in result}
+
+                    _, result = utm.get_services_list()
+                    utm.services = {x['name']: x['id'] for x in result['items']}
+
+                    result = utm._server.v2.nlists.list(utm._auth_token, 'network', 0, 5000, {})
+                    utm.list_ip = {x['name']: x['id'] for x in result['items']}
+
+                    result = utm._server.v2.nlists.list(utm._auth_token, 'url', 0, 5000, {})
+                    utm.list_url = {x['name']: x['id'] for x in result['items']}
+                    
+                    result = utm._server.v2.nlists.list(utm._auth_token, 'timerestrictiongroup', 0, 1000, {})
+                    utm.list_calendar = {x['name']: x['id'] for x in result['items']}
+
                     match section:
                         case 99:
                             import_IP_lists(utm)
@@ -2243,6 +2505,7 @@ def main():
                             import_ldap_server(utm)
                             import_users(utm)
                             import_local_groups(utm)
+                            import_firewall_rules(utm)
                         case 1:
                             import_IP_lists(utm)
                         case 2:
@@ -2280,6 +2543,8 @@ def main():
                             import_users(utm)
                         case 18:
                             import_local_groups(utm)
+                        case 19:
+                            import_firewall_rules(utm)
                     utm.logout()
                     print("\n\033[32mИмпорт конфигурации Cisco ASA на NGFW UserGate завершён.\033[0m\n")
                     while True:

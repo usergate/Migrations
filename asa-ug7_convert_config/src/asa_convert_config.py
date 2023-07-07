@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.3
+# Версия 2.4
 #
 
 import os, sys, json
@@ -46,6 +46,7 @@ def convert_file(utm, file_name):
         sys.exit()
     dhcp_enabled = 0
     rule_number = 0
+    cfrule_number = 0
     ip_protocol_list = protocol_names
     zones = {}
     iface_mtu = {}
@@ -64,6 +65,7 @@ def convert_file(utm, file_name):
     url_dict = {}
     direction = {}
     fw_rules = []
+    cf_rules = []
     default_vrf = {
         "name": "default",
         "descriprion": "",
@@ -1273,6 +1275,102 @@ def convert_file(utm, file_name):
 
         fw_rules.append(rule)
 
+    def convert_webtype_ace(acs_name, rule_block, remark):
+        """
+        Конвертируем ACE webtype в правило КФ. Не активные ACE пропускаются.
+        """
+        if 'inactive' in rule_block:
+            return
+
+        nonlocal cfrule_number
+        cfrule_number += 1
+        deq = deque(rule_block)
+        action = deq.popleft()
+        rule = {
+            "name": f"Rule {cfrule_number} ({acs_name})",
+            "description": ", ".join(remark),
+            "position": "last",
+            "action": "drop" if action == 'deny' else "accept",
+            "public_name": "",
+            "enabled": True,
+            "enable_custom_redirect": False,
+            "blockpage_template_id": -1,
+            "users": [],
+            "url_categories": [],
+            "src_zones": [],
+            "dst_zones": [],
+            "src_ips": [],
+            "dst_ips": [],
+            "morph_categories": [],
+            "urls": [],
+            "referers": [],
+            "referer_categories": [],
+            "user_agents": [],
+            "time_restrictions": [],
+            "content_types": [],
+            "http_methods": [],
+            "src_zones_negate": False,
+            "dst_zones_negate": False,
+            "src_ips_negate": False,
+            "dst_ips_negate": False,
+            "url_categories_negate": False,
+            "urls_negate": False,
+            "content_types_negate": False,
+            "user_agents_negate": False,
+            "custom_redirect": "",
+            "enable_kav_check": False,
+            "enable_md5_check": False,
+            "rule_log": False,
+            "scenario_rule_id": False,
+            "users_negate": False
+        }
+
+        while deq:
+            parameter = deq.popleft()
+            match parameter:
+                case 'url':
+                    url = deq.popleft()
+                    url_list_name = f"For {acs_name}-{cfrule_number}"
+                    if not create_url_list(url, url_list_name, rule):
+                        return
+                case 'tcp':
+                    address = deq.popleft()
+                    get_ips('dst_ips', address, rule, deq)
+                case 'time_range':
+                    rule['time_restrictions'].append(deq.popleft())
+                case 'time-range':
+                    rule['time_restrictions'].append(deq.popleft())
+
+        cf_rules.append(rule)
+
+    def create_url_list(url, name, rule):
+        """Для ACL webtype - создаём URL-лист."""
+        if url == 'any':
+            if rule['action'] == 'accept':
+                print(f'\033[36mURL "{url}" в разрешающем ACE (webtype) пропущен так как в NGFW дублирует дефолтное правило КФ.\033[0m')
+                return False
+            else:
+                return True
+        proto, sep, path = url.partition("://")
+        if proto not in ('http', 'https', 'ftp'):
+            print(f'\033[36mURL {url} в ACE (webtype) пропущен. Неподдерживаемый тип протокола: "{proto}"\033[0m')
+            return False
+        if ('?' in path) or ('[' in path) or (']' in path):
+            print(f"\033[36mURL {url} в ACE (webtype) пропущен. Не допустимые сиволы в url.\033[0m")
+            return False
+
+        url_list = {
+            "name": name,
+            "description": "",
+            "type": "url",
+            "url": "",
+            "attributes": {"threat_level": 3},
+            "content": [{"value": url}]
+        }
+        url_dict[name] = url_list
+        rule['urls'].append(name)
+        return True
+
     def make_block_of_line(fh):
         """Читаем файл и создаём блок записей для раздела конфигурации"""
         block = []
@@ -1406,9 +1504,13 @@ def convert_file(utm, file_name):
                                     convert_ace(x[1], x[5:], remark)
                                 remark.clear()
                                 line = fh.readline()
+                            case 'webtype':
+                                convert_webtype_ace(x[1], x[3:], remark)
+                                remark.clear()
+                                line = fh.readline()
                             case _:
                                 string = line.rstrip('\n')
-                                print(f"\033[36mACE: {string} - не обработано.\033[0m")
+                                print(f"\033[36mACE: {string} - не обработано.\033[0m")                                
                                 line = fh.readline()
                     case _:
                         line = fh.readline()
@@ -1514,6 +1616,11 @@ def convert_file(utm, file_name):
         os.makedirs('data/NetworkPolicies/Firewall')
     with open('data/NetworkPolicies/Firewall/config_firewall_rules.json', 'w') as fh:
         json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
+
+    if not os.path.isdir('data/SecurityPolicies/ContentFiltering'):
+        os.makedirs('data/SecurityPolicies/ContentFiltering')
+    with open('data/SecurityPolicies/ContentFiltering/config_content_rules.json', 'w') as fh:
+        json.dump(cf_rules, fh, indent=4, ensure_ascii=False)
 
 #    aaa = set(zones.keys())
 #    print(aaa)
@@ -2202,8 +2309,8 @@ def import_firewall_rules(utm):
         print("\tНет правил межсетевого экрана для импорта.")
         return
 
-    total, firewall = utm.get_firewall_rules()
-    utm.firewall_rules = {x['name']: x['id'] for x in firewall}
+    _, result = utm.get_firewall_rules()
+    utm.firewall_rules = {x['name']: x['id'] for x in result}
 
     for item in data:
         get_guids_users_and_groups(utm, item)
@@ -2224,6 +2331,43 @@ def import_firewall_rules(utm):
             print(f"\033[31m{result}\033[0m")
         else:
             print(f'\tПравило МЭ "{item["name"]}" добавлено.')
+
+def import_content_rules(utm):
+    """Импортировать список правил фильтрации контента"""
+    print('Импорт списка "Фильтрация контента" раздела "Политики безопасности":')
+    try:
+        with open("data/SecurityPolicies/ContentFiltering/config_content_rules.json", "r") as fh:
+            data = json.load(fh)
+    except FileNotFoundError as err:
+        print(f'\t\033[31mСписок "Фильтрация контента" не импортирован!\n\tНе найден файл "data/SecurityPolicies/ContentFiltering/config_content_rules.json" с сохранённой конфигурацией!\033[0;0m')
+        return
+
+    if not data:
+        print("\tНет правил фильтрации контента для импорта.")
+        return
+
+    _, result = utm.get_content_rules()
+    content_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        set_time_restrictions(utm, item)
+        set_urls_and_categories(utm, item)
+
+        if item['name'] in content_rules:
+            print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
+            item.pop('position', None)
+            err1, result1 = utm.update_content_rule(content_rules[item['name']], item)
+            if err1 == 2:
+                print("\n", f"\033[31m{result1}\033[0m")
+            else:
+                print("\033[32mUpdated!\033[0;0m")
+        else:
+            err, result = utm.add_content_rule(item)
+            if err == 2:
+                print(f"\033[31m{result}\033[0m")
+            else:
+                content_rules[item['name']] = result
+                print(f'\tПравило "{item["name"]}" добавлено.')
 
 ############################################# Служебные функции ###################################################
 def get_guids_users_and_groups(utm, item):
@@ -2328,6 +2472,14 @@ def get_services(utm, item):
             print(f'\t\033[33mНе найден сервис {item} для правила "{rule_name}".\033[0m')
     return new_service_list
 
+def set_urls_and_categories(utm, item):
+    if item['urls']:
+        try:
+            item['urls'] = [utm.list_url[x] for x in item['urls']]
+        except KeyError as err:
+            print(f'\t\033[33mНе найден URL {err} для правила "{item["name"]}".\n\tЗагрузите списки URL и повторите попытку.\033[0m')
+            item['urls'] = []
+
 def menu():
     print("\033c")
     print(f"\033[1;36;43mUserGate\033[1;37;43m                    Конвертация конфигурации с Cisco ASA на NGFW                   \033[1;36;43mUserGate\033[0m\n")
@@ -2354,7 +2506,8 @@ def menu():
     print('\tDHCP                           - "Сеть/DHCP"')
     print('\tDNS                            - "Сеть/DNS"')
     print('\tСтатические маршруты           - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"')
-    print('\tAccess-lists                   - "Политики сети/Межсетевой экран"\033[0m')
+    print('\tAccess-lists                   - "Политики сети/Межсетевой экран"')
+    print('\tWebtype ACLs                   - "Политики безопасности/Фильтрация контента"\033[0m')
 
     print("\n")   
     print("1  - Экспорт конфигурации из файла.")
@@ -2397,6 +2550,7 @@ def menu_import():
     print('  17  - Пользователи             - "Пользователи и устройства/Пользователи"')
     print('  18  - Группы пользователей     - "Пользователи и устройства/Группы"')
     print('  19  - Access-lists             - "Политики сети/Межсетевой экран"')
+    print('  20  - Webtype ACLs             - "Политики безопасности/Фильтрация контента"')
     print("\n")   
     print("  99  - Импортировать всё.")
     print("  \033[33m 0  - Вверх (вернуться в предыдущее меню).\033[0m")
@@ -2404,7 +2558,7 @@ def menu_import():
     while True:
         try:
             mode = int(input("\nВведите номер нужной операции: "))
-            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 99):
+            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 99):
                 print("Вы ввели несуществующую команду.")
 #            elif mode == 0:
 #                sys.exit()
@@ -2506,6 +2660,7 @@ def main():
                             import_users(utm)
                             import_local_groups(utm)
                             import_firewall_rules(utm)
+                            import_content_rules(utm)
                         case 1:
                             import_IP_lists(utm)
                         case 2:
@@ -2545,6 +2700,8 @@ def main():
                             import_local_groups(utm)
                         case 19:
                             import_firewall_rules(utm)
+                        case 20:
+                            import_content_rules(utm)
                     utm.logout()
                     print("\n\033[32mИмпорт конфигурации Cisco ASA на NGFW UserGate завершён.\033[0m\n")
                     while True:

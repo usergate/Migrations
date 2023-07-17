@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.4
+# Версия 2.6
 #
 
 import os, sys, json
@@ -30,7 +30,7 @@ import ipaddress
 import copy
 from datetime import datetime as dt
 from collections import deque
-from services import character_map, character_map_for_users, character_map_for_name, service_ports
+from services import character_map, character_map_for_users, character_map_for_name, service_ports, ug_services
 from utm import UtmXmlRpc
 
 
@@ -47,6 +47,7 @@ def convert_file(utm, file_name):
     dhcp_enabled = 0
     rule_number = 0
     cfrule_number = 0
+    natrule_number = 0
     ip_protocol_list = protocol_names
     zones = {}
     iface_mtu = {}
@@ -66,6 +67,7 @@ def convert_file(utm, file_name):
     direction = {}
     fw_rules = []
     cf_rules = []
+    nat_rules = []
     default_vrf = {
         "name": "default",
         "descriprion": "",
@@ -859,6 +861,7 @@ def convert_file(utm, file_name):
         for item in object_block:
             match item:
                 case ['nat', *other]:
+                    convert_dnat_rule(name, item)
                     return
                 case ['subnet', ip, mask]:
                     subnet = ipaddress.ip_network(f'{ip}/{mask}')
@@ -1011,26 +1014,28 @@ def convert_file(utm, file_name):
         }
 
         for item in object_block:
-            proto = ''
+            proto = set()
             match item:
                 case ['protocol-object', protocol]:
                     if protocol.isdigit():
                         protocol = ip_proto.get(protocol, None)
                     if protocol and protocol in ip_protocol_list:
-                        proto = protocol
+                        proto.add(protocol)
+                    elif protocol == 'ip':
+                        proto.update({'tcp', 'udp'})
                     else:
                         print(f"\033[33mСервис {item} в {name} не конвертирован.\n\tНельзя задать протокол {protocol} в UG NGFW.\033[0m")
                         continue
                 case ['description', *content]:
                     service['description'] = " ".join(content)
-
-            service['protocols'].append(
-                {
-                    "proto": proto,
-                    "port": "",
-                    "source_port": "",
-                 }
-            )
+            for x in proto:
+                service['protocols'].append(
+                    {
+                        "proto": x,
+                        "port": "",
+                        "source_port": "",
+                    }
+                )
         services[name] = service
         
     def convert_icmp_object_group(name):
@@ -1232,9 +1237,12 @@ def convert_file(utm, file_name):
             case 'user-group':
                 group = deq.popleft()
                 group_list = group.split("\\\\")
-#                print('group_list', group_list)
                 if group_list[0] in identity_domains:
                     rule['users'].append(["group", f"{identity_domains[group_list[0]]}\\{group_list[1]}"])
+#            case 'interface':
+#                zone = deq.popleft()
+#                if zone in zones:
+#                    rule['dst_zones'].append(zone)
             case _:
                 ips_mode = 'src_ips'
                 get_ips(ips_mode, argument, rule, deq)
@@ -1245,13 +1253,11 @@ def convert_file(utm, file_name):
                     return
                 case 'eq':
                     port = deq.popleft()
-#                    print(rule_block)
                     service_name = f'Eq {port} (Rule {rule_number})'
                     create_service(service_name, ips_mode, protocol, port)
                     rule['services'].clear()
                     rule['services'].append(["service", service_name])
                 case 'range':
-#                    print(rule_block)
                     port1 = deq.popleft()
                     port2 = deq.popleft()
                     service_name = f'Range {port1}-{port2} (Rule {rule_number})'
@@ -1269,6 +1275,10 @@ def convert_file(utm, file_name):
                         rule['time_restrictions'].append(time_object)
                 case 'time-range':
                     rule['time_restrictions'].append(deq.popleft())
+#                case 'interface':
+#                    zone = deq.popleft()
+#                    if zone in zones:
+#                        rule['dst_zones'].append(zone)
                 case _:
                     ips_mode = 'dst_ips'
                     get_ips(ips_mode, argument, rule, deq)
@@ -1370,6 +1380,150 @@ def convert_file(utm, file_name):
         url_dict[name] = url_list
         rule['urls'].append(name)
         return True
+
+    def convert_dnat_rule(ip_list, rule_block):
+        """Конвертируем object network в правило DNAT или Port-форвардинг"""
+#        print(ip_dict[ip_list]['content'][0]['value'], "\t", rule_block)
+        if ('inactive' in rule_block) or ('interface' in rule_block):
+            print(f'\033[36mПравило NAT "{rule_block}" пропущено так как не активно или содержит интерфейс.\033[0m')
+            return
+
+        nonlocal natrule_number
+        natrule_number += 1
+        rule = {
+            "name": f"Rule {natrule_number} ({ip_list})",
+            "description": "",
+            "action": "dnat",
+            "position": "last",
+            "zone_in": [],
+            "zone_out": [],
+            "source_ip": [],
+            "dest_ip": [],
+            "service": [],
+            "target_ip": ip_dict[ip_list]['content'][0]['value'],
+            "gateway": "",
+            "enabled": False,
+            "log": False,
+            "log_session_start": True,
+            "target_snat": False,
+            "snat_target_ip": "",
+            "zone_in_nagate": False,
+            "zone_out_nagate": False,
+            "source_ip_nagate": False,
+            "dest_ip_nagate": False,
+            "port_mappings": [],
+            "direction": "input",
+            "users": [],
+            "scenario_rule_id": False
+        }
+        zone_out, zone_in = rule_block[1][1:-1].split(',')
+        if len(rule_block) == 3 or 'net-to-net' in rule_block:
+            rule['zone_in'] = [zone_in] if zone_in != 'any' else []
+        if rule_block[2] == 'static':
+            if rule_block[3] in ip_dict:
+                rule['dest_ip'].append(["list_id", rule_block[3]])
+                rule['snat_target_ip'] = ip_dict[rule_block[3]]['content'][0]['value']
+            elif f"host {rule_block[3]}" in ip_dict:
+                rule['dest_ip'].append(["list_id", f"host {rule_block[3]}"])
+                rule['snat_target_ip'] = ip_dict[f"host {rule_block[3]}"]['content'][0]['value']
+            else:
+                rule['dest_ip'].append(create_ip_list(rule_block[3]))
+                rule['snat_target_ip'] = rule_block[3]
+
+            if 'service' in rule_block:
+                i = rule_block.index('service')
+                proto = rule_block[i+1]
+                src_port = rule_block[i+3]
+                dst_port = rule_block[i+2]
+                if src_port == dst_port:
+                    if dst_port in ug_services:
+                        rule['service'].append(["service", ug_services[dst_port]])
+                    elif dst_port in services:
+                        rule['service'].append(["service", dst_port])
+                    else :
+                        service = {
+                            "name": dst_port,
+                            "description": f'Service for DNAT rule (Rule {natrule_number})',
+                            "protocols": [{"proto": proto, "port": service_ports.get(dst_port, dst_port), "source_port": ""}]
+                        }
+                        services[dst_port] = service
+                        rule['service'].append(["service", dst_port])
+                else:
+                    rule['action'] = 'port_mapping'
+                    rule['port_mappings'].append({"proto": proto,
+                                                  "src_port": int(service_ports.get(src_port, src_port)),
+                                                  "dst_port": int(service_ports.get(dst_port, dst_port))})
+        else:
+            return
+
+        nat_rules.append(rule)
+
+    def convert_nat_rule(rule_block):
+        """Конвертируем правило NAT"""
+#        print(ip_dict[ip_list]['content'][0]['value'], "\t", rule_block)
+        if ('inactive' in rule_block) or ('interface' in rule_block):
+            print(f'\033[36mПравило NAT "{rule_block}" пропущено так как не активно или содержит интерфейс.\033[0m')
+            return
+
+        nonlocal natrule_number
+        natrule_number += 1
+        rule = {
+            "name": f"Rule {natrule_number} NAT",
+            "description": "",
+            "action": "nat",
+            "position": "last",
+            "zone_in": [],
+            "zone_out": [],
+            "source_ip": [],
+            "dest_ip": [],
+            "service": [],
+            "target_ip": "",
+            "gateway": "",
+            "enabled": False,
+            "log": False,
+            "log_session_start": True,
+            "target_snat": False,
+            "snat_target_ip": "",
+            "zone_in_nagate": False,
+            "zone_out_nagate": False,
+            "source_ip_nagate": False,
+            "dest_ip_nagate": False,
+            "port_mappings": [],
+            "direction": "input",
+            "users": [],
+            "scenario_rule_id": False
+        }
+        zone_in, zone_out = rule_block[1][1:-1].split(',')
+        rule['zone_in'] = [zone_in.translate(trans_name)] if zone_in != 'any' else []
+        rule['zone_out'] = [zone_out.translate(trans_name)] if zone_out != 'any' else []
+        
+        if 'dynamic' in rule_block:
+            i = rule_block.index('dynamic')
+            if rule_block[i+1] != 'any':
+                if rule_block[i+1] == 'pat-pool':
+                    i += 1
+                if rule_block[i+1] in ip_dict:
+                    rule['source_ip'].append(["list_id", rule_block[i+1]])
+                elif f"host {rule_block[i+1]}" in ip_dict:
+                    rule['source_ip'].append(["list_id", f"host {rule_block[i+1]}"])
+                else:
+                    rule['source_ip'].append(create_ip_list(rule_block[i+1]))
+            if rule_block[i+2] != 'any':
+                if rule_block[i+2] == 'pat-pool':
+                    i += 1
+                if rule_block[i+2] in ip_dict:
+                    rule['dest_ip'].append(["list_id", rule_block[i+2]])
+                elif f"host {rule_block[i+2]}" in ip_dict:
+                    rule['dest_ip'].append(["list_id", f"host {rule_block[i+2]}"])
+                else:
+                    rule['dest_ip'].append(create_ip_list(rule_block[i+2]))
+            if 'description' in rule_block:
+                i = rule_block.index('description')
+                rule['description'] = " ".join(rule_block[i+1:])
+        else:
+            return
+
+        nat_rules.append(rule)
 
     def make_block_of_line(fh):
         """Читаем файл и создаём блок записей для раздела конфигурации"""
@@ -1512,6 +1666,9 @@ def convert_file(utm, file_name):
                                 string = line.rstrip('\n')
                                 print(f"\033[36mACE: {string} - не обработано.\033[0m")                                
                                 line = fh.readline()
+                    case 'nat':
+                        convert_nat_rule(x)
+                        line = fh.readline()
                     case _:
                         line = fh.readline()
 
@@ -1622,11 +1779,11 @@ def convert_file(utm, file_name):
     with open('data/SecurityPolicies/ContentFiltering/config_content_rules.json', 'w') as fh:
         json.dump(cf_rules, fh, indent=4, ensure_ascii=False)
 
-#    aaa = set(zones.keys())
-#    print(aaa)
-#    json_string = json.dumps([x for x in zones.values()], indent=4, ensure_ascii=False)
-#    print(json_string, "\n")
-            
+    if not os.path.isdir('data/NetworkPolicies/NATandRouting'):
+        os.makedirs('data/NetworkPolicies/NATandRouting')
+    with open('data/NetworkPolicies/NATandRouting/config_nat_rules.json', 'w') as fh:
+        json.dump(nat_rules, fh, indent=4, ensure_ascii=False)
+
 ######################################## Импорт ####################################################
 def import_settings(utm):
     """Импортировать настройки"""
@@ -2317,7 +2474,7 @@ def import_firewall_rules(utm):
         set_src_zone_and_ips(utm, item)
         set_dst_zone_and_ips(utm, item)
         set_time_restrictions(utm, item)
-        item['services'] = get_services(utm, item)
+        item['services'] = get_services(utm, item['services'])
 
         err, result = utm.add_firewall_rule(item)
         if err == 1:
@@ -2368,6 +2525,43 @@ def import_content_rules(utm):
             else:
                 content_rules[item['name']] = result
                 print(f'\tПравило "{item["name"]}" добавлено.')
+
+def import_nat_rules(utm):
+    """Импортировать список правил NAT"""
+    print('Импорт списка "NAT и маршрутизация" раздела "Политики сети":')
+    try:
+        with open("data/NetworkPolicies/NATandRouting/config_nat_rules.json", "r") as fh:
+            data = json.load(fh)
+    except FileNotFoundError as err:
+        print(f'\t\033[31mСписок "NAT и маршрутизация" не импортирован!\n\tНе найден файл "data/NetworkPolicies/NATandRouting/config_nat_rules.json" с сохранённой конфигурацией!\033[0;0m')
+        return
+
+    if not data:
+        print('\tНет правил в списке "NAT и маршрутизация" для импорта.')
+        return
+
+    _, result = utm.get_traffic_rules()
+    utm.nat_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        set_src_zone_and_ips(utm, item)
+        set_dst_zone_and_ips(utm, item)
+        item['service'] = get_services(utm, item['service'])
+        if item['action'] == 'route':
+            print(f'\t\033[33mПроверьте шлюз для правила ПБР "{item["name"]}".\n\tВ случае отсутствия, установите вручную.\033[0m')
+
+        err, result = utm.add_traffic_rule(item)
+        if err == 1:
+            print(result, end= ' - ')
+            err1, result1 = utm.update_traffic_rule(item)
+            if err1 != 0:
+                print("\n", f"\033[31m{result1}\033[0m")
+            else:
+                print("\033[32mUpdated!\033[0;0m")
+        elif err == 2:
+            print(f"\033[31m{result}\033[0m")
+        else:
+            print(f'\tПравило "{item["name"]}" добавлено.')
 
 ############################################# Служебные функции ###################################################
 def get_guids_users_and_groups(utm, item):
@@ -2420,40 +2614,52 @@ def get_guids_users_and_groups(utm, item):
         item['users'] = users
 
 def set_src_zone_and_ips(utm, item):
-    if item['src_zones']:
+    if 'src_zones' in item.keys():
+        zone_name = 'src_zones'
+        ip_name = 'src_ips'
+    else:
+        zone_name = 'zone_in'
+        ip_name = 'source_ip'
+    if item[zone_name]:
         try:
-            item['src_zones'] = [utm.zones[x] for x in item['src_zones']]
+            item[zone_name] = [utm.zones[x] for x in item[zone_name]]
         except KeyError as err:
             print(f'\t\033[33mИсходная зона {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-            item['src_zones'] = []
-    if item['src_ips']:
+            item[zone_name] = []
+    if item[ip_name]:
         try:
-            for x in item['src_ips']:
+            for x in item[ip_name]:
                 if x[0] == 'list_id':
                     x[1] = utm.list_ip[x[1]]
                 elif x[0] == 'urllist_id':
                     x[1] = utm.list_url[x[1]]
         except KeyError as err:
             print(f'\t\033[33mНе найден адрес источника {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-            item['src_ips'] = []
+            item[ip_name] = []
 
 def set_dst_zone_and_ips(utm, item):
-    if item['dst_zones']:
+    if 'dst_ips' in item.keys():
+        zone_name = 'dst_zones'
+        ip_name = 'dst_ips'
+    else:
+        zone_name = 'zone_out'
+        ip_name = 'dest_ip'
+    if item[zone_name]:
         try:
-            item['dst_zones'] = [utm.zones[x] for x in item['dst_zones']]
+            item[zone_name] = [utm.zones[x] for x in item[zone_name]]
         except KeyError as err:
             print(f'\t\033[33mЗона назначения {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-            item['dst_zones'] = []
-    if item['dst_ips']:
+            item[zone_name] = []
+    if item[ip_name]:
         try:
-            for x in item['dst_ips']:
+            for x in item[ip_name]:
                 if x[0] == 'list_id':
                     x[1] = utm.list_ip[x[1]]
                 elif x[0] == 'urllist_id':
                     x[1] = utm.list_url[x[1]]
         except KeyError as err:
             print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-            item['dst_ips'] = []
+            item[ip_name] = []
 
 def set_time_restrictions(utm, item):
     if item['time_restrictions']:
@@ -2463,9 +2669,9 @@ def set_time_restrictions(utm, item):
             print(f'\t\033[33mНе найден календарь {err} для правила "{item["name"]}".\n\tЗагрузите календари в библиотеку и повторите попытку.\033[0m')
             item['time_restrictions'] = []
 
-def get_services(utm, item):
+def get_services(utm, rule_services):
     new_service_list = []
-    for service in item['services']:
+    for service in rule_services:
         try:
             new_service_list.append(['service', utm.services[service[1]]])
         except KeyError as err:
@@ -2507,6 +2713,7 @@ def menu():
     print('\tDNS                            - "Сеть/DNS"')
     print('\tСтатические маршруты           - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"')
     print('\tAccess-lists                   - "Политики сети/Межсетевой экран"')
+    print('\tNAT, DNAT, Port-форвардинг     - "Политики сети/NAT и маршрутизация"')
     print('\tWebtype ACLs                   - "Политики безопасности/Фильтрация контента"\033[0m')
 
     print("\n")   
@@ -2531,26 +2738,27 @@ def menu_import():
     print(f"\033[1;36;43mUserGate\033[1;37;43m                    Конвертация конфигурации с Cisco ASA на NGFW                   \033[1;36;43mUserGate\033[0m\n")
     print("\033[32mЭкспорт подготовленной конфигурации из каталога 'data' в текущей директории на NGFW UserGate v7.\033[0m\n")
     print("Выберите раздел для импорта.\n")
-    print('   1  - Списки IP-адресов        - "Библиотеки/IP-адреса"')
-    print('   2  - Списки URL               - "Библиотеки/Списки URL"')
-    print('   3  - Сервисы                  - "Библиотеки/Сервисы"')
-    print('   4  - Временные интервалы      - "Библиотеки/Календари"')
-    print('   5  - Часовой пояс             - "UserGate/Настойки/Настройки интерфейса"')
-    print('   6  - Настройка NTP            - "UserGate/Настойки/Настройка времени сервера"')
-    print('   7  - Модули                   - "UserGate/Настойки/Модули"')
-    print('   8  - Зоны                     - "Сеть/Зоны"')
-    print('   9  - Интерфейсы VLAN          - "Сеть/Интерфейсы"')
-    print('  10  - Шлюзы                    - "Сеть/Шлюзы"')
-    print('  11  - DHCP                     - "Сеть/DHCP"')
-    print('  12  - DNS                      - "Сеть/DNS"')
-    print('  13  - Статические маршруты     - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"')
-    print('  14  - Radius                   - "Пользователи и устройства/Серверы аутентификации"')
-    print('  15  - Tacacs                   - "Пользователи и устройства/Серверы аутентификации"')
-    print('  16  - LDAP                     - "Пользователи и устройства/Серверы аутентификации"')
-    print('  17  - Пользователи             - "Пользователи и устройства/Пользователи"')
-    print('  18  - Группы пользователей     - "Пользователи и устройства/Группы"')
-    print('  19  - Access-lists             - "Политики сети/Межсетевой экран"')
-    print('  20  - Webtype ACLs             - "Политики безопасности/Фильтрация контента"')
+    print('   1  - Списки IP-адресов          - "Библиотеки/IP-адреса"')
+    print('   2  - Списки URL                 - "Библиотеки/Списки URL"')
+    print('   3  - Сервисы                    - "Библиотеки/Сервисы"')
+    print('   4  - Временные интервалы        - "Библиотеки/Календари"')
+    print('   5  - Часовой пояс               - "UserGate/Настойки/Настройки интерфейса"')
+    print('   6  - Настройка NTP              - "UserGate/Настойки/Настройка времени сервера"')
+    print('   7  - Модули                     - "UserGate/Настойки/Модули"')
+    print('   8  - Зоны                       - "Сеть/Зоны"')
+    print('   9  - Интерфейсы VLAN            - "Сеть/Интерфейсы"')
+    print('  10  - Шлюзы                      - "Сеть/Шлюзы"')
+    print('  11  - DHCP                       - "Сеть/DHCP"')
+    print('  12  - DNS                        - "Сеть/DNS"')
+    print('  13  - Статические маршруты       - "Сеть/Виртуальные маршрутизаторы/Статические маршруты"')
+    print('  14  - Radius                     - "Пользователи и устройства/Серверы аутентификации"')
+    print('  15  - Tacacs                     - "Пользователи и устройства/Серверы аутентификации"')
+    print('  16  - LDAP                       - "Пользователи и устройства/Серверы аутентификации"')
+    print('  17  - Пользователи               - "Пользователи и устройства/Пользователи"')
+    print('  18  - Группы пользователей       - "Пользователи и устройства/Группы"')
+    print('  19  - Access-lists               - "Политики сети/Межсетевой экран"')
+    print('  20  - NAT, DNAT, Port-форвардинг - "Политики сети/NAT и маршрутизация"')
+    print('  21  - Webtype ACLs               - "Политики безопасности/Фильтрация контента"')
     print("\n")   
     print("  99  - Импортировать всё.")
     print("  \033[33m 0  - Вверх (вернуться в предыдущее меню).\033[0m")
@@ -2558,7 +2766,7 @@ def menu_import():
     while True:
         try:
             mode = int(input("\nВведите номер нужной операции: "))
-            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 99):
+            if mode not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 99):
                 print("Вы ввели несуществующую команду.")
 #            elif mode == 0:
 #                sys.exit()
@@ -2661,6 +2869,7 @@ def main():
                             import_local_groups(utm)
                             import_firewall_rules(utm)
                             import_content_rules(utm)
+                            import_nat_rules(utm)
                         case 1:
                             import_IP_lists(utm)
                         case 2:
@@ -2701,6 +2910,8 @@ def main():
                         case 19:
                             import_firewall_rules(utm)
                         case 20:
+                            import_nat_rules(utm)
+                        case 21:
                             import_content_rules(utm)
                     utm.logout()
                     print("\n\033[32mИмпорт конфигурации Cisco ASA на NGFW UserGate завершён.\033[0m\n")

@@ -97,14 +97,6 @@ ip_proto = {
     '142': 'rohc'
 }
 
-#network_proto = {
-#    'ah', 'eigrp', 'esp', 'gre', 'icmp', 'ipv6-icmp', 'igmp', 'idrp', 'ipip', 'smtp', 'smtps', 'pop3', 'pop3s',
-#    'ggp', 'ipencap', 'st', 'egp', 'igp', 'pup', 'hmp', 'xns-idp', 'rdp', 'iso-tp4', 'dccp', 'xtp', 'ddp',
-#    'idpr-cmtp', 'ipv6', 'ipv6-route', 'ipv6-frag', 'rsvp', 'skip', 'ipv6-nonxt', 'ipv6-opts', 'rspf', 'vmtp',
-#    'ospf', 'ax.25', 'etherip', 'encap', 'pim', 'ipcomp', 'vrrp', 'l2tp', 'isis', 'sctp', 'fc', 'mobility-header',
-#    'udplite', 'mpls-in-ip', 'manet', 'hip', 'shim6', 'wesp', 'rohc'
-#}
-
 service_ports = {
     'tcpmux': '1',
     'echo': '7',
@@ -445,6 +437,21 @@ service_ports = {
     'dircproxy': '57000',
     'tfido': '60177',
     'fido': '60179',
+}
+
+ug_services = {
+    'https': 'HTTPS',
+    'imap4': 'IMAP',
+    'ntp': 'NTP',
+    'pop3': 'POP3',
+    'postgresql': 'Postgres SQL',
+    'smtp': 'SMTP',
+    'snmp': 'SNMP',
+    'ssh': 'SSH',
+    'www': 'HTTP',
+    '873': 'Rsync',
+    '80': 'HTTP',
+    '5432': 'Postgres SQL',
 }
 
 ddp = {

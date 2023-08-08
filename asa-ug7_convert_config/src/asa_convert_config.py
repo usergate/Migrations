@@ -416,7 +416,7 @@ def convert_file(utm, file_name):
             gateway = {
                 "name": f"{iface} (backup)" if gateways and gateways[0]['name'] == iface else iface,
                 "enabled": True,
-                "descriprion": "",
+                "description": "",
                 "ipv4": next_hop,
                 "vrf": "default",
                 "weight": int(other[0]),
@@ -2085,7 +2085,7 @@ def import_interfaces(utm):
         with open("data/Network/Interfaces/config_interfaces.json", "r") as fd:
             ifaces = json.load(fd)
     except FileNotFoundError as err:
-        print(f'\t\033[31mСписок "Зоны" не импортирован!\n\tНе найден файл "data/Network/Interfaces/config_interfaces.json" с сохранённой конфигурацией!\033[0;0m')
+        print(f'\t\033[31mСписок "Интерфейсы" не импортирован!\n\tНе найден файл "data/Network/Interfaces/config_interfaces.json" с сохранённой конфигурацией!\033[0;0m')
         return
 
     management_port = ''

@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 3.1
+# Версия 3.2
 # Программа предназначена для переноса конфигурации с UTM версии 5 и 6 на версии 6 и 7
 # или между устройствами 6-ой версии.
 #
@@ -2017,8 +2017,8 @@ class UTM(UtmXmlRpc):
                 print(f'\tЛокальная группа "{item["name"]}" добавлена.')
 
             for user_name in users:
-                user_array = user_name. split(' ')
-                if len(user_array) > 1:
+                user_array = user_name.split(' ')
+                if len(user_array) > 1 and ('\\' in user_array[1]):
                     domain, name = user_array[1][1:len(user_array[1])-1].split('\\')
                     err, result = self.get_ldap_user_guid(domain, name)
                     if err != 0:

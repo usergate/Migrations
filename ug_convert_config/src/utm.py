@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.1
+# Версия 3.2
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -814,7 +814,7 @@ class UtmXmlRpc:
             return 2, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 1, f"\tСервис: '{service['name']}' уже существует. Проверка параметров..."
+                return 1, f'\tСервис "{service["name"]}" уже существует. Проверка параметров...'
             else:
                 return 2, f"Ошибка add_service: [{err.faultCode}] — {err.faultString}"
         else:
@@ -2317,6 +2317,18 @@ class UtmXmlRpc:
             return 2, f"\tОшибка utm.update_notification_alert_rule: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID изменённого правила
+
+####################################### Служебные методы ###########################################
+    def get_ip_protocol_list(self):
+        """Получить список поддерживаемых IP протоколов"""
+        try:
+            result = self._server.v2.core.ip.protocol.list()
+
+        except rpc.Fault as err:
+            return 2, f"\tОшибка utm.get_ip_protocol_list: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, {x['name'] for x in result}  # Возвращает set {protocol_name, ...}
+
 
 class UtmError(Exception): pass
 

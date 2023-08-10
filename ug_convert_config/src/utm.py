@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.2
+# Версия 3.3
 # Общий класс для работы с xml-rpc
 import sys
 import xmlrpc.client as rpc
@@ -710,11 +710,11 @@ class UtmXmlRpc:
                 try:
                     if (list_type == 'ipspolicy' and self.version.startswith('5')) \
                              or (self.version.startswith('6.1') and int(utm_version[2]) > 8):
-                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, {}, [])
                     elif self.version.startswith('7'):
-                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, {}, [])
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, {}, [])
                     else:
-                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 5000, '', [])
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, '', [])
                 except rpc.Fault as err:
                     print(f'\033[33m\tСодержимое списка "{item["name"]}" не экспортировано. Ошибка загрузки списка!\033[0m')
                     content['items'] = []

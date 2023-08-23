@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 3.3
+# Версия 3.4
 # Программа предназначена для переноса конфигурации с UTM версии 5 и 6 на версии 6 и 7
 # или между устройствами 6-ой версии.
 #
@@ -530,6 +530,7 @@ class UTM(UtmXmlRpc):
         if os.path.isdir('data/Libraries/IPAddresses'):
             files_list = os.listdir('data/Libraries/IPAddresses')
             if files_list:
+                # Добавляем списки IP-адресов без содержимого (пустые).
                 for file_name in files_list:
                     try:
                         with open(f"data/Libraries/IPAddresses/{file_name}", "r") as fh:
@@ -554,8 +555,27 @@ class UTM(UtmXmlRpc):
                     else:
                         self.list_IP[ip_list['name']] = result
                         print(f'\tДобавлен список IP-адресов: "{ip_list["name"]}".')
+                # Добавляем содержимое в уже добавленные списки IP-адресов (это для вложенных списков).
+                for file_name in files_list:
+                    with open(f"data/Libraries/IPAddresses/{file_name}", "r") as fh:
+                        ip_list = json.load(fh)
+
+                    content = ip_list.pop('content')
                     if content:
-                        err2, result2 = self.add_nlist_items(result, content)
+                        for item in content:
+                            if 'list' in item:
+                                try:
+                                    sublist_id = self.list_IP[item['value']]
+                                    item.clear()
+#                                    item.pop('value', None)
+#                                    item.pop('readonly', None)
+#                                    item.pop('description', None)
+                                    item['list'] = sublist_id
+                                except KeyError:
+                                    print(f'\033[31m\tОшибка! Нет IP-листа "{item["value"]}" в библиотеке списков IP-адресов.')
+                                    print(f'Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".\033[0m')
+                                    break
+                        err2, result2 = self.add_nlist_items(self.list_IP[ip_list['name']], content)
                         if err2 in (1, 3):
                             print(result2)
                         elif err2 == 2:

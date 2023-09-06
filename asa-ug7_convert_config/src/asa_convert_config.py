@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.6
+# Версия 2.7
 #
 
 import os, sys, json
@@ -391,9 +391,13 @@ def convert_file(utm, file_name):
                         if key == 'vlan':
                             iface['vlan_id'] = int(value)
                         elif key == 'nameif':
-                            iface['zone_id'] = zones[value]['name']
-                            iface['mtu'] = iface_mtu[value]
-                            
+                            try:
+                                iface['zone_id'] = zones[value]['name']
+                                iface['mtu'] = iface_mtu[value]
+                            except KeyError:
+                                print(f"\033[33m\tНе найдено MTU для интерфейса {value}. Зона интерфейса будет установлена в Undefined.\033[0m")
+                                iface['zone_id'] = 0
+                                iface['mtu'] = 1500
 #                            iface['name'] = ''
 #                            iface['link'] = ''
                             
@@ -431,7 +435,7 @@ def convert_file(utm, file_name):
             network_dest = pack_ip_address(network, mask)
             route = {
                 "name": f"Route for {network_dest}",
-                "descriprion": "",
+                "description": "",
                 "enabled": False,
                 "dest": network_dest,
                 "gateway": next_hop,

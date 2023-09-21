@@ -750,7 +750,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 3, f'Список: "{named_list["name"]}" уже существует'
+                return 2, f'Список: "{named_list["name"]}" уже существует'
             elif err.faultCode == 111:
                 return 1, f'Недопустимые символы в названии списка "{named_list["name"]}"! Возможно используются русские буквы.'
             else:
@@ -2277,11 +2277,28 @@ class UtmXmlRpc:
         """Получить список поддерживаемых IP протоколов"""
         try:
             result = self._server.v2.core.ip.protocol.list()
-
         except rpc.Fault as err:
             return 1, f"Error utm.get_ip_protocol_list: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, {x['name'] for x in result}  # Возвращает set {protocol_name, ...}
+
+    def get_url_categories(self):
+        """Получить список категорий URL"""
+        try:
+            result = self._server.v2.core.get.categories()
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_url_categories: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result  # Возвращает список [{id: name}, ...]
+
+    def get_l7_apps(self):
+        """Получить список приложений l7"""
+        try:
+            result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, {}, [])
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_l7_apps: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
 #####################################################################################################
 
 class UtmError(Exception): pass

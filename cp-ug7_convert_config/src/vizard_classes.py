@@ -1,11 +1,11 @@
 #
-import os, json, time
+import os, json
 from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea)
-import service_functions as sf
-import thread_functions as tf
+import convert_functions as cf
+import import_functions as tf
 from utm import UtmXmlRpc
 
 
@@ -77,7 +77,6 @@ class SelectAction(QWidget):
         """
         if os.path.isdir(self.parent.cp_path):
             if os.path.exists(os.path.join(self.parent.cp_path, 'index.json')):
-#                data_json = os.path.join(self.parent.cp_path, 'data_json')
                 if create_dir(self, self.parent.cp_data_json):
                     files = os.listdir(self.parent.cp_path)
                     for file_name in files:
@@ -197,6 +196,8 @@ class SelectImportMode(QWidget):
             '8. Импорт групп сервисов': tf.ImportServicesGroups,
             '9. Импорт списков IP-адресов': tf.ImportIpLists,
             '10. Импорт списков URL': tf.ImportUrlLists,
+            '11. Импорт групп URL категорий': tf.ImportUrlCategories,
+            '12. Импорт групп приложений': tf.ImportApplicationGroups,
         }
 
         title = QLabel("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")
@@ -363,7 +364,7 @@ class SelectImportMode(QWidget):
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
             else:
-                message_inform(self, 'Ошибка', f'Произошла ошибка при импорте!')
+                message_inform(self, 'Ошибка', 'Произошла ошибка при запуске процесса импорта!')
 
     def on_batch_changed(self, msg):
         err, message = msg.split('|')
@@ -574,9 +575,11 @@ class VlanWindow(QDialog):
 
 
 class ExportList(QDialog):
+    """Класс для конвертации конфигурации в формат UG NGFW"""
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
+        self.thread = None
         self.setWindowTitle("Преобразование конфигурации")
         self.resize(800, 700)
         title = QLabel(f"<b><font color='green' size='+2'>Gateways policy package - {self.parent.sg_name}</font></b>")
@@ -609,37 +612,58 @@ class ExportList(QDialog):
         self.setLayout(layout)
         
     def _convert_config(self):
-        data = []
+        config_cp = []
         try:
             with open(os.path.join(self.parent.cp_path, 'config_cp.txt'), 'r') as fh:
                 for line in fh:
                     x = line.strip('\n').split()
                     if x and x[0] in {'set', 'add'}:
-                        data.append(x[1:])
+                        config_cp.append(x[1:])
         except FileNotFoundError as err:
             message_alert(self, err, 'Не найден файл "config_cp.txt" c конфигурацией Check Point.')
             self.reject()
             return
-        else:
-            sf.convert_config_cp(self, data)
 
         objects_file = self.parent.sg_index[self.parent.sg_name]['objects']['htmlObjectsFileName'].replace('html', 'json')
         try:
             with open(os.path.join(self.parent.cp_path, objects_file), 'r') as fh:
                 data = json.load(fh)
-            objects = {x['uid']: x for x in data}
+            self.objects = {x['uid']: x for x in data}
         except FileNotFoundError as err:
             message_alert(self, err, f'Не найден файл конфигурации Check Point "{objects_file}"!')
             self.reject()
             return
+
+        if self.thread is None:
+            self.thread = cf.ConvertAll(config_cp, self.objects)
+            self.thread.stepChanged.connect(self.on_batch_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
         else:
-            sf.convert_services(self, objects)
-            sf.convert_services_groups(self, objects)
-            sf.convert_ip_lists(self, objects)
-            sf.convert_ip_lists_groups(self, objects)
-            sf.convert_url_lists(self, objects)
-            self.btn2.setStyleSheet('color: forestgreen; background: white;')
-            self.btn2.setEnabled(True)
+            message_inform(self, 'Ошибка', 'Произошла ошибка при запуске процесса конвертации!')
+
+    def on_batch_changed(self, msg):
+        try:
+            error, message = msg.split('|')
+        except ValueError as err:
+            message_alert(self, err, msg)
+        else:
+            if int(error) == 5:
+                self.log_list.addItem('')
+                self.log_list.addItem(message)
+                self.log_list.addItem('')
+                message_inform(self, 'Конвертация', message)
+            else:
+                self.log_list.addItem(f'    {message}' if int(error) else message)
+            self.log_list.scrollToBottom()
+
+    def on_finished(self):
+        self.thread = None
+        self.btn2.setStyleSheet('color: forestgreen; background: white;')
+        self.btn2.setEnabled(True)
+        # удалить потом
+        with open("objects.json", "w") as fh:
+            json.dump(self.objects, fh, indent=4, ensure_ascii=False)
 
     def _save_logs(self):
         list_items = [f"Преобразование конфигурации Gateways policy package - {self.parent.sg_name}",

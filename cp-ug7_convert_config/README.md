@@ -1,5 +1,5 @@
 <h2 align="center">Конвертация конфигурации с CheckPoint на UserGate</h2>
-<h3 align="center">(Версия 2.1)</h3>
+<h3 align="center">(Версия 2.2)</h3>
 
 Программа предназначена для переноса конфигурации с оборудования Check Point R80.40 на NGFW UserGate v.7.
 

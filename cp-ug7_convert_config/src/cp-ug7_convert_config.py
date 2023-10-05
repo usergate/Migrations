@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # cp-ug7_convert_config.py
-# Version 1.0
+# Version 2.2
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json

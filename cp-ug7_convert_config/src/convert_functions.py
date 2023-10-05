@@ -22,7 +22,7 @@
 # Версия 1.0
 #
 
-import os, sys, json
+import os, sys, json, uuid
 import ipaddress
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import cp_app_category, cp_app_site, new_applicationgroup
@@ -38,25 +38,56 @@ class ConvertAll(QThread):
     """Конвертируем всю конфигурацию CheckPoint"""
     stepChanged = pyqtSignal(str)
     
-    def __init__(self, config_cp, objects):
+    def __init__(self, config_cp, objects, parent):
         super().__init__()
         self.config_cp = config_cp
         self.objects = objects
+        self.sg_index = parent.sg_index
+        self.sg_name = parent.sg_name
+        self.cp_data_json = parent.cp_data_json
         self.error = 0
+        self.app_groups = []
 
     def run(self):
         """Конвертируем всё в пакетном режиме"""
         convert_config_cp(self)
         convert_services(self)
+        convert_other(self)
         convert_services_groups(self)
         convert_ip_lists(self)
         convert_ip_lists_groups(self)
+        convert_ip_group_with_exclusion(self)
         convert_url_lists(self)
         convert_application_site_category(self)
         convert_application_site(self)
         convert_application_group(self)
+        convert_access_role(self)
+        convert_access_policy_files(self)
+        
+        self.save_app_groups()
         self.stepChanged.emit('5|Преобразование конфигурации в формат UG NGFW прошло с ошибками!' if self.error else '5|Преобразование конфигурации в формат UG NGFW прошло успешно.')
 
+    def create_app_group(self, group_name, app_list, comment=''):
+        app_group = {
+            "name": group_name,
+            "description": comment,
+            "type": "applicationgroup",
+            "list_type_update": "static",
+            "schedule": "disabled",
+            "attributes": {},
+            "content": [{"value": x} for x in app_list]
+        }
+        self.app_groups.append(app_group)
+    
+    def save_app_groups(self):
+        """Добавляем группы приложений из applications/new_applicationgroup и записываем все группы приложений в файл."""
+        for item in new_applicationgroup:
+            self.create_app_group(item['name'], item['app_list'], comment="Группа добавлена для совместимости с CheckPoint.")
+
+        if make_dirs(self, 'data_ug/Libraries/Applications'):
+            with open("data_ug/Libraries/Applications/config_applications.json", "w") as fh:
+                json.dump(self.app_groups, fh, indent=4, ensure_ascii=False)
+        self.stepChanged.emit('1|Группы приложений выгружены в файл "data_ug/Libraries/Applications/config_applications.json".')
 
 def convert_config_cp(parent):
     """Конвертируем данные из файла "config_cp.txt" в формат UG NGFW"""
@@ -349,7 +380,7 @@ def convert_services_groups(parent):
     for key, value in parent.objects.items():
         if value['type'] == 'service-group':
             members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members']}  # словарь использован для удаления одинаковых сервисов
-            content = [services[x['name']] for x in members.values()]
+            content = [services[x['name']] for x in members.values() if x['type'] != 'error']
             for item in content:
                 for x in item['protocols']:
                     x.pop('source_port')
@@ -374,8 +405,8 @@ def convert_ip_lists(parent):
     """
     Выгружаем списки IP-адресов в каталог data_ug/Libraries/IPAddresses для последующей загрузки в NGFW.
     В "objects" типы "host", "address-range", "network" переписываются в вид:
-    uid: {'type': 'network', 'name': 'ИМЯ_IP_ЛИСТА'} для загрузки ip-листов в правила. Или
-    uid: {'type': 'error', 'name': f'Объект host: "{value["name"]}" содержит IPV6 адрес.'}
+    uid: {"type": "network", "name": ["list_id", "ИМЯ_IP_ЛИСТА"]} для загрузки ip-листов в правила. Или
+    uid: {"type": "error", "name": f'Объект host: "{value["name"]}" содержит IPV6 адрес.'}
     """
     parent.stepChanged.emit('0|Конвертация списков IP-адресов.')
 
@@ -388,14 +419,13 @@ def convert_ip_lists(parent):
     error = 0
     for key, value in parent.objects.items():
         if value['type'] in ('host', 'address-range', 'network'):
-            if 'ipv6-address' in value.keys():
+            if value.keys().isdisjoint(('ipv4-address', 'ipv4-address-first', 'subnet4')):
                 error = 1
                 parent.error = 1
-                parent.stepChanged.emit(f"3|Warning: Объект host: '{value['name']}' содержит IPV6 адрес. Данный тип адреса не поддерживается.")
-                if ('ipv4-address' not in value.keys()) or not value['ipv4-address']:
-                    parent.objects[key] = {'type': 'error', 'name': f'Объект host: "{value["name"]}" содержит IPV6 адрес.'}
-                    continue
-            parent.objects[key] = {'type': 'network', 'name': value['name'].translate(trans_name)}
+                parent.stepChanged.emit(f"3|Warning: Объект value['type']: '{value['name']}' содержит IPV6 адрес или подсеть. Данный тип адреса не поддерживается.")
+                parent.objects[key] = {'type': 'error', 'name': f'Объект value["type"]: "{value["name"]}" содержит IPV6 адрес или подсеть.'}
+                continue
+            parent.objects[key] = {'type': 'network', 'name': ['list_id', value['name'].translate(trans_name)]}
             match value['type']:
                 case 'host':
                     content = [{'value': value['ipv4-address']}]
@@ -418,24 +448,39 @@ def convert_ip_lists(parent):
             }
 
             file_name = value['name'].translate(trans_filename)
-            with open(f"data_ug/Libraries/IPAddresses/{file_name}.json", "w") as fh:
-                json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'2|Список IP-адресов "{value["name"]}" выгружен в файл "data_ug/Libraries/IPAddresses/{file_name}.json".')
+            try:
+                with open(f"data_ug/Libraries/IPAddresses/{file_name}.json", "w") as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'2|Список IP-адресов "{value["name"]}" выгружен в файл "data_ug/Libraries/IPAddresses/{file_name}.json".')
+            except OSError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'3|Warning! Объект {value["type"]} - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'3|Warning! : {err}.')
+
     parent.stepChanged.emit('1|Списки IP-адресов конвертированы с ошибками!' if error else '1|Списки IP-адресов конвертированы.')
 
 def convert_ip_lists_groups(parent):
     """
     Выгружаем списки групп IP-адресов в каталог data_ug/Libraries/IPAddresses для последующей загрузки в NGFW.
-    В "objects" тип "group" переписывается в вид: uid: {'type': 'network', 'name': 'ИМЯ_IP_ЛИСТА'} для загрузки ip-листов в правила.
+    В "objects" тип "group" переписывается в вид:
+    uid: {"type": "network", "name": ["list_id", "ИМЯ_IP_ЛИСТА"]}.
     """
     parent.stepChanged.emit('0|Конвертация списков групп IP-адресов.')
 
+    error = 0
     for key, value in parent.objects.items():
         if value['type'] == 'group':
-            parent.objects[key] = {'type': 'network', 'name': value['name'].translate(trans_name)}
+            parent.objects[key] = {'type': 'network', 'name': ['list_id', value['name'].translate(trans_name)]}
             content = []
             for uid in value['members']:
-                content.append({"list": parent.objects[uid]['name']})
+                try:
+                    content.append({"list": parent.objects[uid]['name']})
+                except KeyError:
+                    error = 1
+                    parent.error = 1
+                    parent.stepChanged.emit(f'3|Warning! В группе IP-аресов "{value["name"]}" присутствует ссылка на несуществующий объект: {uid}.')
             ip_list = {
                 "name": value['name'].translate(trans_name),
                 "description": value['comments'],
@@ -450,9 +495,54 @@ def convert_ip_lists_groups(parent):
             }
 
             file_name = value['name'].translate(trans_filename)
-            with open(f"data_ug/Libraries/IPAddresses/{file_name}.json", "w") as fh:
-                json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'2|Список групп IP-адресов "{value["name"]}" выгружен в файл "data_ug/Libraries/IPAddresses/{file_name}.json".')
+            try:
+                with open(f"data_ug/Libraries/IPAddresses/{file_name}.json", "w") as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'2|Список групп IP-адресов "{value["name"]}" выгружен в файл "data_ug/Libraries/IPAddresses/{file_name}.json".')
+            except OSError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список групп IP-адресов "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'3|Warning! Объект {value["type"]} - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'3|Warning! : {err}.')
+
+    parent.stepChanged.emit('1|Списки групп IP-адресов конвертированы с ошибками!' if error else '1|Списки групп IP-адресов конвертированы.')
+
+def convert_ip_group_with_exclusion(parent):
+    """
+    В objects.json тип "group-with-exclusion" переписывается в вид:
+    uid: {
+        "type": "group-with-exclusion",
+        "groups": [
+            {
+                "type": "network",
+                "name": ["list_id", "ИМЯ_IP_ЛИСТА"],
+                "action": "accept|drop"  - если drop, в правиле ставим признак 'Инвертировать'
+            },
+            ....
+        ]
+    }
+    """
+    parent.stepChanged.emit('0|Конвертация групп IP-адресов с типом group-with-exclusion.')
+
+    error = 0
+    for key, value in parent.objects.items():
+        if value['type'] == 'group-with-exclusion':
+            try:
+                groups = []
+                if 'except' in value:
+                    groups.append({"type": "network", "name": ['list_id', parent.objects[value['except']['uid']]['name']], "action": "drop"})
+                if 'include' in value:
+                    groups.append({"type": "network", "name": ['list_id', parent.objects[value['include']['uid']]['name']], "action": "accept"})
+                parent.objects[key] = {"type": "group-with-exclusion", "groups": groups}
+            except KeyError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Объект group-with-exclusion "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'3|Warning! Group-with-exclusion "{value["name"]}" не конвертирована: {err}.')
+
+    parent.stepChanged.emit('1|Группы IP-адресов с типом group-with-exclusion конвертированы с ошибками!' if error else '1|Группы IP-адресов с типом group-with-exclusion конвертированы.')
+
 
 def convert_url_lists(parent):
     """
@@ -495,26 +585,7 @@ def convert_application_site_category(parent):
     Категории URL: uid:{'type': 'url_category', 'name': ['ИМЯ_КАТЕГОРИИ_URL', ...]}.
     """
     parent.stepChanged.emit('0|Конвертация application-site-categoty.')
-
-    app_groups = []
-    for item in new_applicationgroup:
-        app_group = {
-            "name": item['name'],
-            "description": "Группа добавлена для совместимости с CheckPoint.",
-            "type": "applicationgroup",
-            "list_type_update": "static",
-            "schedule": "disabled",
-            "attributes": {},
-            "content": [{"value": x} for x in item['app_list']]
-        }
-        app_groups.append(app_group)
     
-    if not os.path.isdir('data_ug/Libraries/Applications'):
-        os.makedirs('data_ug/Libraries/Applications')
-    with open("data_ug/Libraries/Applications/config_applications.json", "w") as fh:
-        json.dump(app_groups, fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit('1|Новые группы приложений выгружены в файл  "data_ug/Libraries/Applications/config_applications.json".')
-
     error = 0
     for key, value in parent.objects.items():
         if value['type'] == 'application-site-category':
@@ -555,15 +626,14 @@ def convert_application_group(parent):
         "apps": [["ro_group", RO_GROUP_NAME], ..., ["group", GROUP_NAME], ...],
         "url_categories": [["list_id", LIST_NAME], ...],
         "urls": ["ИМЯ_URL_ЛИСТА", ...]
-        "error": 0  - Если объект получился пустой (нет приложений и категорий в NGFW), ставим маркер ошибки.
-                      В этом случае в названии правила МЭ пишем: "ERROR! - ИМЯ_ПРАВИЛА".
+        "error": 0  - Если нет ошибки. Если объект получился пустой (нет приложений и категорий в NGFW), ставим маркер ошибки '1'.
+                      В этом случае в названии правила МЭ пишем: "ERROR - ИМЯ_ПРАВИЛА".
         "description": ["Для приложения ... нет аналога на NGFW", ...] - если в этой группе не конвертировались приложения или категории.
                       В описание правила МЭ добавляем этот description с описанием проблем.
     }
     """
     parent.stepChanged.emit('0|Конвертация application-site-group в группы приложений и URL категорий.')
 
-    app_groups = []
     url_groups = []
     for key in parent.objects:
         try:
@@ -603,7 +673,6 @@ def convert_application_group(parent):
                             case 'error':
                                 apps_group_tmp['description'].append(parent.objects[item]['description'])
                     except (TypeError, KeyError) as err:
-                        print(f'3|Warning! {err} - {item}.')
                         parent.stepChanged.emit(f'3|Warning! {err} - {item}.')
 
                 apps_group_tmp['apps'].extend([['ro_group', x] for x in ro_group]),
@@ -611,18 +680,9 @@ def convert_application_group(parent):
                 apps_group_tmp['urls'] = [x for x in url_list]
 
                 if app:
-                    app_groups.append(
-                        {
-                            "name": apps_group_tmp['name'],
-                            "description": apps_group_tmp['comments'],
-                            "type": "applicationgroup",
-                            "list_type_update": "static",
-                            "schedule": "disabled",
-                            "attributes": {},
-                            "content": [{"value": x} for x in app]
-                        }
-                    )
                     apps_group_tmp['apps'].append(['group', apps_group_tmp['name']])
+                    parent.create_app_group(apps_group_tmp['name'], app, comment=apps_group_tmp['comments'])
+                    
                 if url_category:
                     url_groups.append(
                         {
@@ -638,26 +698,14 @@ def convert_application_group(parent):
                     )
                     apps_group_tmp['url_categories'].append(['list_id', apps_group_tmp['name']])
                 # Если объект получился пустой (нет приложений и категорий в NGFW), ставим маркер ошибки.
-                # В названии правила МЭ пишем: "ERROR! - ИМЯ_ПРАВИЛА".
+                # В названии правила МЭ пишем: "ERROR - ИМЯ_ПРАВИЛА".
                 # В описание правила МЭ добавляем objects[key]['description'] с описанием проблемы.
                 if not apps_group_tmp['apps'] and not apps_group_tmp['url_categories'] and not apps_group_tmp['urls']:
                     apps_group_tmp['error'] = 1
 
                 parent.objects[key] = apps_group_tmp
         except (TypeError, KeyError) as err:
-#            print(f'3|Warning! {err} - {parent.objects[key]}.')
             parent.stepChanged.emit(f'3|Warning! {err} - {parent.objects[key]}.')
-
-    if app_groups:
-        if make_dirs(parent, 'data_ug/Libraries/Applications'):
-            if os.path.exists('data_ug/Libraries/Applications/config_applications.json'):
-                with open("data_ug/Libraries/Applications/config_applications.json", "r") as fh:
-                    data = json.load(fh)
-                app_groups.extend(data)
-            with open("data_ug/Libraries/Applications/config_applications.json", "w") as fh:
-                json.dump(app_groups, fh, indent=4, ensure_ascii=False)
-    
-            parent.stepChanged.emit('1|Группы приложений выгружены в файл "data_ug/Libraries/Applications/config_applications.json".')
 
     if url_groups:
         if make_dirs(parent, 'data_ug/Libraries/URLCategories'):
@@ -665,22 +713,24 @@ def convert_application_group(parent):
                 json.dump(url_groups, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit('1|Группы URL категорий выгружены в файл "data_ug/Libraries/URLCategories/config_categories_url.json".')
 
-############################
-
-
-def convert_access_role(objects):
+def convert_access_role(parent):
     """
+    Конвертация access-role в objects.json.
     В файле объектов objects.json UID с access-role переписываются в вид:
-    uid = {
-        'networks': [{'ip-list': 'ИМЯ_IP_ЛИСТА'}],
-        'users': [
-            [ 'user', 'доменое_имя_юзера' ]
+    uid: {
+        "networks": [["list_id", "ИМЯ_IP_ЛИСТА"], ...],
+        "users": [
+            ["user", "доменое_имя_юзера"],
+            ["special", "known_user"],
+            ...
+            ["group", "name_of_group_users"],
         ]
     }
     """
-    print('Конвертация access role...', end = ' - ')
+    parent.stepChanged.emit('0|Конвертация access-role.')
 
-    for key, value in objects.items():
+    error = 0
+    for key, value in parent.objects.items():
         try:
             if value['type'] == 'access-role':
                 tmp_role = {
@@ -688,7 +738,7 @@ def convert_access_role(objects):
                     'name': value['name'],
                 }
                 if value['networks'] != 'any':
-                    tmp_role['networks'] = [{'ip-list': x['name']} for x in value['networks']]
+                    tmp_role['networks'] = [['list_id', x['name']] for x in value['networks']]
                 users = []
                 if isinstance(value['users'], list):
                     for item in value['users']:
@@ -700,479 +750,283 @@ def convert_access_role(objects):
                             users.append(['user', name])
                 elif value['users'] == "all identified":
                     users.append(['special', 'known_user'])
+                elif value['users'] == "any":
+                    pass
+                else:
+                    parent.stepChanged.emit(f'3|Warning! access-role "{value["name"]}": users = {value["users"]}. Обратитесь в техподдержку для исправления ситуации.')
                 tmp_role['users'] = users
-                objects[key] = tmp_role
-        except KeyError:
-            pass
-    print('\033[32mOk!\033[0m')
+                parent.objects[key] = tmp_role
+        except KeyError as err:
+            parent.stepChanged.emit(f'3|Warning! {value["name"]} - {err}')
+            error = 1
+            parent.error = 1
 
-def convert_other(objects):
-    """
-    В файле объектов objects.json конвертятся UID с type 'RulebaseAction', 'CpmiAnyObject'
-    """
-    print('Конвертация сопутствующих объектов...', end = ' - ')
+    parent.stepChanged.emit('1|Конвертации access-role прошла с ошибками.' if error else '1|Конвертация access-role прошла успешно.')
 
-    for key, value in objects.items():
+def convert_other(parent):
+    """
+    Конвертация RulebaseAction, CpmiAnyObject и service-other в objects.json.
+    В файле объектов objects.json UID с type 'RulebaseAction', 'CpmiAnyObject' и service-other заменяются на:
+    uid: {"type": "RulebaseAction", "value": "Accept|Drop|Inform"} если type: 'RulebaseAction',
+    uid: {"type": "CpmiAnyObject", "value": "Any"} если type: 'CpmiAnyObject',
+    uid: {"type": "error", "name": "ИМЯ_СЕРВИСА", "description": "Сервис ИМЯ_СЕРВИСА не конвертирован."} если type: service-other
+    """
+    parent.stepChanged.emit('0|Конвертация сопутствующих объектов.')
+
+    for key, value in parent.objects.items():
         try:
             if value['type'] == 'RulebaseAction':
-                objects[key] = value['name'].lower()
+                parent.objects[key] = {"type": "RulebaseAction", "value": value['name'].lower()}
             elif value['type'] == 'CpmiAnyObject':
-                objects[key] = 'Any'
+                parent.objects[key] = {"type": "CpmiAnyObject", "value": "Any"}
             elif value['type'] == 'service-other':
-                objects[key] = 'Any'
+                parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Сервис "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'3|Warning! Сервисе "{value["name"]}" (тип service-other) не конвертирован и не будет использован в правилах!')
         except KeyError:
             pass
-    print('\033[32mOk!\033[0m')
+    parent.stepChanged.emit('1|Конвертации сопутствующих объектов завершена.')
 
-def convert_access_rule_1(cp, objects):
+
+def convert_access_policy_files(parent):
     """
-    Создание правил МЭ из правил Firewall-Management CheckPoint.
+    Читаем файл index.json и выбираем файлы конфигурации из раздела 'accessLayers'. Читаем их и вместо uid
+    подставляем значения преобразованных объектов из objects. Затем в зависимости от содержимого создаём
+    правило МЭ или КФ или правило МЭ и КФ.
     """
-    print('Конвертация access rule-1...', end = ' - ')
-    file_name = "data_cp/Firewall-Management server_pp.json"
-    if cp == 'Main_4600':
-        file_name = f"data_cp/{cp} Firewall-Management server_pp.json"
+    access_rules = []
+    checkpoint_hosts = ('CpmiClusterMember', 'simple-cluster', 'checkpoint-host')
+    rule_names = set()
 
-    with open("data_ug/library/ip_list.json", "r") as fh:
-        ip_list = {x['name']: ipaddress.ip_interface(x['content'][0]['value'].partition('-')[0]).ip for x in json.load(fh)}
-    private_ips = (ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'), ipaddress.ip_network('192.168.0.0/16'))
+    for access_layer in parent.sg_index[parent.sg_name]['accessLayers']:
+        access_policy_file = f"{access_layer['name']}-{access_layer['domain']}.json"
+        parent.stepChanged.emit(f'0|Конвертируется файл {access_policy_file}.')
 
-    with open(f"{file_name}", "r") as fh:
-        data = json.load(fh)
+        with open(os.path.join(parent.cp_data_json, access_policy_file), "r") as fh:
+            data = json.load(fh)
 
+        for item in data:
+            if item['type'] == 'access-rule':
+                if 'name' not in item:
+                    item['name'] = str(uuid.uuid4()).split('-')[4]
+                item['name'] = item['name'].translate(trans_name)
+                if item['name'] == 'Cleanup rule':
+                    continue
+                if item['name'] in rule_names:  # Встречаются одинаковые имена.
+                    item['name'] += '-1'        # В этом случае добавляем "-1" к имени правила.
+                rule_names.add(item['name'])
+
+                item.pop('meta-info', None)
+                item.pop('vpn', None)
+                item.pop('domain', None)
+                item.pop('install-on', None)
+                item.pop('track', None)
+                item.pop('custom-fields', None)
+                item.pop('user-check', None)
+                item['description'] = []
+
+                destination = []
+                for uid in item['destination']:
+                    if parent.objects[uid]['type'] in checkpoint_hosts:
+                        item['description'].append(f'Из destination удалена запись {parent.objects[uid]["name"]},')
+                    else:
+                        destination.append(parent.objects[uid])
+                item['destination'] = destination
+                source = []
+                for uid in item['source']:
+                    if parent.objects[uid]['type'] in checkpoint_hosts:
+                        item['description'].append(f'Из source удалена запись {parent.objects[uid]["name"]},')
+                    else:
+                        source.append(parent.objects[uid])
+                item['source'] = source
+                item['content'] = [parent.objects[uid] for uid in item['content']]
+                item['action'] = parent.objects[item['action']]
+                item['service'] = [parent.objects[uid] for uid in item['service']]
+                item['time'] = [parent.objects[uid] for uid in item['time']]
+                
+        with open(os.path.join(parent.cp_data_json, access_policy_file.replace('.json', '_convert.json')), "w") as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        access_rules.extend(data)
+        parent.stepChanged.emit(f'1|Файл {access_policy_file.replace(".json", "_convert.json")} создан.')
+
+    parent.stepChanged.emit(f'0|Конвертация access-rules.')
     fw_rules = []
-    for item in data:
-        if item['type'] == 'access-rule':
-            if item['name'] == 'Cleanup rule':
-                continue
-            item['content'] = [objects[uid] for uid in item['content'] if objects[uid] != 'Any']
-            item['source'] = [objects[uid] for uid in item['source'] if objects[uid] != 'Any']
-            item['destination'] = [objects[uid] for uid in item['destination'] if objects[uid] != 'Any']
-            rule = {
-                'name': item['name'],
-                'description': item['comments'],
-                'action': objects[item['action']],
-                'position': item['rule-number'],
-                'scenario_rule_id': False,
-                'src_zones': [],
-                'src_ips': [],
-                'dst_zones': [],
-                'dst_ips': [],
-                'services': list({objects[uid]['services'] for uid in item['service'] if objects[uid] != 'Any'}),
-                'apps': item['content'],
-                'users': [],
-                'enabled': False,
-                'limit': True,
-                'lmit_value': '3/h',
-                'lmit_burst': 5,
-                'log': True if True in item['track'].values() else False,
-                'log_session_start': True if True in item['track'].values() else False,
-                'src_zones_negate': False,
-                'dst_zones_negate': False,
-                'src_ips_negate': item['source-negate'],
-                'dst_ips_negate': item['destination-negate'],
-                'services_negate': item['service-negate'],
-                'apps_negate': item['content-negate'],
-                'fragmented': 'ignore',
-                'time_restrictions': [],
-                'send_host_icmp': '',
-            }
-            tmp_ips_set = set()
-            tmp_zones_set = set()
-            for src in item['source']:
-                if 'networks' in src:
-                    tmp_ips_set.update(set(x['ip-list'] for x in src['networks']))
-                    rule['users'].extend(src['users'])
-                elif 'ip-list' in src:
-                    tmp_ips_set.add(src['ip-list'])
-                else:
-                    tmp_zones_set.add('Management')
-            rule['src_ips'] = [['list_id', x] for x in tmp_ips_set]
-            rule['src_zones'] = [x for x in tmp_zones_set]
-            tmp_ips_set.clear()
-            tmp_zones_set.clear()
-            for dst in item['destination']:
-                if 'ip-list' in dst:
-                    tmp_ips_set.add(dst['ip-list'])
-                else:
-                    tmp_zones_set.add('Management')
-            rule['dst_ips'] = [['list_id', x] for x in tmp_ips_set]
-            rule['dst_zones'] = [x for x in tmp_zones_set]
-
-            if rule['src_ips']:
-                ip = ip_list[rule['src_ips'][0][1]]
-                if any(ip in network for network in private_ips):
-                    rule['src_zones'].append('Trusted')
-                else:
-                    rule['src_zones'].append('Untrusted')
-            if rule['dst_ips']:
-                ip = ip_list[rule['dst_ips'][0][1]]
-                if any(ip in network for network in private_ips):
-                    rule['dst_zones'].append('Trusted')
-                else:
-                    rule['dst_zones'].append('Untrusted')
-
-            fw_rules.append(rule)
-
-    if not os.path.isdir('data_ug/network_policies'):
-        os.makedirs('data_ug/network_policies')
-    with open("data_ug/network_policies/config_firewall_rules-1.json", "w") as fh:
-        json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
-    print('\033[32mOk!\033[0m')
-    return len(fw_rules)
-
-def convert_application_rule(cp, objects):
-    """
-    Разделение Application_and_URL-Management на правила МЭ и КФ.
-    """
-    print('Конвертация правил Application_and_URL-Management...', end = ' - ')
-    file_name = "data_cp/Application_and_URL-Management server_pp.json"
-    if cp == 'Main_4600':
-        file_name = f"data_cp/{cp} Application_and_URL-Management server_pp.json"
-
-    with open(f"{file_name}", "r") as fh:
-        data = json.load(fh)
-
-    for item in data:
-        if item['type'] == 'access-rule':
-            # удалить потом -------------------
-            item.pop('custom-fields', None)
-            item.pop('action-settings', None)
-            item.pop('install-on', None)
-            item.pop('time', None)
-            item.pop('domain', None)
-            item.pop('vpn', None)
-            item.pop('uid', None)
-            item.pop('meta-info', None)
-            item.pop('user-check', None)
-            #-----------------------------------
-            item['services'] = []
-            item['apps'] = []
-            item['url_categories'] = []
-            item['urls'] = []
-            item['service'] = [objects[uid] for uid in item['service'] if objects[uid] != 'Any']
-            apps_set = set()
-            l7category_set = set()
-            for service in item['service']:
-                if 'services' in service:
-                    item['services'].append(service['services'])
-                elif service['type'] == 'apps_group':
-                    item['apps'].extend(service['apps'])
-                    item['url_categories'].extend(service['url_categories'])
-                    item['urls'].extend(service['urls'])
-                elif service['type'] == 'l7_category':
-                    l7category_set.add(service['name'])
-                elif service['type'] == 'l7apps':
-                    tmp_set = set({x for x in service['name']})
-                    apps_set.update(tmp_set)
-                elif service['type'] == 'url-list':
-                    item['urls'].append(service['name'])
-                elif service['type'] == 'url_category':
-                    item['url_categories'].append(['category_id', service['name']])
-            
-            item['services'] = list({x for x in item['services']})
-            item['apps'].extend([['ro_group', x] for x in l7category_set])
-            item['apps'].extend([['app', x] for x in apps_set])
-            
-    with open("data_cp/Application_rules.json", "w") as fh:
-        json.dump(data, fh, indent=4, ensure_ascii=False)
-    print('\033[32mOk!\033[0m')
-
-def convert_access_rule_2(rule_count, objects):
-    """
-    Создание правил МЭ из правил Application_and_URL-Management CheckPoint.
-    """
-    print('Конвертация access rule-2...', end = ' - ')
-    file_name = "data_cp/Application_rules.json"
-
-    with open("data_ug/library/ip_list.json", "r") as fh:
-        ip_list = {x['name']: ipaddress.ip_interface(x['content'][0]['value'].partition('-')[0]).ip for x in json.load(fh)}
-    private_ips = (ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'), ipaddress.ip_network('192.168.0.0/16'))
-
-    with open(f"{file_name}", "r") as fh:
-        data = json.load(fh)
-
-    fw_rules = []
-    for item in data:
-        if (item['type'] == 'access-rule') and (item['services'] or item['apps']):
-            if item['name'] == 'Cleanup rule':
-                continue
-            rule_count += 1
-            item['content'] = [objects[uid] for uid in item['content'] if objects[uid] != 'Any']
-            item['source'] = [objects[uid] for uid in item['source'] if objects[uid] != 'Any']
-            item['destination'] = [objects[uid] for uid in item['destination'] if objects[uid] != 'Any']
-            rule = {
-                'name': item['name'],
-                'description': item['comments'],
-                'action': objects[item['action']],
-                'position': rule_count,
-                'scenario_rule_id': False,
-                'src_zones': [],
-                'src_ips': [],
-                'dst_zones': [],
-                'dst_ips': [],
-                'services': item['services'],
-                'apps': item['apps'],
-                'users': [],
-                'enabled': False,
-                'limit': True,
-                'lmit_value': '3/h',
-                'lmit_burst': 5,
-                'log': True if True in item['track'].values() else False,
-                'log_session_start': True if True in item['track'].values() else False,
-                'src_zones_negate': False,
-                'dst_zones_negate': False,
-                'src_ips_negate': item['source-negate'],
-                'dst_ips_negate': item['destination-negate'],
-                'services_negate': item['service-negate'],
-                'apps_negate': item['content-negate'],
-                'fragmented': 'ignore',
-                'time_restrictions': [],
-                'send_host_icmp': '',
-            }
-            tmp_ips_set = set()
-            tmp_zones_set = set()
-            for src in item['source']:
-                if 'networks' in src:
-                    tmp_ips_set.update(set(x['ip-list'] for x in src['networks']))
-                    rule['users'].extend(src['users'])
-                elif 'ip-list' in src:
-                    tmp_ips_set.add(src['ip-list'])
-                else:
-                    tmp_zones_set.add('Management')
-            rule['src_ips'] = [['list_id', x] for x in tmp_ips_set]
-            rule['src_zones'] = [x for x in tmp_zones_set]
-            tmp_ips_set.clear()
-            tmp_zones_set.clear()
-            for dst in item['destination']:
-                if 'ip-list' in dst:
-                    tmp_ips_set.add(dst['ip-list'])
-                else:
-                    tmp_zones_set.add('Management')
-            rule['dst_ips'] = [['list_id', x] for x in tmp_ips_set]
-            rule['dst_zones'] = [x for x in tmp_zones_set]
-
-            if rule['src_ips']:
-                ip = ip_list[rule['src_ips'][0][1]]
-                if any(ip in network for network in private_ips):
-                    rule['src_zones'].append('Trusted')
-                else:
-                    rule['src_zones'].append('Untrusted')
-            if rule['dst_ips']:
-                ip = ip_list[rule['dst_ips'][0][1]]
-                if any(ip in network for network in private_ips):
-                    rule['dst_zones'].append('Trusted')
-                else:
-                    rule['dst_zones'].append('Untrusted')
-
-            fw_rules.append(rule)
-
-    if not os.path.isdir('data_ug/network_policies'):
-        os.makedirs('data_ug/network_policies')
-    with open("data_ug/network_policies/config_firewall_rules-2.json", "w") as fh:
-        json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
-    print('\033[32mOk!\033[0m')
-
-def convert_content_rule(objects):
-    """
-    Создание правил КФ из правил Application_and_URL-Management CheckPoint.
-    """
-    print('Конвертация правил контентной фильтации...', end = ' - ')
-    file_name = "data_cp/Application_rules.json"
-
-    with open("data_ug/library/ip_list.json", "r") as fh:
-        ip_list = {x['name']: ipaddress.ip_interface(x['content'][0]['value'].partition('-')[0]).ip for x in json.load(fh)}
-    private_ips = (ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'), ipaddress.ip_network('192.168.0.0/16'))
-
-    with open(f"{file_name}", "r") as fh:
-        data = json.load(fh)
-
     kf_rules = []
-    rule_number = 0
-    for item in data:
-        if (item['type'] == 'access-rule') and (item['url_categories'] or item['urls']):
+    for item in access_rules:
+        if item['type'] == 'access-rule':
             if item['name'] == 'Cleanup rule':
                 continue
-            rule_number += 1
-            item['content'] = [objects[uid] for uid in item['content'] if objects[uid] != 'Any']
-            item['source'] = [objects[uid] for uid in item['source'] if objects[uid] != 'Any']
-            item['destination'] = [objects[uid] for uid in item['destination'] if objects[uid] != 'Any']
-            rule = {
-                'position': rule_number,
-                'action': objects[item['action']],
-                'name': item['name'],
-                'public_name': '',
-                'description': item['comments'],
-                'enabled': False,
-                'enable_custom_redirect': False,
-                'blockpage_template_id': -1,
-                'users': [],
-                'url_categories': item['url_categories'],
-                'src_zones': [],
-                'dst_zones': [],
-                'src_ips': [],
-                'dst_ips': [],
-                'morph_categories': [],
-                'urls': item['urls'],
-                'referers': [],
-                'user_agents': [],
-                'time_restrictions': [],
-                'active': True,
-                'content_types': [],
-                'http_methods': [],
-                'custom_redirect': '',
-                'src_zones_negate': False,
-                'dst_zones_negate': False,
-                'src_ips_negate': item['source-negate'],
-                'dst_ips_negate': item['destination-negate'],
-                'url_categories_negate': item['service-negate'],
-                'urls_negate': item['service-negate'],
-                'content_types_negate': item['content-negate'],
-                'user_agents_negate': False,
-                'enable_kav_check': False,
-                'enable_md5_check': False,
-                'rule_log': True if True in item['track'].values() else False,
-                'scenario_rule_id': False,
-            }
-            tmp_ips_set = set()
-            tmp_zones_set = set()
-            for src in item['source']:
-                if 'networks' in src:
-                    tmp_ips_set.update(set(x['ip-list'] for x in src['networks']))
-                    rule['users'].extend(src['users'])
-                elif 'ip-list' in src:
-                    tmp_ips_set.add(src['ip-list'])
-                else:
-                    tmp_zones_set.add('Management')
-            rule['src_ips'] = [['list_id', x] for x in tmp_ips_set]
-            rule['src_zones'] = [x for x in tmp_zones_set]
-            tmp_ips_set.clear()
-            tmp_zones_set.clear()
-            for dst in item['destination']:
-                if 'ip-list' in dst:
-                    tmp_ips_set.add(dst['ip-list'])
-                else:
-                    tmp_zones_set.add('Management')
-            rule['dst_ips'] = [['list_id', x] for x in tmp_ips_set]
-            rule['dst_zones'] = [x for x in tmp_zones_set]
+            services = set()
+            service_groups = set()
+            apps = []
+            l7apps = set()
+            url_categories = []
+            urls = []
+            for value in item['service']:
+                match value['type']:
+                    case 'service':
+                        services.add(value['name'])
+                    case 'servicegroup':
+                        service_groups.add(value['name'])
+                    case 'apps_group':
+                        if not value['error']:
+                            apps.extend(value['apps'])                      # добавляется ['ro_group', 'имя категории приложений'], ['group', 'имя группы прилодений']
+                            url_categories.extend(value['url_categories'])  # добавляется ['list_id', 'name_of_categories']
+                            urls.extend(value['urls'])
+                        item['description'].extend(value['description'])
+                    case 'l7apps':
+                        l7apps.update(value['name'])
+                    case 'l7_category':
+                        url_categories.extend([['category_id', x] for x in value['name']])
+                    case 'url':
+                        urls.append(value['name'])
+                    case 'error':
+                        item['description'].append(value['description'])
+            if l7apps:
+                appsgroup_name = str(uuid.uuid4()).split('-')[4]
+                apps.append(["group", appsgroup_name])
+                parent.create_app_group(appsgroup_name, l7apps, comment=f'Создано для правила "{item["name"]}".')
 
-            if rule['src_ips']:
-                ip = ip_list[rule['src_ips'][0][1]]
-                if any(ip in network for network in private_ips):
-                    rule['src_zones'].append('Trusted')
-                else:
-                    rule['src_zones'].append('Untrusted')
-            if rule['dst_ips']:
-                ip = ip_list[rule['dst_ips'][0][1]]
-                if any(ip in network for network in private_ips):
-                    rule['dst_zones'].append('Trusted')
-                else:
-                    rule['dst_zones'].append('Untrusted')
+            if item['description']:
+                item['name'] = f'ERROR - {item["name"]}'
 
-            kf_rules.append(rule)
+            item['services'] = [['service', service_name] for service_name in services]
+            item['services'].extend([['list_id', servicegroup_name] for servicegroup_name in service_groups])
+            item['apps'] = apps
+            item['url_categories'] = url_categories
+            item['urls'] = urls
 
-    if not os.path.isdir('data_ug/security_policies'):
-        os.makedirs('data_ug/security_policies')
-    with open("data_ug/security_policies/config_content_rules.json", "w") as fh:
-        json.dump(kf_rules, fh, indent=4, ensure_ascii=False)
-    print('\033[32mOk!\033[0m')
+            if services or service_groups or apps:
+                create_firewall_rule(parent, item, fw_rules)
+            elif url_categories or urls:
+                create_content_rule(parent, item, kf_rules)
+            else:
+                create_firewall_rule(parent, item, fw_rules, err=1)
+
+    with open(os.path.join(parent.cp_data_json, "access_rules.json"), "w") as fh:
+        json.dump(access_rules, fh, indent=4, ensure_ascii=False)
+
+    if make_dirs(parent, 'data_ug/NetworkPolicies/Firewall'):
+        with open("data_ug/NetworkPolicies/Firewall/config_firewall_rules.json", "w") as fh:
+            json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit('1|Правила межсетевого экрана выгружены в файл "data_ug/NetworkPolicies/Firewall/config_firewall_rules.json".')
+
+    if make_dirs(parent, 'data_ug/SecurityPolicies/ContentFiltering'):
+        with open("data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json", "w") as fh:
+            json.dump(kf_rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit('1|Правила контентной фильтрации выгружены в файл "data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json".')
+
+def create_firewall_rule(parent, item, fw_rules, err=0):
+    """
+    Создаём правило МЭ из access-rule CheckPoint. Если err=1, правило будет пустое с пояснением ошибок в описание правила.
+    """
+    parent.stepChanged.emit(f'2|Конвертация access-rule "{item["name"]}" в правило межсетевого экрана.')
+
+    item['description'].append(item['comments'])
+    
+    rule = {
+        "name": item['name'],
+        "description": "\n".join(item['description']),
+        "action": item['action']['value'] if item['action']['type'] == 'RulebaseAction' else 'drop',
+        "position": item['rule-number'],
+        "scenario_rule_id": False,
+        "src_zones": [],
+        "src_ips": get_ips_list(item['source']),
+        "dst_zones": [],
+        "dst_ips": get_ips_list(item['destination']),
+        "services": item['services'],
+        "apps": item['apps'],
+        "users": get_users_list(item['source'], item['destination']),
+        "enabled": False,
+        "limit": True,
+        "lmit_value": "3/h",
+        "lmit_burst": 5,
+        "log": True,
+        "log_session_start": True,
+        "src_zones_negate": False,
+        "dst_zones_negate": False,
+        "src_ips_negate": item['source-negate'],
+        "dst_ips_negate": item['destination-negate'],
+        "services_negate": item['service-negate'],
+        "apps_negate": item['service-negate'],
+        "fragmented": "ignore",
+        "time_restrictions": [],
+        "send_host_icmp": "",
+    }
+
+    fw_rules.append(rule)
+    parent.stepChanged.emit(f'2|    Создано правило межсетевого экрана "{item["name"]}".')
+
+def create_content_rule(parent, item, kf_rules):
+    """
+    Создаём правило КФ из access-rule CheckPoint.
+    """
+    parent.stepChanged.emit(f'2|Конвертация access-rule "{item["name"]}" в правило контентной фильтации.')
+
+    item['description'].append(item['comments'])
+
+    rule = {
+        'position': item['rule-number'],
+        'action': item['action']['value'] if item['action']['type'] == 'RulebaseAction' else 'drop',
+        'name': item['name'],
+        'public_name': '',
+        'description': "\n".join(item['description']),
+        'enabled': False,
+        'enable_custom_redirect': False,
+        'blockpage_template_id': -1,
+        'users': get_users_list(item['source'], item['destination']),
+        'url_categories': item['url_categories'],
+        'src_zones': [],
+        'dst_zones': [],
+        'src_ips': get_ips_list(item['source']),
+        'dst_ips': get_ips_list(item['destination']),
+        'morph_categories': [],
+        'urls': item['urls'],
+        'referers': [],
+        'user_agents': [],
+        'time_restrictions': [],
+        'active': True,
+        'content_types': [],
+        'http_methods': [],
+        'custom_redirect': '',
+        'src_zones_negate': False,
+        'dst_zones_negate': False,
+        'src_ips_negate': item['source-negate'],
+        'dst_ips_negate': item['destination-negate'],
+        'url_categories_negate': item['service-negate'],
+        'urls_negate': item['service-negate'],
+        'content_types_negate': item['content-negate'],
+        'user_agents_negate': False,
+        'enable_kav_check': False,
+        'enable_md5_check': False,
+        'rule_log': True,
+        'scenario_rule_id': False,
+    }
+
+    kf_rules.append(rule)
+    parent.stepChanged.emit(f'2|    Создано правило контентной фильтрации "{item["name"]}".')
+
+def get_ips_list(array):
+    """Получить структуру src_ips/dst_ips для правил МЭ и КФ из объектов access_rule."""
+    result = []
+    for item in array:
+        if item['type'] == 'network':
+            result.append(item['name'])
+        elif item['type'] == 'access-role' and 'networks' in item:
+            result.extend(item['networks'])
+    return result
+
+def get_users_list(src_array, dst_array):
+    """Получить структуру users для правил МЭ и КФ из объектов access_rule."""
+    result = []
+    for item in src_array:
+        if item['type'] == 'access-role' and 'users' in item:
+            result.extend(item['users'])
+    for item in dst_array:
+        if item['type'] == 'access-role' and 'users' in item:
+            result.extend(item['users'])
+    return result
 
 ################################## Импорт ####################################################################
-#def import_application_groups(utm):
-#    """Импортировать список "Приложения" на UTM"""
-#    print('Импорт списка "Приложения" раздела "Библиотеки":')
-#    try:
-#        with open("data_ug/library/application_groups.json", "r") as fh:
-#            data = json.load(fh)
-#    except FileNotFoundError as err:
-#        print('\t\033[31mСписок "Приложения" не импортирован!\n\tНе найден файл "data_ug/library/application_groups.json" с сохранённой конфигурацией!\033[0;0m')
-#        return
-
-#    if not data:
-#        print("\tНет групп приложений для импорта.")
-#        return
-
-#    l7apps = utm.get_l7_apps()
-
-#    for item in data:
-#        content = item.pop('content')
-#        err, result = utm.add_nlist(item)
-#        if err == 1:
-#            print(result, "\033[32mOk!\033[0;0m")
-#        elif err == 2:
-#            print(f"\033[31m{result}\033[0m")
-#        else:
-#            print(f'\tГруппа приложений "{item["name"]}" добавлена.')
-#            if content:
-#                try:
-#                    content = [{'value': l7apps[x['value']]} for x in content]
-#                except KeyError as err:
-#                    print(f'\t\t\033[31mНе найдены стандартные приложения.\033[0m')
-#                    print(f'\t\t\033[31mВведите лицензионный ключ и дождитесь обновления списков UserGate.\033[0m')
-#                    return
-#                try:
-#                    err2, result2 = utm.add_nlist_items(result, content)
-#                    if err2 != 0:
-#                        print(f'\033[31m{result2}\033[0m')
-#                    else:
-#                        print(f'\t\tСодержимое группы приложений: "{item["name"]}" добавлено.')
-#                except Exception as err:
-#                    print(f'\t\t\033[31mСодержимое группы приложений "{item["name"]}" не добавлено.\n\t\t{err}\033[0m')
-
-
-#def import_firewall_rules(number, file_rules, utm):
-#    """Импортировать список правил межсетевого экрана"""
-#    print(f'Импорт списка №{number} "Межсетевой экран" раздела "Политики сети":')
-#    try:
-#        with open(f"data_ug/network_policies/{file_rules}", "r") as fh:
-#            data = json.load(fh)
-#    except FileNotFoundError as err:
-#        print(f'\t\033[31mСписок №{number} "Межсетевой экран" не импортирован!\n\tНе найден файл "data_ug/network_policies/{file_rules}" с сохранённой конфигурацией!\033[0;0m')
-#        return
-
-#    if not data:
-#        print("\tНет правил №{number} межсетевого экрана для импорта.")
-#        return
-
-#    firewall_rules = utm.get_firewall_rules()
-#    services_list = utm.get_services_list()
-#    l7_categories = utm.get_l7_categories()
-#    applicationgroup = utm.get_nlists_list('applicationgroup')
-#    l7_apps = utm.get_l7_apps()
-#    zones = utm.get_zones_list()
-#    list_ip = utm.get_nlists_list('network')
-#    list_users = utm.get_users_list()
-#    list_groups = utm.get_groups_list()
-
-#    for item in data:
-#        get_guids_users_and_groups(utm, item, list_users, list_groups)
-#        set_src_zone_and_ips(item, zones, list_ip)
-#        set_dst_zone_and_ips(item, zones, list_ip)
-#        try:
-#            item['services'] = [services_list[x] for x in item['services']]
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найден сервис {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-#            item['services'] = []
-#        try:
-#            set_apps(item['apps'], l7_categories, applicationgroup, l7_apps)
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найдено приложение {err} для правила "{item["name"]}".\n\tЗагрузите сервисы и повторите попытку.\033[0m')
-#            item['apps'] = []
-
-#        if item['name'] in firewall_rules:
-#            print(f'\tПравило МЭ "{item["name"]}" уже существует', end= ' - ')
-#            err1, result1 = utm.update_firewall_rule(firewall_rules[item['name']], item)
-#            if err1 != 0:
-#                print("\n", f"\033[31m{result1}\033[0m")
-#            else:
-#                print("\033[32mUpdated!\033[0;0m")
-#        else:
-#            err, result = utm.add_firewall_rule(item)
-#            if err != 0:
-#                print(f"\033[31m{result}\033[0m")
-#            else:
-#                firewall_rules[item["name"]] = result
-#                print(f'\tПравило МЭ "{item["name"]}" добавлено.')
 
 #def import_content_rules(utm):
 #    """Импортировать список правил фильтрации контента"""

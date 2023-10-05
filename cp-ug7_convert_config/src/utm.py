@@ -19,9 +19,13 @@ class UtmXmlRpc:
         self._url = f'http://{server_ip}:4040/rpc'
         self._auth_token = None
         self._server = None
-        self.version = None
         self.server_ip = server_ip
         self.node_name = None
+        self.version = None
+        self.version_hight = None
+        self.version_midle = None
+        self.version_low = None
+        self.version_other = None
 
     def connect(self):
         """Подключиться к UTM"""
@@ -52,6 +56,11 @@ class UtmXmlRpc:
             self._auth_token = result.get('auth_token')
             self.node_name =  result.get('node')
             self.version = result.get('version')
+            tmp = self.version.split(".")
+            self.version_hight = int(tmp[0])
+            self.version_midle = int(tmp[1])
+            self.version_low = int(tmp[2])
+            self.version_other = tmp[3]
             return 0, True
 
     def get_node_status(self):
@@ -702,7 +711,7 @@ class UtmXmlRpc:
             result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 5000, {})
         except rpc.Fault as err:
             return 1, f"Error utm.get_nlists_list: [{err.faultCode}] — {err.faultString}"
-        return 0, result['items']
+        return 0, result['items']   # Возвращает лист списков (список словарей).
 
     def get_nlist_list(self, list_type):
         """Получить содержимое пользовательских именованных списков раздела Библиотеки"""
@@ -811,7 +820,7 @@ class UtmXmlRpc:
                 result = self._server.v1.libraries.services.list(self._auth_token, 0, 5000, {}, [])
         except rpc.Fault as err:
             return 1, f"Error utm.get_services_list: [{err.faultCode}] — {err.faultString}"
-        return 0, result
+        return 0, result['items']   # Возвращает лист сервисов (список словарей).
 
     def add_service(self, service):
         """Добавить список сервисов раздела Библиотеки"""
@@ -1429,8 +1438,6 @@ class UtmXmlRpc:
 
     def add_firewall_rule(self, rule):
         """Добавить новое правило в МЭ"""
-        if rule['name'] in self.firewall_rules.keys():
-            return 2, f'Правило МЭ "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.firewall.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
@@ -1441,13 +1448,11 @@ class UtmXmlRpc:
             else:
                 return 1, f"Error utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}"
         else:
-            self.firewall_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
-    def update_firewall_rule(self, rule):
-        """Обновить правило МЭ"""
+    def update_firewall_rule(self, rule_id, rule):
+        """Обновить правило МЭ. Принимает структуру правила и его ID."""
         try:
-            rule_id = self.firewall_rules[rule['name']]
             result = self._server.v1.firewall.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
             return 1, f"Error utm.update_firewall_rule: [{err.faultCode}] — {err.faultString}"
@@ -2294,22 +2299,34 @@ class UtmXmlRpc:
     def get_l7_apps(self):
         """Получить список приложений l7"""
         try:
-            result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, {}, [])
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.l7.signatures.list(self._auth_token, 0, 50000, {}, [])
+                return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
+            elif self.version_hight == 6 or (self.version_hight == 7 and self.version_midle == 0):
+                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, {}, [])
+                return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]
+            elif self.version_hight == 5:
+                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, '')
+                return 0, [{'id': x['app_id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
         except rpc.Fault as err:
             return 1, f"Error utm.get_l7_apps: [{err.faultCode}] — {err.faultString}"
+
+    def get_l7_categories(self):
+        """
+        Получить список категорий l7.
+        В версиях до 7.1 возвращает список: [{'id': category_id, 'name': category_name, 'app_list': [id_app_1, id_app_2, ...]}, ...]
+        В версиях начиная с 7.1 возвращает список: [{'id': category_id, 'name': category_name}, ...]
+        """
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.l7.get.categories(self._auth_token)
+            else:
+                result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_l7_categories: [{err.faultCode}] — {err.faultString}"
         else:
-            return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
+            return 0, result['items']
 #####################################################################################################
 
 class UtmError(Exception): pass
 
-character_map = {
-    ord('\n'): '',
-    ord('\t'): '',
-    ord('\r'): '',
-#    ':': '_',
-    '/': '_',
-    '\\': '_',
-    '.': '_',
-#    ' ': '_',
-}

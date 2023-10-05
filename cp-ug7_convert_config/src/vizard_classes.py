@@ -198,6 +198,7 @@ class SelectImportMode(QWidget):
             '10. Импорт списков URL': tf.ImportUrlLists,
             '11. Импорт групп URL категорий': tf.ImportUrlCategories,
             '12. Импорт групп приложений': tf.ImportApplicationGroups,
+            '13. Импорт правил МЭ': tf.ImportFirewallRules,
         }
 
         title = QLabel("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")
@@ -635,7 +636,7 @@ class ExportList(QDialog):
             return
 
         if self.thread is None:
-            self.thread = cf.ConvertAll(config_cp, self.objects)
+            self.thread = cf.ConvertAll(config_cp, self.objects, self.parent)
             self.thread.stepChanged.connect(self.on_batch_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()

@@ -54,6 +54,7 @@ class ImportAll(QThread):
         import_url_lists(self)
         import_url_categories(self)
         import_application_groups(self)
+        import_firewall_rules(self)
         self.stepChanged.emit('5|Импорт конфигурации прошёл с ошибками!' if self.error else '5|Импорт всей конфигурации прошёл успешно.')
 
 
@@ -203,6 +204,7 @@ class ImportUrlCategories(QThread):
     def run(self):
         import_url_categories(self)
 
+
 class ImportApplicationGroups(QThread):
     """Импортировать группы приложений на UTM"""
     stepChanged = pyqtSignal(str)
@@ -216,18 +218,18 @@ class ImportApplicationGroups(QThread):
         import_application_groups(self)
 
 
-def read_json_file(json_file, err_file_not_found, err_data):
-    try:
-        with open(json_file, "r") as fh:
-            data = json.load(fh)
-    except FileNotFoundError as err:
-        return 1, f'{err_file_not_found} Не найден файл "{json_file}" с сохранённой конфигурацией!'
-    except ValueError as err:
-        return 1, f'1|Error: JSONDecodeError - {err} "{json_file}".'
+class ImportFirewallRules(QThread):
+    """Импортировать группы приложений на UTM"""
+    stepChanged = pyqtSignal(str)
 
-    if not data:
-        return 1, f'{err_data} Файл "{json_file}" пуст.'
-    return 0, data
+    def __init__(self, utm):
+        super().__init__()
+        self.utm = utm
+        self.error = 0
+
+    def run(self):
+        import_firewall_rules(self)
+
 
 def import_gateways(parent):
     """Импортируем список шлюзов"""
@@ -424,7 +426,7 @@ def import_services(parent):
         parent.stepChanged.emit(f'1|{result}')
         parent.error = 1
         return
-    services_list = {x['name']: x['id'] for x in result['items']}
+    services_list = {x['name']: x['id'] for x in result}
     error = 0
     
     for item in data:
@@ -456,7 +458,7 @@ def import_services_groups(parent):
         parent.stepChanged.emit(f'1|{result}')
         parent.error = 1
         return
-    services_list = {x['name']: x['id'] for x in result['items']}
+    services_list = {x['name']: x['id'] for x in result}
     out_message = '1|Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
     error = 0
     
@@ -477,7 +479,7 @@ def import_services_groups(parent):
                     parent.stepChanged.emit(f'1|{result1}')
                     parent.stepChanged.emit(f'2|Ошибка! Группа сервисов "{services_group["name"]}" не импортирована.')
                     error = 1
-                elif err1 == 3:
+                elif err1 == 2:
                     parent.stepChanged.emit(f'2|{result1}')
                     continue
                 else:
@@ -487,15 +489,15 @@ def import_services_groups(parent):
                         try:
                             item['value'] = services_list[item['name']]
                         except KeyError:
-                            parent.stepChanged.emit(f'2|Ошибка! Нет сервиса "{item["name"]}" в списке сервисов NGFW.')
-                            parent.stepChanged.emit(f'2|Ошибка! Сервис "{item["name"]}" не добавлен в группу сервисов "{services_group["name"]}".')
+                            parent.stepChanged.emit(f'2|   Ошибка! Нет сервиса "{item["name"]}" в списке сервисов NGFW.')
+                            parent.stepChanged.emit(f'2|   Ошибка! Сервис "{item["name"]}" не добавлен в группу сервисов "{services_group["name"]}".')
                     err2, result2 = parent.utm.add_nlist_items(result1, content)
                     if err2:
-                        parent.stepChanged.emit(f'2|{result2}')
+                        parent.stepChanged.emit(f'2|   {result2}')
                         if err2 == 1:
                             error = 1
                     else:
-                        parent.stepChanged.emit(f'2|Содержимое группы сервисов "{services_group["name"]}" обновлено.')
+                        parent.stepChanged.emit(f'2|   Содержимое группы сервисов "{services_group["name"]}" обновлено.')
                 else:
                     parent.stepChanged.emit(f'2|Список "{services_group["name"]}" пуст.')
         else:
@@ -542,7 +544,7 @@ def import_ip_lists(parent):
             parent.stepChanged.emit(f'1|{result1}')
             parent.stepChanged.emit(f'2|Ошибка! Список IP-адресов "{ip_list["name"]}" не импортирован.')
             error = 1
-        elif err == 3:
+        elif err == 2:
             parent.stepChanged.emit(f'2|{result1}')
         else:
             list_ip[ip_list['name']] = result1
@@ -557,7 +559,7 @@ def import_ip_lists(parent):
             for item in content:
                 if 'list' in item:
                     try:
-                        item['list'] = list_ip[item['list']]
+                        item['list'] = list_ip[item['list'][1]]
                     except KeyError:
                         err1 = f'Ошибка! Нет IP-листа "{item["value"]}" в Библиотеке списков IP-адресов NGFW.'
                         err2 = f'Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".'
@@ -636,9 +638,9 @@ def import_url_lists(parent):
                 if err2 == 1:
                     error = 1
             else:
-                parent.stepChanged.emit(f'2|Содержимое списка "{data["name"]}" обновлено. Added {result2} record.')
+                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено. Added {result2} record.')
         else:
-            parent.stepChanged.emit(f'2|Список "{data["name"]}" пуст.')
+            parent.stepChanged.emit(f'2|   Список "{data["name"]}" пуст.')
 
     if error:
         parent.error = 1
@@ -769,4 +771,163 @@ def import_application_groups(parent):
         parent.error = 1
     out_message = '1|Группы приложений импортированы в раздел "Библиотеки/Приложения".'
     parent.stepChanged.emit('1|Произошла ошибка при импорте групп приложений!' if error else out_message)
+
+def import_firewall_rules(parent):
+    """Импортировать список правил межсетевого экрана"""
+    parent.stepChanged.emit('0|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
+
+    json_file = "data_ug/NetworkPolicies/Firewall/config_firewall_rules.json"
+    err, data = read_json_file(json_file, '1|Ошибка импорта правил межсетевого экрана!', '1|Нет правил межсетевого экрана для импорта.')
+    if err:
+        parent.stepChanged.emit(data)
+        parent.error = 1
+        return
+
+    err, result = parent.utm.get_firewall_rules()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+
+    firewall_rules = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_services_list()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    services_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('servicegroup')
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    servicegroups_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('network')
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    ips_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_l7_categories()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    l7categories = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('applicationgroup')
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    applicationgroup = {x['name']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item['position'] = 'last'
+        for ips in item['src_ips']:
+            try:
+                ips[1] = ips_list[ips[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
+        for ips in item['dst_ips']:
+            try:
+                ips[1] = ips_list[ips[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
+        for service in item['services']:
+            try:
+                service[1] = services_list[service[1]] if service[0] == 'service' else servicegroups_list[service[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найден сервис {service} для правила {item["name"]}.')
+        for app in item['apps']:
+            try:
+                app[1] = l7categories[app[1]] if app[0] == 'ro_group' else applicationgroup[app[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найдена группа приложений {err} для правила "{item["name"]}". Загрузите группы приложений и повторите попытку.')
+
+        get_guids_users_and_groups(parent, item)
+#        parent.set_time_restrictions(item)
+        if item['name'] in firewall_rules:
+            parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'2|   {result}')
+            else:
+                parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" обновлено.')
+        else:
+            err, result = parent.utm.add_firewall_rule(item)
+            if err:
+                parent.stepChanged.emit(f'2|   {result}')
+            else:
+                firewall_rules[item['name']] = result
+                parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" добавлено.')
+    if error:
+        parent.error = 1
+    out_message = '1|Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".'
+    parent.stepChanged.emit('1|Произошла ошибка при импорте правил межсетевого экрана!' if error else out_message)
+
+def get_guids_users_and_groups(parent, item):
+    """
+    Получить GUID-ы групп и пользователей по их именам.
+    Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
+    """
+    if 'users' in item.keys() and item['users']:
+        users = []
+        for x in item['users']:
+            if x[0] == 'user' and x[1]:
+                i = x[1].partition("\\")
+                if i[2]:
+                    err, result = parent.utm.get_ldap_user_guid(i[0], i[2])
+                    if err:
+                        parent.stepChanged.emit(f'2|   {result}')
+                    elif not result:
+                        parent.stepChanged.emit(f'2|   Ошибка! Нет LDAP-коннектора для домена "{i[0]}"! Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
+                    else:
+                        x[1] = result
+                        users.append(x)
+
+            elif x[0] == 'group' and x[1]:
+                i = x[1].partition("\\")
+                if i[2]:
+                    err, result = parent.utm.get_ldap_group_guid(i[0], i[2])
+                    if err:
+                        parent.stepChanged.emit(f'2|   {result}')
+                    elif not result:
+                        parent.stepChanged.emit(f'2|   Ошибка! Нет LDAP-коннектора для домена "{i[0]}"! Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
+                    else:
+                        x[1] = result
+                        users.append(x)
+            elif x[0] == 'special' and x[1]:
+                users.append(x)
+        item['users'] = users
+    else:
+        item['users'] = []
+
+def read_json_file(json_file, err_file_not_found, err_data):
+    try:
+        with open(json_file, "r") as fh:
+            data = json.load(fh)
+    except FileNotFoundError as err:
+        return 1, f'{err_file_not_found} Не найден файл "{json_file}" с сохранённой конфигурацией!'
+    except ValueError as err:
+        return 1, f'1|Error: JSONDecodeError - {err} "{json_file}".'
+
+    if not data:
+        return 1, f'{err_data} Файл "{json_file}" пуст.'
+    return 0, data
 

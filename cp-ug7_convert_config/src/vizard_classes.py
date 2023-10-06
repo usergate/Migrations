@@ -199,6 +199,7 @@ class SelectImportMode(QWidget):
             '11. Импорт групп URL категорий': tf.ImportUrlCategories,
             '12. Импорт групп приложений': tf.ImportApplicationGroups,
             '13. Импорт правил МЭ': tf.ImportFirewallRules,
+            '14. Импорт правил КФ': tf.ImportContentRules,
         }
 
         title = QLabel("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")

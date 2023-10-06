@@ -23,110 +23,498 @@ l7_categories = {
 }
 
 cp_app_category = {
-    "Anonymizer": {"type": "l7_category", "name": ["Proxies and anonymizers"]},
-    "Alcohol & Tobacco": {"type": "url_category", "name": ["Alcohol & Tobacco"]},
-#    "Artificial Intelligence (AI)": None,   # {"type": "url_category", "name": ["Chat-bot AI"]}
-    "Blogs / Personal Pages": {"type": "url_category", "name": ["Personal Sites"]},
-    "Botnets": {"type": "url_category", "name": ["Botnets"]},
-#    "Browser Plugin": None,
-#    "Browser Toolbar": None,
-    "Business / Economy": {"type": "l7_category", "name": ["Business"]},
-#    "Check Point Products": None,
-    "Child Abuse": {"type": "url_category", "name": ["Child Abuse Images"]},
-    "Cloud Services": {"type": "applicationgroup", "name": ["Cloud Services"]},     # Новая категория
-    "Computers / Internet": {"type": "l7_category", "name": ["Standard networks"]},
-    "Critical Risk": {"type": "url_category", "name": ["Reputation: High risk"]},
-    "Cryptocurrency": {"type": "url_category", "name": ["Cryptocurrency Mining"]},
-    "Download Manager": {"type": "applicationgroup", "name": ["Download Manager"]}, # Новая категория
-    "Education": {"type": "url_category", "name": ["Education"]},
-    "Email": {"type": "l7_category", "name": ["Email"]},
-    "Encrypts communications": {"type": "l7_category", "name": ["Tunneling", "Proxies and anonymizer"]},
-    "Entertainment": {"type": "url_category", "name": ["Entertainment"]},
-    "Fashion": {"type": "url_category", "name": ["Fashion & Beauty"]},
-#    "Facebook Business": None,
-#    "Facebook Education": None,
-#    "Facebook Entertainment": None,
-#    "Facebook Friends & Family": None,
-#    "Facebook Games": None,
-#    "Facebook Lifestyle": None,
-#    "Facebook Sports": None,
-#    "Facebook Utilities": None,
-#    "Facebook Widgets": None,
-    "File Storage and Sharing": {"type": "l7_category", "name": ["File storage and backup"]},
-    "File Upload": {"type": "applicationgroup", "name": ["File Upload"]},          # Новая категория
-    "Financial Services": {"type": "url_category", "name": ["Finance"]},
-#    "Friendster Widgets": None,
-    "Gambling": {"type": "url_category", "name": ["Gambling"]},
-    "Games": {"type": "l7_category", "name": ["Games"]},
-#    "Google Plus Widgets": None,
-    "Government / Military": {"type": "url_category", "name": ["Government", "Military"]},
-    "High Risk": {"type": "url_category", "name": ["Reputation: High risk"]},
-    "Hacking": {"type": "url_category", "name": ["Hacking"]},
-    "Hate / Racism": {"type": "url_category", "name": ["Hate & Intolerance"]},
-    "Health": {"type": "url_category", "name": ["Health & Medicine"]},
-    "High Bandwidth": {"type": "l7_category", "name": ["Proxies and anonymizer", "File sharing P2P", "File storage and backup"]},
-    "Illegal / Questionable": {"type": "url_category", "name": ["Tasteless", "Violence", "Criminal Activity", "Hate & Intolerance", "Profanity"]},
-    "Illegal Drugs": {"type": "url_category", "name": ["Illegal Drug"]},
-    "Inactive Sites": {"type": "url_category", "name": ["Parked Domains", "General"]},
-    "Instant Chat": {"type": "applicationgroup", "name": ["Instant Chat"]},        # Новая категория
-    "Instant Messaging": {"type": "l7_category", "name": ["Instant messaging"]},
-#    "IPTV": None,
-    "Job Search / Careers": {"type": "url_category", "name": ["Job Search"]},
-    "Lingerie and Swimsuit / Suggestive": {"type": "url_category", "name": ["Nudity"]},
-#    "LinkedIn Widgets": None,
-    "Marijuana": {"type": "url_category", "name": ["Illegal Drug"]},
-    "Media Sharing": {"type": "applicationgroup", "name": ["Media Sharing"]},      # Новая категория
-    "Media Streams": {"type": "l7_category", "name": ["Media streaming"]},
-    "Medium Risk": {"type": "url_category", "name": ["Reputation: Medium risk"]},
-    "Microsoft & Office365 Services": {"type": "applicationgroup", "name": ["Microsoft and Office365 Services"]}, # Новая категория
-    "Mobile Software": {"type": "l7_category", "name": ["Mobile"]},
-#    "MySpace Widgets": None,
-    "Network Protocols": {"type": "l7_category", "name": ["Standard networks"]},
-    "Network Utilities": {"type": "l7_category", "name": ["Standard networks"]},
-    "News / Media": {"type": "url_category", "name": ["News"]},
-    "Newsgroups / Forums": {"type": "url_category", "name": ["Forums & Newsgroups"]},
-#    "Ning.com Widgets": None,
-    "Nudity": {"type": "url_category", "name": ["Nudity"]},
-    "P2P File Sharing": {"type": "l7_category", "name": ["File sharing P2P"]},
-    "Personals / Dating": {"type": "url_category", "name": ["Dating & Personals"]},
-    "Phishing": {"type": "url_category", "name": ["Phishing & Fraud"]},
-    "Political / Legal": {"type": "url_category", "name": ["Legal", "Politics"]},
-    "Pornography": {"type": "url_category", "name": ["Pornography/Sexually Explicit"]},
-    "Real Estate": {"type": "url_category", "name": ["Real Estate"]},
-    "Remote Administration": {"type": "l7_category", "name": ["Remote access"]},
-    "Restaurants / Dining / Foods": {"type": "url_category", "name": ["Restaurants & Dining"]},
-    "Religion": {"type": "url_category", "name": ["Religion"]},
-#    "SCADA Protocols": None,
-    "Sex": {"type": "url_category", "name": ["Gay, Lesbian or Bisexual", "Nudity", "Pornography/Sexually Explicit"]},
-    "Sex Education": {"type": "url_category", "name": ["Sex Education"]},
-    "Search Engines / Portals": {"type": "url_category", "name": ["Search Engines & Portals"]},
-    "Shopping": {"type": "url_category", "name": ["Shopping"]},
-#    "SMS Tools": None,
-    "Social Networking": {"type": "l7_category", "name": ["Social networking"]},
-#    "Social Plugins": None,
-    "Software Downloads": {"type": "url_category", "name": ["Download Sites"]},
-    "Software Update": {"type": "l7_category", "name": ["Software update"]},
-    "Spam": {"type": "url_category", "name": ["Spam Sites"]},
-    "Sports": {"type": "url_category", "name": ["Sports"]},
-    "Spyware / Malicious Sites": {"type": "url_category", "name": ["Compromised", "Phishing & Fraud", "Malware"]},
-    "Stealth Tactics": {"type": "url_category", "name": ["Malware"]},
-    "Suspicious Content": {"type": "url_category", "name": ["Tasteless", "Phishing & Fraud", "Compromised", "Spam Sites", "Malware"]},
-    "Tasteless": {"type": "url_category", "name": ["Tasteless"]},
-    "Translation": {"type": "url_category", "name": ["Translators"]},
-    "Travel": {"type": "url_category", "name": ["Travel"]},
-#    "Twitter Clients": None,
-    "Vehicles": {"type": "url_category", "name": ["Transportation"]},
-    "Video Conferencing": {"type": "l7_category", "name": ["Conferencing"]},
-    "Violence": {"type": "url_category", "name": ["Violence"]},
-    "VoIP": {"type": "l7_category", "name": ["VOIP"]},
-    "Weapons": {"type": "url_category", "name": ["Weapons"]},
-#    "Web Advertisements": None,
-#    "Web Browser": None,
-#    "Web Browser Acceleration": None,
-    "Web Conferencing": {"type": "l7_category", "name": ["Conferencing"]},
-#    "Web Content Aggregators": None,
-    "Web Services Provider": {"type": "l7_category", "name": ["Web browsing"]},
-#    "Web Spider": None,
+    "Anonymizer": {
+        "type": "app-url-category",
+        "l7_category": ["Proxies and anonymizers"],
+        "url_category": ["Anonymizers"],
+        "applicationgroup": []
+    },
+    "Alcohol & Tobacco": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Alcohol & Tobacco"],
+        "applicationgroup": []
+    },
+    "Artificial Intelligence (AI)": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Chat-bot AI"],
+        "applicationgroup": []
+    },
+    "Blogs / Personal Pages": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Personal Sites"],
+        "applicationgroup": []
+    },
+    "Botnets": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Botnets"],
+        "applicationgroup": []
+    },
+    "Business / Economy": {
+        "type": "app-url-category",
+        "l7_category": ["Business"],
+        "url_category": ["Business"],
+        "applicationgroup": []
+    },
+    "Child Abuse": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Child Abuse Images"],
+        "applicationgroup": []
+    },
+    "Cloud Services": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": [],
+        "applicationgroup": ["Cloud Services"]
+    },
+    "Computers / Internet": {
+        "type": "app-url-category",
+        "l7_category": ["Standard networks"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Critical Risk": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Reputation: High risk"],
+        "applicationgroup": []
+    },
+    "Cryptocurrency": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Cryptocurrency Mining"],
+        "applicationgroup": []
+    },
+    "Download Manager": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": [],
+        "applicationgroup": ["Download Manager"]
+    },
+    "Education": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Education"],
+        "applicationgroup": []
+    },
+    "Email": {
+        "type": "app-url-category",
+        "l7_category": ["Email"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Encrypts communications": {
+        "type": "app-url-category",
+        "l7_category": ["Tunneling", "Proxies and anonymizer"],
+        "url_category": ["Anonymizers"],
+        "applicationgroup": []
+    },
+    "Entertainment": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Entertainment"],
+        "applicationgroup": []
+    },
+    "Fashion": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Fashion & Beauty"],
+        "applicationgroup": []
+    },
+    "File Storage and Sharing": {
+        "type": "app-url-category",
+        "l7_category": ["File storage and backup"],
+        "url_category": ["Personal Storage"],
+        "applicationgroup": []
+    },
+    "File Upload": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": [],
+        "applicationgroup": ["File Upload"]
+    },
+    "Financial Services": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Finance"],
+        "applicationgroup": []
+    },
+    "Gambling": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Gambling"],
+        "applicationgroup": []
+    },
+    "Games": {
+        "type": "app-url-category",
+        "l7_category": ["Games"],
+        "url_category": ["Games"],
+        "applicationgroup": []
+    },
+    "Government / Military": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Government", "Military"],
+        "applicationgroup": []
+    },
+    "High Risk": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Reputation: High risk"],
+        "applicationgroup": []
+    },
+    "Hacking": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Hacking"],
+        "applicationgroup": []
+    },
+    "Hate / Racism": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Hate & Intolerance"],
+        "applicationgroup": []
+    },
+    "Health": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Health & Medicine"],
+        "applicationgroup": []
+    },
+    "High Bandwidth": {
+        "type": "app-url-category",
+        "l7_category": ["Proxies and anonymizer", "File sharing P2P", "File storage and backup"],
+        "url_category": ["Anonymizers", "Peer-to-Peer", "Personal Storage"],
+        "applicationgroup": []
+    },
+    "Illegal / Questionable": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Tasteless", "Violence", "Criminal Activity", "Hate & Intolerance", "Profanity"],
+        "applicationgroup": []
+    },
+    "Illegal Drugs": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Illegal Drug"],
+        "applicationgroup": []
+    },
+    "Inactive Sites": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Parked Domains", "General"],
+        "applicationgroup": []
+    },
+    "Instant Chat": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Chat", "Instant Messaging"],
+        "applicationgroup": ["Instant Chat"]
+    },
+    "Instant Messaging": {
+        "type": "app-url-category",
+        "l7_category": ["Instant messaging"],
+        "url_category": ["Instant Messaging"],
+        "applicationgroup": []
+    },
+    "Job Search / Careers": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Job Search"],
+        "applicationgroup": []
+    },
+    "Lingerie and Swimsuit / Suggestive": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Nudity"],
+        "applicationgroup": []
+    },
+    "Marijuana": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Illegal Drug"],
+        "applicationgroup": []
+    },
+    "Media Sharing": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": [],
+        "applicationgroup": ["Media Sharing"]
+    },
+    "Media Streams": {
+        "type": "app-url-category",
+        "l7_category": ["Media streaming"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Medium Risk": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Reputation: Medium risk"],
+        "applicationgroup": []
+    },
+    "Microsoft & Office365 Services": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": [],
+        "applicationgroup": ["Microsoft and Office365 Services"]
+    },
+    "Mobile Software": {
+        "type": "app-url-category",
+        "l7_category": ["Mobile"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Network Protocols": {
+        "type": "app-url-category",
+        "l7_category": ["Standard networks"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Network Utilities": {
+        "type": "app-url-category",
+        "l7_category": ["Standard networks"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "News / Media": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["News"],
+        "applicationgroup": []
+    },
+    "Newsgroups / Forums": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Forums & Newsgroups"],
+        "applicationgroup": []
+    },
+    "Nudity": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Nudity"],
+        "applicationgroup": []
+    },
+    "P2P File Sharing": {
+        "type": "app-url-category",
+        "l7_category": ["File sharing P2P"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Personals / Dating": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Dating & Personals"],
+        "applicationgroup": []
+    },
+    "Phishing": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Phishing & Fraud"],
+        "applicationgroup": []
+    },
+    "Political / Legal": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Legal", "Politics"],
+        "applicationgroup": []
+    },
+    "Pornography": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Pornography/Sexually Explicit"],
+        "applicationgroup": []
+    },
+    "Real Estate": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Real Estate"],
+        "applicationgroup": []
+    },
+    "Remote Administration": {
+        "type": "app-url-category",
+        "l7_category": ["Remote access"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Restaurants / Dining / Foods": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Restaurants & Dining"],
+        "applicationgroup": []
+    },
+    "Religion": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Religion"],
+        "applicationgroup": []
+    },
+    "Sex": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Gay, Lesbian or Bisexual", "Nudity", "Pornography/Sexually Explicit"],
+        "applicationgroup": []
+    },
+    "Sex Education": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Sex Education"],
+        "applicationgroup": []
+    },
+    "Search Engines / Portals": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Search Engines & Portals"],
+        "applicationgroup": []
+    },
+    "Shopping": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Shopping"],
+        "applicationgroup": []
+    },
+    "Social Networking": {
+        "type": "app-url-category",
+        "l7_category": ["Social networking"],
+        "url_category": ["Social Networking"],
+        "applicationgroup": []
+    },
+    "Software Downloads": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Download Sites"],
+        "applicationgroup": []
+    },
+    "Software Update": {
+        "type": "app-url-category",
+        "l7_category": ["Software update"],
+        "url_category": ["Updates"],
+        "applicationgroup": []
+    },
+    "Spam": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Spam Sites"],
+        "applicationgroup": []
+    },
+    "Sports": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Sports"],
+        "applicationgroup": []
+    },
+    "Spyware / Malicious Sites": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Compromised", "Phishing & Fraud", "Malware"],
+        "applicationgroup": []
+    },
+    "Stealth Tactics": {
+        "type": "app-url-category",
+        "l7_category": ["Trojan Horses"],
+        "url_category": ["Malware"],
+        "applicationgroup": []
+    },
+    "Suspicious Content": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Tasteless", "Phishing & Fraud", "Compromised", "Spam Sites", "Malware"],
+        "applicationgroup": []
+    },
+    "Tasteless": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Tasteless"],
+        "applicationgroup": []
+    },
+    "Translation": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Translators"],
+        "applicationgroup": []
+    },
+    "Travel": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Travel"],
+        "applicationgroup": []
+    },
+    "Vehicles": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Transportation"],
+        "applicationgroup": []
+    },
+    "Video Conferencing": {
+        "type": "app-url-category",
+        "l7_category": ["Conferencing"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Violence": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Violence"],
+        "applicationgroup": []
+    },
+    "VoIP": {
+        "type": "app-url-category",
+        "l7_category": ["VOIP"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Weapons": {
+        "type": "app-url-category",
+        "l7_category": [],
+        "url_category": ["Weapons"],
+        "applicationgroup": []
+    },
+    "Web Conferencing": {
+        "type": "app-url-category",
+        "l7_category": ["Conferencing"],
+        "url_category": [],
+        "applicationgroup": []
+    },
+    "Web Services Provider": {
+        "type": "app-url-category",
+        "l7_category": ["Web browsing"],
+        "url_category": [],
+        "applicationgroup": []
+    }
+}
+
+unknown_cp_app_categoty = {
+    "Browser Plugin": None,
+    "Browser Toolbar": None,
+    "Check Point Products": None,
+    "Facebook Business": None,
+    "Facebook Education": None,
+    "Facebook Entertainment": None,
+    "Facebook Friends & Family": None,
+    "Facebook Games": None,
+    "Facebook Lifestyle": None,
+    "Facebook Sports": None,
+    "Facebook Utilities": None,
+    "Facebook Widgets": None,
+    "Friendster Widgets": None,
+    "Google Plus Widgets": None,
+    "IPTV": None,
+    "LinkedIn Widgets": None,
+    "MySpace Widgets": None,
+    "Ning.com Widgets": None,
+    "SCADA Protocols": None,
+    "SMS Tools": None,
+    "Social Plugins": None,
+    "Twitter Clients": None,
+    "Web Content Aggregators": None,
+    "Web Advertisements": None,
+    "Web Browser": None,
+    "Web Browser Acceleration": None,
+    "Web Spider": None,
 }
 
 url_categories = {

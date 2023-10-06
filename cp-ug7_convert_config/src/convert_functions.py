@@ -19,11 +19,10 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 2.2
+# Версия 2.3
 #
 
 import os, sys, json, uuid
-import ipaddress
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import cp_app_category, cp_app_site, new_applicationgroup
 from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name
@@ -579,10 +578,13 @@ def convert_url_lists(parent):
 
 def convert_application_site_category(parent):
     """
-    Выгружаем новые группы приложений в каталог data_ug/Libraries/Applications для последующей загрузки в NGFW.
     В "objects" тип "application-site-category" переписывается в вид: uid:
-    Категории приложений: uid:{'type': 'l7_category', 'name': ['ИМЯ_КАТЕГОРИИ_ПРИЛОЖЕНИЙ', ...]},
-    Категории URL: uid:{'type': 'url_category', 'name': ['ИМЯ_КАТЕГОРИИ_URL', ...]}.
+    uid: {
+       'type': 'app-url-category',
+       'l7_category': ['ИМЯ_КАТЕГОРИИ_ПРИЛОЖЕНИЙ', ...],
+       'url_category': ['ИМЯ_КАТЕГОРИИ_URL', ...],
+       'applicationgroup': ['ИМЯ_ГРУППЫ ПРИЛОЖЕНИЙ', ...]
+    }
     """
     parent.stepChanged.emit('0|Конвертация application-site-categoty.')
     
@@ -875,8 +877,10 @@ def convert_access_policy_files(parent):
                         item['description'].extend(value['description'])
                     case 'l7apps':
                         l7apps.update(value['name'])
-                    case 'l7_category':
-                        url_categories.extend([['category_id', x] for x in value['name']])
+                    case 'app-url-category':
+                        apps.extend([['ro_group', x] for x in value['l7_category']])
+                        apps.extend([["group", x] for x in  value['applicationgroup']])
+                        url_categories.extend([['category_id', x] for x in value['url_category']])
                     case 'url':
                         urls.append(value['name'])
                     case 'error':
@@ -895,11 +899,14 @@ def convert_access_policy_files(parent):
             item['url_categories'] = url_categories
             item['urls'] = urls
 
+            indicator = False
             if services or service_groups or apps:
                 create_firewall_rule(parent, item, fw_rules)
-            elif url_categories or urls:
+                indicator = True
+            if url_categories or urls:
                 create_content_rule(parent, item, kf_rules)
-            else:
+                indicator = True
+            if not indicator:
                 create_firewall_rule(parent, item, fw_rules, err=1)
 
     with open(os.path.join(parent.cp_data_json, "access_rules.json"), "w") as fh:
@@ -1027,159 +1034,6 @@ def get_users_list(src_array, dst_array):
     return result
 
 ################################## Импорт ####################################################################
-
-#def import_content_rules(utm):
-#    """Импортировать список правил фильтрации контента"""
-#    print('Импорт списка "Фильтрация контента" раздела "Политики безопасности":')
-#    try:
-#        with open("data_ug/security_policies/config_content_rules.json", "r") as fh:
-#            data = json.load(fh)
-#    except FileNotFoundError as err:
-#        print(f'\t\033[31mСписок "Фильтрация контента" не импортирован!\n\tНе найден файл "data_ug/security_policies/config_content_rules.json" с сохранённой конфигурацией!\033[0;0m')
-#        return
-
-#    if not data:
-#        print("\tНет правил фильтрации контента для импорта.")
-#        return
-
-#    content_rules = utm.get_content_rules()
-#    zones = utm.get_zones_list()
-#    list_ip = utm.get_nlists_list('network')
-#    list_users = utm.get_users_list()
-#    list_groups = utm.get_groups_list()
-#    list_url = utm.get_nlists_list('url')
-#    list_urlcategorygroup = utm.get_nlists_list('urlcategorygroup')
-#    url_category = utm.get_url_category()
-#    list_mime = utm.get_nlists_list('mime')
-
-#    for item in data:
-#        get_guids_users_and_groups(utm, item, list_users, list_groups)
-#        set_src_zone_and_ips(item, zones, list_ip)
-#        set_dst_zone_and_ips(item, zones, list_ip)
-#        set_urls_and_categories(item, list_url, list_urlcategorygroup, url_category)
-#        try:
-#            item['content_types'] = [list_mime[x] for x in item['content_types']]
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найден тип контента {err} для правила "{item["name"]}".\n\tЗагрузите список типов контента и повторите попытку.\033[0m')
-#            item['content_types'] = []
-
-#        if item['name'] in content_rules:
-#            print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
-#            err1, result1 = utm.update_content_rule(content_rules[item['name']], item)
-#            if err1 == 2:
-#                print("\n", f"\033[31m{result1}\033[0m")
-#            else:
-#                print("\033[32mUpdated!\033[0;0m")
-#        else:
-#            err, result = utm.add_content_rule(item)
-#            if err == 2:
-#                print(f"\033[31m{result}\033[0m")
-#            else:
-#                content_rules[item['name']] = result
-#                print(f'\tПравило "{item["name"]}" добавлено.')
-
-#def set_src_zone_and_ips(item, zones, list_ip={}, list_url={}):
-#    if item['src_zones']:
-#        try:
-#            item['src_zones'] = [zones[x] for x in item['src_zones']]
-#        except KeyError as err:
-#            print(f'\t\033[33mИсходная зона {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-#            item['src_zones'] = []
-#    if item['src_ips']:
-#        try:
-#            for x in item['src_ips']:
-#                if x[0] == 'list_id':
-#                    x[1] = list_ip[x[1]]
-#                elif x[0] == 'urllist_id':
-#                    x[1] = list_url[x[1]]
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найден адрес источника {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-#            item['src_ips'] = []
-
-#def set_dst_zone_and_ips(item, zones, list_ip={}, list_url={}):
-#    if item['dst_zones']:
-#        try:
-#            item['dst_zones'] = [zones[x] for x in item['dst_zones']]
-#        except KeyError as err:
-#            print(f'\t\033[33mЗона назначения {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-#            item['dst_zones'] = []
-#    if item['dst_ips']:
-#        try:
-#            for x in item['dst_ips']:
-#                if x[0] == 'list_id':
-#                    x[1] = list_ip[x[1]]
-#                elif x[0] == 'urllist_id':
-#                    x[1] = list_url[x[1]]
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-#            item['dst_ips'] = []
-
-#def get_guids_users_and_groups(utm, item, list_users, list_groups):
-#    """
-#    Получить GUID-ы групп и пользователей по их именам.
-#    Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
-#    """
-#    if 'users' in item.keys() and item['users']:
-#        users = []
-#        for x in item['users']:
-#            if x[0] == 'user' and x[1]:
-#                i = x[1].partition("\\")
-#                if i[2]:
-#                    err, result = utm.get_ldap_user_guid(i[0], i[2])
-#                    if err != 0:
-#                        print(f"\033[31m{result}\033[0m")
-#                    elif not result:
-#                        print(f'\t\033[31mНет LDAP-коннектора для домена "{i[0]}"!\n\tИмпортируйте и настройте LDAP-коннектор. Затем повторите импорт.\033[0m')
-#                    else:
-#                        x[1] = result
-#                        users.append(x)
-#                else:
-#                    x[1] = list_users[x[1]]
-#                    users.append(x)
-
-#            elif x[0] == 'group' and x[1]:
-#                i = x[1].partition("\\")
-#                if i[2]:
-#                    err, result = utm.get_ldap_group_guid(i[0], i[2])
-#                    if err != 0:
-#                        print(f"\033[31m{result}\033[0m")
-#                    elif not result:
-#                        print(f'\t\033[31mНет LDAP-коннектора для домена "{i[0]}"!\n\tИмпортируйте и настройте LDAP-коннектор. Затем повторите импорт групп.\033[0m')
-#                    else:
-#                        x[1] = result
-#                        users.append(x)
-#                else:
-#                    x[1] = list_groups[x[1]]
-#                    users.append(x)
-#            elif x[0] == 'special' and x[1]:
-#                users.append(x)
-#        item['users'] = users
-#    else:
-#        item['users'] = []
-
-#def set_apps(array_apps, l7_categories, applicationgroup, l7_apps):
-#    """Определяем ID приложения по имени при импорте"""
-#    for app in array_apps:
-#        if app[0] == 'ro_group':
-#            if app[1] == 0:
-#                app[1] = "All"
-#            elif app[1] == "All":
-#                app[1] = 0
-#            else:
-#                try:
-#                    app[1] = l7_categories[app[1]]
-#                except KeyError as err:
-#                    print(f'\t\033[33mНе найдена категория l7 №{err}.\n\tВозможно нет лицензии, и UTM не получил список категорий l7.\n\tУстановите лицензию и повторите попытку.\033[0m')
-#        elif app[0] == 'group':
-#            try:
-#                app[1] = applicationgroup[app[1]]
-#            except KeyError as err:
-#                print(f'\t\033[33mНе найдена группа приложений №{err}.\n\tЗагрузите приложения и повторите попытку.\033[0m')
-#        elif app[0] == 'app':
-#            try:
-#                app[1] = l7_apps[app[1]]
-#            except KeyError as err:
-#                print(f'\t\033[33mНе найдено приложение №{err}.\n\tВозможно нет лицензии, и UTM не получил список приложений l7.\n\tЗагрузите приложения или установите лицензию и повторите попытку.\033[0m')
 
 #def set_urls_and_categories(item, list_url, list_urlcategorygroup, url_category):
 #    if item['urls']:

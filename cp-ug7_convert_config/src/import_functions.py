@@ -19,12 +19,11 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.2
+# Версия 2.3
 #
 
 import os, sys, json
 from PyQt6.QtCore import QThread, pyqtSignal
-#from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name,
 
 
 class ImportAll(QThread):
@@ -55,6 +54,7 @@ class ImportAll(QThread):
         import_url_categories(self)
         import_application_groups(self)
         import_firewall_rules(self)
+        import_content_rules(self)
         self.stepChanged.emit('5|Импорт конфигурации прошёл с ошибками!' if self.error else '5|Импорт всей конфигурации прошёл успешно.')
 
 
@@ -219,7 +219,7 @@ class ImportApplicationGroups(QThread):
 
 
 class ImportFirewallRules(QThread):
-    """Импортировать группы приложений на UTM"""
+    """Импортировать правила МЭ на UTM"""
     stepChanged = pyqtSignal(str)
 
     def __init__(self, utm):
@@ -229,6 +229,19 @@ class ImportFirewallRules(QThread):
 
     def run(self):
         import_firewall_rules(self)
+
+
+class ImportContentRules(QThread):
+    """Импортировать правила КФ на UTM"""
+    stepChanged = pyqtSignal(str)
+
+    def __init__(self, utm):
+        super().__init__()
+        self.utm = utm
+        self.error = 0
+
+    def run(self):
+        import_content_rules(self)
 
 
 def import_gateways(parent):
@@ -789,7 +802,6 @@ def import_firewall_rules(parent):
         parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
         parent.error = 1
         return
-
     firewall_rules = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_services_list()
@@ -864,6 +876,7 @@ def import_firewall_rules(parent):
 #        parent.set_time_restrictions(item)
         if item['name'] in firewall_rules:
             parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" уже существует.')
+            item.pop('position', None)
             err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
             if err:
                 parent.stepChanged.emit(f'2|   {result}')
@@ -880,6 +893,104 @@ def import_firewall_rules(parent):
         parent.error = 1
     out_message = '1|Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".'
     parent.stepChanged.emit('1|Произошла ошибка при импорте правил межсетевого экрана!' if error else out_message)
+
+def import_content_rules(parent):
+    """Импортировать список правил фильтрации контента"""
+    parent.stepChanged.emit('0|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
+
+    json_file = "data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json"
+    err, data = read_json_file(json_file, '1|Ошибка импорта правил фильтрации контента!', '1|Нет правил фильтрации контента для импорта.')
+    if err:
+        parent.stepChanged.emit(data)
+        parent.error = 1
+        return
+
+    err, result = parent.utm.get_content_rules()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.error = 1
+        return
+    content_rules = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('network')
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.error = 1
+        return
+    ips_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('urlcategorygroup')
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.error = 1
+        return
+    url_category_groups = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_url_categories()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.error = 1
+        return
+    url_categories = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('url')
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.error = 1
+        return
+    url_list = {x['name']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item['position'] = 'last'
+        get_guids_users_and_groups(parent, item)
+        for ips in item['src_ips']:
+            try:
+                ips[1] = ips_list[ips[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
+        for ips in item['dst_ips']:
+            try:
+                ips[1] = ips_list[ips[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
+
+        for x in item['url_categories']:
+            try:
+                x[1] = url_category_groups[x[1]] if x[0] == 'list_id' else url_categories[x[1]]
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найдена группа URL-категорий {err} для правила "{item["name"]}". Загрузите ктегории URL и повторите попытку.')
+
+        item['urls'] = [url_list[url_name] for url_name in item['urls']]
+#        parent.set_time_restrictions(item)
+        if item['name'] in content_rules:
+            parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" уже существует.')
+            item.pop('position', None)
+            err, result = parent.utm.update_content_rule(content_rules[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'2|   {result}')
+            else:
+                parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" обновлено.')
+        else:
+            err, result = parent.utm.add_content_rule(item)
+            if err:
+                parent.stepChanged.emit(f'2|   {result}')
+            else:
+                content_rules[item['name']] = result
+                parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" добавлено.')
+
+    if error:
+        parent.error = 1
+    out_message = '1|Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".'
+    parent.stepChanged.emit('1|Произошла ошибка при импорте правил контентной фильтрации!' if error else out_message)
 
 def get_guids_users_and_groups(parent, item):
     """

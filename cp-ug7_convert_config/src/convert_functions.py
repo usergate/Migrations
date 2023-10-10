@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 2.3
+# Версия 2.4
 #
 
 import os, sys, json, uuid
@@ -46,6 +46,7 @@ class ConvertAll(QThread):
         self.cp_data_json = parent.cp_data_json
         self.error = 0
         self.app_groups = []
+        self.zones = {}
 
     def run(self):
         """Конвертируем всё в пакетном режиме"""
@@ -64,6 +65,7 @@ class ConvertAll(QThread):
         convert_access_policy_files(self)
         
         self.save_app_groups()
+        self.save_zones()
         self.stepChanged.emit('5|Преобразование конфигурации в формат UG NGFW прошло с ошибками!' if self.error else '5|Преобразование конфигурации в формат UG NGFW прошло успешно.')
 
     def create_app_group(self, group_name, app_list, comment=''):
@@ -87,6 +89,14 @@ class ConvertAll(QThread):
             with open("data_ug/Libraries/Applications/config_applications.json", "w") as fh:
                 json.dump(self.app_groups, fh, indent=4, ensure_ascii=False)
         self.stepChanged.emit('1|Группы приложений выгружены в файл "data_ug/Libraries/Applications/config_applications.json".')
+
+    def save_zones(self):
+        """Сохраняем зоны, если они есть."""
+        if self.zones:
+            if make_dirs(self, 'data_ug/Network/Zones'):
+                with open('data_ug/Network/Zones/config_zones.json', 'w') as fh:
+                    json.dump([x for x in self.zones.values()], fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit('1|Зоны выгружены в файл "data_ug/Network/Zones/config_zones.json".')
 
 def convert_config_cp(parent):
     """Конвертируем данные из файла "config_cp.txt" в формат UG NGFW"""
@@ -475,7 +485,10 @@ def convert_ip_lists_groups(parent):
             content = []
             for uid in value['members']:
                 try:
-                    content.append({"list": parent.objects[uid]['name']})
+                    if parent.objects[uid]['type'] == 'simple-gateway':
+                        content.append({"value": parent.objects[uid]['ipv4-address']})
+                    else:
+                        content.append({"list": parent.objects[uid]['name']})
                 except KeyError:
                     error = 1
                     parent.error = 1
@@ -658,6 +671,14 @@ def convert_application_group(parent):
                 for item in parent.objects[key]['members']:
                     try:
                         match parent.objects[item]['type']:
+                            case 'app-url-category':
+                                for name in parent.objects[item]['l7_category']:
+                                    ro_group.add(name)
+                                for name in parent.objects[item]['applicationgroup']:
+                                    applicationgroups.add(name)
+                                for name in parent.objects[item]['url_category']:
+                                    url_category.add(name)
+#                                    apps_group_tmp['url_categories'].append(['category_id', name])
                             case 'l7apps':
                                 for name in parent.objects[item]['name']:
                                     app.add(name)
@@ -777,13 +798,17 @@ def convert_other(parent):
 
     for key, value in parent.objects.items():
         try:
-            if value['type'] == 'RulebaseAction':
-                parent.objects[key] = {"type": "RulebaseAction", "value": value['name'].lower()}
-            elif value['type'] == 'CpmiAnyObject':
-                parent.objects[key] = {"type": "CpmiAnyObject", "value": "Any"}
-            elif value['type'] == 'service-other':
-                parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Сервис "{value["name"]}" не конвертирован.'}
-                parent.stepChanged.emit(f'3|Warning! Сервисе "{value["name"]}" (тип service-other) не конвертирован и не будет использован в правилах!')
+            match value['type']:
+                case 'RulebaseAction':
+                    parent.objects[key] = {"type": "RulebaseAction", "value": value['name'].lower()}
+                case 'CpmiAnyObject':
+                    parent.objects[key] = {"type": "CpmiAnyObject", "value": "Any"}
+                case 'service-other':
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Сервис "{value["name"]}" не конвертирован.'}
+                    parent.stepChanged.emit(f'3|Warning! Сервисе "{value["name"]}" (тип service-other) не конвертирован и не будет использован в правилах!')
+                case 'Internet':
+                    parent.objects[key] = {"type": "Zone", "value": "Internet"}
+                    create_zone('Internet', parent.zones)
         except KeyError:
             pass
     parent.stepChanged.emit('1|Конвертации сопутствующих объектов завершена.')
@@ -881,6 +906,8 @@ def convert_access_policy_files(parent):
                         apps.extend([['ro_group', x] for x in value['l7_category']])
                         apps.extend([["group", x] for x in  value['applicationgroup']])
                         url_categories.extend([['category_id', x] for x in value['url_category']])
+                    case 'l7_category':
+                        apps.extend([['ro_group', x] for x in value['name']])
                     case 'url':
                         urls.append(value['name'])
                     case 'error':
@@ -936,9 +963,9 @@ def create_firewall_rule(parent, item, fw_rules, err=0):
         "action": item['action']['value'] if item['action']['type'] == 'RulebaseAction' else 'drop',
         "position": item['rule-number'],
         "scenario_rule_id": False,
-        "src_zones": [],
+        "src_zones": [x['value'] for x in item['source'] if x['type'] == 'Zone'],
         "src_ips": get_ips_list(item['source']),
-        "dst_zones": [],
+        "dst_zones": [x['value'] for x in item['destination'] if x['type'] == 'Zone'],
         "dst_ips": get_ips_list(item['destination']),
         "services": item['services'],
         "apps": item['apps'],
@@ -982,8 +1009,8 @@ def create_content_rule(parent, item, kf_rules):
         'blockpage_template_id': -1,
         'users': get_users_list(item['source'], item['destination']),
         'url_categories': item['url_categories'],
-        'src_zones': [],
-        'dst_zones': [],
+        'src_zones': [x['value'] for x in item['source'] if x['type'] == 'Zone'],
+        'dst_zones': [x['value'] for x in item['destination'] if x['type'] == 'Zone'],
         'src_ips': get_ips_list(item['source']),
         'dst_ips': get_ips_list(item['destination']),
         'morph_categories': [],
@@ -1012,6 +1039,13 @@ def create_content_rule(parent, item, kf_rules):
     kf_rules.append(rule)
     parent.stepChanged.emit(f'2|    Создано правило контентной фильтрации "{item["name"]}".')
 
+#def get_zones(array):
+#    """Получить список зон, если они есть."""
+#    result = []
+#    for item in array:
+#        result = [x['value'] for x in item if x['type'] == 'Zone']
+#    return result
+
 def get_ips_list(array):
     """Получить структуру src_ips/dst_ips для правил МЭ и КФ из объектов access_rule."""
     result = []
@@ -1033,26 +1067,195 @@ def get_users_list(src_array, dst_array):
             result.extend(item['users'])
     return result
 
-################################## Импорт ####################################################################
+def create_zone(zone_name, zones):
+    """Создаём зону"""
+    zone = {
+        "name": zone_name,
+        "description": "",
+        "dos_profiles": [
+            {
+                "enabled": True,
+                "kind": "syn",
+                "alert_threshold": 3000,
+                "drop_threshold": 6000,
+                "aggregate": False,
+                "excluded_ips": []
+            },
+            {
+                "enabled": True,
+                "kind": "udp",
+                "alert_threshold": 3000,
+                "drop_threshold": 6000,
+                "aggregate": False,
+                "excluded_ips": []
+            },
+            {
+                "enabled": True,
+                "kind": "icmp",
+                "alert_threshold": 100,
+                "drop_threshold": 200,
+                "aggregate": False,
+                "excluded_ips": []
+            }
+        ],
+        "services_access": [
+            {
+                'enabled': True,
+                'service_id': 1,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 2,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 4,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 5,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 6,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 7,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 8,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 9,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 10,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 11,
+                'allowed_ips': []
+            },
+            {
+                'enabled': True,
+                'service_id': 12,
+                'allowed_ips': []
+            },
+            {
+                'enabled': True,
+                'service_id': 13,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 14,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 15,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 16,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 17,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 18,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 19,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 20,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 21,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 22,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 23,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 24,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 25,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 26,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 27,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 28,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 29,
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 30,
+                'allowed_ips': []
+            }
+        ],
+        "readonly": False,
+        "enable_antispoof": False,
+        "antispoof_invert": False,
+        "networks": [],
+        "sessions_limit_enabled": False,
+        "sessions_limit_threshold": -1,
+        "sessions_limit_exclusions": [],
+    }
+    zones[zone_name] = zone
 
-#def set_urls_and_categories(item, list_url, list_urlcategorygroup, url_category):
-#    if item['urls']:
-#        try:
-#            item['urls'] = [list_url[x] for x in item['urls']]
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найден URL {err} для правила "{item["name"]}".\n\tЗагрузите списки URL и повторите попытку.\033[0m')
-#            item['urls'] = []
-#    if item['url_categories']:
-#        try:
-#            for x in item['url_categories']:
-#                if x[0] == 'list_id':
-#                    x[1] = list_urlcategorygroup[x[1]]
-#                elif x[0] == 'category_id':
-#                    x[1] = url_category[x[1]]
-#        except KeyError as err:
-#            print(f'\t\033[33mНе найдена группа URL-категорий {err} для правила "{item["name"]}".\n\tЗагрузите категории URL и повторите попытку.\033[0m')
-#            item['url_categories'] = []
-
+######################## Служебнуе функции ####################################################################
 def make_dirs(parent, folder):
     if not os.path.isdir(folder):
         try:

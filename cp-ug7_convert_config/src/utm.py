@@ -333,7 +333,7 @@ class UtmXmlRpc:
             result = self._server.v1.netmanager.zones.list(self._auth_token)
         except rpc.Fault as err:
             return 1, f"Error utm.get_zones_list: [{err.faultCode}] — {err.faultString}"
-        return 0, result
+        return 0, result    # Возвращает список зон.
 
     def add_zone(self, zone):
         """Добавить зону"""
@@ -343,9 +343,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Зона: {zone['name']} уже существует. Проверка параметров..."
+                return 2, f"Зона: {zone['name']} уже существует."
             elif err.faultCode == 111:
-                return 2, f"Зона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
+                return 1, f"Зона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
             else:
                 return 1, f"Error utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1444,7 +1444,7 @@ class UtmXmlRpc:
             if err.faultCode == 110:
                 return 1, f'Правило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
             elif err.faultCode == 111:
-                return 1, f"Правило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+                return 1, f"Error: Правило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
             else:
                 return 1, f"Error utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}"
         else:

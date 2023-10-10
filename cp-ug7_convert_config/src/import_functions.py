@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.3
+# Версия 2.4
 #
 
 import os, sys, json
@@ -41,6 +41,7 @@ class ImportAll(QThread):
 
     def run(self):
         """Импортируем всё в пакетном режиме"""
+        import_zones(self)
         import_vlans(self)
         import_gateways(self)
         import_ui(self)
@@ -121,6 +122,19 @@ class ImportStaticRoutes(QThread):
 
     def run(self):
         import_static_routes(self)
+
+
+class ImportZones(QThread):
+    """Импортируем Зоны"""
+    stepChanged = pyqtSignal(str)
+    
+    def __init__(self, utm):
+        super().__init__()
+        self.utm = utm
+        self.error = 0
+
+    def run(self):
+        import_zones(self)
 
 
 class ImportVlans(QThread):
@@ -390,6 +404,30 @@ def import_static_routes(parent):
         parent.error = 1
     parent.stepChanged.emit('1|Ошибка импорта статических маршрутов!' if error else out_message)
 
+def import_zones(parent):
+    """Импортируем зоны на NGFW, если они есть."""
+    parent.stepChanged.emit('0|Импорт зон в раздел "Сеть/Зоны".')
+
+    json_file = "data_ug/Network/Zones/config_zones.json"
+    err, data = read_json_file(json_file, '1|Ошибка импорта зон!', '1|Нет зон для импорта.')
+    if err:
+        parent.stepChanged.emit('0|Импорт зон в раздел "Сеть/Зоны".')
+        parent.stepChanged.emit(data)
+        parent.error = 1
+        return
+
+    error = 0
+    for item in data:
+        err, result = parent.utm.add_zone(item)
+        if err:
+            error = 1 if err == 1 else 0
+            parent.stepChanged.emit(f'2|{result}')
+        else:
+            parent.stepChanged.emit(f'2|Зона "{item["name"]}" добавлена.')
+
+    out_message = '1|Зоны импортированы в раздел "Сеть/Зоны".'
+    parent.stepChanged.emit('1|Произошла ошибка при импорте зон.' if error else out_message)
+
 def import_vlans(parent):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
     error = 0
@@ -574,7 +612,7 @@ def import_ip_lists(parent):
                     try:
                         item['list'] = list_ip[item['list'][1]]
                     except KeyError:
-                        err1 = f'Ошибка! Нет IP-листа "{item["value"]}" в Библиотеке списков IP-адресов NGFW.'
+                        err1 = f'Ошибка! Нет IP-листа "{item["list"][1]}" в Библиотеке списков IP-адресов NGFW.'
                         err2 = f'Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".'
                         parent.stepChanged.emit(f'2|{err1}')
                         parent.stepChanged.emit(f'2|{err2}')
@@ -804,6 +842,14 @@ def import_firewall_rules(parent):
         return
     firewall_rules = {x['name']: x['id'] for x in result}
 
+    err, result = parent.utm.get_zones_list()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    zones_list = {x['name']: x['id'] for x in result}
+
     err, result = parent.utm.get_services_list()
     if err:
         parent.stepChanged.emit(f'1|{result}')
@@ -847,18 +893,10 @@ def import_firewall_rules(parent):
     error = 0
     for item in data:
         item['position'] = 'last'
-        for ips in item['src_ips']:
-            try:
-                ips[1] = ips_list[ips[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
-        for ips in item['dst_ips']:
-            try:
-                ips[1] = ips_list[ips[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
+        item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
+        item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
+        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
+        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
         for service in item['services']:
             try:
                 service[1] = services_list[service[1]] if service[0] == 'service' else servicegroups_list[service[1]]
@@ -875,17 +913,17 @@ def import_firewall_rules(parent):
         get_guids_users_and_groups(parent, item)
 #        parent.set_time_restrictions(item)
         if item['name'] in firewall_rules:
-            parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'2|Правило МЭ "{item["name"]}" уже существует.')
             item.pop('position', None)
             err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
             if err:
-                parent.stepChanged.emit(f'2|   {result}')
+                parent.stepChanged.emit(f'2|{result}')
             else:
                 parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" обновлено.')
         else:
             err, result = parent.utm.add_firewall_rule(item)
             if err:
-                parent.stepChanged.emit(f'2|   {result}')
+                parent.stepChanged.emit(f'2|{result}')
             else:
                 firewall_rules[item['name']] = result
                 parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" добавлено.')
@@ -912,6 +950,14 @@ def import_content_rules(parent):
         parent.error = 1
         return
     content_rules = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_zones_list()
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.error = 1
+        return
+    zones_list = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_nlists_list('network')
     if err:
@@ -949,18 +995,10 @@ def import_content_rules(parent):
     for item in data:
         item['position'] = 'last'
         get_guids_users_and_groups(parent, item)
-        for ips in item['src_ips']:
-            try:
-                ips[1] = ips_list[ips[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
-        for ips in item['dst_ips']:
-            try:
-                ips[1] = ips_list[ips[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {item["name"]}.')
+        item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
+        item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
+        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
+        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
 
         for x in item['url_categories']:
             try:
@@ -969,20 +1007,28 @@ def import_content_rules(parent):
                 error = 1
                 parent.stepChanged.emit(f'3|Error! Не найдена группа URL-категорий {err} для правила "{item["name"]}". Загрузите ктегории URL и повторите попытку.')
 
-        item['urls'] = [url_list[url_name] for url_name in item['urls']]
+        url_oids = []
+        for url_name in item['urls']:
+            try:
+                url_oids.append(url_list[url_name])
+            except KeyError as err:
+                error = 1
+                parent.stepChanged.emit(f'3|Error! Не найден URL {err} для правила "{item["name"]}".')
+        item['urls'] = url_oids
 #        parent.set_time_restrictions(item)
+
         if item['name'] in content_rules:
-            parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'2|Правило КФ "{item["name"]}" уже существует.')
             item.pop('position', None)
             err, result = parent.utm.update_content_rule(content_rules[item['name']], item)
             if err:
-                parent.stepChanged.emit(f'2|   {result}')
+                parent.stepChanged.emit(f'2|{result}')
             else:
                 parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" обновлено.')
         else:
             err, result = parent.utm.add_content_rule(item)
             if err:
-                parent.stepChanged.emit(f'2|   {result}')
+                parent.stepChanged.emit(f'2|{result}')
             else:
                 content_rules[item['name']] = result
                 parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" добавлено.')
@@ -991,6 +1037,28 @@ def import_content_rules(parent):
         parent.error = 1
     out_message = '1|Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".'
     parent.stepChanged.emit('1|Произошла ошибка при импорте правил контентной фильтрации!' if error else out_message)
+
+def get_ips(parent, rule_ips, utm_ips, rule_name):
+    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на NGFW, то он пропускается."""
+    new_rule_ips = []
+    for ips in rule_ips:
+        try:
+            new_rule_ips.append(['list_id', utm_ips[ips[1]]])
+        except KeyError as err:
+            error = 1
+            parent.stepChanged.emit(f'3|Error! Не найден список IP-адресов {ips} для правила {rule_name}.')
+    return new_rule_ips
+
+def get_zones(parent, zones, zones_list, rule_name):
+    """Получить UID-ы зон. Если зона не существует на NGFW, то она пропускается."""
+    new_zones = []
+    for i, zone in enumerate(zones):
+        try:
+            new_zones.append(zones_list[zone])
+        except KeyError as err:
+            error = 1
+            parent.stepChanged.emit(f'3|Error! Не найдена зона {zone} для правила {rule_name}.')
+    return new_zones
 
 def get_guids_users_and_groups(parent, item):
     """

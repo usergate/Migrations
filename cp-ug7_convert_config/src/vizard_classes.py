@@ -186,20 +186,21 @@ class SelectImportMode(QWidget):
         self.utm = ""
         self.thread = None
         self.func = {
-            '1. Импорт интерфейсов VLAN': None,
-            '2. Импорт шлюзов': tf.ImportGateways,
-            '3. Импорт часового пояса': tf.ImportUi,
-            '4. Импорт серверов DNS': tf.ImportDnsServers,
-            '5. Импорт серверов NTP': tf.ImportNtpSettings,
-            '6. Импорт статических маршрутов': tf.ImportStaticRoutes,
-            '7. Импорт списка сервисов': tf.ImportServices,
-            '8. Импорт групп сервисов': tf.ImportServicesGroups,
-            '9. Импорт списков IP-адресов': tf.ImportIpLists,
-            '10. Импорт списков URL': tf.ImportUrlLists,
-            '11. Импорт групп URL категорий': tf.ImportUrlCategories,
-            '12. Импорт групп приложений': tf.ImportApplicationGroups,
-            '13. Импорт правил МЭ': tf.ImportFirewallRules,
-            '14. Импорт правил КФ': tf.ImportContentRules,
+            '1. Импорт Зон': tf.ImportZones,
+            '2. Импорт интерфейсов VLAN': None,
+            '3. Импорт шлюзов': tf.ImportGateways,
+            '4. Импорт часового пояса': tf.ImportUi,
+            '5. Импорт серверов DNS': tf.ImportDnsServers,
+            '6. Импорт серверов NTP': tf.ImportNtpSettings,
+            '7. Импорт статических маршрутов': tf.ImportStaticRoutes,
+            '8. Импорт списка сервисов': tf.ImportServices,
+            '9. Импорт групп сервисов': tf.ImportServicesGroups,
+            '10. Импорт списков IP-адресов': tf.ImportIpLists,
+            '11. Импорт списков URL': tf.ImportUrlLists,
+            '12. Импорт групп URL категорий': tf.ImportUrlCategories,
+            '13. Импорт групп приложений': tf.ImportApplicationGroups,
+            '14. Импорт правил МЭ': tf.ImportFirewallRules,
+            '15. Импорт правил КФ': tf.ImportContentRules,
         }
 
         title = QLabel("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")
@@ -328,7 +329,7 @@ class SelectImportMode(QWidget):
         if self.selected_point:
             self.disable_buttons()
             if self.thread is None:
-                if self.selected_point ==  '1. Импорт интерфейсов VLAN':
+                if self.selected_point ==  '2. Импорт интерфейсов VLAN':
                     cv = CreateVlans(self, self.utm)
                     self.thread = tf.ImportVlans(self.utm, cv.utm_vlans, cv.utm_zones, cv.new_vlans, cv.ifaces)
                 else:

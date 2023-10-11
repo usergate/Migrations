@@ -1,9 +1,9 @@
 #
-import os, json
+import os, json, ipaddress
 from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
-                             QListWidget, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea)
+                             QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea)
 import convert_functions as cf
 import import_functions as tf
 from utm import UtmXmlRpc
@@ -344,9 +344,9 @@ class SelectImportMode(QWidget):
 
     def on_step_changed(self, msg):
         err, message = msg.split('|')
-        self.log_list.addItem(f'    {message}' if int(err) else message)
+        self.add_item_log(f'    {message}' if int(err) else message, color=int(err))
         self.log_list.scrollToBottom()
-        if int(err) == 1:
+        if int(err) in (5, 6):
             _, title = self.selected_point.split('.')
             message_inform(self, title, message)
 
@@ -371,13 +371,14 @@ class SelectImportMode(QWidget):
 
     def on_batch_changed(self, msg):
         err, message = msg.split('|')
-        if int(err) == 5:
+        if int(err) in (5, 6):
             self.log_list.addItem('')
-            self.log_list.addItem(message)
+            self.add_item_log(message, int(err))
             self.log_list.addItem('')
             message_inform(self, 'Импорт', message)
         else:
-            self.log_list.addItem(f'    {message}' if int(err) else message)
+            self.add_item_log(f'    {message}' if int(err) else message, int(err))
+
         self.log_list.scrollToBottom()
 
     def _save_logs(self):
@@ -392,9 +393,15 @@ class SelectImportMode(QWidget):
         """Возвращаемся на стартовое окно"""
         self.parent.stacklayout.setCurrentIndex(0)
 
-    def add_item_log(self, message):
-        """Добавляем запись лога в log_list"""
-        self.log_list.addItem(message)
+    def add_item_log(self, message, color=0):
+        """
+        Добавляем запись лога в log_list.
+        Цвета: [black, darkred, black, dodgerblue, darkorange, darkgreen, darkorange]
+        """
+        colors = ['#000000', '#8b0000', '#000000', '#1e90ff', '#ff8c00', '#006400', '#ff8c00']
+        i = QListWidgetItem(message)
+        i.setForeground(QColor(colors[color]))
+        self.log_list.addItem(i)
 
 
 class LoginWindow(QDialog):
@@ -444,7 +451,7 @@ class LoginWindow(QDialog):
         self.setLayout(layout)
         
     def _send_accept(self):
-        if self.ngfw_ip.text() and self.login.text() and self.password.text():
+        if self.check_ip_is_valid(self.ngfw_ip.text()) and self.login.text() and self.password.text():
             self.utm = UtmXmlRpc(self.ngfw_ip.text(), self.login.text(), self.password.text())
             err, result = self.utm.connect()
             if err:
@@ -452,6 +459,14 @@ class LoginWindow(QDialog):
             else:
                 self.accept()
 
+    def check_ip_is_valid(self, ip_addr):
+        """Проверяем введённый ip-адрес на валидность."""
+        try:
+            ipaddress.ip_address(ip_addr)
+            return True
+        except ValueError:
+            message_inform(self, 'Ошибка!', 'Вы ввели не корректный IP-адрес.')
+            return False
 
 class CreateVlans:
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""

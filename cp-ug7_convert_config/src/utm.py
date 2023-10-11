@@ -343,9 +343,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Зона: {zone['name']} уже существует."
+                return 2, f"Зона {zone['name']} уже существует."
             elif err.faultCode == 111:
-                return 1, f"Зона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
+                return 1, f"Error: Зона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
             else:
                 return 1, f"Error utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:
@@ -379,7 +379,7 @@ class UtmXmlRpc:
             result = self._server.v1.netmanager.gateway.add(self._auth_token, self.node_name, gateway)
         except rpc.Fault as err:
             if err.faultCode == 1019:
-                return 2, f'Шлюз "{gateway["name"]}" не импортирован! Duplicate IP.'
+                return 2, f'Error: Шлюз "{gateway["name"]}" не импортирован! Duplicate IP.'
             else:
                 return 1, f"Error utm.add_gateway: [{err.faultCode}] — {err.faultString}"
         else:
@@ -624,9 +624,9 @@ class UtmXmlRpc:
             result = self._server.v1.netmanager.virtualrouter.add(self._auth_token, vrf_info)
         except rpc.Fault as err:
             if err.faultCode == 1015:
-                return 2, f'В виртуальном маршрутизаторе "{rule["name"]}" указан несуществующий порт: {rule["interfaces"]}.'
+                return 2, f'Error: В виртуальном маршрутизаторе "{rule["name"]}" указан несуществующий порт: {rule["interfaces"]}.'
             elif err.faultCode == 1016:
-                return 2, f'В виртуальном маршрутизаторе "{rule["name"]}" указан порт использующийся в другом маршрутизаторе: {rule["interfaces"]}.'
+                return 2, f'Error: В виртуальном маршрутизаторе "{rule["name"]}" указан порт использующийся в другом маршрутизаторе: {rule["interfaces"]}.'
             else:
                 return 1, f"Error utm.add_vrf: [{err.faultCode}] — {err.faultString}"
         else:
@@ -638,7 +638,7 @@ class UtmXmlRpc:
             result = self._server.v1.netmanager.virtualrouter.update(self._auth_token, vrf_id, vrf_info)
         except rpc.Fault as err:
             if err.faultCode == 1020:
-                return 2, f'В виртуальном маршрутизаторе "{rule["name"]}" указан порт использующийся в другом маршрутизаторе: {rule["interfaces"]} [{err.faultString}]'
+                return 2, f'Error: В виртуальном маршрутизаторе "{rule["name"]}" указан порт использующийся в другом маршрутизаторе: {rule["interfaces"]} [{err.faultString}]'
             return 1, f"Error utm.update_vrf: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает ID добавленного правила
@@ -714,7 +714,7 @@ class UtmXmlRpc:
         return 0, result['items']   # Возвращает лист списков (список словарей).
 
     def get_nlist_list(self, list_type):
-        """Получить содержимое пользовательских именованных списков раздела Библиотеки"""
+        """Получить список пользовательских именованных списков c их содержимым."""
         array = []
         try:
             result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 5000, {})
@@ -735,11 +735,11 @@ class UtmXmlRpc:
                     else:
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, '', [])
                 except rpc.Fault as err:
-                    return 2, f'Содержимое списка "{item["name"]}" не экспортировано. Ошибка загрузки списка!'
+                    return 2, f'Error: Содержимое списка "{item["name"]}" не экспортировано. Ошибка загрузки списка!'
                 except ExpatError:
-                    return 2, f'Содержимое списка "{item["name"]}" не экспортировано. Список corrupted!'
+                    return 2, f'Error: Содержимое списка "{item["name"]}" не экспортировано. Список corrupted!'
                 except UnboundLocalError:
-                    return 2, f'Содержимое списка "{item["name"]}" не экспортировано. Ошибка программы!'
+                    return 2, f'Error: Содержимое списка "{item["name"]}" не экспортировано. Ошибка программы!'
 
                 if list_type == 'timerestrictiongroup' and self.version.startswith('5'):
                     item['content'] = [x['value'] for x in content['items']]
@@ -759,9 +759,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f'Список: "{named_list["name"]}" уже существует'
+                return 2, f'Список "{named_list["name"]}" уже существует'
             elif err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии списка "{named_list["name"]}"! Возможно используются русские буквы.'
+                return 1, f'Error: Недопустимые символы в названии списка "{named_list["name"]}"! Возможно используются русские буквы.'
             else:
                 return 1, f"Error utm.add_nlist: [{err.faultCode}] — {err.faultString}"
         else:
@@ -805,7 +805,7 @@ class UtmXmlRpc:
             if err.faultCode == 2001:
                 return 2, f"Содержимое: {items} не добавлено, так как уже существует."
             elif err.faultCode == 2003:
-                return 3, f"Содержимое: {items} не добавлено, так как обновляется через URL."
+                return 2, f"Содержимое: {items} не добавлено, так как обновляется через URL."
             else:
                 return 1, f'Error utm.add_nlist_items: [{err.faultCode}] — {err.faultString}'
         else:
@@ -1442,7 +1442,7 @@ class UtmXmlRpc:
             result = self._server.v1.firewall.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
             if err.faultCode == 110:
-                return 1, f'Правило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
+                return 1, f'Error: Правило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
             elif err.faultCode == 111:
                 return 1, f"Error: Правило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
             else:

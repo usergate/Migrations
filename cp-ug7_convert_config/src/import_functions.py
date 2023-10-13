@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.5
+# Версия 2.6
 #
 
 import os, sys, json
@@ -922,12 +922,14 @@ def import_firewall_rules(parent):
             item.pop('position', None)
             err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
             if err:
+                error = 1
                 parent.stepChanged.emit(f'1|{result}')
             else:
                 parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" обновлено.')
         else:
             err, result = parent.utm.add_firewall_rule(item)
             if err:
+                error = 1
                 parent.stepChanged.emit(f'1|{result}')
             else:
                 firewall_rules[item['name']] = result
@@ -1027,12 +1029,14 @@ def import_content_rules(parent):
             item.pop('position', None)
             err, result = parent.utm.update_content_rule(content_rules[item['name']], item)
             if err:
+                error = 1
                 parent.stepChanged.emit(f'1|{result}')
             else:
                 parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" обновлено.')
         else:
             err, result = parent.utm.add_content_rule(item)
             if err:
+                error = 1
                 parent.stepChanged.emit(f'1|{result}')
             else:
                 content_rules[item['name']] = result

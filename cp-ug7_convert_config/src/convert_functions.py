@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 2.4
+# Версия 2.6
 #
 
 import os, sys, json, uuid
@@ -569,6 +569,7 @@ def convert_url_lists(parent):
     else:
         os.makedirs('data_ug/Libraries/URLLists')
 
+    error = 0
     for key, value in parent.objects.items():
         if value['type'] == 'application-site' and 'url-list' in value:
             parent.objects[key] = {'type': 'url', 'name': value['name'].translate(trans_name)}
@@ -588,6 +589,8 @@ def convert_url_lists(parent):
             with open(f"data_ug/Libraries/URLLists/{file_name}.json", "w") as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'2|Список URL "{value["name"]}" выгружен в файл "data_ug/Libraries/URLLists/{file_name}.json"')
+
+    parent.stepChanged.emit('1|Конвертация списков URL прошла с ошибками!' if error else '1|Конвертация списков URL завершена.')
 
 def convert_application_site_category(parent):
     """
@@ -800,7 +803,7 @@ def convert_other(parent):
         try:
             match value['type']:
                 case 'RulebaseAction':
-                    parent.objects[key] = {"type": "RulebaseAction", "value": value['name'].lower()}
+                    parent.objects[key] = {"type": "RulebaseAction", "value": "accept" if value['name'] == 'Inform' else value['name'].lower()}
                 case 'CpmiAnyObject':
                     parent.objects[key] = {"type": "CpmiAnyObject", "value": "Any"}
                 case 'service-other':
@@ -1250,7 +1253,7 @@ def create_zone(zone_name, zones):
         "antispoof_invert": False,
         "networks": [],
         "sessions_limit_enabled": False,
-        "sessions_limit_threshold": -1,
+        "sessions_limit_threshold": 0,
         "sessions_limit_exclusions": [],
     }
     zones[zone_name] = zone

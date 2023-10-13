@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.5
+# Версия 3.6
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -345,7 +345,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f"Зона {zone['name']} уже существует."
             elif err.faultCode == 111:
-                return 1, f"Error: Зона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
+                return 1, f"Error: Зона '{zone['name']}' не добавлена [{err.faultString}]"
             else:
                 return 1, f"Error utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:
@@ -414,10 +414,14 @@ class UtmXmlRpc:
     def get_interfaces_list(self):
         """Получить список сетевых интерфейсов"""
         try:
-            result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, {})
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, 0, 1000, {})
+                return 0, result['items']
+            else:
+                result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, {})
+                return 0, result
         except rpc.Fault as err:
             return 1, f"Error utm.get_interfaces_list: [{err.faultCode}] — {err.faultString}"
-        return 0, result
 
     def update_interface(self, iface_id, iface):
         """Update interface"""
@@ -1056,7 +1060,7 @@ class UtmXmlRpc:
     def get_ssl_profiles_list(self):
         """Получить список профилей SSL раздела Библиотеки"""
         try:
-            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, '')
         except rpc.Fault as err:
             return 1, f"Error get_ssl_profiles_list: [{err.faultCode}] — {err.faultString}"
         return 0, result['items']
@@ -1093,6 +1097,12 @@ class UtmXmlRpc:
             result = self._server.v3.accounts.groups.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
             return 1, f"Error utm.get_groups_list: [{err.faultCode}] — {err.faultString}"
+        if not self.version_hight >= 7 and not self.version_midle >= 1:
+            try:
+                for group in result['items']:
+                    group['id'] = group.pop('guid')
+            except KeyError as err:
+                return 1, f"Error utm.get_groups_list: нет GUID в группе локальных пользователей {group['name']} [{err}]"
         return 0, result['items']
 
     def add_group(self, group):
@@ -1134,6 +1144,12 @@ class UtmXmlRpc:
             result = self._server.v3.accounts.users.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
             return 1, f"Error get_users_list: [{err.faultCode}] — {err.faultString}"
+        if not self.version_hight >= 7 and not self.version_midle >= 1:
+            try:
+                for user in result['items']:
+                    user['id'] = user.pop('guid')
+            except KeyError as err:
+                return 1, f"Error utm.get_users_list: нет GUID у пользователя {user['name']} [{err}]"
         return 0, result['items']
 
     def add_user(self, user):
@@ -1444,7 +1460,7 @@ class UtmXmlRpc:
             if err.faultCode == 110:
                 return 1, f'Error: Правило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
             elif err.faultCode == 111:
-                return 1, f"Error: Правило '{rule['name']}' не добавлено, так как русские буквы в имени правила запрещены."
+                return 1, f"Error: Правило '{rule['name']}' не добавлено. [{err.faultString}]"
             else:
                 return 1, f"Error utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}"
         else:
@@ -2040,11 +2056,15 @@ class UtmXmlRpc:
     def get_reverseproxy_servers(self):
         """Получить список серверов reverse-прокси"""
         try:
-            result = self._server.v1.reverseproxy.profiles.list(self._auth_token)
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.reverseproxy.profiles.list(self._auth_token, 0, 1000, {}, [])
+                return 0, result['items']
+            else:
+                result = self._server.v1.reverseproxy.profiles.list(self._auth_token)
+                return 0, result
         except rpc.Fault as err:
             return 1, f"Error utm.get_reverseproxy_servers: [{err.faultCode}] — {err.faultString}"
-        return 0, result
-
+ 
     def add_reverseproxy_servers(self, profile):
         """Добавить новый сервер reverse-прокси"""
         try:

@@ -492,14 +492,17 @@ class CreateVlans:
         self.utm_zones = {x['name']: x['id'] for x in result}
 
         # Составляем список легитимных интерфейсов (interfaces_list).
-        _, result = self.utm.get_interfaces_list()
+        err, result = self.utm.get_interfaces_list()
+        if err:
+            self.new_vlans = f'1|{result}'
+            return
         for item in result:
             if item['kind'] == 'vlan':
                 self.utm_vlans[item['vlan_id']] = item['name']
             for ip in item['ipv4']:
                 if ip.startswith(self.utm.server_ip):
                     management_port = item["name"]
-                    message = f'Интерфейс {item["name"]} - {self.utm.server_ip} используется для текущей сессии.\nОн не будет использоваться для создания интерфейсов VLAN.'
+#                    message = f'Интерфейс {item["name"]} - {self.utm.server_ip} используется для текущей сессии.\nОн не будет использоваться для создания интерфейсов VLAN.'
                     parent.add_item_log(f'    Интерфейс {item["name"]} - {self.utm.server_ip} используется для текущей сессии.')
                     parent.add_item_log('    Он не будет использоваться для создания интерфейсов VLAN.')
             if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:

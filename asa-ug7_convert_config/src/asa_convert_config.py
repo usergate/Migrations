@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.7
+# Версия 2.8
 #
 
 import os, sys, json
@@ -30,7 +30,7 @@ import ipaddress
 import copy
 from datetime import datetime as dt
 from collections import deque
-from services import character_map, character_map_for_users, character_map_for_name, service_ports, ug_services
+from services import character_map, character_map_for_users, character_map_for_name, service_ports, ug_services, zone_services
 from utm import UtmXmlRpc
 
 
@@ -40,10 +40,10 @@ def convert_file(utm, file_name):
 
     trans_table = str.maketrans(character_map)
     trans_name = str.maketrans(character_map_for_name)
+
     err, protocol_names = utm.get_ip_protocol_list()
-    if err:
-        print(err)
-        sys.exit()
+    exit_if_error(err, protocol_names)
+
     dhcp_enabled = 0
     rule_number = 0
     cfrule_number = 0
@@ -306,7 +306,7 @@ def convert_file(utm, file_name):
                 "antispoof_invert": False,
                 "networks": [],
                 "sessions_limit_enabled": False,
-                "sessions_limit_threshold": -1,
+                "sessions_limit_threshold": 0,
                 "sessions_limit_exclusions": [],
             }
             zones[zone_name] = zone
@@ -655,7 +655,8 @@ def convert_file(utm, file_name):
         
         match line:
             case ['dhcp', 'address', ip_range, zone_name]:
-                _, data = utm.get_interfaces_list()
+                err, data = utm.get_interfaces_list()
+                exit_if_error(err, data)
                 dst_ports = {x['name']: x.get('ipv4', None) for x in data if not x['name'].startswith('tunnel')}
 
                 print(f"\n\033[36mКонвертируется DHCP subnet\033[0m {ip_range} \033[36mУкажите порт UG-NGFW для него.\033[0m")
@@ -1812,7 +1813,7 @@ def import_settings(utm):
 
     for key, value in settings.items():
         err, result = utm.set_settings_param(key, value)
-        if err == 2:
+        if err == 1:
             print(f"\033[31m{result}\033[0m")
         else:
             print(f'\t{params[key]} - \033[32mUpdated!\033[0m')
@@ -1821,8 +1822,11 @@ def import_ui(utm):
     """Импортировать настройки интерфейса"""
     print('Импорт "Настройки интерфейса" веб-консоли раздела "Настройки":')
 
-    result = utm._server.v1.content.ssl.profiles.list(utm._auth_token, 0, 100, {})
-    list_ssl_profiles = {x['name']: x['id'] for x in result['items']}
+    err, result = utm.get_ssl_profiles_list()
+    if err == 1:
+        print(f"\033[31m{result}\033[0m")
+        return
+    list_ssl_profiles = {x['name']: x['id'] for x in result}
 
     try:
         with open("data/UserGate/GeneralSettings/config_settings_ui.json", "r") as fh:
@@ -1849,7 +1853,7 @@ def import_ui(utm):
     for key, value in data.items():
         if key != 'webui_auth_mode':
             err, result = utm.set_settings_param(key, value)
-            if err == 2:
+            if err == 1:
                 print(f"\033[31m{result}\033[0m")
             else:
                 print(f'\t{params[key]} - \033[32mUpdated!\033[0m.')
@@ -1867,7 +1871,7 @@ def import_ntp(utm):
     data.pop('utc_time', None)
 
     err, result = utm.add_ntp_config(data)
-    if err == 2:
+    if err == 1:
         print(f"\033[31m{result}\033[0m")
     else:
         print(f'\tНастройки NTP обновлены.')
@@ -1875,9 +1879,6 @@ def import_ntp(utm):
 def import_IP_lists(utm):
     """Импортировать списки IP адресов"""
     print('Импорт списков IP-адресов раздела "Библиотеки":')
-
-    result = utm._server.v2.nlists.list(utm._auth_token, 'network', 0, 5000, {})
-    list_IP = {x['name']: x['id'] for x in result['items']}
 
     if os.path.isdir('data/Libraries/IPAddresses'):
         files_list = os.listdir('data/Libraries/IPAddresses')
@@ -1892,26 +1893,27 @@ def import_IP_lists(utm):
 
                 content = ip_list.pop('content')
                 err, result = utm.add_nlist(ip_list)
-                if err == 1:
-                    print(result, end= ' - ')
-                    result = list_IP[ip_list['name']]
+                if err == 2:
+                    print(f'\t{result}', end= ' - ')
+                    result = utm.list_ip[ip_list['name']]
                     err1, result1 = utm.update_nlist(result, ip_list)
-                    if err1 != 0:
-                        print("\n", f"\033[31m{result1}\033[0m")
+                    if err1 == 1:
+                        print("\n", f"\033[31m\t{result1}\033[0m")
+                        continue
                     else:
                         print("\033[32mUpdated!\033[0;0m")
-                elif err == 2:
-                    print(f"\033[31m{result}\033[0m")
+                elif err == 1:
+                    print(f"\033[31m\t{result}\033[0m")
                     continue
                 else:
-                    list_IP[ip_list['name']] = result
+                    utm.list_ip[ip_list['name']] = result
                     print(f'\tДобавлен список IP-адресов: "{ip_list["name"]}".')
                 if content:
                     err2, result2 = utm.add_nlist_items(result, content)
-                    if err2 in (1, 3):
-                        print(result2)
-                    elif err2 == 2:
-                        print(f"\033[31m{result2}\033[0m")
+                    if err2 == 2:
+                        print(f"\t{result2}")
+                    elif err2 == 1:
+                        print(f"\033[31m\t{result2}\033[0m")
                     else:
                         print(f'\tСодержимое списка "{ip_list["name"]}" обновлено. Added {result2} record.')
                 else:
@@ -1924,9 +1926,6 @@ def import_IP_lists(utm):
 def import_url_lists(utm):
     """Импортировать списки URL на UTM"""
     print('Импорт списков URL раздела "Библиотеки":')
-
-    result = utm._server.v2.nlists.list(utm._auth_token, 'url', 0, 5000, {})
-    list_url = {x['name']: x['id'] for x in result['items']}
 
     if os.path.isdir('data/Libraries/URLLists'):
         files_list = os.listdir('data/Libraries/URLLists')
@@ -1942,27 +1941,28 @@ def import_url_lists(utm):
                 print(f'\tДобавляется список URL: "{url_list["name"]}".')
                 content = url_list.pop('content')
                 err, result = utm.add_nlist(url_list)
-                if err == 1:
-                    print(result, end= ' - ')
-                    result = list_url[url_list['name']]
+                if err == 2:
+                    print(f"\t{result}", end= " - ")
+                    result = utm.list_url[url_list['name']]
                     err1, result1 = utm.update_nlist(result, url_list)
-                    if err1 != 0:
-                        print("\n", f'\033[31m{result1}\033[0m')
+                    if err1 == 1:
+                        print("\n", f'\033[31m\t{result1}\033[0m')
+                        continue
                     else:
                         print("\033[32mOk!\033[0;0m")
-                elif err == 2:
-                    print(f"\033[31m{result}\033[0m")
+                elif err == 1:
+                    print(f"\033[31m\t{result}\033[0m")
                     continue
                 else:
-                    list_url[url_list['name']] = result
+                    utm.list_url[url_list['name']] = result
                     print(f'\tСписок URL: "{url_list["name"]}" добавлен.')
                 if content:
                     for item in content:
                         err2, result2 = utm.add_nlist_item(result, item)
-                        if err2 == 2:
+                        if err2 == 1:
                             print(f"\033[31m\t\tURL '{item['value']}' не добавлен.\033[0m")
-                            print(f"\033[31m{result2}\033[0m")
-                        elif err2 == 1:
+                            print(f"\033[31m\t\t{result2}\033[0m")
+                        elif err2 == 2:
                             print(f"\t\tURL '{item['value']}' уже существует.")
                         else:
                             print(f"\t\tURL '{item['value']}' добавлен в список.")
@@ -1984,26 +1984,23 @@ def import_services(utm):
         print(f'\t\033[31mСписок "Сервисы" не импортирован!\n\tНе найден файл "data/Libraries/Services/config_services.json" с сохранённой конфигурацией!\033[0;0m')
         return
 
-    result = utm._server.v1.libraries.services.list(utm._auth_token, 0, 5000, {}, [])
-    utm_services = {x['name']: x['id'] for x in result['items']}
-
     for item in services:
         err, result = utm.add_service(item)
-        if err == 1:
-            print(result, end= ' - ')
+        if err == 2:
+            print(f"\t{result}", end= ' - ')
             try:
-                err1, result1 = utm.update_service(utm_services[item['name']], item)
+                err1, result1 = utm.update_service(utm.services[item['name']], item)
             except KeyError as keyerr:
                 print(f"\n\t\t\033[31mService {keyerr} not updated.\n\t\tУстановите последнее обновление на UTM и повторите попытку.\033[0m")
             else:
                 if err1 != 0:
-                    print(result1)
+                    print(f"\n\t\t{result1}")
                 else:
                     print("\033[32mOk!\033[0;0m")
-        elif err == 2:
-            print(result)
+        elif err == 1:
+            print(f"\t{result}")
         else:
-            utm_services[item['name']] = result
+            utm.services[item['name']] = result
             print(f'\tСервис "{item["name"]}" добавлен.')
 
 def import_time_restricted_lists(utm):
@@ -2019,38 +2016,32 @@ def import_time_restricted_lists(utm):
         print("\033[33m\tНет списков Календарей для импорта.\033[0m")
         return
 
-    result = utm._server.v2.nlists.list(utm._auth_token, 'timerestrictiongroup', 0, 1000, {})
-    list_of_calendars = {x['name']: x['id'] for x in result['items']}
-
     for item in data:
         content = item.pop('content')
         err, result = utm.add_nlist(item)
-        if err == 1:
-            print(result, end= ' - ')
-            result = list_of_calendars[item['name']]
+        if err == 2:
+            print(f"\t{result}", end= ' - ')
+            result = utm.list_calendar[item['name']]
             err1, result1 = utm.update_nlist(result, item)
-            if err1 != 0:
-                print("\n", f"\033[31m{result1}\033[0m")
+            if err1 == 1:
+                print("\n", f"\033[31m\t{result1}\033[0m")
             else:
                 print("\033[32mOk!\033[0;0m")
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
+        elif err == 1:
+            print(f"\033[31m\t{result}\033[0m")
             continue
         else:
-            list_of_calendars[item['name']] = result
+            utm.list_calendar[item['name']] = result
             print(f'\tДобавлен элемент календаря: "{item["name"]}".')
         for x in content:
             err2, result2 = utm.add_nlist_item(result, x)
-            if err2 == 2:
-                print(f"\033[31m{result2}\033[0m")
+            if err2 == 1:
+                print(f"\033[31m\t\t{result2}\033[0m")
         print(f'\t\tСодержимое списка "{item["name"]}" обновлено.')
 
 def import_zones(utm):
     """Импортировать зоны на UTM"""
     print('Импорт списка "Зоны" раздела "Сеть":')
-
-    _, result = utm.get_zones_list()
-    utm_zones = {x['name']: x['id'] for x in result}
 
     try:
         with open("data/Network/Zones/config_zones.json", "r") as fd:
@@ -2060,21 +2051,49 @@ def import_zones(utm):
         return
 
     for item in zones:
+        if item['sessions_limit_threshold'] < 0:
+            item['sessions_limit_threshold'] = 0
+        if utm.version_hight >= 7 and utm.version_midle >= 1:
+            transforn_allowed_ips(utm, item)
         err, result = utm.add_zone(item)
-        if err == 1:
-            print(result, end= ' - ')
-            err1, result1 = utm.update_zone(utm_zones[item['name']], item)
-            if err1 != 0:
-                print(result1)
+        if err == 2:
+            print(f"\t{result}", end= ' - ')
+            err1, result1 = utm.update_zone(utm.zones[item['name']], item)
+            if err1 == 2:
+                print(f"\t{result1}")
+            elif err == 1:
+                print(f"\033[31m\t{result}\033[0m")
             else:
                 print("\033[32mOk!\033[0;0m")
-        elif err == 2:
-            print(result)
+        elif err == 1:
+            print(f"\033[31m\t{result}\033[0m")
         else:
-            utm_zones[item['name']] = result
+            utm.zones[item['name']] = result
             print(f"\tЗона '{item['name']}' добавлена.")
     print('\033[36;1mВнимание:\033[0m \033[36mНеобходимо настроить каждую зону. Включить нужный сервис в контроле доступа,')
     print('поменять по необходимости параметры защиты от DoS и настроить защиту от спуфинга.\033[0m')
+
+def transforn_allowed_ips(utm, zone):
+    """Преобразуем список IP в группу IP-адресов. Созданную группу добавляем в библиотеку."""
+    for x in zone['services_access']:
+        if x['allowed_ips']:
+            ip_list = {
+                "name": f"For Zone: {zone['name']} (service: {zone_services[x['service_id']]})",
+                "description": "",
+                "type": "network",
+                "url": "",
+                "attributes": {"threat_level": 3},
+            }
+            err, result = utm.add_nlist(ip_list)
+            if err == 1:
+                print(f"\t{result1}")
+                x['allowed_ips'] = []
+            else:
+                content = [{"value": ips} for ips in x['allowed_ips']]
+                err1, result1 = utm.add_nlist_items(result, content)
+                if err == 1:
+                    print(f"\t{result1}")
+                x['allowed_ips'] = [["list_id", result]]
 
 def import_interfaces(utm):
     """Импортировать интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
@@ -2096,8 +2115,6 @@ def import_interfaces(utm):
     utm_vlans = {}
     interfaces_list = {}
 
-    _, result = utm.get_zones_list()
-    utm_zones = {x['name']: x['id'] for x in result}
     # Составляем список легитимных интерфейсов.
     _, result = utm.get_interfaces_list()
 
@@ -2142,14 +2159,14 @@ def import_interfaces(utm):
 
         if item['zone_id']:
             try:
-                item['zone_id'] = utm_zones[item['zone_id']]
+                item['zone_id'] = utm.zones[item['zone_id']]
             except KeyError as err:
                 print(f'\t\033[33mЗона {err} для интерфейса "{item["name"]}" не найдена.\n\tСоздайте зону {err} и присвойте этому VLAN.\033[0m')
                 item['zone_id'] = 0
 
         item.pop('kind')
         err, result = utm.add_interface_vlan(item)
-        if err == 2:
+        if err:
             print(f'\033[33m\tИнтерфейс "{item["name"]}" не добавлен!\033[0m')
             print(f"\033[31m{result}\033[0m")
         else:
@@ -2170,7 +2187,8 @@ def import_gateways_list(utm):
         print("\tНет шлюзов для импорта.")
         return
 
-    _, result = utm.get_gateways_list()
+    err, result = utm.get_gateways_list()
+    exit_if_error(err, result)
     gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
 
     for item in data:
@@ -2178,14 +2196,14 @@ def import_gateways_list(utm):
             if item['name'] in gateways_list:
                 print(f'\tШлюз "{item["name"]}" уже существует', end= ' - ')
                 err, result = utm.update_gateway(gateways_list[item['name']], item)
-                if err == 2:
-                    print("\n", f"\033[31m{result}\033[0m")
+                if err:
+                    print("\n", f"\033[31m\t{result}\033[0m")
                 else:
                     print("\033[32mUpdated!\033[0;0m")
             else:
                 err, result = utm.add_gateway(item)
-                if err == 2:
-                    print(f"\033[31m{result}\033[0m")
+                if err:
+                    print(f"\033[31m\t{result}\033[0m")
                 else:
                     gateways_list[item['name']] = result
                     print(f'\tШлюз "{item["name"]}" добавлен.')
@@ -2203,10 +2221,12 @@ def import_dhcp_subnets(utm):
         print("\tНет DHCP subnets для импорта.")
         return
 
-    _, data = utm.get_interfaces_list()
+    err, data = utm.get_interfaces_list()
+    exit_if_error(err, data)
     dst_ports = [x['name'] for x in data if not x['name'].startswith('tunnel')]
 
-    _, data = utm.get_dhcp_list()
+    err, data = utm.get_dhcp_list()
+    exit_if_error(err, data)
     old_dhcp_subtets = [x['name'] for x in data]
 
     for item in subnets:
@@ -2219,7 +2239,7 @@ def import_dhcp_subnets(utm):
             item.pop("cc")
             item.pop("node_name")
         err, result = utm.add_dhcp_subnet(item)
-        print(f"\033[31m{result}\033[0m") if err else print(f'\tSubnet "{item["name"]}" добавлен.')
+        print(f"\033[31m\t{result}\033[0m") if err else print(f'\tSubnet "{item["name"]}" добавлен.')
 
 def import_dns_servers(utm):
     """Импортировать список системных DNS серверов"""
@@ -2235,10 +2255,10 @@ def import_dns_servers(utm):
 
     for item in data:
         err, result = utm.add_dns_server(item)
-        if err == 1:
-            print(result)
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
+        if err == 2:
+            print(f"\t{result}")
+        elif err == 1:
+            print(f"\033[31m\t{result}\033[0m")
         else:
             print(f'\tDNS сервер "{item["dns"]}" добавлен.')
 
@@ -2254,16 +2274,19 @@ def import_dns_rules(utm):
         print(f'\t\033[36mВероятно у вас нет правил DNS-прокси.\033[0;0m')
         return
 
-    dns_rules = [x['name'] for x in utm._server.v1.dns.rules.list(utm._auth_token, 0, 1000, {})['items']]
+    err, result = utm.get_dns_rules()
+    exit_if_error(err, result)
+    dns_rules = [x['name'] for x in result]
+
     for item in data:
         if item['name'] in dns_rules:
             print(f'\tПравило DNS прокси "{item["name"]}" уже существует.')
         else:
             err, result = utm.add_dns_rule(item)
-            if err == 1:
-                print(result)
-            elif err == 2:
-                print(f"\033[31m{result}\033[0m")
+            if err == 2:
+                print(f"\t{result}")
+            elif err == 1:
+                print(f"\033[31m\t{result}\033[0m")
             else:
                 print(f'\tПравило DNS прокси "{item["name"]}" добавлено.')
 
@@ -2281,19 +2304,21 @@ def import_virt_routes(utm):
         print('\tНет данных для импорта. Файл "data/Network/VRF/config_routers.json" пуст.')
         return
 
-    virt_routers = {x['name']: x['id'] for x in utm.get_routers_list()}
+    err, result = utm.get_routers_list()
+    exit_if_error(err, result)
+    virt_routers = {x['name']: x['id'] for x in result}
 
     for item in data:
         if item['name'] in virt_routers:
-            err, result = utm.update_routers_rule(virt_routers[item['name']], item)
-            if err == 2:
-                print(f'\033[31m{result}\033[0m')
+            err, result = utm.update_vrf(virt_routers[item['name']], item)
+            if err:
+                print(f'\033[31m\t{result}\033[0m')
             else:
                 print(f'\tВиртуальный маршрутизатор "{item["name"]}" - \033[32mUpdated!\033[0m')
         else:
-            err, result = utm.add_routers_rule(item)
+            err, result = utm.add_vrf(item)
             if err == 2:
-                print(f'\033[31m{result}\033[0m')
+                print(f'\033[31m\t{result}\033[0m')
             else:
                 print(f'\tСоздан виртуальный маршрутизатор "{item["name"]}".')
     print('\t\033[36mДобавленные маршруты не активны. Необходимо проверить маршрутизацию и включить их.\033[0m')
@@ -2312,12 +2337,14 @@ def import_radius_server(utm):
         return
 
     for item in data:
+        if item['name'] in utm.auth_servers:
+            print(f'\tСервер RADIUS "{item["name"]}" уже существует.')
+            continue
         err, result = utm.add_auth_server('radius', item)
-        if err == 1:
-            print(result)
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
         else:
+            utm.auth_servers[item['name']] = result
             print(f'\tСервер авторизации RADIUS "{item["name"]}" добавлен.')
 
 def import_tacacs_server(utm):
@@ -2334,12 +2361,14 @@ def import_tacacs_server(utm):
         return
 
     for item in data:
+        if item['name'] in utm.auth_servers:
+            print(f'\tСервер TACACS "{item["name"]}" уже существует.')
+            continue
         err, result = utm.add_auth_server('tacacs', item)
-        if err == 1:
-            print(result)
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
         else:
+            utm.auth_servers[item['name']] = result
             print(f'\tСервер авторизации TACACS "{item["name"]}" добавлен.')
 
 def import_ldap_server(utm):
@@ -2355,17 +2384,22 @@ def import_ldap_server(utm):
         print("\tНет серверов авторизации LDAP для импорта.")
         return
 
+    ind = 0
     for item in data:
+        if item['name'] in utm.auth_servers:
+            print(f'\tСервер LDAP "{item["name"]}" уже существует.')
+            continue
         item['keytab_exists'] = False
         item.pop("cc", None)
         err, result = utm.add_auth_server('ldap', item)
-        if err == 1:
-            print(result)
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
         else:
+            utm.auth_servers[item['name']] = result
+            ind = 1
             print(f'\tСервер авторизации LDAP "{item["name"]}" добавлен.')
-            print(f'\t\033[36mПри необходимости, включить "{item["name"]}", ввести пароль и импортировать keytab файл.\033[0m')
+    if ind:
+        print(f'\t\033[36mНеобходимо включить импортированные LDAP-коннекторы, ввести пароль и импортировать keytab файл.\033[0m')
 
 def import_users(utm):
     """Импортировать список локальных пользователей"""
@@ -2377,7 +2411,8 @@ def import_users(utm):
         print(f'\t\033[31mСписок локальных пользователей не импортирован!\n\tНе найден файл "data/UsersAndDevices/Users/config_users.json" с сохранённой конфигурацией!\033[0;0m')
         return
 
-    _, result = utm.get_users_list()
+    err, result = utm.get_users_list()
+    exit_if_error(err, result)
     users_list = {x['auth_login'] for x in result}
 
     for item in users:
@@ -2385,10 +2420,10 @@ def import_users(utm):
             print(f'\tПользователь "{item["name"]}" уже существует.')
             continue
         err, result = utm.add_user(item)
-        if err == 1:
+        if err == 2:
             print(f'\t{result}')
-        elif err == 2:
-            print(f'\033[31m{result}\033[0m')
+        elif err == 1:
+            print(f'\033[31m\t{result}\033[0m')
         else:
             users_list.add(item['auth_login'])
             print(f'\tЛокальный пользователь "{item["name"]}" добавлен.')
@@ -2406,27 +2441,24 @@ def import_local_groups(utm):
 
     print('Импорт списка локальных групп раздела "Пользователи и устройства":')
 
-    _, result = utm.get_users_list()
-    users_list = {x['auth_login']: x['guid'] for x in result}
-
-    _, result = utm.get_groups_list()
-    list_groups = {x['name']: x['guid'] for x in result}
+    err, result = utm.get_users_list()
+    exit_if_error(err, result)
+    users_list = {x['auth_login']: x['id'] for x in result}
 
     for item in groups:
         users = item.pop('users')
         err, result = utm.add_group(item)
-        if err == 1:
-            print(result, end= ' - ')
-            item['guid'] = list_groups[item['name']]
-            err1, result1 = utm.update_group(item)
-            if err1 != 0:
-                print("\n", f"\033[31m{result1}\033[0m")
+        if err == 2:
+            print(f"\t{result}", end= ' - ')
+            err1, result1 = utm.update_group(utm.list_groups[item['name']], item)
+            if err1:
+                print("\n", f"\033[31m\t{result1}\033[0m")
             else:
                 print("\033[32mOk!\033[0;0m")
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
+        elif err == 1:
+            print(f"\033[31m\t{result}\033[0m")
         else:
-            list_groups[item['name']] = result
+            utm.list_groups[item['name']] = result
             print(f'\tЛокальная группа "{item["name"]}" добавлена.')
 
         domain_users = []
@@ -2435,24 +2467,24 @@ def import_local_groups(utm):
             if len(user_array) > 1:
                 domain_users.append(user_array)
             else:
-                err2, result2 = utm.add_user_in_group(list_groups[item['name']], users_list[user_name])
-                if err2 != 0:
-                    print(f"\033[31m{result2}\033[0m")
+                err2, result2 = utm.add_user_in_group(utm.list_groups[item['name']], users_list[user_name])
+                if err2:
+                    print(f"\033[31m\t{result2}\033[0m")
                 else:
                     print(f'\t\tПользователь "{user_name}" добавлен в группу "{item["name"]}".')
         for user in domain_users:
             domain, name = user[1][1:len(user[1])-1].split('\\')
             err, result = utm.get_ldap_user_guid(domain, name)
             if err:
-                print(f"\033[31m{result}\033[0m")
+                print(f"\033[31m\t{result}\033[0m")
                 break
             elif not result:
                 print(f'\t\033[31mНет LDAP-коннектора для домена "{domain}" или в домене нет пользователя {name}.')
                 print('\tИмпортируйте и настройте LDAP-коннектор. Затем повторите импорт групп.\033[0m')
                 break
-            err2, result2 = utm.add_user_in_group(list_groups[item['name']], result)
-            if err2 != 0:
-                print(f"\033[31m{result2}\033[0m")
+            err2, result2 = utm.add_user_in_group(utm.list_groups[item['name']], result)
+            if err2:
+                print(f"\033[31m\t\t{result2}\033[0m")
             else:
                 print(f'\t\tПользователь "{name}@{domain}" добавлен в группу "{item["name"]}".')
 
@@ -2470,65 +2502,75 @@ def import_firewall_rules(utm):
         print("\tНет правил межсетевого экрана для импорта.")
         return
 
-    _, result = utm.get_firewall_rules()
-    utm.firewall_rules = {x['name']: x['id'] for x in result}
+    err, result = utm.get_firewall_rules()
+    exit_if_error(err, result)
+    firewall_rules = {x['name']: x['id'] for x in result}
 
     for item in data:
         get_guids_users_and_groups(utm, item)
-        set_src_zone_and_ips(utm, item)
-        set_dst_zone_and_ips(utm, item)
+        item['src_zones'] = get_zones(utm, item['src_zones'], item['name'])
+        item['dst_zones'] = get_zones(utm, item['dst_zones'], item['name'])
+        item['src_ips'] = get_ips(utm, item['src_ips'], item['name'])
+        item['dst_ips'] = get_ips(utm, item['dst_ips'], item['name'])
+        item['services'] = get_services(utm, item['services'], item['name'])
         set_time_restrictions(utm, item)
-        item['services'] = get_services(utm, item['services'])
 
-        err, result = utm.add_firewall_rule(item)
-        if err == 1:
-            print(result, end= ' - ')
-            err1, result1 = utm.update_firewall_rule(item)
-            if err1 != 0:
-                print("\n", f"\033[31m{result1}\033[0m")
+        rule_id = firewall_rules.get(item['name'], None)
+        if rule_id:
+            print(f'\tПравило МЭ "{item["name"]}" уже существует', end= ' - ')
+            err, result = utm.update_firewall_rule(rule_id, item)
+            if err:
+                print("\n", f"\033[31m\t{result1}\033[0m")
             else:
                 print("\033[32mUpdated!\033[0;0m")
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
         else:
-            print(f'\tПравило МЭ "{item["name"]}" добавлено.')
+            err, result = utm.add_firewall_rule(item)
+            if err:
+                print(f"\033[31m\t{result}\033[0m")
+            else:
+                firewall_rules[item['name']] = result
+                print(f'\tПравило МЭ "{item["name"]}" добавлено.')
 
 def import_content_rules(utm):
     """Импортировать список правил фильтрации контента"""
-    print('Импорт списка "Фильтрация контента" раздела "Политики безопасности":')
+    print('Импорт правил "Фильтрация контента" раздела "Политики безопасности":')
     try:
         with open("data/SecurityPolicies/ContentFiltering/config_content_rules.json", "r") as fh:
             data = json.load(fh)
     except FileNotFoundError as err:
-        print(f'\t\033[31mСписок "Фильтрация контента" не импортирован!\n\tНе найден файл "data/SecurityPolicies/ContentFiltering/config_content_rules.json" с сохранённой конфигурацией!\033[0;0m')
+        print(f'\t\033[31mПравила фильтрации контента не импортированы!\n\tНе найден файл "data/SecurityPolicies/ContentFiltering/config_content_rules.json" с сохранённой конфигурацией!\033[0;0m')
         return
 
     if not data:
         print("\tНет правил фильтрации контента для импорта.")
         return
 
-    _, result = utm.get_content_rules()
+    err, result = utm.get_content_rules()
+    exit_if_error(err, result)
     content_rules = {x['name']: x['id'] for x in result}
 
     for item in data:
         set_time_restrictions(utm, item)
         set_urls_and_categories(utm, item)
 
-        if item['name'] in content_rules:
+        rule_id = content_rules.get(item['name'], None)
+        if rule_id:
             print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
             item.pop('position', None)
-            err1, result1 = utm.update_content_rule(content_rules[item['name']], item)
-            if err1 == 2:
-                print("\n", f"\033[31m{result1}\033[0m")
+            err, result = utm.update_content_rule(rule_id, item)
+            if err:
+                print("\n", f"\033[31m\t{result1}\033[0m")
             else:
                 print("\033[32mUpdated!\033[0;0m")
         else:
             err, result = utm.add_content_rule(item)
-            if err == 2:
-                print(f"\033[31m{result}\033[0m")
+            if err:
+                print(f"\033[31m\t{result}\033[0m")
             else:
                 content_rules[item['name']] = result
                 print(f'\tПравило "{item["name"]}" добавлено.')
+    print('\033[36;1mВнимание:\033[0m \033[36mПроверьте импортированные правила фильтрации контента.')
+    print('Отредактируйте правила, задайте зоны и адреса источника/назначения, пользователей и другие параметры.\033[0m')
 
 def import_nat_rules(utm):
     """Импортировать список правил NAT"""
@@ -2544,28 +2586,35 @@ def import_nat_rules(utm):
         print('\tНет правил в списке "NAT и маршрутизация" для импорта.')
         return
 
-    _, result = utm.get_traffic_rules()
-    utm.nat_rules = {x['name']: x['id'] for x in result}
+    err, result = utm.get_traffic_rules()
+    exit_if_error(err, result)
+    nat_rules = {x['name']: x['id'] for x in result}
 
     for item in data:
-        set_src_zone_and_ips(utm, item)
-        set_dst_zone_and_ips(utm, item)
-        item['service'] = get_services(utm, item['service'])
+        item['zone_in'] = get_zones(utm, item['zone_in'], item['name'])
+        item['zone_out'] = get_zones(utm, item['zone_out'], item['name'])
+        item['source_ip'] = get_ips(utm, item['source_ip'], item['name'])
+        item['dest_ip'] = get_ips(utm, item['dest_ip'], item['name'])
+        item['service'] = get_services(utm, item['service'], item['name'])
+
         if item['action'] == 'route':
             print(f'\t\033[33mПроверьте шлюз для правила ПБР "{item["name"]}".\n\tВ случае отсутствия, установите вручную.\033[0m')
 
-        err, result = utm.add_traffic_rule(item)
-        if err == 1:
-            print(result, end= ' - ')
-            err1, result1 = utm.update_traffic_rule(item)
-            if err1 != 0:
-                print("\n", f"\033[31m{result1}\033[0m")
+        rule_id = nat_rules.get(item['name'], None)
+        if rule_id:
+            print(f'\tПравило "{item["name"]}" уже существует', end= ' - ')
+            err, result = utm.update_traffic_rule(rule_id, item)
+            if err:
+                print("\n", f"\033[31m\t{result1}\033[0m")
             else:
                 print("\033[32mUpdated!\033[0;0m")
-        elif err == 2:
-            print(f"\033[31m{result}\033[0m")
         else:
-            print(f'\tПравило "{item["name"]}" добавлено.')
+            err, result = utm.add_traffic_rule(item)
+            if err:
+                print(f"\033[31m\t{result}\033[0m")
+            else:
+                nat_rules[item['name']] = result
+                print(f'\tПравило "{item["name"]}" добавлено.')
 
 ############################################# Служебные функции ###################################################
 def get_guids_users_and_groups(utm, item):
@@ -2617,53 +2666,28 @@ def get_guids_users_and_groups(utm, item):
                 users.append(x)
         item['users'] = users
 
-def set_src_zone_and_ips(utm, item):
-    if 'src_zones' in item.keys():
-        zone_name = 'src_zones'
-        ip_name = 'src_ips'
-    else:
-        zone_name = 'zone_in'
-        ip_name = 'source_ip'
-    if item[zone_name]:
+def get_zones(utm, zones, rule_name):
+    """Получить UID-ы зон. Если зона не существует на NGFW, то она пропускается."""
+    new_zones = []
+    for zone in zones:
         try:
-            item[zone_name] = [utm.zones[x] for x in item[zone_name]]
+            new_zones.append(utm.zones[zone])
         except KeyError as err:
-            print(f'\t\033[33mИсходная зона {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-            item[zone_name] = []
-    if item[ip_name]:
-        try:
-            for x in item[ip_name]:
-                if x[0] == 'list_id':
-                    x[1] = utm.list_ip[x[1]]
-                elif x[0] == 'urllist_id':
-                    x[1] = utm.list_url[x[1]]
-        except KeyError as err:
-            print(f'\t\033[33mНе найден адрес источника {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-            item[ip_name] = []
+            print(f'\t\033[33mЗона {err} для правила "{rule_name}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
+    return new_zones
 
-def set_dst_zone_and_ips(utm, item):
-    if 'dst_ips' in item.keys():
-        zone_name = 'dst_zones'
-        ip_name = 'dst_ips'
-    else:
-        zone_name = 'zone_out'
-        ip_name = 'dest_ip'
-    if item[zone_name]:
+def get_ips(utm, rule_ips, rule_name):
+    """Получить UID-ы списков IP-адресов и URL-листов. Если списки не существует на NGFW, то они пропускается."""
+    new_rule_ips = []
+    for ips in rule_ips:
         try:
-            item[zone_name] = [utm.zones[x] for x in item[zone_name]]
+            if ips[0] == 'list_id':
+                new_rule_ips.append(['list_id', utm.list_ip[ips[1]]])
+            elif ips[0] == 'urllist_id':
+                new_rule_ips.append(['urllist_id', utm.list_url[ips[1]]])
         except KeyError as err:
-            print(f'\t\033[33mЗона назначения {err} для правила "{item["name"]}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-            item[zone_name] = []
-    if item[ip_name]:
-        try:
-            for x in item[ip_name]:
-                if x[0] == 'list_id':
-                    x[1] = utm.list_ip[x[1]]
-                elif x[0] == 'urllist_id':
-                    x[1] = utm.list_url[x[1]]
-        except KeyError as err:
-            print(f'\t\033[33mНе найден адрес назначения {err} для правила "{item["name"]}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-            item[ip_name] = []
+            print(f'\t\033[33mНе найден адрес источника/назначения {err} для правила "{rule_name}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
+    return new_rule_ips
 
 def set_time_restrictions(utm, item):
     if item['time_restrictions']:
@@ -2673,13 +2697,13 @@ def set_time_restrictions(utm, item):
             print(f'\t\033[33mНе найден календарь {err} для правила "{item["name"]}".\n\tЗагрузите календари в библиотеку и повторите попытку.\033[0m')
             item['time_restrictions'] = []
 
-def get_services(utm, rule_services):
+def get_services(utm, rule_services, rule_name):
     new_service_list = []
     for service in rule_services:
         try:
             new_service_list.append(['service', utm.services[service[1]]])
         except KeyError as err:
-            print(f'\t\033[33mНе найден сервис {item} для правила "{rule_name}".\033[0m')
+            print(f'\t\033[33mНе найден сервис "{service[1]}" для правила "{rule_name}".\033[0m')
     return new_service_list
 
 def set_urls_and_categories(utm, item):
@@ -2689,6 +2713,11 @@ def set_urls_and_categories(utm, item):
         except KeyError as err:
             print(f'\t\033[33mНе найден URL {err} для правила "{item["name"]}".\n\tЗагрузите списки URL и повторите попытку.\033[0m')
             item['urls'] = []
+
+def exit_if_error(err, result):
+    if err:
+        print(f"\033[31m\t{result}\033[0m")
+        sys.exit(1)
 
 def menu():
     print("\033c")
@@ -2799,7 +2828,8 @@ def main():
                 login = input("\033[36mВведите логин администратора UTM:\033[0m ")
                 password = stdiomask.getpass("\033[36mВведите пароль:\033[0m ")
                 utm = UtmXmlRpc(server_ip, login, password)
-                utm._connect()
+                utm.connect()
+                utm.login()
                 print()
 
                 try:
@@ -2824,31 +2854,41 @@ def main():
                         login = input("\033[36mВведите логин администратора UTM:\033[0m ")
                         password = stdiomask.getpass("\033[36mВведите пароль:\033[0m ")
                     utm = UtmXmlRpc(server_ip, login, password)
-                    utm._connect()
+                    utm.connect()
+                    utm.login()
                     print()
-                    ldap, radius, tacacs, _, _ = utm.get_auth_servers()
+
+                    err, (ldap, radius, tacacs, _, _) = utm.get_auth_servers()
+                    exit_if_error(err, f'Error utm.get_auth_servers - [{ldap}].')
                     utm.auth_servers = {x['name']: x['id'] for x in [*ldap, *radius, *tacacs]}
 
-                    _, local_users = utm.get_users_list()
-                    utm.list_users = {x['name']: x['guid'] for x in local_users}
+                    err, result = utm.get_users_list()
+                    exit_if_error(err, result)
+                    utm.list_users = {x['name']: x['id'] for x in result}
 
-                    _, local_groups = utm.get_groups_list()
-                    utm.list_groups = {x['name']: x['guid'] for x in local_groups}
+                    err, result = utm.get_groups_list()
+                    exit_if_error(err, result)
+                    utm.list_groups = {x['name']: x['id'] for x in result}
 
-                    _, result = utm.get_zones_list()
+                    err, result = utm.get_zones_list()
+                    exit_if_error(err, result)
                     utm.zones = {x['name']: x['id'] for x in result}
 
-                    _, result = utm.get_services_list()
-                    utm.services = {x['name']: x['id'] for x in result['items']}
+                    err, result = utm.get_services_list()
+                    exit_if_error(err, result)
+                    utm.services = {x['name']: x['id'] for x in result}
 
-                    result = utm._server.v2.nlists.list(utm._auth_token, 'network', 0, 5000, {})
-                    utm.list_ip = {x['name']: x['id'] for x in result['items']}
+                    err, result = utm.get_nlists_list('network')
+                    exit_if_error(err, result)
+                    utm.list_ip = {x['name']: x['id'] for x in result}
 
-                    result = utm._server.v2.nlists.list(utm._auth_token, 'url', 0, 5000, {})
-                    utm.list_url = {x['name']: x['id'] for x in result['items']}
+                    err, result = utm.get_nlists_list('url')
+                    exit_if_error(err, result)
+                    utm.list_url = {x['name']: x['id'] for x in result}
                     
-                    result = utm._server.v2.nlists.list(utm._auth_token, 'timerestrictiongroup', 0, 1000, {})
-                    utm.list_calendar = {x['name']: x['id'] for x in result['items']}
+                    err, result = utm.get_nlists_list('timerestrictiongroup')
+                    exit_if_error(err, result)
+                    utm.list_calendar = {x['name']: x['id'] for x in result}
 
                     match section:
                         case 99:

@@ -180,10 +180,7 @@ class SelectImportMode(QWidget):
         super().__init__()
         self.parent = parent
         self.selected_point = ""
-        self.ngfw_ip = ""
-        self.ngfw_admin = ""
-        self.ngfw_pass = ""
-        self.utm = ""
+        self.utm = None
         self.thread = None
         self.func = {
             '1. Импорт Зон': tf.ImportZones,
@@ -212,25 +209,17 @@ class SelectImportMode(QWidget):
         self.log_list = QListWidget()
 
         self.btn1 = QPushButton("Назад")
-        self.btn1.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn1.setEnabled(False)
         self.btn1.setFixedWidth(100)
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2 = QPushButton("Импорт выбранного раздела")
-        self.btn2.setStyleSheet('color: gray; background: gainsboro;')
         self.btn2.setFixedWidth(190)
         self.btn2.clicked.connect(self.import_selected_point)
-        self.btn2.setEnabled(False)
         self.btn3 = QPushButton("Импортировать всё")
-        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
         self.btn3.setFixedWidth(140)
         self.btn3.clicked.connect(self.import_all)
-        self.btn3.setEnabled(False)
         self.btn4 = QPushButton("Сохранить лог")
-        self.btn4.setStyleSheet('color: gray; background: gainsboro;')
         self.btn4.setFixedWidth(100)
         self.btn4.clicked.connect(self._save_logs)
-        self.btn4.setEnabled(False)
 
         lists_hbox = QHBoxLayout()
         lists_hbox.addWidget(self.sg_list)
@@ -254,6 +243,7 @@ class SelectImportMode(QWidget):
 
         self.parent.stacklayout.currentChanged.connect(self.add_sglist_items)
         self.sg_list.currentTextChanged.connect(self.select_item)
+        self.disable_buttons()
 
     def disable_buttons(self):
         self.btn1.setStyleSheet('color: gray; background: gainsboro;')
@@ -286,31 +276,18 @@ class SelectImportMode(QWidget):
                 self.sg_list.addItem(key)
             self.sg_list.setCurrentRow(0)
             self.get_auth()
-        elif e == 0:
-            if self.utm:
-                self.utm.logout()
-            self.ngfw_ip = ""
-            self.ngfw_admin = ""
-            self.ngfw_pass = ""
-            self.utm = ""
-            self.sg_list.clear()
-            self.log_list.clear()
-            self.disable_buttons()
 
     def select_item(self, item_text):
         self.selected_point = item_text
 
     def get_auth(self):
         """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
-        if not (self.ngfw_ip and self.ngfw_admin and self.ngfw_pass):
+        if not self.utm:
             dialog = LoginWindow(parent=self)
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
-                self.ngfw_ip = dialog.ngfw_ip.text()
-                self.ngfw_admin = dialog.login.text()
-                self.ngfw_pass = dialog.password.text()
                 self.utm = dialog.utm
-                self.add_item_log(f"Импорт конфигурации на UG NGFW, ip: {self.ngfw_ip}, NGFW v.{self.utm.version}")
+                self.add_item_log(f"Импорт конфигурации на UG NGFW, ip: {self.utm.server_ip}, NGFW v.{self.utm.version}")
                 self.add_item_log(f"{'-'*120}")
                 if self.utm.version_hight != 6:
                     self.add_item_log("Импорт возможен только на NGFW версии 6!", 1)
@@ -396,6 +373,11 @@ class SelectImportMode(QWidget):
 
     def run_page_0(self):
         """Возвращаемся на стартовое окно"""
+        if self.utm:
+            self.utm.logout()
+        self.utm = None
+        self.sg_list.clear()
+        self.log_list.clear()
         self.parent.stacklayout.setCurrentIndex(0)
 
     def add_item_log(self, message, color=0):

@@ -314,21 +314,22 @@ class SelectImportMode(QWidget):
         self.id_nodes = ['node_1', 'node_2', 'node_3', 'node_4']    # Идентификаторы узла кластера
         self.thread = None
         self.func = {
-            '1. Импорт Зон': tf.ImportZones,
-            '2. Импорт интерфейсов VLAN': None,
-            '3. Импорт шлюзов': tf.ImportGateways,
-            '4. Импорт часового пояса': tf.ImportUi,
-            '5. Импорт серверов DNS': tf.ImportDnsServers,
-            '6. Импорт серверов NTP': tf.ImportNtpSettings,
-            '7. Импорт статических маршрутов': tf.ImportStaticRoutes,
-            '8. Импорт списка сервисов': tf.ImportServices,
-            '9. Импорт групп сервисов': tf.ImportServicesGroups,
-            '10. Импорт списков IP-адресов': tf.ImportIpLists,
-            '11. Импорт списков URL': tf.ImportUrlLists,
-            '12. Импорт групп URL категорий': tf.ImportUrlCategories,
-            '13. Импорт групп приложений': tf.ImportApplicationGroups,
-            '14. Импорт правил МЭ': tf.ImportFirewallRules,
-            '15. Импорт правил КФ': tf.ImportContentRules,
+            '1. Импорт часового пояса': tf.ImportUi,
+            '2. Импорт домена captive-портала': tf.ImportModules,
+            '3. Импорт серверов NTP': tf.ImportNtpSettings,
+            '4. Импорт серверов DNS': tf.ImportDnsServers,
+            '5. Импорт Зон': tf.ImportZones,
+            '6. Импорт интерфейсов VLAN': None,
+            '7. Импорт шлюзов': tf.ImportGateways,
+            '8. Импорт статических маршрутов': tf.ImportStaticRoutes,
+            '9. Импорт списка сервисов': tf.ImportServices,
+            '10. Импорт групп сервисов': tf.ImportServicesGroups,
+            '11. Импорт списков IP-адресов': tf.ImportIpLists,
+            '12. Импорт списков URL': tf.ImportUrlLists,
+            '13. Импорт групп URL категорий': tf.ImportUrlCategories,
+            '14. Импорт групп приложений': tf.ImportApplicationGroups,
+            '15. Импорт правил МЭ': tf.ImportFirewallRules,
+            '16. Импорт правил КФ': tf.ImportContentRules,
         }
         title = QLabel("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -420,13 +421,13 @@ class SelectImportMode(QWidget):
                 self.disable_buttons()
                 if self.thread is None:
                     point_number, point_name = self.selected_point.split('.')
-                    if point_number in ('2', '3', '7'):
+                    if point_number in ('6', '7', '8'):
                         node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
                         if not ok:
                             message_inform(self, 'Ошибка', f'{point_name} прерван, так как не указан идентификатор узла!')
                             self.enable_buttons()
                             return
-                        if point_number ==  '2':
+                        if point_number ==  '6':
                             cv = CreateVlans(self, self.parent.utm, self.template_id)
                             self.thread = tf.ImportVlans(self.parent.utm, self.template_id, node_name, cv.utm_vlans, cv.utm_zones, cv.new_vlans, cv.ifaces)
                         else:
@@ -445,7 +446,7 @@ class SelectImportMode(QWidget):
         err, message = msg.split('|')
         self.add_item_log(f'    {message}' if int(err) else message, color=int(err))
         self.log_list.scrollToBottom()
-        if int(err) in (5, 6):
+        if int(err) == 5:
             _, title = self.selected_point.split('.')
             message_inform(self, title, message)
 
@@ -470,7 +471,7 @@ class SelectImportMode(QWidget):
 
     def on_batch_changed(self, msg):
         err, message = msg.split('|')
-        if int(err) in (5, 6):
+        if int(err) == 5:
             self.log_list.addItem('')
             self.add_item_log(message, int(err))
             self.log_list.addItem('')
@@ -497,9 +498,9 @@ class SelectImportMode(QWidget):
     def add_item_log(self, message, color=0):
         """
         Добавляем запись лога в log_list.
-        Цвета: [black, darkred, black, dodgerblue, darkorange, darkgreen, darkorange]
+        Цвета: [darkblue, darkred, black, dimgray, darkorange, darkgreen, dodgerblue]
         """
-        colors = ['#000000', '#8b0000', '#000000', '#1e90ff', '#ff8c00', '#006400', '#ff8c00']
+        colors = ['#00008b', '#8b0000', '#000000', '#696969', '#ff8c00', '#006400', '#1e90ff']
         i = QListWidgetItem(message)
         i.setForeground(QColor(colors[color]))
         self.log_list.addItem(i)

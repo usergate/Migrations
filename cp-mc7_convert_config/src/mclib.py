@@ -215,7 +215,7 @@ class UtmXmlRpc:
             result = self._server.v1.ccdns.custom.dns.add(self._auth_token, template_id, dns_server)
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'DNS server {dns_server["dns"]} уже существует.'
+                return 3, f'DNS server {dns_server["dns"]} уже существует.'
             else:
                 return 1, f'Error utm.add_template_dns_server: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта.
@@ -234,7 +234,7 @@ class UtmXmlRpc:
             result = self._server.v1.ccdns.rule.add(self._auth_token, template_id, dns_rule)
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'Правило DNS {dns_rule["name"]} уже существует.'
+                return 3, f'Правило DNS {dns_rule["name"]} уже существует.'
             else:
                 return 1, f'Error utm.add_template_dns_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта.
@@ -253,7 +253,7 @@ class UtmXmlRpc:
             result = self._server.v1.ccdns.static.record.add(self._auth_token, template_id, dns_record)
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'Статическая запись DNS "{dns_record["name"]}" уже существует.'
+                return 3, f'Статическая запись DNS "{dns_record["name"]}" уже существует.'
             else:
                 return 1, f'Error utm.add_template_dns_static_record: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта.
@@ -300,7 +300,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'Зона {zone["name"]} уже существует.'
+                return 3, f'Зона {zone["name"]} уже существует.'
             else:
                 return 1, f'Error utm.add_template_zone: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID созданной зоны
@@ -315,7 +315,7 @@ class UtmXmlRpc:
             if err.faultCode == 7:
                 return 4, f'Зона {zone["name"]} не найдена в шаблоне!'
             elif err.faultCode == 9:
-                return 2, f'Зона {zone["name"]} - нет отличающихся параметров для изменения.'
+                return 3, f'Зона {zone["name"]} - нет отличающихся параметров для изменения.'
             else:
                 return 1, f'Error utm.update_template_zone: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
@@ -326,11 +326,12 @@ class UtmXmlRpc:
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
                 result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {})
+                return 0, result['items']    # Возвращает список интерфейсов.
             else:
                 result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, {})
+                return 0, result    # Возвращает список интерфейсов.
         except rpc.Fault as err:
             return 1, f'Error utm.get_template_interfaces_list: [{err.faultCode}] — {err.faultString}'
-        return 0, result    # Возвращает список интерфейсов.
 
     def add_template_interface(self, template_id, iface):
         """Добавить vlan интерфейс в шаблон"""
@@ -360,7 +361,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'Сервис "{service["name"]}" уже существует.'
+                return 3, f'Сервис "{service["name"]}" уже существует.'
             else:
                 return 1, f'Error utm.add_template_service: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID сервиса
@@ -371,7 +372,7 @@ class UtmXmlRpc:
             result = self._server.v1.ccnetwork.service.update(self._auth_token, template_id, service_id, service)
         except rpc.Fault as err:
             if err.faultCode == 7:
-                return 2, f'Не удалось обновить сервис "{service["name"]}". Данный сервис не найден.'
+                return 4, f'Не удалось обновить сервис "{service["name"]}". Данный сервис не найден.'
             else:
                 return 1, f'Error utm.update_template_service: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
@@ -393,7 +394,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'Список "{named_list["name"]}" уже существует'
+                return 3, f'Список "{named_list["name"]}" уже существует'
             else:
                 return 1, f'Error utm.add_template_nlist: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID списка
@@ -406,7 +407,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 9:
-                return 2, f'Список "{named_list["name"]}" - нет отличающихся параметров для изменения.'
+                return 3, f'Список "{named_list["name"]}" - нет отличающихся параметров для изменения.'
             else:
                 return 1, f'Error utm.update_template_nlist: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
@@ -418,8 +419,8 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            if err.faultCode == 9:
-                return 2, f'Содержимое "{item}" не добавлено, так как уже существует.'
+            if err.faultCode in {9, 22001}:
+                return 3, f'Содержимое "{item}" не добавлено, так как уже существует.'
             else:
                 return 1, f'Error utm.add_template_nlist_item: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта
@@ -431,8 +432,8 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            if err.faultCode == 9:
-                return 2, f'Содержимое "{items}" не добавлено, так как уже существует.'
+            if err.faultCode in {9, 22001}:
+                return 3, f'Содержимое "{items}" не добавлено, так как уже существует.'
             else:
                 return 1, f'Error utm.add_template_nlist_items: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список ID добавленных записей.
@@ -488,31 +489,39 @@ class UtmXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Пользователи #####################################################################
-    def get_usercatalog_ldap_user_guid(self, ldap_domain, user_name):
-        """Получить GUID пользователя LDAP по его имени"""
-        users = []
+    def get_usercatalog_ldap_servers(self):
+        """Получить список всех активных LDAP серверов области"""
         try:
-            result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
-            for x in result:
-                domains = [y.lower() for y in x['domains']]
-                if ldap_domain.lower() in domains:
-                    users = self._server.v1.usercatalogs.realm.ldap.users.list(self._auth_token, x['id'], user_name)
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {'enabled': True}, [])
+                return 0, result['items']
+            else:
+                result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
+                return 0, result
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_usercatalog_ldap_servers: [{err.faultCode}] — {err.faultString}"
+
+    def get_usercatalog_ldap_user_guid(self, ldap_id, user_name):
+        """Получить GUID пользователя LDAP по его имени"""
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                users = self._server.v1.usercatalogs.ldap.users.list(self._auth_token, ldap_id, user_name)
+            else:
+                users = self._server.v1.usercatalogs.realm.ldap.users.list(self._auth_token, ldap_id, user_name)
         except rpc.Fault as err:
             return 1, f"Error utm.get_usercatalog_ldap_user_guid: [{err.faultCode}] — {err.faultString}"
-        return 0, users[0]['guid'] if users else 0
+        return 0, users[0]['guid'] if users else 0  # Возвращает или guid или 0
 
-    def get_usercatalog_ldap_group_guid(self, ldap_domain, group_name):
+    def get_usercatalog_ldap_group_guid(self, ldap_id, group_name):
         """Получить GUID группы LDAP по её имени"""
-        groups = []
         try:
-            result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
-            for x in result:
-                domains = [y.lower() for y in x['domains']]
-                if ldap_domain.lower() in domains:
-                    groups = self._server.v1.usercatalogs.realm.ldap.groups.list(self._auth_token, x['id'], group_name)
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                groups = self._server.v1.usercatalogs.ldap.groups.list(self._auth_token, ldap_id, group_name)
+            else:
+                groups = self._server.v1.usercatalogs.realm.ldap.groups.list(self._auth_token, ldap_id, group_name)
         except rpc.Fault as err:
             return 1, f"Error utm.get_usercatalog_ldap_group_guid: [{err.faultCode}] — {err.faultString}"
-        return 0, groups[0]['guid'] if groups else 0
+        return 0, groups[0]['guid'] if groups else 0  # Возвращает или guid или 0
 
 ####################################### Служебные методы ###########################################
     def get_ip_protocol_list(self):
@@ -553,7 +562,7 @@ class UtmXmlRpc:
         """
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.l7.get.categories(self._auth_token)
+                result = self._server.v1.ccl7.get.categories(self._auth_token)
             else:
                 result = self._server.v1.core.get.l7categories(self._auth_token, 0, 10000, '')
         except rpc.Fault as err:

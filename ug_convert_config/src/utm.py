@@ -16,6 +16,10 @@ class UtmXmlRpc:
         self.version = None
         self.server_ip = server_ip
         self.node_name = None
+        self.version_hight = None
+        self.version_midle = None
+        self.version_low = None
+        self.version_other = None
 
     def _connect(self):
         """Подключиться к UTM"""
@@ -26,6 +30,11 @@ class UtmXmlRpc:
                 self._auth_token = result.get('auth_token')
                 self.node_name =  result.get('node')
                 self.version = result.get('version')
+                tmp = self.version.split(".")
+                self.version_hight = int(tmp[0])
+                self.version_midle = int(tmp[1])
+                self.version_low = int(tmp[2])
+                self.version_other = tmp[3]
             else:
                 print('Ошибка: UTM не позволяет установить соединение!')
                 sys.exit(1)
@@ -311,6 +320,9 @@ class UtmXmlRpc:
 
     def get_snmp_engine_id(self):
         """Выгрузить SNMP Engine ID"""
+        if self.version.startswith('5'):
+            print("\tНет в версии 5 нет SNMP Engine.")
+            return 0
         try:
             result = self._server.v1.snmp.engine.id.get(self._auth_token)
         except rpc.Fault as err:
@@ -324,23 +336,22 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.netmanager.zones.list(self._auth_token)
         except rpc.Fault as err:
-            print(f"Ошибка utm.get_zones_list: [{err.faultCode}] — {err.faultString}")
-            sys.exit(1)
-        return len(result), result
+            return 1, f"Error utm.get_zones_list: [{err.faultCode}] — {err.faultString}"
+        return 0, result
 
     def add_zone(self, zone):
         """Добавить зону"""
         try:
             result = self._server.v1.netmanager.zone.add(self._auth_token, zone)
         except TypeError as err:
-            return 11, err
+            return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 1, f"\tЗона: {zone['name']} уже существует. Проверка параметров..."
+                return 2, f"Зона {zone['name']} уже существует."
             elif err.faultCode == 111:
-                return 2, f"\tЗона '{zone['name']}' не добавлена, возможно имя зоны в русском регистре."
+                return 1, f"Error: Зона '{zone['name']}' не добавлена [{err.faultString}]"
             else:
-                return 2, f"Ошибка utm.add_zone: [{err.faultCode}] — {err.faultString}"
+                return 1, f"Error utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result
 
@@ -349,12 +360,12 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.netmanager.zone.update(self._auth_token, zone_id, zone)
         except TypeError as err:
-            return 11, err
+            return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 1, f"\tЗона: {zone['name']} - нет отличающихся параметров для изменения."
+                return 2, f"Зона: {zone['name']} - нет отличающихся параметров для изменения."
             else:
-                return 2, f"Ошибка utm.update_zone: [{err.faultCode}] — {err.faultString}"
+                return 1, f"Error utm.update_zone: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result
 
@@ -409,11 +420,14 @@ class UtmXmlRpc:
     def get_interfaces_list(self):
         """Получить список сетевых интерфейсов"""
         try:
-            result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, {})
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, 0, 1000, {})
+                return 0, result['items']
+            else:
+                result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, {})
+                return 0, result
         except rpc.Fault as err:
-            print(f"Ошибка utm.get_interfaces_list: [{err.faultCode}] — {err.faultString}")
-            sys.exit(1)
-        return len(result), result
+            return 1, f"Error utm.get_interfaces_list: [{err.faultCode}] — {err.faultString}"
 
     def update_interface(self, iface_id, iface):
         """Update interface"""
@@ -1050,11 +1064,10 @@ class UtmXmlRpc:
     def get_ssl_profiles_list(self):
         """Получить список профилей SSL раздела Библиотеки"""
         try:
-            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, '')
         except rpc.Fault as err:
-            print(f"Ошибка get_ssl_profiles_list: [{err.faultCode}] — {err.faultString}")
-            sys.exit(1)
-        return len(result['items']), result['items']
+            return 1, f"Error get_ssl_profiles_list: [{err.faultCode}] — {err.faultString}"
+        return 0, result['items']
 
     def add_ssl_profile(self, profile):
         """Добавить профиль SSL в Библиотеку"""
@@ -1087,9 +1100,14 @@ class UtmXmlRpc:
         try:
             result = self._server.v3.accounts.groups.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            print(f"\tОшибка utm.get_groups_list: [{err.faultCode}] — {err.faultString}")
-            sys.exit(1)
-        return len(result['items']), result['items']
+            return 1, f"Error utm.get_groups_list: [{err.faultCode}] — {err.faultString}"
+        if not (self.version_hight >= 7 and self.version_midle >= 1):
+            try:
+                for group in result['items']:
+                    group['id'] = group.pop('guid')
+            except KeyError as err:
+                return 1, f"Error utm.get_groups_list: нет GUID в группе локальных пользователей {group['name']} [{err}]"
+        return 0, result['items']
 
     def add_group(self, group):
         """Добавить локальную группу"""
@@ -1130,9 +1148,14 @@ class UtmXmlRpc:
         try:
             result = self._server.v3.accounts.users.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            print(f"\tОшибка get_users_list: [{err.faultCode}] — {err.faultString}")
-            sys.exit(1)
-        return len(result['items']), result['items']
+            return 1, f"Error get_users_list: [{err.faultCode}] — {err.faultString}"
+        if not (self.version_hight >= 7 and self.version_midle >= 1):
+            try:
+                for user in result['items']:
+                    user['id'] = user.pop('guid')
+            except KeyError as err:
+                return 1, f"Error utm.get_users_list: нет GUID у пользователя {user['name']} [{err}]"
+        return 0, result['items']
 
     def add_user(self, user):
         """Добавить локального пользователя"""
@@ -2067,11 +2090,14 @@ class UtmXmlRpc:
     def get_reverseproxy_servers(self):
         """Получить список серверов reverse-прокси"""
         try:
-            result = self._server.v1.reverseproxy.profiles.list(self._auth_token)
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.reverseproxy.profiles.list(self._auth_token, 0, 1000, {}, [])
+                return 0, result['items']
+            else:
+                result = self._server.v1.reverseproxy.profiles.list(self._auth_token)
+                return 0, result
         except rpc.Fault as err:
-            print(f"\tОшибка utm.get_reverseproxy_servers: [{err.faultCode}] — {err.faultString}")
-            sys.exit(1)
-        return len(result), result
+            return 1, f"Error utm.get_reverseproxy_servers: [{err.faultCode}] — {err.faultString}"
 
     def add_reverseproxy_servers(self, profile):
         """Добавить новый сервер reverse-прокси"""
@@ -2323,13 +2349,51 @@ class UtmXmlRpc:
         """Получить список поддерживаемых IP протоколов"""
         try:
             result = self._server.v2.core.ip.protocol.list()
-
         except rpc.Fault as err:
             return 2, f"\tОшибка utm.get_ip_protocol_list: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, {x['name'] for x in result}  # Возвращает set {protocol_name, ...}
 
+    def get_url_categories(self):
+        """Получить список категорий URL"""
+        try:
+            result = self._server.v2.core.get.categories()
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_url_categories: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result  # Возвращает список [{id: name}, ...]
 
+    def get_l7_apps(self):
+        """Получить список приложений l7"""
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.l7.signatures.list(self._auth_token, 0, 50000, {}, [])
+                return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
+            elif self.version_hight == 6 or (self.version_hight == 7 and self.version_midle == 0):
+                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, {}, [])
+                return 0, [{"id": x['id'], 'name': x['name']} for x in result['items']]
+            elif self.version_hight == 5:
+                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, '')
+                return 0, [{'id': x['app_id'], 'name': x['name']} for x in result['items']]
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_l7_apps: [{err.faultCode}] — {err.faultString}"
+
+    def get_l7_categories(self):
+        """
+        Получить список категорий l7.
+        В версиях до 7.1 возвращает список: [{'id': category_id, 'name': category_name, 'app_list': [id_app_1, id_app_2, ...]}, ...]
+        В версиях начиная с 7.1 возвращает список: [{'id': category_id, 'name': category_name}, ...]
+        """
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.l7.get.categories(self._auth_token)
+            else:
+                result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_l7_categories: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result['items']
+####################################################################################################
 class UtmError(Exception): pass
 
 character_map = {

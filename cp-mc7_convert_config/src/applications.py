@@ -1553,7 +1553,6 @@ new_applicationgroup = [
             "Facebook  Chat",
             "Digsby Beta",
             "Google Chat",
-            "GoToMeeting chat",
             "eBuddy",
             "eBuddy for Android",
             "Hipchat",

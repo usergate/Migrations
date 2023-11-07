@@ -47,6 +47,7 @@ class ImportAll(QThread):
         import_vlans(self)
         import_gateways(self)
         import_ui(self)
+        import_modules(self)
         import_dns_servers(self)
         import_ntp_settings(self)
         import_static_routes(self)
@@ -88,6 +89,20 @@ class ImportUi(QThread):
 
     def run(self):
         import_ui(self)
+
+
+class ImportModules(QThread):
+    """Импортируем настройки домена captive-портала"""
+    stepChanged = pyqtSignal(str)
+    
+    def __init__(self, utm, template_id):
+        super().__init__()
+        self.utm = utm
+        self.template_id = template_id
+        self.error = 0
+
+    def run(self):
+        import_modules(self)
 
 
 class ImportDnsServers(QThread):
@@ -278,47 +293,6 @@ class ImportContentRules(QThread):
         import_content_rules(self)
 
 
-def import_gateways(parent):
-    """Импортируем список шлюзов"""
-    parent.stepChanged.emit('0|Импорт шлюзов в раздел "Сеть/Шлюзы".')
-    json_file = "data_ug/Network/Gateways/config_gateways.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта шлюзов!', '2|Нет шлюзов для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_template_gateways_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-
-    gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
-    error = 0
-
-    for item in data:
-        if not item['is_automatic']:
-            item['node_name'] = parent.node_name
-            if item['name'] in gateways_list:
-                err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
-                if err:
-                    parent.stepChanged.emit(f'{err}|{result} Шлюз "{item["name"]}"')
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'2|Шлюз "{item["name"]}" уже существует - Updated!')
-            else:
-                err, result = parent.utm.add_template_gateway(parent.template_id, item)
-                if err:
-                    parent.stepChanged.emit(f'1|{result}')
-                    error = 1
-                else:
-                    gateways_list[item['name']] = result
-                    parent.stepChanged.emit(f'2|Шлюз "{item["name"]}" добавлен.')
-    if error:
-        parent.error = 1
-    parent.stepChanged.emit('6|Ошибка импорта шлюзов!' if error else '5|Шлюзы импортированы в раздел "Сеть/Шлюзы".')
-
 def import_ui(parent):
     """Импортируем часовой пояс"""
     parent.stepChanged.emit('0|Импорт часового пояса в "Настройки/Настройки интерфейса/Часовой пояс".')
@@ -342,31 +316,39 @@ def import_ui(parent):
     else:
         parent.stepChanged.emit(f'2|Часовой пояс {time_zone} импортирован.')
     out_message = '5|Импортирован часовой пояс в раздел "Настройки/Настройки интерфейса/Часовой пояс".'
-    parent.stepChanged.emit('6|Ошибка импорта часового пояса!' if error else out_message)
+    parent.stepChanged.emit('4|Ошибка импорта часового пояса!' if error else out_message)
 
-def import_dns_servers(parent):
-    """Импортируем список системных DNS серверов"""
-    parent.stepChanged.emit('0|Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
-    json_file = "data_ug/Network/DNS/config_dns_servers.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта серверов DNS!', '2|Нет серверов DNS для импорта.')
+def import_modules(parent):
+    """Импортируем модули"""
+    parent.stepChanged.emit('0|Импорт домена captive-портала в "Настройки/Модули".')
+    json_file = "data_ug/UserGate/GeneralSettings/config_settings.json"
+    err, data = read_json_file(json_file, '2|Ошибка импорта домена captive-портала!', '2|Нет домена captive-портала для импорта.')
     if err:
         parent.stepChanged.emit(data)
         parent.error = 1
         return
 
+    params = {
+        'auth_captive': 'Домен Auth captive-портала',
+        'logout_captive': 'Домен Logout captive-портала',
+        'block_page_domain': 'Домен страницы блокировки',
+        'ftpclient_captive': 'FTP поверх HTTP домен',
+    }
     error = 0
-    for item in data:
-        item.pop('is_bad', None)
-        err, result = parent.utm.add_template_dns_server(parent.template_id, item)
+    
+    for key in data:
+        setting = {}
+        setting[key] = {'value': data[key]}
+        err, result = parent.utm.set_template_settings(parent.template_id, setting)
         if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                error = 1
-                parent.error = 1
+            parent.stepChanged.emit(f'1|{result}')
+            error = 1
+            parent.error = 1
         else:
-            parent.stepChanged.emit(f'2|DNS сервер "{item["dns"]}" добавлен.')
-    out_message = '5|Импортированы системные DNS-сервера в раздел "Сеть/DNS/Системные DNS-серверы".'
-    parent.stepChanged.emit('6|Ошибка импорта DNS-серверов!' if error else out_message)
+            parent.stepChanged.emit(f'2|Изменён "{params[key]}".')
+
+    out_message = '5|Настройки домена captive-портала импортированы в раздел "Настройки/Модули".'
+    parent.stepChanged.emit('4|Ошибка импорта домена captive-портала!' if error else out_message)
 
 def import_ntp_settings(parent):
     """Импортируем настройки NTP"""
@@ -398,47 +380,31 @@ def import_ntp_settings(parent):
         parent.stepChanged.emit(f'2|Использование NTP {"включено" if data["ntp_enabled"] else "отключено"}.')
 
     out_message = '5|Импортированы сервера NTP в раздел "Настройки/Настройки времени сервера".'
-    parent.stepChanged.emit('6|Ошибка импорта настроек NTP!' if error else out_message)
+    parent.stepChanged.emit('4|Ошибка импорта настроек NTP!' if error else out_message)
 
-def import_static_routes(parent):
-    """Импортируем статические маршруты в Виртуальный маршрутизатор по умолчанию"""
-    parent.stepChanged.emit('0|Импорт статических маршрутов в Виртуальный маршрутизатор по умолчанию.')
-
-    json_file = "data_ug/Network/VRF/config_routers.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта статических маршрутов!', '2|Нет статических маршрутов для импорта.')
+def import_dns_servers(parent):
+    """Импортируем список системных DNS серверов"""
+    parent.stepChanged.emit('0|Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
+    json_file = "data_ug/Network/DNS/config_dns_servers.json"
+    err, data = read_json_file(json_file, '2|Ошибка импорта серверов DNS!', '2|Нет серверов DNS для импорта.')
     if err:
         parent.stepChanged.emit(data)
         parent.error = 1
         return
 
-    err, result = parent.utm.get_template_vrf_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    virt_routers = {x['name']: x['id'] for x in result}
-    error = 0    
-    out_message = '5|Статические маршруты импортированы в Виртуальный маршрутизатор по умолчанию.'
-    
+    error = 0
     for item in data:
-        item['node_name'] = parent.node_name
-        if item['name'] in virt_routers:
-            err, result = parent.utm.update_template_vrf(parent.template_id, virt_routers[item['name']], item)
-            if err:
-                parent.stepChanged.emit(f'1|{result}')
+        item.pop('is_bad', None)
+        err, result = parent.utm.add_template_dns_server(parent.template_id, item)
+        if err:
+            parent.stepChanged.emit(f'{err}|{result}')
+            if err == 1:
                 error = 1
+                parent.error = 1
         else:
-            err, result = parent.utm.add_template_vrf(parent.template_id, item)
-            if err:
-                parent.stepChanged.emit(f'1|{result}')
-                error = 1
-            else:
-                out_message = f'5|Создан виртуальный маршрутизатор "{item["name"]}".'
-    if not error:
-        parent.stepChanged.emit('3|Добавленные маршруты не активны. Необходимо проверить маршрутизацию и включить их.')
-    else:
-        parent.error = 1
-    parent.stepChanged.emit('6|Ошибка импорта статических маршрутов!' if error else out_message)
+            parent.stepChanged.emit(f'2|DNS сервер "{item["dns"]}" добавлен.')
+    out_message = '5|Импортированы системные DNS-сервера в раздел "Сеть/DNS/Системные DNS-серверы".'
+    parent.stepChanged.emit('4|Ошибка импорта DNS-серверов!' if error else out_message)
 
 def import_zones(parent):
     """Импортируем зоны на NGFW, если они есть."""
@@ -498,7 +464,7 @@ def import_zones(parent):
             parent.stepChanged.emit(f'2|Зона "{item["name"]}" добавлена.')
 
     out_message = '5|Зоны импортированы в раздел "Сеть/Зоны".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте зон.' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте зон.' if error else out_message)
 
 def import_vlans(parent):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
@@ -508,15 +474,19 @@ def import_vlans(parent):
         return
     for item in parent.ifaces:
         if item['kind'] == 'vlan':
-            item['node_name'] = parent.node_name
             current_port = parent.new_vlans[item['vlan_id']]['port']
             current_zone = parent.new_vlans[item['vlan_id']]['zone']
             if item["vlan_id"] in parent.utm_vlans:
-                parent.stepChanged.emit(f'2|VLAN {item["vlan_id"]} уже существует на порту {parent.utm_vlans[item["vlan_id"]]}')
+                parent.stepChanged.emit(f'3|VLAN {item["vlan_id"]} уже существует на порту {parent.utm_vlans[item["vlan_id"]]}')
                 continue
             if current_port == "Undefined":
-                parent.stepChanged.emit(f"2|VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
+                parent.stepChanged.emit(f"6|VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
                 continue
+
+            item.pop('running', None)
+            item['node_name'] = parent.node_name
+            item['config_on_device'] = False
+            item['mac'] = ''
             item['link'] = current_port
             item['name'] = f'{current_port}.{item["vlan_id"]}'
             item['zone_id'] = 0 if current_zone == "Undefined" else parent.utm_zones[current_zone]
@@ -532,7 +502,88 @@ def import_vlans(parent):
                 parent.stepChanged.emit(f'2|Добавлен VLAN {item["vlan_id"]}, name: {item["name"]}, zone: {current_zone}.')
 
     out_message = '5|Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".'
-    parent.stepChanged.emit('6|Произошла ошибка создания интерфейса VLAN!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка создания интерфейса VLAN!' if error else out_message)
+
+def import_gateways(parent):
+    """Импортируем список шлюзов"""
+    parent.stepChanged.emit('0|Импорт шлюзов в раздел "Сеть/Шлюзы".')
+    json_file = "data_ug/Network/Gateways/config_gateways.json"
+    err, data = read_json_file(json_file, '2|Ошибка импорта шлюзов!', '2|Нет шлюзов для импорта.')
+    if err:
+        parent.stepChanged.emit(data)
+        parent.error = 1
+        return
+
+    err, result = parent.utm.get_template_gateways_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.error = 1
+        return
+
+    gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
+    error = 0
+
+    for item in data:
+        if not item['is_automatic']:
+            item['node_name'] = parent.node_name
+            if item['name'] in gateways_list:
+                err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
+                if err:
+                    parent.stepChanged.emit(f'{err}|{result} Шлюз "{item["name"]}"')
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'2|Шлюз "{item["name"]}" уже существует - Updated!')
+            else:
+                err, result = parent.utm.add_template_gateway(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'1|{result}')
+                    error = 1
+                else:
+                    gateways_list[item['name']] = result
+                    parent.stepChanged.emit(f'2|Шлюз "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    parent.stepChanged.emit('4|Ошибка импорта шлюзов!' if error else '5|Шлюзы импортированы в раздел "Сеть/Шлюзы".')
+
+def import_static_routes(parent):
+    """Импортируем статические маршруты в Виртуальный маршрутизатор по умолчанию"""
+    parent.stepChanged.emit('0|Импорт статических маршрутов в Виртуальный маршрутизатор по умолчанию.')
+
+    json_file = "data_ug/Network/VRF/config_routers.json"
+    err, data = read_json_file(json_file, '2|Ошибка импорта статических маршрутов!', '2|Нет статических маршрутов для импорта.')
+    if err:
+        parent.stepChanged.emit(data)
+        parent.error = 1
+        return
+
+    err, result = parent.utm.get_template_vrf_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'1|{result}')
+        parent.error = 1
+        return
+    virt_routers = {x['name']: x['id'] for x in result}
+    error = 0    
+    out_message = '5|Статические маршруты импортированы в Виртуальный маршрутизатор по умолчанию.'
+    
+    for item in data:
+        item['node_name'] = parent.node_name
+        if item['name'] in virt_routers:
+            err, result = parent.utm.update_template_vrf(parent.template_id, virt_routers[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'1|{result}')
+                error = 1
+        else:
+            err, result = parent.utm.add_template_vrf(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'1|{result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'2|Создан виртуальный маршрутизатор "{item["name"]}".')
+    if not error:
+        parent.stepChanged.emit('6|Добавленные маршруты не активны. Необходимо проверить маршрутизацию и включить их.')
+    else:
+        parent.error = 1
+    parent.stepChanged.emit('4|Ошибка импорта статических маршрутов!' if error else out_message)
 
 def import_services(parent):
     """Импортируем список сервисов раздела библиотеки"""
@@ -555,7 +606,7 @@ def import_services(parent):
     
     for item in data:
         if item['name'] in services_list:
-            parent.stepChanged.emit(f'2|Сервис "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'3|Сервис "{item["name"]}" уже существует.')
         else:
             err, result = parent.utm.add_template_service(parent.template_id, item)
             if err:
@@ -568,7 +619,7 @@ def import_services(parent):
                 parent.stepChanged.emit(f'2|Сервис "{item["name"]}" добавлен.')
 
     out_message = '5|Список сервисов импортирован в раздел "Библиотеки/Сервисы"'
-    parent.stepChanged.emit('6|Произошла ошибка при добавлении сервисов!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при добавлении сервисов!' if error else out_message)
 
 def import_services_groups(parent):
     """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
@@ -635,7 +686,7 @@ def import_services_groups(parent):
         out_message = "2|Нет групп сервисов для импорта."
     if error:
         parent.error = 1
-    parent.stepChanged.emit('6|Произошла ошибка при добавлении групп сервисов!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при добавлении групп сервисов!' if error else out_message)
 
 def import_ip_lists(parent):
     """Импортируем списки IP адресов"""
@@ -703,7 +754,7 @@ def import_ip_lists(parent):
                 continue
             err2, result2 = parent.utm.add_template_nlist_items(parent.template_id, named_list_id, content)
             if err2:
-                parent.stepChanged.emit(f'{err2}|   {result2}')
+                parent.stepChanged.emit(f'{err2}|Список "{ip_list["name"]}" - {result2}')
                 if err2 == 1:
                     error = 1
             else:
@@ -714,7 +765,7 @@ def import_ip_lists(parent):
     if error:
         parent.error = 1
     out_message = '5|Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте списков IP-адресов!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте списков IP-адресов!' if error else out_message)
 
 def import_url_lists(parent):
     """Импортировать списки URL на UTM"""
@@ -764,14 +815,15 @@ def import_url_lists(parent):
                 if err2 == 1:
                     error = 1
             else:
-                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено. Added {result2} record.')
+#                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено. Added {len(result2)} record.')
+                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено.')
         else:
             parent.stepChanged.emit(f'2|   Список "{data["name"]}" пуст.')
 
     if error:
         parent.error = 1
     out_message = '5|Списки URL импортированы в раздел "Библиотеки/Списки URL".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте списков URL!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте списков URL!' if error else out_message)
 
 def import_url_categories(parent):
     """Импортировать группы URL категорий с содержимым на UTM"""
@@ -822,16 +874,17 @@ def import_url_categories(parent):
                     error = 1
                     continue
                 err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, url_category_groups[item['name']], category_url)
-                if err2:
-                    parent.stepChanged.emit(f'{err2}|   {result2}')
-                    if err2 == 1:
-                        error = 1
+                if err2 == 3:
+                    parent.stepChanged.emit(f'3|   Категория "{category["name"]}" уже существует.')
+                elif err2 == 1:
+                    parent.stepChanged.emit(f'1|   {result2}')
+                    error = 1
                 else:
                     parent.stepChanged.emit(f'2|   Добавлена категория "{category["name"]}".')
     if error:
         parent.error = 1
     out_message = '5|Группы URL категорий импортированы в раздел "Библиотеки/Категории URL".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте групп URL категорий!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте групп URL категорий!' if error else out_message)
 
 def import_application_groups(parent):
     """Импортировать список "Приложения" на UTM"""
@@ -867,8 +920,8 @@ def import_application_groups(parent):
             parent.stepChanged.emit(f'1|Ошибка! Группа приложений "{item["name"]}" не импортирована.')
             error = 1
             continue
-        elif err == 2:
-            parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" уже существует.')
+        elif err == 3:
+            parent.stepChanged.emit(f'3|Группа приложений "{item["name"]}" уже существует.')
         else:
             list_applicationgroups[item['name']] = result
             parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" добавлена.')
@@ -896,15 +949,15 @@ def import_application_groups(parent):
             if err2 == 1:
                 error = 1
                 parent.stepChanged.emit(f'1|   {result2}')
-            elif err2 == 2:
-                parent.stepChanged.emit(f'2|   Приложение "{app_name}" уже существует.')
+            elif err2 == 3:
+                parent.stepChanged.emit(f'3|   Приложение "{app_name}" уже существует.')
             else:
                 parent.stepChanged.emit(f'2|   Добавлено приложение "{app_name}".')
 
     if error:
         parent.error = 1
     out_message = '5|Группы приложений импортированы в раздел "Библиотеки/Приложения".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте групп приложений!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте групп приложений!' if error else out_message)
 
 def import_firewall_rules(parent):
     """Импортировать список правил межсетевого экрана"""
@@ -974,6 +1027,12 @@ def import_firewall_rules(parent):
     applicationgroup = {x['name']: x['id'] for x in result}
 
     error = 0
+    err, ldap_servers = get_ldap_servers(parent)
+    if err:
+        parent.stepChanged.emit(f'{err}|{ldap_servers}')
+        error = 1
+        ldap_servers = 0
+
     for item in data:
         item['position'] = 'last'
         item['position_layer'] = 'pre'
@@ -981,6 +1040,7 @@ def import_firewall_rules(parent):
         item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
         item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
         item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], ldap_servers, item['name']) if ldap_servers else []
         for service in item['services']:
             try:
                 service[1] = services_list[service[1]] if service[0] == 'service' else servicegroups_list[service[1]]
@@ -993,8 +1053,7 @@ def import_firewall_rules(parent):
             except KeyError as err:
                 error = 1
                 parent.stepChanged.emit(f'1|Error! Не найдена группа приложений {err} для правила "{item["name"]}". Загрузите группы приложений и повторите попытку.')
-
-        get_guids_users_and_groups(parent, item)
+        
 #        parent.set_time_restrictions(item)
         if item['name'] in firewall_rules:
             parent.stepChanged.emit(f'2|Правило МЭ "{item["name"]}" уже существует.')
@@ -1016,7 +1075,7 @@ def import_firewall_rules(parent):
     if error:
         parent.error = 1
     out_message = '5|Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте правил межсетевого экрана!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте правил межсетевого экрана!' if error else out_message)
 
 def import_content_rules(parent):
     """Импортировать список правил фильтрации контента"""
@@ -1078,14 +1137,20 @@ def import_content_rules(parent):
     url_list = {x['name']: x['id'] for x in result}
 
     error = 0
+    err, ldap_servers = get_ldap_servers(parent)
+    if err:
+        parent.stepChanged.emit(f'{err}|{ldap_servers}')
+        error = 1
+        ldap_servers = 0
+
     for item in data:
         item['position'] = 'last'
         item['position_layer'] = 'pre'
-        get_guids_users_and_groups(parent, item)
         item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
         item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
         item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], ldap_servers, item["name"]) if ldap_servers else []
 
         for x in item['url_categories']:
             try:
@@ -1125,7 +1190,7 @@ def import_content_rules(parent):
     if error:
         parent.error = 1
     out_message = '5|Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте правил контентной фильтрации!' if error else out_message)
+    parent.stepChanged.emit('4|Произошла ошибка при импорте правил контентной фильтрации!' if error else out_message)
 
 def get_ips(parent, rule_ips, utm_ips, rule_name):
     """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на NGFW, то он пропускается."""
@@ -1149,42 +1214,69 @@ def get_zones(parent, zones, zones_list, rule_name):
             parent.stepChanged.emit(f'1|Error! Не найдена зона {zone} для правила {rule_name}.')
     return new_zones
 
-def get_guids_users_and_groups(parent, item):
+def get_guids_users_and_groups(parent, users, ldap_servers, rule_name):
     """
     Получить GUID-ы групп и пользователей по их именам.
     Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
     """
-    if 'users' in item.keys() and item['users']:
-        users = []
-        for x in item['users']:
-            if x[0] == 'user' and x[1]:
-                i = x[1].partition("\\")
-                if i[2]:
-                    err, result = parent.utm.get_usercatalog_ldap_user_guid(i[0], i[2])
-                    if err:
-                        parent.stepChanged.emit(f'1|{result}')
-                    elif not result:
-                        parent.stepChanged.emit(f'3|Ошибка! Правило "{item["name"]}". Нет LDAP-коннектора для домена "{i[0]}"! Настройте LDAP-коннектор. Затем повторите импорт.')
-                    else:
-                        x[1] = result
-                        users.append(x)
+    if not users:
+        return []
 
-            elif x[0] == 'group' and x[1]:
-                i = x[1].partition("\\")
-                if i[2]:
-                    err, result = parent.utm.get_usercatalog_ldap_group_guid(i[0], i[2])
+    new_users = []
+    for x in users:
+        if x[0] == 'user' and x[1]:
+            ldap_domain, _, user_name = x[1].partition("\\")
+            if user_name:
+                try:
+                    ldap_id = ldap_servers[ldap_domain.lower()]
+                except KeyError:
+                    parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет LDAP-коннектора для домена "{ldap_domain}"')
+                else:
+                    err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
                     if err:
                         parent.stepChanged.emit(f'1|{result}')
                     elif not result:
-                        parent.stepChanged.emit(f'3|Ошибка! Правило "{item["name"]}". Нет LDAP-коннектора для домена "{i[0]}"! Настройте LDAP-коннектор. Затем повторите импорт.')
+                        parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
                     else:
                         x[1] = result
-                        users.append(x)
-            elif x[0] == 'special' and x[1]:
-                users.append(x)
-        item['users'] = users
-    else:
-        item['users'] = []
+                        new_users.append(x)
+
+        elif x[0] == 'group' and x[1]:
+            ldap_domain, _, group_name = x[1].partition("\\")
+            if group_name:
+                try:
+                    ldap_id = ldap_servers[ldap_domain.lower()]
+                except KeyError:
+                    parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет LDAP-коннектора для домена "{ldap_domain}"')
+                else:
+                    err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
+                    if err:
+                        parent.stepChanged.emit(f'1|{result}')
+                    elif not result:
+                        parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                    else:
+                        x[1] = result
+                        new_users.append(x)
+        elif x[0] == 'special' and x[1]:
+            new_users.append(x)
+    return new_users
+
+def get_ldap_servers(parent):
+    """
+    Получаем список всех активных LDAP-серверов области.
+    Выдаём словарь: {"имя_домена": "id_ldap-коннектора", ...}.
+    """
+    err, result = parent.utm.get_usercatalog_ldap_servers()
+    if err:
+        return 1, result
+    if not result:
+        return 4, 'Доменные пользователи не будут импортированы. Нет доступных LDAP-серверов в области.'
+
+    ldap_servers = {}
+    for srv in result:
+        for domain in srv['domains']:
+            ldap_servers[domain.lower()] = srv['id']
+    return 0, ldap_servers
 
 def read_json_file(json_file, err_file_not_found, err_data):
     try:

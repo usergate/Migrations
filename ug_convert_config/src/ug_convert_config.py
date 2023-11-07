@@ -92,15 +92,6 @@ class UTM(UtmXmlRpc):
             if int(self.version[:1]) > 6:
                 result = self._server.v2.nlists.list(self._auth_token, 'servicegroup', 0, 1000, {})
                 self.services_groups = {x['id']: x['name'] for x in result['items'] if result['count']}
-            
-            result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')
-            self.l7_categories = {x['id']: x['name'] for x in result['items'] if result['count']}
-            
-            if int(self.version[:1]) > 5:
-                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, {}, [])
-            else:
-                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, '')
-            self.l7_apps = {x['id'] if 'id' in x.keys() else x['app_id']: x['name'] for x in result['items'] if result['count']}
 
             result = self._server.v2.nlists.list(self._auth_token, 'network', 0, 5000, {})
             self.list_IP = {x['id']: x['name'].strip().translate(trans_table) for x in result['items'] if result['count']}
@@ -120,9 +111,6 @@ class UTM(UtmXmlRpc):
             result = self._server.v2.nlists.list(self._auth_token, 'applicationgroup', 0, 1000, {})
             self.list_applicationgroup = {x['id']: x['name'] for x in result['items'] if result['count']}
 
-            result = self._server.v3.accounts.groups.list(self._auth_token, 0, 1000, {})
-            self.list_groups = {x['guid']: x['name'] for x in result['items'] if result['total']}
-
             result = self._server.v1.auth.user.auth.profiles.list(self._auth_token)
             self.auth_profiles = {x['id']: x['name'] for x in result}
             
@@ -140,11 +128,40 @@ class UTM(UtmXmlRpc):
                 print(f"\033[31mОшибка ug_convert_config/init_struct_for_export: [{err.faultCode}] {err.faultString}\033[0m")
             sys.exit(1)
 
-        total, data = self.get_users_list()
-        self.list_users = {x['guid']: x['name'] for x in data if total}
+        err, result = self.get_groups_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.list_groups = {x['id']: x['name'] for x in result}
 
-        total, data = self.get_zones_list()
-        self.zones = {x['id']: x['name'] for x in data if total}
+        err, result = self.get_l7_apps()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.l7_apps = {x['id']: x['name'] for x in result}
+
+        err, result = self.get_l7_categories()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.l7_categories = {x['id']: x['name'] for x in result}
+
+        err, result = self.get_users_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.list_users = {x['id']: x['name'] for x in result}
+
+        err, result = self.get_zones_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.zones = {x['id']: x['name'] for x in result}
 
         total, data = self.get_shaper_list()
         self.shaper = {x['id']: x['name'] for x in data if total}
@@ -164,8 +181,12 @@ class UTM(UtmXmlRpc):
         _, data = self.get_scenarios_rules()
         self.scenarios_rules = {x['id']: x['name'] for x in data}
 
-        total, data = self.get_reverseproxy_servers()
-        self.reverse_servers = {x['id']: x['name'] for x in data if total}
+        err, result = self.get_reverseproxy_servers()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.reverse_servers = {x['id']: x['name'] for x in result}
 
         if not os.path.isdir('data'):
             os.makedirs('data')
@@ -187,17 +208,33 @@ class UTM(UtmXmlRpc):
                 result = self._server.v2.nlists.list(self._auth_token, 'servicegroup', 0, 1000, {})
                 self.services_groups = {x['name']: x['id'] for x in result['items'] if result['count']}
 
-            result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, {}, [])
-            self.services = {x['name']: x['id'] for x in result['items'] if result['total']}
+            try:
+                result = self._server.v1.libraries.services.list(self._auth_token, 0, 1000, {}, [])
+                self.services = {x['name']: x['id'] for x in result['items'] if result['total']}
+            except:
+                print('Error - services')
+                sys.exit(1)
 
-            result = self._server.v2.nlists.list(self._auth_token, 'morphology', 0, 1000, {})
-            self.list_morph = {x['name']: x['id'] for x in result['items'] if result['count']}
+            try:
+                result = self._server.v2.nlists.list(self._auth_token, 'morphology', 0, 1000, {})
+                self.list_morph = {x['name']: x['id'] for x in result['items'] if result['count']}
+            except:
+                print('Error - list_morph')
+                sys.exit(1)
 
-            result = self._server.v2.nlists.list(self._auth_token, 'network', 0, 5000, {})
-            self.list_IP = {x['name']: x['id'] for x in result['items'] if result['count']}
+            try:
+                result = self._server.v2.nlists.list(self._auth_token, 'network', 0, 5000, {})
+                self.list_IP = {x['name']: x['id'] for x in result['items'] if result['count']}
+            except:
+                print('Error - list_IP')
+                sys.exit(1)
 
-            result = self._server.v2.nlists.list(self._auth_token, 'useragent', 0, 1000, {})
-            self.list_useragent = {x['name']: x['id'] for x in result['items'] if result['count']}
+            try:
+                result = self._server.v2.nlists.list(self._auth_token, 'useragent', 0, 1000, {})
+                self.list_useragent = {x['name']: x['id'] for x in result['items'] if result['count']}
+            except:
+                print('Error - list_useragent')
+                sys.exit(1)
 
             result = self._server.v2.nlists.list(self._auth_token, 'mime', 0, 1000, {})
             self.list_mime = {x['name']: x['id'] for x in result['items'] if result['count']}
@@ -214,43 +251,83 @@ class UTM(UtmXmlRpc):
             result = self._server.v2.nlists.list(self._auth_token, 'applicationgroup', 0, 1000, {})
             self.list_applicationgroup = {x['name']: x['id'] for x in result['items'] if result['count']}
 
-            result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')
-            self.l7_categories = {x['name']: x['id'] for x in result['items'] if result['count']}
-            
-            result = self._server.v2.core.get.l7apps(self._auth_token, 0, 10000, {}, [])
-            self.l7_apps = {x['name']: x['id'] for x in result['items'] if result['count']}
-
             result = self._server.v1.notification.profiles.list(self._auth_token)
             self.list_notifications = {x['name']: x['id'] for x in result}
 
-            result = self._server.v1.netmanager.netflow.profiles.list(self._auth_token, 0, 1000, {})
-            self.list_netflow = {x['name']: x['id'] for x in result['items'] if result['count']}
+            try:
+                result = self._server.v1.netmanager.netflow.profiles.list(self._auth_token, 0, 1000, {})
+                self.list_netflow = {x['name']: x['id'] for x in result['items'] if result['count']}
+            except:
+                print('Error - list_netflow')
+                sys.exit(1)
 
-            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, {})
-            self.list_ssl_profiles = {x['name']: x['id'] for x in result['items'] if result['count']}
-
-            result = self._server.v3.accounts.groups.list(self._auth_token, 0, 1000, {})
-            self.list_groups = {x['name']: x['guid'] for x in result['items'] if result['total']}
-
-            result = self._server.v1.auth.user.auth.profiles.list(self._auth_token)
-            self.auth_profiles = {x['name']: x['id'] for x in result}
+            try:
+                result = self._server.v1.auth.user.auth.profiles.list(self._auth_token)
+                self.auth_profiles = {x['name']: x['id'] for x in result}
+            except:
+                print('Error - auth_profiles')
+                sys.exit(1)
 
             result = self._server.v1.captiveportal.profiles.list(self._auth_token, 0, 100, '')
             self.captive_profiles = {x['name']: x['id'] for x in result['items']}
 
-            result = self._server.v1.captiveportal.rules.list(self._auth_token, 0, 100, {})
-            self.captive_portal_rules = {x['name']: x['id'] for x in result['items']}
+            try:
+                result = self._server.v1.captiveportal.rules.list(self._auth_token, 0, 100, {})
+                self.captive_portal_rules = {x['name']: x['id'] for x in result['items']}
+            except:
+                print('Error - captive_portal_rules')
+                sys.exit(1)
 
         except rpc.Fault as err:
             if err.faultCode == 102:
                 print("\033[31m\tУ вас нет прав для использования API.")
                 print("\tДобавьте необходимые разрешения в профиль администратора.\033[0m\n")
             else:
-                print(f"\033[31mОшибка ug_convert_config/init_struct_for_export: [{err.faultCode}] {err.faultString}\033[0m")
+                print(f"\033[31mОшибка ug_convert_config/init_struct_for_import: [{err.faultCode}] {err.faultString}\033[0m")
             sys.exit(1)
 
-        total, data = self.get_zones_list()
-        self.zones = {x['name']: x['id'] for x in data if total}
+        err, result = self.get_groups_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.list_groups = {x['name']: x['id'] for x in result}
+
+        err, result = self.get_l7_apps()
+        if err:
+            print(f"\033[31m{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.l7_apps = {x['name']: x['id'] for x in result}
+
+        err, result = self.get_l7_categories()
+        if err:
+            print(f"\033[31m{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.l7_categories = {x['name']: x['id'] for x in result}
+
+        err, result = self.get_users_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.list_users = {x['name']: x['id'] for x in result}
+            self.list_authlogin = {x['auth_login']: x['id'] for x in result}
+
+        err, result = self.get_zones_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.zones = {x['name']: x['id'] for x in result}
+
+        err, result = self.get_ssl_profiles_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.list_ssl_profiles = {x['name']: x['id'] for x in result}
 
         total, data = self.get_shaper_list()
         self.shaper = {x['name']: x['id'] for x in data if total}
@@ -261,10 +338,6 @@ class UTM(UtmXmlRpc):
         total, data = self.get_templates_list()
         self.list_templates = {x['name']: x['id'] for x in data if total}
 
-        total, data = self.get_users_list()
-        self.list_users = {x['name']: x['guid'] for x in data if total}
-        self.list_authlogin = {x['auth_login']: x['guid'] for x in data if total}
-
         total, data = self.get_2fa_profiles()
         self.profiles_2fa = {x['name']: x['id'] for x in data if total}
 
@@ -274,8 +347,12 @@ class UTM(UtmXmlRpc):
         total, data = self.get_scenarios_rules()
         self.scenarios_rules = {x['name']: x['id'] for x in data if total}
 
-        total, reverse = self.get_reverseproxy_servers()
-        self.reverse_servers = {x['name']: x['id'] for x in reverse if total}
+        err, result = self.get_reverseproxy_servers()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+        else:
+            self.reverse_servers = {x['name']: x['id'] for x in result}
 
     def init_struct(self):
         """Заполнить служебные структуры данных. Применяется при экспорте и импорте."""
@@ -4596,7 +4673,11 @@ class UTM(UtmXmlRpc):
         if not os.path.isdir('data/Network/Zones'):
             os.makedirs('data/Network/Zones')
 
-        _, data = self.get_zones_list()
+        err, data = self.get_zones_list()
+        if err:
+            print(f"\033[31m\t{result}\033[0m")
+            sys.exit(1)
+
         with open("data/Network/Zones/config_zones.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)
         print(f"\tСписок зон выгружен в файл 'data/Network/Zones/config_zones.json'.")
@@ -4613,16 +4694,18 @@ class UTM(UtmXmlRpc):
 
         for item in zones:
             item.pop("cc", None)
+            if item['sessions_limit_threshold'] < 0:
+                item['sessions_limit_threshold'] = 0
             err, result = self.add_zone(item)
-            if err == 1:
-                print(result, end= ' - ')
+            if err == 2:
+                print(f"\t{result}")
                 err1, result1 = self.update_zone(self.zones[item['name']], item)
-                if err1 != 0:
-                    print(result1)
+                if err1:
+                    print(f"\033[31m\t{result1}\033[0m" if err1 == 1 else f"\t{result1}")
                 else:
-                    print("\033[32mOk!\033[0;0m")
-            elif err == 2:
-                print(result)
+                    print(f"\t  Зона {item['name']} обновлена.")
+            elif err == 1:
+                print(f"\033[31m\t{result}\033[0m")
             else:
                 self.zones[item['name']] = result
                 print(f"\tЗона '{item['name']}' добавлена.")
@@ -4633,7 +4716,10 @@ class UTM(UtmXmlRpc):
         if not os.path.isdir('data/Network/Gateways'):
             os.makedirs('data/Network/Gateways')
 
-        _, data = self.get_interfaces_list()
+        err, data = self.get_interfaces_list()
+        if err:
+            print(f'\t{data}')
+            sys.exit(1)
         iface_name = self.translate_iface_name(data)
 
         _, data = self.get_gateways_list()
@@ -4728,7 +4814,10 @@ class UTM(UtmXmlRpc):
         _, result = self.get_netflow_profiles_list()
         self.list_netflow = {x['id']: x['name'] for x in result}
 
-        _, data = self.get_interfaces_list()
+        err, data = self.get_interfaces_list()
+        if err:
+            print(f'\t{data}')
+            sys.exit(1)
 
         iface_name = self.translate_iface_name(data)
 
@@ -6070,6 +6159,7 @@ def executor(utm, mode, section, command):
     command = section * 100 + command
     utm.init_struct()
     if mode == 1:
+        print('Export')
         if not os.path.isdir('data'):
             os.mkdir('data')
             print("Создана директория 'data' в текущем каталоге.")
@@ -6415,6 +6505,7 @@ def executor(utm, mode, section, command):
                 if input_value == " ":
                     break
     else:
+        print('import')
         if int(utm.version[:1]) > 5:
             utm.init_struct_for_import()
             try:

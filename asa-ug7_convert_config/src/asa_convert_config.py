@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.8
+# Версия 2.9
 #
 
 import os, sys, json
@@ -316,25 +316,28 @@ def convert_file(utm, file_name):
         """Устанавливаем контроль доступа для зоны"""
         match array:
             case [service, 'domain-lookup', zone_name]:
-                for service in zones[zone_name]['services_access']:
-                    if service['service_id'] == 9:
-                        service['enabled'] = True
+                if zone_name in zones:
+                    for service in zones[zone_name]['services_access']:
+                        if service['service_id'] == 9:
+                            service['enabled'] = True
             case ['telnet' | 'ssh', ip, mask, zone_name]:
-                if ip in ('version', 'key-exchange'):
-                    return
-                ipv4 = pack_ip_address(ip, mask)
-                for service in zones[zone_name]['services_access']:
-                    if service['service_id'] == 14:
-                        service['enabled'] = True
-                        service['allowed_ips'].append(ipv4)
+                if zone_name in zones:
+                    if ip in ('version', 'key-exchange', 'cipher'):
+                        return
+                    ipv4 = pack_ip_address(ip, mask)
+                    for service in zones[zone_name]['services_access']:
+                        if service['service_id'] == 14:
+                            service['enabled'] = True
+                            service['allowed_ips'].append(ipv4)
             case ['http', ip, mask, zone_name]:
-                ipv4 = pack_ip_address(ip, mask)
-                for service in zones[zone_name]['services_access']:
-                    if service['service_id'] == 4:
-                        service['enabled'] = True
-                    elif service['service_id'] == 8:
-                        service['enabled'] = True
-                        service['allowed_ips'].append(ipv4)
+                if zone_name in zones:
+                    ipv4 = pack_ip_address(ip, mask)
+                    for service in zones[zone_name]['services_access']:
+                        if service['service_id'] == 4:
+                            service['enabled'] = True
+                        elif service['service_id'] == 8:
+                            service['enabled'] = True
+                            service['allowed_ips'].append(ipv4)
 
     def convert_dns_servers(x):
         """Заполняем список системных DNS"""
@@ -757,8 +760,9 @@ def convert_file(utm, file_name):
                 domain = domain.split(".")
                 identity_domains[domain[0]] = auth_servers[server]['domains'][0]
             case ['default-domain', domain]:
-                domain = domain.split(".")
-                identity_domains['default'] = identity_domains[domain[0]]
+                if domain != 'LOCAL':
+                    domain = domain.split(".")
+                    identity_domains['default'] = identity_domains[domain[0]]
 
     def convert_user_groups_object_group(name, object_block):
         """Конвертируем локальные группы пользователей"""
@@ -1056,7 +1060,7 @@ def convert_file(utm, file_name):
                 }
             ]
         }
-        data['services'][name] = service
+        services[name] = service
 
     def convert_access_group(x):
         """
@@ -1117,9 +1121,10 @@ def convert_file(utm, file_name):
                 ip = deq.popleft()
             case _:
                 try:
+                    ipaddress.ip_address(address)   # проверяем что это IP-адрес или получаем ValueError
                     mask = deq.popleft()
                     rule[ips_mode].append(create_ip_list(address, mask))
-                except IndexError:
+                except (ValueError, IndexError):
                     pass
 
     def create_service(name, ips_mode, protocol, port1, port2=None):
@@ -1160,9 +1165,15 @@ def convert_file(utm, file_name):
         Конвертируем ACE в правило МЭ.
         Не активные ACE пропускаются. ACE не назначенные интерфейсам пропускаются.
         ACE с именами ASA интерфейсов пропускаются.
+        ACE c security-group и object-group-security пропускаются.
         """
-        if (acs_name not in direction) or ('inactive' in rule_block) or ('interface' in rule_block):
+#        if (acs_name not in direction) or ('inactive' in rule_block) or ('interface' in rule_block):
+        if acs_name not in direction:
             return
+        for value in ('inactive', 'interface', 'security-group', 'object-group-security'):
+            if value in rule_block:
+                print(f'\033[36mACE: {" ".join(rule_block)} - не пропущено так как содержит параметр: "{value}".\033[0m')
+                return
 
         nonlocal rule_number
         rule_number += 1
@@ -1632,6 +1643,8 @@ def convert_file(utm, file_name):
                             case 'icmp-type':
                                 line, tmp_block = make_block_of_line(fh)
                                 convert_icmp_object_group(x[2])
+                            case _:
+                                line = fh.readline()
                     case 'access-group':
                         convert_access_group(x[1:])
                         line = fh.readline()

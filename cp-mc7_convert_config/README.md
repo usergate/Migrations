@@ -1,5 +1,5 @@
 <h2 align="center">Конвертация конфигурации с CheckPoint на UserGate<br>Management Server</h2>
-<h3 align="center">(Версия 1.1)</h3>
+<h3 align="center">(Версия 1.2)</h3>
 
 Программа предназначена для переноса конфигурации с оборудования Check Point R80.40 в шаблон NGFW Management Server UserGate v.7.
 
@@ -92,3 +92,4 @@ Server, login и пароль администратора области.
 - правил межсетевого экрана,
 - правил контентной фильтрации.
 
+10.11.2023  Добалена конвертация встроенных сервисов CheckPoint.<br>

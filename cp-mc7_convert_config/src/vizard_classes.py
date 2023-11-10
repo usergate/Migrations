@@ -763,13 +763,14 @@ class ExportList(QDialog):
         except ValueError as err:
             message_alert(self, err, msg)
         else:
-            if int(error) == 5:
-                self.log_list.addItem('')
-                self.log_list.addItem(message)
-                self.log_list.addItem('')
+            if int(error) == 8:
+                self.add_item_list(message, color=5)
+                message_inform(self, 'Конвертация', message)
+            elif int(error) == 9:
+                self.add_item_list(message, color=4)
                 message_inform(self, 'Конвертация', message)
             else:
-                self.log_list.addItem(f'    {message}' if int(error) else message)
+                self.add_item_list(f'    {message}' if int(error) else message, color=int(error))
             self.log_list.scrollToBottom()
 
     def on_finished(self):
@@ -790,8 +791,17 @@ class ExportList(QDialog):
         message_inform(self, 'Сохранение лога экспорта', 'Лог экспорта конфигурации CheckPoint в формат UG NGFW\nсохранён в файл "export.log" в текущей директории.')
         self.parent.stacklayout.setCurrentIndex(0)
 
-    def add_item_list(self, message):
-        self.log_list.addItem(message)
+    def add_item_list(self, message, color=0):
+        """
+        Добавляем запись лога в log_list.
+        Цвета: [darkblue, darkred, black, dimgray, darkorange, darkgreen, dodgerblue]
+        """
+        colors = ['#00008b', '#8b0000', '#000000', '#696969', '#ff8c00', '#006400', '#1e90ff']
+        i = QListWidgetItem(message)
+        i.setForeground(QColor(colors[color]))
+        self.log_list.addItem(i)
+
+#        self.log_list.addItem(message)
 
 #-------------------------------------- Служебные функции --------------------------------------------------
 def create_dir(self, folder):

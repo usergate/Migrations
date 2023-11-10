@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # cp-mc7_convert_config.py
-# Version 1.0
+# Version 1.2
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json

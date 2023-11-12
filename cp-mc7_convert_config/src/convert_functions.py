@@ -422,7 +422,7 @@ def convert_services_groups(parent):
             content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
             for item in content:
                 for x in item['protocols']:
-                    x.pop('source_port')
+                    x.pop('source_port', None)
 
             services_group = {
                 "name": value['name'],
@@ -529,7 +529,7 @@ def convert_ip_lists_groups(parent):
                 except KeyError:
                     error = 1
                     parent.error = 1
-#                    print(uid.upper())
+#                    print(uid)
                     parent.stepChanged.emit(f'4|Warning! В группе IP-аресов "{value["name"]}" присутствует ссылка на несуществующий объект: {uid}.')
             ip_list = {
                 "name": value['name'].translate(trans_name),

@@ -19,13 +19,14 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 2.6
+# Версия 2.7
 #
 
 import os, sys, json, uuid
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import cp_app_category, cp_app_site, new_applicationgroup
 from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name
+from embedded_objects import embedded_objects
 
 
 content_by_uid = {}
@@ -66,7 +67,8 @@ class ConvertAll(QThread):
         
         self.save_app_groups()
         self.save_zones()
-        self.stepChanged.emit('5|Преобразование конфигурации в формат UG NGFW прошло с ошибками!' if self.error else '5|Преобразование конфигурации в формат UG NGFW прошло успешно.')
+        self.stepChanged.emit('0| ')
+        self.stepChanged.emit('9|Преобразование конфигурации в формат UG NGFW прошло с ошибками!' if self.error else '8|Преобразование конфигурации в формат UG NGFW прошло успешно.')
 
     def create_app_group(self, group_name, app_list, comment=''):
         app_group = {
@@ -88,7 +90,7 @@ class ConvertAll(QThread):
         if make_dirs(self, 'data_ug/Libraries/Applications'):
             with open("data_ug/Libraries/Applications/config_applications.json", "w") as fh:
                 json.dump(self.app_groups, fh, indent=4, ensure_ascii=False)
-        self.stepChanged.emit('1|Группы приложений выгружены в файл "data_ug/Libraries/Applications/config_applications.json".')
+        self.stepChanged.emit('5|Группы приложений выгружены в файл "data_ug/Libraries/Applications/config_applications.json".')
 
     def save_zones(self):
         """Сохраняем зоны, если они есть."""
@@ -96,7 +98,7 @@ class ConvertAll(QThread):
             if make_dirs(self, 'data_ug/Network/Zones'):
                 with open('data_ug/Network/Zones/config_zones.json', 'w') as fh:
                     json.dump([x for x in self.zones.values()], fh, indent=4, ensure_ascii=False)
-            self.stepChanged.emit('1|Зоны выгружены в файл "data_ug/Network/Zones/config_zones.json".')
+            self.stepChanged.emit('2|Зоны выгружены в файл "data_ug/Network/Zones/config_zones.json".')
 
 def convert_config_cp(parent):
     """Конвертируем данные из файла "config_cp.txt" в формат UG NGFW"""
@@ -124,11 +126,14 @@ def convert_config_cp(parent):
 
     def convert_dns_servers(x):
         """Заполняем список системных DNS"""
-        if x[1] == 'suffix':
-            domain_name = x[2]
-        else:
-            system_dns.append({'dns': x[2], 'is_bad': False})
-            parent.stepChanged.emit(f'2|DNS сервер {x[2]} конвертирован в "data_ug/Network/DNS/config_dns_servers.json".')
+        match x[1]:
+            case 'suffix':
+                domain_name = x[2]
+            case 'mode':
+                pass
+            case 'primary'|'secondary':
+                system_dns.append({'dns': x[2], 'is_bad': False})
+                parent.stepChanged.emit(f'2|DNS сервер {x[2]} конвертирован в "data_ug/Network/DNS/config_dns_servers.json".')
 
     def convert_modules(x):
         """Выгружаем UserGate->Настройки->Модули"""
@@ -176,7 +181,7 @@ def convert_config_cp(parent):
             "kind": "vlan",
             "enabled": False,
             "description": "",
-            "zone_id": "",
+            "zone_id": 0,
             "master": False,
             "netflow_profile": "undefined",
             "running": False,
@@ -366,7 +371,7 @@ def convert_services(parent):
         os.makedirs('data_ug/Libraries/Services')
     with open("data_ug/Libraries/Services/config_services.json", "w") as fh:
         json.dump(list(services.values()), fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit(f'1|Список сервисов выгружен в файл  "data_ug/Libraries/Services/config_services.json".')
+    parent.stepChanged.emit(f'5|Список сервисов выгружен в файл  "data_ug/Libraries/Services/config_services.json".')
 
 def convert_services_groups(parent):
     """
@@ -385,14 +390,38 @@ def convert_services_groups(parent):
     with open("data_ug/Libraries/Services/config_services.json", "r") as fh:
         data = json.load(fh)
     services = {x['name']: x for x in data}
+    len_1 = len(services)
 
     for key, value in parent.objects.items():
         if value['type'] == 'service-group':
-            members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members']}  # словарь использован для удаления одинаковых сервисов
-            content = [services[x['name']] for x in members.values() if x['type'] != 'error']
+            members = {}  # Для members использован словарь для удаления одинаковых сервисов.
+#            members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members'] if parent.objects.get(uid, None)}
+            for uid in value['members']:
+                if uid in parent.objects:
+                    service = parent.objects[uid]
+                elif uid in embedded_objects:
+                    service = embedded_objects[uid]
+                    if service['type'] == 'service':
+                        services[service['name']] = {
+                            'name': service['name'],
+                            'description': service['description'],
+                            'protocols': [
+                                {
+                                    'proto': service['proto'],
+                                    'port': service['port'],
+                                }
+                            ]
+                        }
+                    else:
+                        continue
+                else:
+                    continue
+                members[service['name']] = service['type']
+
+            content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
             for item in content:
                 for x in item['protocols']:
-                    x.pop('source_port')
+                    x.pop('source_port', None)
 
             services_group = {
                 "name": value['name'],
@@ -409,6 +438,16 @@ def convert_services_groups(parent):
             with open(f"data_ug/Libraries/ServicesGroups/{value['name']}.json", "w") as fh:
                 json.dump(services_group, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'2|Группа сервисов {value["name"]} выгружена в файл  "data_ug/Libraries/ServicesGroups/{value["name"]}.json".')
+
+    len_2 = len(services)
+    if len_1 != len_2:
+        for item in services.values():
+            for x in item['protocols']:
+                x['source_port'] = ''
+
+        with open("data_ug/Libraries/Services/config_services.json", "w") as fh:
+            json.dump(list(services.values()), fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'5|Список сервисов обновлён в файле "data_ug/Libraries/Services/config_services.json".')
 
 def convert_ip_lists(parent):
     """
@@ -431,7 +470,7 @@ def convert_ip_lists(parent):
             if value.keys().isdisjoint(('ipv4-address', 'ipv4-address-first', 'subnet4')):
                 error = 1
                 parent.error = 1
-                parent.stepChanged.emit(f"3|Warning: Объект value['type']: '{value['name']}' содержит IPV6 адрес или подсеть. Данный тип адреса не поддерживается.")
+                parent.stepChanged.emit(f"4|Warning: Объект value['type']: '{value['name']}' содержит IPV6 адрес или подсеть. Данный тип адреса не поддерживается.")
                 parent.objects[key] = {'type': 'error', 'name': f'Объект value["type"]: "{value["name"]}" содержит IPV6 адрес или подсеть.'}
                 continue
             parent.objects[key] = {'type': 'network', 'name': ['list_id', value['name'].translate(trans_name)]}
@@ -465,10 +504,10 @@ def convert_ip_lists(parent):
                 error = 1
                 parent.error = 1
                 parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
-                parent.stepChanged.emit(f'3|Warning! Объект {value["type"]} - "{value["name"]}" не конвертирован и не будет использован в правилах.')
-                parent.stepChanged.emit(f'3|Warning! : {err}.')
+                parent.stepChanged.emit(f'1|Warning! Объект {value["type"]} - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'1|Warning! : {err}.')
 
-    parent.stepChanged.emit('1|Списки IP-адресов конвертированы с ошибками!' if error else '1|Списки IP-адресов конвертированы.')
+    parent.stepChanged.emit('4|Списки IP-адресов конвертированы с ошибками!' if error else '5|Списки IP-адресов конвертированы.')
 
 def convert_ip_lists_groups(parent):
     """
@@ -492,7 +531,7 @@ def convert_ip_lists_groups(parent):
                 except KeyError:
                     error = 1
                     parent.error = 1
-                    parent.stepChanged.emit(f'3|Warning! В группе IP-аресов "{value["name"]}" присутствует ссылка на несуществующий объект: {uid}.')
+                    parent.stepChanged.emit(f'4|Warning! В группе IP-аресов "{value["name"]}" присутствует ссылка на несуществующий объект: {uid}.')
             ip_list = {
                 "name": value['name'].translate(trans_name),
                 "description": value['comments'],
@@ -515,10 +554,10 @@ def convert_ip_lists_groups(parent):
                 error = 1
                 parent.error = 1
                 parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список групп IP-адресов "{value["name"]}" не конвертирован.'}
-                parent.stepChanged.emit(f'3|Warning! Объект {value["type"]} - "{value["name"]}" не конвертирован и не будет использован в правилах.')
-                parent.stepChanged.emit(f'3|Warning! : {err}.')
+                parent.stepChanged.emit(f'1|Warning! Объект {value["type"]} - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'1|Warning! : {err}.')
 
-    parent.stepChanged.emit('1|Списки групп IP-адресов конвертированы с ошибками!' if error else '1|Списки групп IP-адресов конвертированы.')
+    parent.stepChanged.emit('4|Списки групп IP-адресов конвертированы с ошибками!' if error else '5|Списки групп IP-адресов конвертированы.')
 
 def convert_ip_group_with_exclusion(parent):
     """
@@ -551,9 +590,9 @@ def convert_ip_group_with_exclusion(parent):
                 error = 1
                 parent.error = 1
                 parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Объект group-with-exclusion "{value["name"]}" не конвертирован.'}
-                parent.stepChanged.emit(f'3|Warning! Group-with-exclusion "{value["name"]}" не конвертирована: {err}.')
+                parent.stepChanged.emit(f'4|Warning! Group-with-exclusion "{value["name"]}" не конвертирована: {err}.')
 
-    parent.stepChanged.emit('1|Группы IP-адресов с типом group-with-exclusion конвертированы с ошибками!' if error else '1|Группы IP-адресов с типом group-with-exclusion конвертированы.')
+    parent.stepChanged.emit('4|Группы IP-адресов с типом group-with-exclusion конвертированы с ошибками!' if error else '5|Группы IP-адресов с типом group-with-exclusion конвертированы.')
 
 
 def convert_url_lists(parent):
@@ -590,7 +629,7 @@ def convert_url_lists(parent):
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'2|Список URL "{value["name"]}" выгружен в файл "data_ug/Libraries/URLLists/{file_name}.json"')
 
-    parent.stepChanged.emit('1|Конвертация списков URL прошла с ошибками!' if error else '1|Конвертация списков URL завершена.')
+    parent.stepChanged.emit('4|Конвертация списков URL прошла с ошибками!' if error else '5|Конвертация списков URL завершена.')
 
 def convert_application_site_category(parent):
     """
@@ -613,8 +652,8 @@ def convert_application_site_category(parent):
                 error = 1
                 parent.error = 1
                 parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Для категории "{value["name"]}" нет аналога на UG NGFW.'}
-                parent.stepChanged.emit(f'3|Warning! Application-site-category "{value["name"]}" не конвертирована (нет аналога на UG NGFW).')
-    parent.stepChanged.emit('1|Конвертации application-site-categoty прошла с ошибками. Некоторые категории не перенесены.' if error else '1|Конвертация application-site-category прошла успешно.')
+                parent.stepChanged.emit(f'4|Warning! Application-site-category "{value["name"]}" не конвертирована (нет аналога на UG NGFW).')
+    parent.stepChanged.emit('4|Конвертации application-site-categoty прошла с ошибками. Некоторые категории не перенесены.' if error else '5|Конвертация application-site-category прошла успешно.')
 
 def convert_application_site(parent):
     """
@@ -632,8 +671,8 @@ def convert_application_site(parent):
                 error = 1
                 parent.error = 1
                 parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Для приложения "{value["name"]}" нет аналога на UG NGFW.'}
-                parent.stepChanged.emit(f'3|Warning! Приложение "{value["name"]}" не конвертировано (нет аналога на UG NGFW).')
-    parent.stepChanged.emit('1|Конвертации application-site прошла с ошибками. Некоторые приложения не перенесены.' if error else '1|Конвертация application-site прошла успешно.')
+                parent.stepChanged.emit(f'4|Warning! Приложение "{value["name"]}" не конвертировано (нет аналога на UG NGFW).')
+    parent.stepChanged.emit('4|Конвертации application-site прошла с ошибками. Некоторые приложения не перенесены.' if error else '5|Конвертация application-site прошла успешно.')
 
 def convert_application_group(parent):
     """
@@ -699,7 +738,7 @@ def convert_application_group(parent):
                             case 'error':
                                 apps_group_tmp['description'].append(parent.objects[item]['description'])
                     except (TypeError, KeyError) as err:
-                        parent.stepChanged.emit(f'3|Warning! {err} - {item}.')
+                        parent.stepChanged.emit(f'4|Warning! {err} - {item}.')
 
                 apps_group_tmp['apps'].extend([['ro_group', x] for x in ro_group]),
                 apps_group_tmp['apps'].extend([['group', x] for x in applicationgroups]),
@@ -731,13 +770,13 @@ def convert_application_group(parent):
 
                 parent.objects[key] = apps_group_tmp
         except (TypeError, KeyError) as err:
-            parent.stepChanged.emit(f'3|Warning! {err} - {parent.objects[key]}.')
+            parent.stepChanged.emit(f'4|Warning! {err} - {parent.objects[key]}.')
 
     if url_groups:
         if make_dirs(parent, 'data_ug/Libraries/URLCategories'):
             with open("data_ug/Libraries/URLCategories/config_categories_url.json", "w") as fh:
                 json.dump(url_groups, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit('1|Группы URL категорий выгружены в файл "data_ug/Libraries/URLCategories/config_categories_url.json".')
+            parent.stepChanged.emit('5|Группы URL категорий выгружены в файл "data_ug/Libraries/URLCategories/config_categories_url.json".')
 
 def convert_access_role(parent):
     """
@@ -779,15 +818,15 @@ def convert_access_role(parent):
                 elif value['users'] == "any":
                     pass
                 else:
-                    parent.stepChanged.emit(f'3|Warning! access-role "{value["name"]}": users = {value["users"]}. Обратитесь в техподдержку для исправления ситуации.')
+                    parent.stepChanged.emit(f'4|Warning! access-role "{value["name"]}": users = {value["users"]}.')
                 tmp_role['users'] = users
                 parent.objects[key] = tmp_role
         except KeyError as err:
-            parent.stepChanged.emit(f'3|Warning! {value["name"]} - {err}')
+            parent.stepChanged.emit(f'4|Warning! {value["name"]} - {err}')
             error = 1
             parent.error = 1
 
-    parent.stepChanged.emit('1|Конвертации access-role прошла с ошибками.' if error else '1|Конвертация access-role прошла успешно.')
+    parent.stepChanged.emit('4|Конвертации access-role прошла с ошибками.' if error else '5|Конвертация access-role прошла успешно.')
 
 def convert_other(parent):
     """
@@ -808,13 +847,13 @@ def convert_other(parent):
                     parent.objects[key] = {"type": "CpmiAnyObject", "value": "Any"}
                 case 'service-other':
                     parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Сервис "{value["name"]}" не конвертирован.'}
-                    parent.stepChanged.emit(f'3|Warning! Сервисе "{value["name"]}" (тип service-other) не конвертирован и не будет использован в правилах!')
+                    parent.stepChanged.emit(f'4|Warning! Сервисе "{value["name"]}" (тип service-other) не конвертирован и не будет использован в правилах!')
                 case 'Internet':
                     parent.objects[key] = {"type": "Zone", "value": "Internet"}
                     create_zone('Internet', parent.zones)
         except KeyError:
             pass
-    parent.stepChanged.emit('1|Конвертации сопутствующих объектов завершена.')
+    parent.stepChanged.emit('5|Конвертации сопутствующих объектов завершена.')
 
 
 def convert_access_policy_files(parent):
@@ -876,7 +915,7 @@ def convert_access_policy_files(parent):
         with open(os.path.join(parent.cp_data_json, access_policy_file.replace('.json', '_convert.json')), "w") as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
         access_rules.extend(data)
-        parent.stepChanged.emit(f'1|Файл {access_policy_file.replace(".json", "_convert.json")} создан.')
+        parent.stepChanged.emit(f'2|Файл {access_policy_file.replace(".json", "_convert.json")} создан.')
 
     parent.stepChanged.emit(f'0|Конвертация access-rules.')
     fw_rules = []
@@ -945,12 +984,12 @@ def convert_access_policy_files(parent):
     if make_dirs(parent, 'data_ug/NetworkPolicies/Firewall'):
         with open("data_ug/NetworkPolicies/Firewall/config_firewall_rules.json", "w") as fh:
             json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit('1|Правила межсетевого экрана выгружены в файл "data_ug/NetworkPolicies/Firewall/config_firewall_rules.json".')
+        parent.stepChanged.emit('5|Правила межсетевого экрана выгружены в файл "data_ug/NetworkPolicies/Firewall/config_firewall_rules.json".')
 
     if make_dirs(parent, 'data_ug/SecurityPolicies/ContentFiltering'):
         with open("data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json", "w") as fh:
             json.dump(kf_rules, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit('1|Правила контентной фильтрации выгружены в файл "data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json".')
+        parent.stepChanged.emit('5|Правила контентной фильтрации выгружены в файл "data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json".')
 
 def create_firewall_rule(parent, item, fw_rules, err=0):
     """
@@ -1041,13 +1080,6 @@ def create_content_rule(parent, item, kf_rules):
 
     kf_rules.append(rule)
     parent.stepChanged.emit(f'2|    Создано правило контентной фильтрации "{item["name"]}".')
-
-#def get_zones(array):
-#    """Получить список зон, если они есть."""
-#    result = []
-#    for item in array:
-#        result = [x['value'] for x in item if x['type'] == 'Zone']
-#    return result
 
 def get_ips_list(array):
     """Получить структуру src_ips/dst_ips для правил МЭ и КФ из объектов access_rule."""

@@ -182,16 +182,17 @@ character_map_file_name = {
 }
 
 character_map_for_name = {
-    '=': None,
+    '#': None,
+    '=': ' ',
+    ':': '_',
     '"': None,
     "'": None,
     '!': None,
     '@': None,
-    '#': None,
-    ';': None,
+    ';': " ",
     '%': None,
     '$': None,
-    '&': ',',
+    '&': ",",
     '^': None,
     '*': None,
     '?': None,
@@ -202,6 +203,76 @@ character_map_for_name = {
     '<': None,
     '>': None,
     '|': "_",
-    '?': None,
+    '+': " ",
     '\\': None,
+}
+
+ip_proto = {
+    '0': 'ip',          # ASA
+    '1': 'icmp',        # ASA
+    '2': 'igmp',        # ASA
+    '3': 'ggp',
+    '4': 'ipip',        # ASA
+    '5': 'st',
+    '8': 'egp',
+    '9': 'igp',
+    "11": 'pup',
+    '20': 'hmp',
+    '22': 'xns-idp',
+    '27': 'rdp',
+    '29': 'iso-tp4',
+    '33': 'dccp',
+    '36': 'xtp',
+    '37': 'ddp',
+    '38': 'idpr-cmtp',
+    '41': 'ipv6',
+    '43': 'ipv6-route',
+    '44': 'ipv6-frag',
+    '45': 'idrp',
+    '46': 'rsvp',
+    '47': 'gre',        # ASA
+    '50': 'esp',        # ASA
+    '51': 'ah',         # ASA
+    '57': 'skip',
+    '58': 'ipv6-icmp',  # ASA
+    '59': 'ipv6-nonxt',
+    '60': 'ipv6-opts',
+    '81': 'vmtp',
+    '88': 'eigrp',      # ASA
+    '89': 'ospf',       # ASA
+    '93': 'ax.25',
+    '94': 'nos',        # ASA
+    '97': 'etherip',
+    '98': 'encap',
+    '103': 'pim',       # ASA
+    '108': 'ipcomp',
+    '109': 'snp',        # ASA
+    '112': 'vrrp',
+    '115': 'l2tp',
+    '124': 'isis',
+    '132': 'sctp',
+    '133': 'fc',
+    '135': 'mobility-header',
+    '136': 'udplite',
+    '137': 'mpls-in-ip',
+    '138': 'manet',
+    '139': 'hip',
+    '140': 'shim6',
+    '141': 'wesp',
+    '142': 'rohc'
+}
+
+ug_services = {
+    'https': 'HTTPS',
+    'imap4': 'IMAP',
+    'ntp': 'NTP',
+    'pop3': 'POP3',
+    'postgresql': 'Postgres SQL',
+    'smtp': 'SMTP',
+    'snmp': 'SNMP',
+    'ssh': 'SSH',
+    'www': 'HTTP',
+    '873': 'Rsync',
+    '80': 'HTTP',
+    '5432': 'Postgres SQL',
 }

@@ -183,21 +183,22 @@ class SelectImportMode(QWidget):
         self.utm = None
         self.thread = None
         self.func = {
-            '1. Импорт Зон': tf.ImportZones,
-            '2. Импорт интерфейсов VLAN': None,
-            '3. Импорт шлюзов': tf.ImportGateways,
-            '4. Импорт часового пояса': tf.ImportUi,
-            '5. Импорт серверов DNS': tf.ImportDnsServers,
-            '6. Импорт серверов NTP': tf.ImportNtpSettings,
-            '7. Импорт статических маршрутов': tf.ImportStaticRoutes,
-            '8. Импорт списка сервисов': tf.ImportServices,
-            '9. Импорт групп сервисов': tf.ImportServicesGroups,
-            '10. Импорт списков IP-адресов': tf.ImportIpLists,
-            '11. Импорт списков URL': tf.ImportUrlLists,
-            '12. Импорт групп URL категорий': tf.ImportUrlCategories,
-            '13. Импорт групп приложений': tf.ImportApplicationGroups,
-            '14. Импорт правил МЭ': tf.ImportFirewallRules,
-            '15. Импорт правил КФ': tf.ImportContentRules,
+            '1. Импорт часового пояса': tf.ImportUi,
+            '2. Импорт домена captive-портала': tf.ImportModules,
+            '3. Импорт серверов NTP': tf.ImportNtpSettings,
+            '4. Импорт серверов DNS': tf.ImportDnsServers,
+            '5. Импорт Зон': tf.ImportZones,
+            '6. Импорт интерфейсов VLAN': None,
+            '7. Импорт шлюзов': tf.ImportGateways,
+            '8. Импорт статических маршрутов': tf.ImportStaticRoutes,
+            '9. Импорт списка сервисов': tf.ImportServices,
+            '10. Импорт групп сервисов': tf.ImportServicesGroups,
+            '11. Импорт списков IP-адресов': tf.ImportIpLists,
+            '12. Импорт списков URL': tf.ImportUrlLists,
+            '13. Импорт групп URL категорий': tf.ImportUrlCategories,
+            '14. Импорт групп приложений': tf.ImportApplicationGroups,
+            '15. Импорт правил МЭ': tf.ImportFirewallRules,
+            '16. Импорт правил КФ': tf.ImportContentRules,
         }
 
         title = QLabel("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")
@@ -214,9 +215,9 @@ class SelectImportMode(QWidget):
         self.btn2 = QPushButton("Импорт выбранного раздела")
         self.btn2.setFixedWidth(190)
         self.btn2.clicked.connect(self.import_selected_point)
-        self.btn3 = QPushButton("Импортировать всё")
-        self.btn3.setFixedWidth(140)
-        self.btn3.clicked.connect(self.import_all)
+#        self.btn3 = QPushButton("Импортировать всё")
+#        self.btn3.setFixedWidth(140)
+#        self.btn3.clicked.connect(self.import_all)
         self.btn4 = QPushButton("Сохранить лог")
         self.btn4.setFixedWidth(100)
         self.btn4.clicked.connect(self._save_logs)
@@ -229,7 +230,7 @@ class SelectImportMode(QWidget):
         btn_hbox.addWidget(self.btn1)
         btn_hbox.addStretch()
         btn_hbox.addWidget(self.btn2)
-        btn_hbox.addWidget(self.btn3)
+#        btn_hbox.addWidget(self.btn3)
         btn_hbox.addStretch()
         btn_hbox.addWidget(self.btn4)
 
@@ -250,8 +251,8 @@ class SelectImportMode(QWidget):
         self.btn1.setEnabled(False)
         self.btn2.setStyleSheet('color: gray; background: gainsboro;')
         self.btn2.setEnabled(False)
-        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn3.setEnabled(False)
+#        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+#        self.btn3.setEnabled(False)
         self.btn4.setStyleSheet('color: gray; background: gainsboro;')
         self.btn4.setEnabled(False)
 
@@ -260,8 +261,8 @@ class SelectImportMode(QWidget):
         self.btn1.setEnabled(True)
         self.btn2.setStyleSheet('color: forestgreen; background: white;')
         self.btn2.setEnabled(True)
-        self.btn3.setStyleSheet('color: darkred; background: white;')
-        self.btn3.setEnabled(True)
+#        self.btn3.setStyleSheet('color: darkred; background: white;')
+#        self.btn3.setEnabled(True)
         self.btn4.setStyleSheet('color: steelblue; background: white;')
         self.btn4.setEnabled(True)
 
@@ -278,6 +279,7 @@ class SelectImportMode(QWidget):
             self.get_auth()
 
     def select_item(self, item_text):
+        """Выбрали раздел для импорта."""
         self.selected_point = item_text
 
     def get_auth(self):
@@ -311,7 +313,8 @@ class SelectImportMode(QWidget):
         if self.selected_point:
             self.disable_buttons()
             if self.thread is None:
-                if self.selected_point ==  '2. Импорт интерфейсов VLAN':
+                point_number, point_name = self.selected_point.split('.')
+                if point_number ==  '6':
                     cv = CreateVlans(self, self.utm)
                     self.thread = tf.ImportVlans(self.utm, cv.utm_vlans, cv.utm_zones, cv.new_vlans, cv.ifaces)
                 else:
@@ -375,7 +378,7 @@ class SelectImportMode(QWidget):
         """Возвращаемся на стартовое окно"""
         if self.utm:
             self.utm.logout()
-        self.utm = ""
+        self.utm = None
         self.sg_list.clear()
         self.log_list.clear()
         self.parent.stacklayout.setCurrentIndex(0)
@@ -656,13 +659,14 @@ class ExportList(QDialog):
         except ValueError as err:
             message_alert(self, err, msg)
         else:
-            if int(error) == 5:
-                self.log_list.addItem('')
-                self.log_list.addItem(message)
-                self.log_list.addItem('')
+            if int(error) == 8:
+                self.add_item_list(message, color=5)
+                message_inform(self, 'Конвертация', message)
+            elif int(error) == 9:
+                self.add_item_list(message, color=4)
                 message_inform(self, 'Конвертация', message)
             else:
-                self.log_list.addItem(f'    {message}' if int(error) else message)
+                self.add_item_list(f'    {message}' if int(error) else message, color=int(error))
             self.log_list.scrollToBottom()
 
     def on_finished(self):
@@ -683,8 +687,15 @@ class ExportList(QDialog):
         message_inform(self, 'Сохранение лога экспорта', 'Лог экспорта конфигурации CheckPoint в формат UG NGFW\nсохранён в файл "export.log" в текущей директории.')
         self.parent.stacklayout.setCurrentIndex(0)
 
-    def add_item_list(self, message):
-        self.log_list.addItem(message)
+    def add_item_list(self, message, color=0):
+        """
+        Добавляем запись лога в log_list.
+        Цвета: [darkblue, darkred, black, dimgray, darkorange, darkgreen, dodgerblue]
+        """
+        colors = ['#00008b', '#8b0000', '#000000', '#696969', '#ff8c00', '#006400', '#1e90ff']
+        i = QListWidgetItem(message)
+        i.setForeground(QColor(colors[color]))
+        self.log_list.addItem(i)
 
 #-------------------------------------- Служебные функции --------------------------------------------------
 def create_dir(self, folder):

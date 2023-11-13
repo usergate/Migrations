@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.6
+# Версия 2.7
 #
 
 import os, sys, json
@@ -45,6 +45,7 @@ class ImportAll(QThread):
         import_vlans(self)
         import_gateways(self)
         import_ui(self)
+        import_modules(self)
         import_dns_servers(self)
         import_ntp_settings(self)
         import_static_routes(self)
@@ -83,6 +84,19 @@ class ImportUi(QThread):
 
     def run(self):
         import_ui(self)
+
+
+class ImportModules(QThread):
+    """Импортируем настройки домена captive-портала"""
+    stepChanged = pyqtSignal(str)
+    
+    def __init__(self, utm):
+        super().__init__()
+        self.utm = utm
+        self.error = 0
+
+    def run(self):
+        import_modules(self)
 
 
 class ImportDnsServers(QThread):
@@ -322,6 +336,36 @@ def import_ui(parent):
     out_message = '5|Импортирован часовой пояс в раздел "Настройки/Настройки интерфейса/Часовой пояс".'
     parent.stepChanged.emit('6|Ошибка импорта часового пояса!' if error else out_message)
 
+def import_modules(parent):
+    """Импортируем модули"""
+    parent.stepChanged.emit('0|Импорт домена captive-портала в "Настройки/Модули".')
+    json_file = "data_ug/UserGate/GeneralSettings/config_settings.json"
+    err, data = read_json_file(json_file, '2|Ошибка импорта домена captive-портала!', '2|Нет домена captive-портала для импорта.')
+    if err:
+        parent.stepChanged.emit(data)
+        parent.error = 1
+        return
+
+    params = {
+        'auth_captive': 'Домен Auth captive-портала',
+        'logout_captive': 'Домен Logout captive-портала',
+        'block_page_domain': 'Домен страницы блокировки',
+        'ftpclient_captive': 'FTP поверх HTTP домен',
+    }
+    error = 0
+    
+    for key, value in data.items():
+        err, result = parent.utm.set_settings_param(key, value)
+        if err:
+            parent.stepChanged.emit(f'1|{result}')
+            error = 1
+            parent.error = 1
+        else:
+            parent.stepChanged.emit(f'2|Изменён "{params[key]}".')
+
+    out_message = '5|Настройки домена captive-портала импортированы в раздел "Настройки/Модули".'
+    parent.stepChanged.emit('6|Ошибка импорта домена captive-портала!' if error else out_message)
+
 def import_dns_servers(parent):
     """Импортируем список системных DNS серверов"""
     parent.stepChanged.emit('0|Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
@@ -342,8 +386,8 @@ def import_dns_servers(parent):
                 parent.error = 1
         else:
             parent.stepChanged.emit(f'2|DNS сервер "{item["dns"]}" добавлен.')
-    out_message = '5|Импортированы системные DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".'
-    parent.stepChanged.emit('6|Ошибка импорта DNS-сервера!' if error else out_message)
+    out_message = '5|Импортированы системные DNS-сервера в раздел "Сеть/DNS/Системные DNS-серверы".'
+    parent.stepChanged.emit('6|Ошибка импорта DNS-серверов!' if error else out_message)
 
 def import_ntp_settings(parent):
     """Импортируем настройки NTP"""

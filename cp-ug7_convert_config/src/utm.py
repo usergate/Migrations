@@ -1119,10 +1119,11 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает GUID добавленной группы
 
-    def update_group(self, group):
+    def update_group(self, guid, group):
         """Обновить локальную группу"""
+#        guid = group['id'] if (self.version_hight >= 7 and self.version_midle >= 1) else group['guid']
         try:
-            result = self._server.v3.accounts.group.update(self._auth_token, group['guid'], group)
+            result = self._server.v3.accounts.group.update(self._auth_token, guid, group)
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
@@ -1144,7 +1145,7 @@ class UtmXmlRpc:
             result = self._server.v3.accounts.users.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
             return 1, f"Error get_users_list: [{err.faultCode}] — {err.faultString}"
-        if not self.version_hight >= 7 and not self.version_midle >= 1:
+        if not (self.version_hight >= 7 and self.version_midle >= 1):
             try:
                 for user in result['items']:
                     user['id'] = user.pop('guid')
@@ -1162,12 +1163,13 @@ class UtmXmlRpc:
             else:
                 return 1, f"Error add_user: [{err.faultCode}] — {err.faultString}"
         else:
-            return 0, result     # Возвращает GUID добавленного пользователя
+            return 0, result     # Возвращает ID добавленного пользователя
 
     def update_user(self, user):
         """Обновить локального пользователя"""
+        guid = user['id'] if (self.version_hight >= 7 and self.version_midle >= 1) else user['guid']
         try:
-            result = self._server.v3.accounts.user.update(self._auth_token, user['guid'], user)
+            result = self._server.v3.accounts.user.update(self._auth_token, guid, user)
         except rpc.Fault as err:
             return 1, f"Error utm.update_user: [{err.faultCode}] — {err.faultString}"
         else:
@@ -1207,8 +1209,8 @@ class UtmXmlRpc:
 
     def add_auth_server(self, type, server):
         """Добавить auth сервер"""
-        if server['name'] in self.auth_servers.keys():
-            return 1, f"Сервер авторизации '{server['name']}' уже существует."
+#        if server['name'] in self.auth_servers.keys():
+#            return 1, f"Сервер авторизации '{server['name']}' уже существует."
         try:
             if type == 'ldap':
                 result = self._server.v1.auth.ldap.server.add(self._auth_token, server)
@@ -1226,7 +1228,7 @@ class UtmXmlRpc:
             else:
                 return 1, f"Error utm.add_auth_server: [{err.faultCode}] — {err.faultString}"
         else:
-            self.auth_servers[server['name']] = result
+#            self.auth_servers[server['name']] = result
             return 0, result     # Возвращает ID добавленного сервера авторизации
 
     def get_2fa_profiles(self):

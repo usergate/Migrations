@@ -777,9 +777,10 @@ class ExportList(QDialog):
         self.thread = None
         self.btn2.setStyleSheet('color: forestgreen; background: white;')
         self.btn2.setEnabled(True)
-        # удалить потом
+
         with open("objects.json", "w") as fh:
             json.dump(self.objects, fh, indent=4, ensure_ascii=False)
+
 
     def _save_logs(self):
         list_items = [f"Преобразование конфигурации Gateways policy package - {self.parent.sg_name}",

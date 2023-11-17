@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json
@@ -809,14 +809,14 @@ def import_url_lists(parent):
             parent.stepChanged.emit(f'2|Добавлен список URL: "{data["name"]}".')
 
         if content:
-            err2, result2 = parent.utm.add_template_nlist_items(parent.template_id, url_list[data['name']], content)
-            if err2:
-                parent.stepChanged.emit(f'{err2}|   {result2}')
-                if err2 == 1:
-                    error = 1
-            else:
-#                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено. Added {len(result2)} record.')
-                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено.')
+            for item in content:
+                err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, url_list[data['name']], item)
+                if err2:
+                    parent.stepChanged.emit(f'{err2}|   {result2}')
+                    if err2 == 1:
+                        error = 1
+                else:
+                    parent.stepChanged.emit(f'2|   URL "{item["value"]}" добавлен.')
         else:
             parent.stepChanged.emit(f'2|   Список "{data["name"]}" пуст.')
 

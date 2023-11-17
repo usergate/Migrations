@@ -19,20 +19,21 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json, uuid
 import ipaddress
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import cp_app_category, cp_app_site, new_applicationgroup
-from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name
+from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name, character_map_for_url
 from embedded_objects import embedded_objects
 
 
 content_by_uid = {}
 trans_filename = str.maketrans(character_map_file_name)
 trans_name = str.maketrans(character_map_for_name)
+trans_url = str.maketrans(character_map_for_url)
 
 
 class ConvertAll(QThread):
@@ -356,18 +357,24 @@ def convert_services(parent):
             _, proto = value['type'].split('-')
             parent.objects[key] = ServicePorts.get_dict_by_port(proto, value['port'], value['name'])
             service_name = ServicePorts.get_name_by_port(proto, value['port'], value['name'])
-
-            services[service_name] = {
-                'name': service_name,
-                'description': value['comments'],
-                'protocols': [
-                    {
-                        'proto': proto,
-                        'port': value.get('port', ""),
-                        'source_port': ""
-                    }
-                ]
-            }
+            
+            port = value.get('port', "")
+            if (">" or "<") in port:
+                parent.objects[key]['type'] = 'error'
+                parent.objects[key]['description'] = 'Символы "<" и ">" не поддерживаются в определении порта.'
+                parent.stepChanged.emit(f'3|Warning: Сервис "{service_name}" содержит символы "<" или ">".\nТакое значение порта не поддерживается.')
+            else:
+                services[service_name] = {
+                    'name': service_name,
+                    'description': value['comments'],
+                    'protocols': [
+                        {
+                            'proto': proto,
+                            'port': value.get('port', ""),
+                            'source_port': ""
+                        }
+                    ]
+                }
 
     if not os.path.isdir('data_ug/Libraries/Services'):
         os.makedirs('data_ug/Libraries/Services')
@@ -396,7 +403,7 @@ def convert_services_groups(parent):
 
     for key, value in parent.objects.items():
         if value['type'] == 'service-group':
-            members = {}    # Для members использован словарь для удаления одинаковых сервисов.
+            members = {}  # Для members использован словарь для удаления одинаковых сервисов.
 #            members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members'] if parent.objects.get(uid, None)}
             for uid in value['members']:
                 if uid in parent.objects:
@@ -411,13 +418,16 @@ def convert_services_groups(parent):
                                 {
                                     'proto': service['proto'],
                                     'port': service['port'],
-                                    'source_port': ""
                                 }
                             ]
                         }
+                    else:
+                        continue
                 else:
                     continue
                 members[service['name']] = service['type']
+                if service['type'] == 'error':
+                    parent.stepChanged.emit(f'3|Warning: {service["description"]}\nЭтот сервис не будет добавлен в группу сервисов "{value["name"]}".')
 
             content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
             for item in content:
@@ -448,8 +458,7 @@ def convert_services_groups(parent):
 
         with open("data_ug/Libraries/Services/config_services.json", "w") as fh:
             json.dump(list(services.values()), fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'5|Список сервисов обновлён в файле  "data_ug/Libraries/Services/config_services.json".')
-
+        parent.stepChanged.emit(f'5|Список сервисов обновлён в файле "data_ug/Libraries/Services/config_services.json".')
 
 def convert_ip_lists(parent):
     """
@@ -525,11 +534,15 @@ def convert_ip_lists_groups(parent):
                     if parent.objects[uid]['type'] == 'simple-gateway':
                         content.append({"value": parent.objects[uid]['ipv4-address']})
                     else:
-                        content.append({"list": parent.objects[uid]['name']})
+                        if isinstance(parent.objects[uid]['name'], list):
+                            content.append({"list": parent.objects[uid]['name']})
+                        elif isinstance(parent.objects[uid]['name'], str):
+                            content.append({"list": ['list_id', parent.objects[uid]['name']]})
+                        else:
+                            parent.stepChanged.emit(f'4|Warning! Не определён тип объекта "{parent.objects[uid]["name"]}"')
                 except KeyError:
                     error = 1
                     parent.error = 1
-#                    print(uid)
                     parent.stepChanged.emit(f'4|Warning! В группе IP-аресов "{value["name"]}" присутствует ссылка на несуществующий объект: {uid}.')
             ip_list = {
                 "name": value['name'].translate(trans_name),
@@ -616,7 +629,7 @@ def convert_url_lists(parent):
                 "attributes": {
                     "threat_level": dict_risk.get(value['risk'], 5)
                 },
-                "content": [{'value': url} for url in value['url-list']]
+                "content": [{'value': url.translate(trans_url)} for url in value['url-list']]
             }
 
             file_name = value['name'].translate(trans_filename)
@@ -647,7 +660,7 @@ def convert_application_site_category(parent):
                 error = 1
                 parent.error = 1
                 parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Для категории "{value["name"]}" нет аналога на UG NGFW.'}
-                parent.stepChanged.emit(f'3|Warning! Application-site-category "{value["name"]}" не конвертирована (нет аналога на UG NGFW).')
+                parent.stepChanged.emit(f'4|Warning! Application-site-category "{value["name"]}" не конвертирована (нет аналога на UG NGFW).')
     parent.stepChanged.emit('4|Конвертации application-site-categoty прошла с ошибками. Некоторые категории не перенесены.' if error else '5|Конвертация application-site-category прошла успешно.')
 
 def convert_application_site(parent):
@@ -870,7 +883,7 @@ def convert_access_policy_files(parent):
 
         for item in data:
             if item['type'] == 'access-rule':
-                if 'name' not in item:
+                if 'name' not in item or not item['name'] or item['name'].isspace():
                     item['name'] = str(uuid.uuid4()).split('-')[4]
                 item['name'] = item['name'].translate(trans_name)
                 if item['name'] == 'Cleanup rule':
@@ -1276,9 +1289,22 @@ def make_dirs(parent, folder):
         try:
             os.makedirs(folder)
         except Exception as err:
-            parent.stepChanged.emit(f'1|Error! Ошибка создания каталога: {folder} - {err}')
+            parent.stepChanged.emit(f'2|Error! Ошибка создания каталога: {folder} - {err}')
             return False
         else:
             return True
     else:
         return True
+
+def get_objects(parent):
+    try:
+        with open("objects.json", "w") as fh:
+            return json.load(fh)
+    except FileNotFoundError as err:
+        parent.stepChanged.emit(f'2|Error! Ошибка чтения файла: objects.json - {err}')
+        return False
+
+def set_objects(parent, objects):
+    with open("objects.json", "w") as fh:
+        json.dump(objects, fh, indent=4, ensure_ascii=False)
+

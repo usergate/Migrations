@@ -2075,7 +2075,7 @@ class UTM(UtmXmlRpc):
         _, data = self.get_groups_list()
 
         for item in data:
-            _, users = self.get_group_users(item['guid'])
+            _, users = self.get_group_users(item.get('guid', item['id']))
             item.pop('cc', None)
             if self.version.startswith('5'):
                 item['users'] = [x['name'] for x in users]
@@ -2139,7 +2139,10 @@ class UTM(UtmXmlRpc):
         _, data = self.get_users_list()
 
         for item in data:
-            item.pop('guid')
+            if 'guid' in item:
+                item.pop('guid', None)
+            else:
+                item.pop('id', None)
             item.pop('creation_date')
             item.pop('expiration_date')
             item.pop('cc', None)
@@ -4043,9 +4046,8 @@ class UTM(UtmXmlRpc):
             self.get_names_users_and_groups(item)
             item['services'] = self.get_services(item['name'], item['services'])
             self.set_time_restrictions(item)
-            item['dos_profile'] = dos_profiles[item['dos_profile']]
-            if item['scenario_rule_id']:
-                item['scenario_rule_id'] = self.scenarios_rules[item['scenario_rule_id']]
+            item['dos_profile'] = dos_profiles.get(item['dos_profile'], False)
+            item['scenario_rule_id'] = self.scenarios_rules.get(item['scenario_rule_id'], False)
 
         with open("data/SecurityPolicies/DoSRules/config_dos_rules.json", "w") as fd:
             json.dump(data, fd, indent=4, ensure_ascii=False)

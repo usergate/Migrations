@@ -25,12 +25,14 @@
 import os, sys, json, uuid
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import cp_app_category, cp_app_site, new_applicationgroup
-from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name
+from services import ServicePorts, dict_risk, character_map, character_map_file_name, character_map_for_name, character_map_for_url
+from embedded_objects import embedded_objects
 
 
 content_by_uid = {}
 trans_filename = str.maketrans(character_map_file_name)
 trans_name = str.maketrans(character_map_for_name)
+trans_url = str.maketrans(character_map_for_url)
 
 
 class ConvertAll(QThread):
@@ -179,7 +181,7 @@ def convert_config_cp(parent):
             "kind": "vlan",
             "enabled": False,
             "description": "",
-            "zone_id": "",
+            "zone_id": 0,
             "master": False,
             "netflow_profile": "undefined",
             "running": False,
@@ -352,18 +354,24 @@ def convert_services(parent):
             _, proto = value['type'].split('-')
             parent.objects[key] = ServicePorts.get_dict_by_port(proto, value['port'], value['name'])
             service_name = ServicePorts.get_name_by_port(proto, value['port'], value['name'])
-
-            services[service_name] = {
-                'name': service_name,
-                'description': value['comments'],
-                'protocols': [
-                    {
-                        'proto': proto,
-                        'port': value.get('port', ""),
-                        'source_port': ""
-                    }
-                ]
-            }
+            
+            port = value.get('port', "")
+            if (">" or "<") in port:
+                parent.objects[key]['type'] = 'error'
+                parent.objects[key]['description'] = 'Символы "<" и ">" не поддерживаются в определении порта.'
+                parent.stepChanged.emit(f'3|Warning: Сервис "{service_name}" содержит символы "<" или ">".\nТакое значение порта не поддерживается.')
+            else:
+                services[service_name] = {
+                    'name': service_name,
+                    'description': value['comments'],
+                    'protocols': [
+                        {
+                            'proto': proto,
+                            'port': value.get('port', ""),
+                            'source_port': ""
+                        }
+                    ]
+                }
 
     if not os.path.isdir('data_ug/Libraries/Services'):
         os.makedirs('data_ug/Libraries/Services')
@@ -388,15 +396,40 @@ def convert_services_groups(parent):
     with open("data_ug/Libraries/Services/config_services.json", "r") as fh:
         data = json.load(fh)
     services = {x['name']: x for x in data}
+    len_1 = len(services)
 
     for key, value in parent.objects.items():
         if value['type'] == 'service-group':
-            # Для members использован словарь для удаления одинаковых сервисов.
-            members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members'] if parent.objects.get(uid, None)}
-            content = [services[x['name']] for x in members.values() if x['type'] != 'error']
+            members = {}  # Для members использован словарь для удаления одинаковых сервисов.
+#            members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members'] if parent.objects.get(uid, None)}
+            for uid in value['members']:
+                if uid in parent.objects:
+                    service = parent.objects[uid]
+                elif uid in embedded_objects:
+                    service = embedded_objects[uid]
+                    if service['type'] == 'service':
+                        services[service['name']] = {
+                            'name': service['name'],
+                            'description': service['description'],
+                            'protocols': [
+                                {
+                                    'proto': service['proto'],
+                                    'port': service['port'],
+                                }
+                            ]
+                        }
+                    else:
+                        continue
+                else:
+                    continue
+                members[service['name']] = service['type']
+                if service['type'] == 'error':
+                    parent.stepChanged.emit(f'3|Warning: {service["description"]}\nЭтот сервис не будет добавлен в группу сервисов "{value["name"]}".')
+
+            content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
             for item in content:
                 for x in item['protocols']:
-                    x.pop('source_port')
+                    x.pop('source_port', None)
 
             services_group = {
                 "name": value['name'],
@@ -413,6 +446,16 @@ def convert_services_groups(parent):
             with open(f"data_ug/Libraries/ServicesGroups/{value['name']}.json", "w") as fh:
                 json.dump(services_group, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'2|Группа сервисов {value["name"]} выгружена в файл  "data_ug/Libraries/ServicesGroups/{value["name"]}.json".')
+
+    len_2 = len(services)
+    if len_1 != len_2:
+        for item in services.values():
+            for x in item['protocols']:
+                x['source_port'] = ''
+
+        with open("data_ug/Libraries/Services/config_services.json", "w") as fh:
+            json.dump(list(services.values()), fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'5|Список сервисов обновлён в файле "data_ug/Libraries/Services/config_services.json".')
 
 def convert_ip_lists(parent):
     """
@@ -492,7 +535,12 @@ def convert_ip_lists_groups(parent):
                     if parent.objects[uid]['type'] == 'simple-gateway':
                         content.append({"value": parent.objects[uid]['ipv4-address']})
                     else:
-                        content.append({"list": parent.objects[uid]['name']})
+                        if isinstance(parent.objects[uid]['name'], list):
+                            content.append({"list": parent.objects[uid]['name']})
+                        elif isinstance(parent.objects[uid]['name'], str):
+                            content.append({"list": ['list_id', parent.objects[uid]['name']]})
+                        else:
+                            parent.stepChanged.emit(f'4|Warning! Не определён тип объекта "{parent.objects[uid]["name"]}"')
                 except KeyError:
                     error = 1
                     parent.error = 1
@@ -586,7 +634,7 @@ def convert_url_lists(parent):
                 "attributes": {
                     "threat_level": dict_risk.get(value['risk'], 5)
                 },
-                "content": [{'value': url} for url in value['url-list']]
+                "content": [{'value': url.translate(trans_url)} for url in value['url-list']]
             }
 
             file_name = value['name'].translate(trans_filename)
@@ -840,7 +888,7 @@ def convert_access_policy_files(parent):
 
         for item in data:
             if item['type'] == 'access-rule':
-                if 'name' not in item:
+                if 'name' not in item or not item['name'] or item['name'].isspace():
                     item['name'] = str(uuid.uuid4()).split('-')[4]
                 item['name'] = item['name'].translate(trans_name)
                 if item['name'] == 'Cleanup rule':

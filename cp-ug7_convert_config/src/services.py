@@ -207,6 +207,16 @@ character_map_for_name = {
     '\\': None,
 }
 
+character_map_for_url = {
+    '{': None,
+    '}': None,
+    '(': None,
+    ')': None,
+    '[': None,
+    ']': None,
+    '\\': None,
+}
+
 ip_proto = {
     '0': 'ip',          # ASA
     '1': 'icmp',        # ASA

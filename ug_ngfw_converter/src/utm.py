@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.8
+# Версия 3.9
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -918,7 +918,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.shaper.pool.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Ошибка utm.get_shaper_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Ошибка utm.get_shaper_list: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def add_shaper(self, shaper):
@@ -1061,7 +1061,7 @@ class UtmXmlRpc:
             try:
                 result = self._server.v1.notification.profile.add(self._auth_token, profile)
             except rpc.Fault as err:
-                return 1, f"Error utm.add_notification_profiles: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_notification_profiles: [{err.faultCode}] — {err.faultString}'
             return 0, result     # Возвращает ID добавленного профиля
         
     def update_notification_profile(self, profile):
@@ -1072,25 +1072,40 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            return 1, f"Error utm.update_notification_profile: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_notification_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
     def get_idps_signatures_list(self):
         """Получить список сигнатур IDPS"""
-        idps = {}
         try:
             result = self._server.v1.idps.signatures.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
-            return 1, f"Error utm.get_idps_signatures_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_idps_signatures_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list сигнатур
+
+    def get_idps_profiles_list(self):
+        """Получить список профилей СОВ. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.idps.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_idps_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает list
+
+    def get_l7_profiles_list(self):
+        """Получить список профилей приложений. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.l7.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_l7_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает list
 
     def get_netflow_profiles_list(self):
         """Получить список профилей netflow раздела Библиотеки"""
         try:
             result = self._server.v1.netmanager.netflow.profiles.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_notification_profiles_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_notification_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_netflow_profile(self, profile):
@@ -1103,7 +1118,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f'Профиль netflow "{profile["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_netflow_profile: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_netflow_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного профиля
 
@@ -1114,7 +1129,7 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            return 1, f"Error utm.update_netflow_profile: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_netflow_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1123,7 +1138,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.netmanager.lldp.profiles.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_lldp_profiles_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_lldp_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список словарей
 
     def add_lldp_profile(self, profile):
@@ -1136,7 +1151,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f'Профиль lldp "{profile["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_lldp_profile: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_lldp_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного профиля
 
@@ -1147,7 +1162,7 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            return 1, f"Error utm.update_lldp_profile: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_lldp_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1156,7 +1171,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, '')
         except rpc.Fault as err:
-            return 1, f"Error get_ssl_profiles_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error get_ssl_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_ssl_profile(self, profile):
@@ -1169,7 +1184,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f'Профиль SSL: "{profile["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_ssl_profile: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_ssl_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного профиля
 
@@ -1180,9 +1195,17 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            return 1, f"Error utm.update_ssl_profile: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_ssl_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
+
+    def get_hip_profiles_list(self):
+        """Получить список профилей HIP раздела Библиотеки"""
+        try:
+            result = self._server.v1.hip.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error get_hip_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
 
 ################################### Пользователи и устройства #####################################
     def get_groups_list(self):
@@ -1565,6 +1588,8 @@ class UtmXmlRpc:
     def get_ldap_group_name(self, group_guid):
         """Получить имя группы LDAP по её GUID"""
         user = []
+        if self.version_hight >= 7 and self.version_midle >= 1:
+            group_guid = group_guid.split(':')[1]
         try:
             result = self._server.v1.ldap.group.fetch(self._auth_token, group_guid)
         except rpc.Fault as err:
@@ -1645,9 +1670,9 @@ class UtmXmlRpc:
     def get_firewall_rules(self):
         """Получить список правил межсетевого экрана"""
         try:
-            result = self._server.v1.firewall.rules.list(self._auth_token, 0, 5000, {})
+            result = self._server.v1.firewall.rules.list(self._auth_token, 0, 20000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_firewall_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_firewall_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_firewall_rule(self, rule):
@@ -1655,12 +1680,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.firewall.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 110:
-                return 1, f'Error: Правило МЭ "{rule["name"]}" не добавлено — {err.faultString}.'
-            elif err.faultCode == 111:
-                return 1, f"Error: Правило '{rule['name']}' не добавлено. [{err.faultString}]"
-            else:
-                return 1, f"Error utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_firewall_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -1669,7 +1689,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.firewall.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_firewall_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_firewall_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1678,31 +1698,24 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.traffic.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_traffic_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_traffic_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_traffic_rule(self, rule):
         """Добавить новое правило NAT"""
-        if rule['name'] in self.nat_rules.keys():
-            return 2, f'\tПравило "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.traffic.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f'Error utm.add_traffic_rule: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error utm.add_traffic_rule: [{err.faultCode}] — {err.faultString}'
         else:
-            self.nat_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
-    def update_traffic_rule(self, rule):
+    def update_traffic_rule(self, rule_id, rule):
         """Обновить правило NAT"""
         try:
-            rule_id = self.nat_rules[rule['name']]
             result = self._server.v1.traffic.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_traffic_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_traffic_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1713,83 +1726,60 @@ class UtmXmlRpc:
             icap = self._server.v1.icap.loadbalancing.rules.list(self._auth_token)
             reverse = self._server.v1.reverseproxy.loadbalancing.rules.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"error utm.get_loadbalancing_rules: [{err.faultCode}] — {err.faultString}"
-        return 0, (tcpudp, icap, reverse)
+            return 1, f'error utm.get_loadbalancing_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, tcpudp, icap, reverse
 
     def add_virtualserver_rule(self, rule):
         """Добавить новое правило балансировки нагрузки TCP/UDP"""
-        if rule['name'] in self.tcpudp_rules.keys():
-            return 2, f'\tПравило "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.virtualserver.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 409:
-                return 2, f'Правило "{rule["name"]}" уже существует.'
-            elif err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_virtualserver_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_virtualserver_rule: [{err.faultCode}] — {err.faultString}'
         else:
-            self.tcpudp_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
-    def update_virtualserver_rule(self, rule):
+    def update_virtualserver_rule(self, rule_id, rule):
         """Обновить правило балансировки нагрузки TCP/UDP"""
         try:
-            rule_id = self.tcpudp_rules[rule['name']]
             result = self._server.v1.virtualserver.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_virtualserver_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_virtualserver_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
     def add_icap_loadbalancing_rule(self, rule):
         """Добавить новое правило балансировки нагрузки ICAP"""
-        if rule['name'] in self.icap_loadbalancing.keys():
-            return 2, f'\tПравило "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.icap.loadbalancing.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_icap_loadbalancing_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_icap_loadbalancing_rule: [{err.faultCode}] — {err.faultString}'
         else:
-            self.icap_loadbalancing[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
-    def update_icap_loadbalancing_rule(self, rule):
+    def update_icap_loadbalancing_rule(self, rule_id, rule):
         """Обновить правило балансировки нагрузки ICAP"""
         try:
-            rule_id = self.icap_loadbalancing[rule['name']]
             result = self._server.v1.icap.loadbalancing.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_icap_loadbalancing_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_icap_loadbalancing_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
     def add_reverse_loadbalancing_rule(self, rule):
         """Добавить новое правило балансировки нагрузки reverse-proxy"""
-        if rule['name'] in self.reverse_rules.keys():
-            return 2, f'\tПравило "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.reverseproxy.loadbalancing.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_reverse_loadbalancing_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_reverse_loadbalancing_rule: [{err.faultCode}] — {err.faultString}'
         else:
-            self.reverse_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
-    def update_reverse_loadbalancing_rule(self, rule):
+    def update_reverse_loadbalancing_rule(self, rule_id, rule):
         """Обновить правило балансировки нагрузки reverse-proxy"""
         try:
-            rule_id = self.reverse_rules[rule['name']]
             result = self._server.v1.reverseproxy.loadbalancing.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_reverse_loadbalancing_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_reverse_loadbalancing_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1798,22 +1788,16 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.shaper.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_shaper_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_shaper_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def add_shaper_rule(self, shaper_rules, rule):
+    def add_shaper_rule(self, rule):
         """Добавить новое правило пропускной способности"""
-        if rule['name'] in shaper_rules.keys():
-            return 2, f'\tПравило "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.shaper.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_shaper_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_shaper_rule: [{err.faultCode}] — {err.faultString}'
         else:
-            shaper_rules[rule['name']] = result
             return 0, result     # Возвращает ID добавленного правила
 
     def update_shaper_rule(self, rule_id, rule):
@@ -1821,7 +1805,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.shaper.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Return utm.update_shaper_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_shaper_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2112,8 +2096,8 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.icap.profiles.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_icap_servers: [{err.faultCode}] — {err.faultString}"
-        return 0, result
+            return 1, f'Error utm.get_icap_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает список настроек ICAP серверов
 
     def add_icap_server(self, profile):
         """Добавить новый ICAP сервер"""
@@ -2256,12 +2240,12 @@ class UtmXmlRpc:
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
                 result = self._server.v1.reverseproxy.profiles.list(self._auth_token, 0, 1000, {}, [])
-                return 0, result['items']
+                return 0, result['items']   # Возвращает список настроек серверов reverse-прокси
             else:
                 result = self._server.v1.reverseproxy.profiles.list(self._auth_token)
-                return 0, result
+                return 0, result   # Возвращает список настроек серверов reverse-прокси
         except rpc.Fault as err:
-            return 1, f"Error utm.get_reverseproxy_servers: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_reverseproxy_servers: [{err.faultCode}] — {err.faultString}'
  
     def add_reverseproxy_servers(self, profile):
         """Добавить новый сервер reverse-прокси"""

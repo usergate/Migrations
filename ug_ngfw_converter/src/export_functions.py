@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.3
+# Версия 0.4
 #
 
 import os, sys, json
@@ -42,6 +42,11 @@ class ExportAll(QThread):
         self.base_path = base_path
         self.all_points = all_points
         self.ssl_profiles = {}
+        self.servicegroups_list = {}
+        self.l7_categories = {}             # Устанавливаются через функцию set_appps_values()
+        self.l7_apps = {}                   # -- // --
+        self.list_applicationgroup = {}     # -- // --
+        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
         self.default_urlcategorygroup = {
@@ -122,6 +127,19 @@ class ExportAll(QThread):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.list_calendar = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        # Получаем список сервисов
+        err, result = self.utm.get_services_list()
+        if err:
+            self.stepChanged.emit(f'iRED|{result}')
+            return
+        self.services_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        # Получаем список групп сервисов
+        if self.version >= 7:
+            err, result = self.utm.get_nlists_list('servicegroup')
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.servicegroups_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
     def run(self):
         """Экспортируем всё в пакетном режиме"""
@@ -149,6 +167,11 @@ class ExportSelectedPoints(QThread):
         self.selected_path = selected_path
         self.selected_points = selected_points
         self.ssl_profiles = {}
+        self.servicegroups_list = {}
+        self.l7_categories = {}             # Устанавливаются через set_appps_values()
+        self.l7_apps = {}                   # -- // --
+        self.list_applicationgroup = {}     # -- // --
+        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
         self.default_urlcategorygroup = {
@@ -229,6 +252,19 @@ class ExportSelectedPoints(QThread):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.list_calendar = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        # Получаем список сервисов
+        err, result = self.utm.get_services_list()
+        if err:
+            self.stepChanged.emit(f'iRED|{result}')
+            return
+        self.services_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        # Получаем список групп сервисов
+        if self.version >= 7:
+            err, result = self.utm.get_nlists_list('servicegroup')
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.servicegroups_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
     def run(self):
         """Экспортируем определённый раздел конфигурации"""
@@ -1509,7 +1545,7 @@ def export_captive_portal_rules(parent, path):
 
     err, result = parent.utm.get_captive_profiles()
     if err:
-        parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     captive_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
@@ -1618,7 +1654,7 @@ def export_userid_agent(parent, path):
 
     err, result = parent.utm.get_useridagent_filters()
     if err:
-        parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     useridagent_filters = {x['id']: x['name'] for x in result}
@@ -1660,9 +1696,301 @@ def export_userid_agent(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек UserID агент.' if error else out_message)
 
 
+def export_firewall_rules(parent, path):
+    """Экспортируем список правил межсетевого экрана"""
+    parent.stepChanged.emit('BLUE|Экспорт правил межсетевого экрана из раздела "Политики сети/Межсетевой экран".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    if not parent.scenarios_rules:
+        err = set_scenarios_rules(parent)
+        if err:
+            parent.error = 1
+            return
+
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_idps_profiles_list()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        idps_profiles = {x['id']: x['name'] for x in result}
+
+        err, result = parent.utm.get_l7_profiles_list()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        l7_profiles = {x['id']: x['name'] for x in result}
+
+        err, result = parent.utm.get_hip_profiles_list()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        hip_profiles = {x['id']: x['name'] for x in result}
+
+    duplicate = {}
+    err, data = parent.utm.get_firewall_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            if item['name'] in duplicate.keys():
+                num = duplicate[item['name']]
+                num = num + 1
+                duplicate[item['name']] = num
+                item['name'] = f"{item['name']} {num}"
+            else:
+                duplicate[item['name']] = 0
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('rownumber', None)
+            item.pop('active', None)
+            item.pop('deleted_users', None)
+
+            if item['scenario_rule_id']:
+                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['services'] = get_services(parent, item['services'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            if 'apps' in item:
+                item['apps'] = get_apps(parent, item['apps'], item['name'])
+            if 'ips_profile' in item and item['ips_profile']:
+                item['ips_profile'] = idps_profiles[item['ips_profile']]
+            if 'l7_profile' in item and item['l7_profile']:
+                item['l7_profile'] = l7_profiles[item['l7_profile']]
+            if 'hip_profiles' in item:
+                item['hip_profiles'] = [hip_profiles[x] for x in item['hip_profiles']]
+
+        json_file = os.path.join(path, 'config_firewall_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила межсетевого экрана выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил межсетевого экрана.' if error else out_message)
+
+
+def export_nat_rules(parent, path):
+    """Экспортируем список правил NAT"""
+    parent.stepChanged.emit('BLUE|Экспорт правил NAT из раздела "Политики сети/NAT и маршрутизация".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_gateways_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        error = 1
+    ngfw_gateways = {f'{x["id"]}:{x["node_name"]}': x['name'] for x in result if 'name' in x}
+
+    if not parent.scenarios_rules:
+        err = set_scenarios_rules(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, data = parent.utm.get_traffic_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item.pop('guid', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            if item['scenario_rule_id']:
+                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+            item['zone_in'] = get_zones_name(parent, item['zone_in'], item['name'])
+            item['zone_out'] = get_zones_name(parent, item['zone_out'], item['name'])
+            item['source_ip'] = get_ips_name(parent, item['source_ip'], item['name'])
+            item['dest_ip'] = get_ips_name(parent, item['dest_ip'], item['name'])
+            item['service'] = get_services(parent, item['service'], item['name'])
+            item['gateway'] = ngfw_gateways.get(item['gateway'], item['gateway'])
+            if parent.version >= 6:
+                item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            else:
+                item['users'] = []
+                item['position_layer'] = 'local'
+                item['time_created'] = ''
+                item['time_updated'] = ''
+
+        json_file = os.path.join(path, 'config_nat_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила NAT выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил NAT.' if error else out_message)
+
+
+def export_loadbalancing_rules(parent, path):
+    """Экспортируем список правил балансировки нагрузки"""
+    parent.stepChanged.emit('BLUE|Экспорт правил балансировки нагрузки из раздела "Политики сети/Балансировка нагрузки".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_icap_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    icap_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_reverseproxy_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverse_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, tcpudp, icap, reverse = parent.utm.get_loadbalancing_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {tcpudp}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in tcpudp:
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            if parent.version < 7.1:
+                item['src_zones'] = []
+                item['src_zones_negate'] = False
+                item['src_ips'] = []
+                item['src_ips_negate'] = False
+            else:
+                item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+                item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+        json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
+        with open(json_file, 'w') as fh:
+            json.dump(tcpudp, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список балансировщиков TCP/UDP выгружен в файл "{json_file}".')
+
+        for item in icap:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            item['profiles'] = [icap_servers[x] for x in item['profiles']]
+        json_file = os.path.join(path, 'config_loadbalancing_icap.json')
+        with open(json_file, 'w') as fh:
+            json.dump(icap, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список балансировщиков ICAP выгружен в файл "{json_file}".')
+
+        for item in reverse:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            item['profiles'] = [reverse_servers[x] for x in item['profiles']]
+        json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
+        with open(json_file, 'w') as fh:
+            json.dump(reverse, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список балансировщиков reverse-прокси выгружен в файл "{json_file}".')
+
+    out_message = f'GREEN|    Правила балансировки нагрузки выгружены в каталог "{path}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил балансировки нагрузки.' if error else out_message)
+
+
+def export_shaper_rules(parent, path):
+    """Экспортируем список правил пропускной способности"""
+    parent.stepChanged.emit('BLUE|Экспорт правил пропускной способности из раздела "Политики сети/Пропускная способность".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    if not parent.scenarios_rules:
+        err = set_scenarios_rules(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, result = parent.utm.get_shaper_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    shaper_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_shaper_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('rownumber', None)
+            item.pop('guid', None)
+            item.pop('deleted_users', None)
+            item.pop('active', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            if item['scenario_rule_id']:
+                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['services'] = get_services(parent, item['services'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['apps'] = get_apps(parent, item['apps'], item['name'])
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            item['pool'] = shaper_list[item['pool']]
+            if parent.version < 6:
+                item['position_layer'] = 'local'
+                item['limit'] = True
+                item['limit_value'] = '3/h'
+                item['limit_burst'] = 5
+                item['log'] = False
+                item['log_session_start'] = True
+
+        json_file = os.path.join(path, 'config_shaper_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила пропускной способности выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил пропускной способности.' if error else out_message)
+
+
 def pass_function(parent, path):
     """Функция заглушка"""
     parent.stepChanged.emit(f'GRAY|Экспорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
+
 
 func = {
     'GeneralSettings':  export_general_settings,
@@ -1691,6 +2019,10 @@ func = {
     'UserIDagent': export_userid_agent,
     'BYODPolicies': export_byod_policy,
     'BYODDevices': pass_function,
+    'Firewall': export_firewall_rules,
+    'NATandRouting': export_nat_rules,
+    'LoadBalancing': export_loadbalancing_rules,
+    'TrafficShaping': export_shaper_rules,
 }
 
 
@@ -2059,116 +2391,6 @@ def import_application_groups(parent):
     out_message = '5|Группы приложений импортированы в раздел "Библиотеки/Приложения".'
     parent.stepChanged.emit('6|Произошла ошибка при импорте групп приложений!' if error else out_message)
 
-def import_firewall_rules(parent):
-    """Импортировать список правил межсетевого экрана"""
-    parent.stepChanged.emit('0|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
-
-    json_file = "data_ug/NetworkPolicies/Firewall/config_firewall_rules.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта правил межсетевого экрана!', '2|Нет правил межсетевого экрана для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_firewall_rules()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    firewall_rules = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_zones_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    zones_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_services_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    services_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('servicegroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    servicegroups_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('network')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    ips_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_l7_categories()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    l7categories = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('applicationgroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    applicationgroup = {x['name']: x['id'] for x in result}
-
-    error = 0
-    for item in data:
-        item['position'] = 'last'
-        item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
-        item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
-        for service in item['services']:
-            try:
-                service[1] = services_list[service[1]] if service[0] == 'service' else servicegroups_list[service[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найден сервис {service} для правила {item["name"]}.')
-        for app in item['apps']:
-            try:
-                app[1] = l7categories[app[1]] if app[0] == 'ro_group' else applicationgroup[app[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найдена группа приложений {err} для правила "{item["name"]}". Загрузите группы приложений и повторите попытку.')
-
-        get_guids_users_and_groups(parent, item)
-#        parent.set_time_restrictions(item)
-        if item['name'] in firewall_rules:
-            parent.stepChanged.emit(f'2|Правило МЭ "{item["name"]}" уже существует.')
-            item.pop('position', None)
-            err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
-            if err:
-                error = 1
-                parent.stepChanged.emit(f'1|{result}')
-            else:
-                parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" обновлено.')
-        else:
-            err, result = parent.utm.add_firewall_rule(item)
-            if err:
-                error = 1
-                parent.stepChanged.emit(f'1|{result}')
-            else:
-                firewall_rules[item['name']] = result
-                parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" добавлено.')
-    if error:
-        parent.error = 1
-    out_message = '5|Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте правил межсетевого экрана!' if error else out_message)
 
 def import_content_rules(parent):
     """Импортировать список правил фильтрации контента"""
@@ -2339,7 +2561,7 @@ def get_time_restrictions_name(parent, times, rule_name):
 
 def get_names_users_and_groups(parent, users, rule_name):
     """
-    Получить имена групп и пользователей по их GUID.
+    Получаем имена групп и пользователей по их GUID.
     Заменяет GUID локальных/доменных пользователей и групп на имена.
     """
     new_users = []
@@ -2374,6 +2596,80 @@ def get_names_users_and_groups(parent, users, rule_name):
                 else:
                     new_users.append(['group', group_name])
     return new_users
+
+def get_services(parent, service_list, rule_name):
+    """Получаем имена сервисов по их ID. Если сервис не найден, то он пропускается."""
+    new_service_list = []
+    if parent.version < 7:
+        for item in service_list:
+            try:
+                new_service_list.append(['service', parent.services_list[item]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{item}" для правила "{rule_name}".')
+    else:
+        for item in service_list:
+            try:
+                new_service_list.append(['service', parent.services_list[item[1]]] if item[0] == 'service' else ['list_id', parent.servicegroups_list[item[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error! Не найдена группа сервисов "{item}" для правила "{rule_name}".')
+    return new_service_list
+
+def set_apps_values(parent):
+    """Устанавливаем в parent значения атрибутов: l7_categories, l7_apps, list_applicationgroup"""
+    err, result = parent.utm.get_l7_categories()
+    if err:
+        parent.stepChanged.emit(f'iRED|{result}')
+        return 1
+    parent.l7_categories = {x['id']: x['name'] for x in result}
+
+    err, result = parent.utm.get_l7_apps()
+    if err:
+        parent.stepChanged.emit(f'iRED|{result}')
+        return 1
+    parent.l7_apps = {x['id']: x['name'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('applicationgroup')
+    if err:
+        parent.stepChanged.emit(f'iRED|{result}')
+        return 1
+    parent.list_applicationgroup = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    return 0
+
+def get_apps(parent, array_apps, rule_name):
+    """Определяем имя приложения или группы приложений по ID."""
+    new_app_list = []
+    for app in array_apps:
+        if app[0] == 'ro_group':
+            if app[1] == 0:
+                new_app_list.append(['ro_group', 'All'])
+            else:
+                try:
+                    new_app_list.append(['ro_group', parent.l7_categories[app[1]]])
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error! Не найдена категория l7 №{err} для правила "{rule_name}".')
+                    parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и UTM не получил список категорий l7. Установите лицензию и повторите попытку.')
+        elif app[0] == 'group':
+            try:
+                new_app_list.append(['group', parent.list_applicationgroup[app[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error! Не найдена группа приложений l7 №{err} для правила "{rule_name}".')
+        elif app[0] == 'app':
+            try:
+                new_app_list.append(['app', parent.l7_apps[app[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error! Не найдено приложение №{err} для правила "{rule_name}".')
+                parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и UTM не получил список приложений l7. Установите лицензию и повторите попытку.')
+    return new_app_list
+
+def set_scenarios_rules(parent):
+    """Устанавливаем в parent значение атрибута: scenarios_rules"""
+    err, result = parent.utm.get_scenarios_rules()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        return 1
+    parent.scenarios_rules = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+    return 0
 
 def translate_iface_name(ngfw_version, path, data):
     """Преобразуем имена интерфейсов для версии 5 (eth меняется на port, так же меняются имена vlan)"""

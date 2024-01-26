@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.4
+# Версия 0.5
 #
 
 import os, sys, json, time
@@ -2416,6 +2416,1650 @@ def import_shaper_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.' if error else out_message)
 
 
+def import_morphology_lists(parent, path):
+    """Импортируем списки морфологии"""
+    parent.stepChanged.emit('BLUE|Импорт списков морфологии в раздел "Библиотеки/Морфология".')
+    error = 0
+    json_file = os.path.join(path, 'config_morphology_lists.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_nlists_list('morphology')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    morphology_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        content = item.pop('content')
+        item.pop('last_update', None)
+        if parent.version < 6:
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+            attributes = []
+            attributes.append({'name': 'weight', 'value': item['attributes']['threshold']})
+            attributes.append({'name': 'threat_level', 'value': item['attributes']['threat_level']})
+            item['attributes'] = attributes
+
+        if item['name'] in morphology_list:
+            parent.stepChanged.emit(f'GRAY|    Список морфологии "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(morphology_list[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список морфологии: {item["name"]}]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Список морфологии "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список морфологии: "{item["name"]}"]')
+                continue
+            else:
+                morphology_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Список морфологии "{item["name"]}" добавлен.')
+
+        err2, result2 = parent.utm.add_nlist_items(morphology_list[item['name']], content)
+        if err2 == 2:
+            parent.stepChanged.emit(f'GRAY|       {result2}')
+        elif err2 == 1:
+            error = 1
+            parent.stepChanged.emit(f'RED|       {result2}  [Список морфологии: "{item["name"]}"]')
+        else:
+            parent.stepChanged.emit(f'BLACK|       Содержимое списка морфологии "{item["name"]}" обновлено.')
+
+    if parent.version == 7.0:
+        parent.stepChanged.emit(f'rNOTE|    В версии 7.0 не импортируется содержимое списков морфологии, если прописаны слова в русском регистре.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Списки морфологии импортированны в раздел "Библиотеки/Морфология".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков морфологии.' if error else out_message)
+
+
+def import_services_list(parent, path):
+    """Импортируем список сервисов раздела библиотеки"""
+    parent.stepChanged.emit('BLUE|Импорт списка сервисов в раздел "Библиотеки/Сервисы"')
+    json_file = os.path.join(path, 'config_services_list.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    error = 0
+    
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        for value in item['protocols']:
+            if parent.version < 7.1:
+                value.pop('alg', None)
+                if parent.version < 6:
+                    value.pop('app_proto', None)
+                    if value['port'] in ('110', '995'):
+                        value['proto'] = 'tcp'
+        
+        if item['name'] in parent.services_list:
+            parent.stepChanged.emit(f'GRAY|    Сервис "{item["name"]}" уже существует.')
+        else:
+            err, result = parent.utm.add_service(item)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}  [Сервис: "{item["name"]}"]')
+                error = 1
+                parent.error = 1
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.services_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Сервис "{item["name"]}" добавлен.')
+
+    out_message = 'GREEN|    Список сервисов импортирован в раздел "Библиотеки/Сервисы"'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при добавлении сервисов!' if error else out_message)
+
+
+def import_services_groups(parent, path):
+    """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
+    parent.stepChanged.emit('BLUE|Импорт групп сервисов в раздел "Библиотеки/Группы сервисов".')
+    json_file = os.path.join(path, 'config_services_groups_list.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    for item in data:
+        content = item.pop('content')
+        item.pop('last_update', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        
+        if item['name'] in parent.servicegroups_list:
+            parent.stepChanged.emit(f'GRAY|    Группа сервисов "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(parent.servicegroups_list[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Группа сервисов: "{item["name"]}"]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Группа сервисов "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Группа сервисов: "{item["name"]}"]')
+                continue
+            else:
+                parent.servicegroups_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Группа сервисов "{item["name"]}" добавлена.')
+
+        if content:
+            err2, result2 = parent.utm.add_nlist_items(parent.servicegroups_list[item['name']], content)
+            if err2 == 1:
+                parent.stepChanged.emit(f'RED|       {result2}  [Группа сервисов: "{item["name"]}"]')
+                error = 1
+            elif err2 == 2:
+                parent.stepChanged.emit(f'GRAY|       {result2}')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Содержимое группы сервисов "{item["name"]}" обновлено.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп сервисов.' if error else out_message)
+
+
+def import_ip_lists(parent, path):
+    """Импортируем списки IP адресов"""
+    parent.stepChanged.emit('BLUE|Импорт списков IP-адресов в раздел "Библиотеки/IP-адреса".')
+    error = 0
+
+    if not os.path.isdir(path):
+        parent.stepChanged.emit("GRAY|    Нет списков IP-адресов для импорта.")
+        return
+    files_list = os.listdir(path)
+    if not files_list:
+        parent.stepChanged.emit("GRAY|    Нет списков IP-адресов для импорта.")
+        return
+
+    # Импортируем все списки IP-адресов без содержимого (пустые).
+    parent.stepChanged.emit(f'LBLUE|    Импортируем списки IP-адресов без содержимого.')
+    for file_name in files_list:
+        json_file = os.path.join(path, file_name)
+        err, data = read_json_file(parent, json_file)
+        if err:
+            if err in (1, 2):
+                parent.error = 1
+            continue
+
+        data['name'] = data['name'].strip().translate(trans_name)
+        content = data.pop('content')
+        data.pop('last_update', None)
+        if parent.version < 6:
+            data['attributes'] = [{'name': 'threat_level', 'value': data['attributes']['threat_level']}]
+            data.pop('list_type_update', None)
+            data.pop('schedule', None)
+        if data['name'] in parent.ip_lists:
+            parent.stepChanged.emit(f'GRAY|    Список IP-адресов "{data["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(parent.ip_lists[data['name']], data)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}"]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{data["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(data)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}"]')
+                continue
+            else:
+                parent.ip_lists[data['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{data["name"]}" импортирован.')
+    # Добавляем содержимое в уже добавленные списки IP-адресов.
+    parent.stepChanged.emit(f'LBLUE|    Импортируем содержимое списков IP-адресов.')
+    for file_name in files_list:
+        json_file = os.path.join(path, file_name)
+        err, data = read_json_file(parent, json_file)
+        if err:
+            if err in (1, 2):
+                parent.error = 1
+            continue
+
+        data['name'] = data['name'].strip().translate(trans_name)
+        try:
+            list_id = parent.ip_lists[data['name']]
+        except KeyError:
+            parent.stepChanged.emit(f'RED|    Ошибка! Нет IP-листа "{data["name"]}" в списках IP-адресов NGFW.')
+            parent.stepChanged.emit(f'RED|    Ошибка! Содержимое не добавлено в список IP-адресов "{data["name"]}".')
+            error = 1
+            continue
+        if data['content']:
+            new_content = []
+            for item in data['content']:
+                if 'list' in item:
+                    if parent.version >= 7:
+                        try:
+                            item['list'] = parent.ip_lists[item['list']]
+                            new_content.append(item)
+                        except KeyError:
+                            parent.stepChanged.emit(f'RED|    Ошибка! Нет IP-листа "{item["list"]}" в списках IP-адресов NGFW.')
+                            parent.stepChanged.emit(f'RED|    Ошибка! Список "{item["list"]}" не добавлен в список IP-адресов "{data["name"]}".')
+                            error = 1
+                    else:
+                        parent.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен "{item["list"]}". Данная версия не поддерживает содержимое в виде списков IP-адресов.')
+                else:
+                    new_content.append(item)
+            data['content'] = new_content
+            err2, result2 = parent.utm.add_nlist_items(list_id, data['content'])
+            if err2 == 1:
+                parent.stepChanged.emit(f'RED|    {result2}  [Список IP-адресов: "{data["name"]}"]')
+                error = 1
+            elif err2 == 2:
+                parent.stepChanged.emit(f'GRAY|    {result2}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" обновлено.')
+        else:
+            parent.stepChanged.emit(f'GRAY|    Список "{data["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков IP-адресов.' if error else out_message)
+
+
+def import_useragent_lists(parent, path):
+    """Импортируем списки Useragent браузеров"""
+    parent.stepChanged.emit('BLUE|Импорт списка "Useragent браузеров" в раздел "Библиотеки/Useragent браузеров".')
+    json_file = os.path.join(path, 'config_useragents_list.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.get_nlists_list('useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useragent_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        content = item.pop('content')
+        item.pop('last_update', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.version < 6:
+            item['attributes'] = []
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+
+        if item['name'] in useragent_list:
+            parent.stepChanged.emit(f'GRAY|    Список Useragent "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(useragent_list[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список Useragent: {item["name"]}]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Список Useragent "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список Useragent: "{item["name"]}"]')
+                continue
+            else:
+                useragent_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Список Useragent "{item["name"]}" импортирован.')
+
+        if content:
+            err2, result2 = parent.utm.add_nlist_items(useragent_list[item['name']], content)
+            if err2 == 2:
+                parent.stepChanged.emit(f'GRAY|       {result2}')
+            elif err2 == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result2}  [Список Useragent: "{item["name"]}"]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Содержимое списка Useragent "{item["name"]}" обновлено.')
+        else:
+            parent.stepChanged.emit(f'GRAY|       Список Useragent "{item["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список "Useragent браузеров" импортирован в раздел "Библиотеки/Useragent браузеров".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков Useragent браузеров.' if error else out_message)
+
+
+def import_mime_lists(parent, path):
+    """Импортируем списки Типов контента"""
+    parent.stepChanged.emit('BLUE|Импорт списка "Типы контента" в раздел "Библиотеки/Типы контента".')
+    json_file = os.path.join(path, 'config_mime_types.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.get_nlists_list('mime')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mime_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        content = item.pop('content')
+        item.pop('last_update', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.version < 6:
+            item['attributes'] = []
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+
+        if item['name'] in mime_list:
+            parent.stepChanged.emit(f'GRAY|    Список Типов контента "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(mime_list[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список Типов контента: {item["name"]}]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Список Типов контента "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список Типов контента: "{item["name"]}"]')
+                continue
+            else:
+                mime_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Список Типов контента "{item["name"]}" импортирован.')
+
+        if content:
+            err2, result2 = parent.utm.add_nlist_items(mime_list[item['name']], content)
+            if err2 == 2:
+                parent.stepChanged.emit(f'GRAY|       {result2}')
+            elif err2 == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result2}  [Список Типов контента: "{item["name"]}"]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Содержимое списка Типов контента "{item["name"]}" обновлено.')
+        else:
+            parent.stepChanged.emit(f'GRAY|       Список Типов контента "{item["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Списки "Типы контента" импортированы в раздел "Библиотеки/Типы контента".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков "Типы контента".' if error else out_message)
+
+
+def import_url_lists(parent, path):
+    """Импортируем списки URL"""
+    parent.stepChanged.emit('BLUE|Импорт списков URL в раздел "Библиотеки/Списки URL".')
+    error = 0
+
+    if not os.path.isdir(path):
+        parent.stepChanged.emit("GRAY|    Нет списков URL для импорта.")
+        return
+    files_list = os.listdir(path)
+    if not files_list:
+        parent.stepChanged.emit("GRAY|    Нет списков URL для импорта.")
+        return
+
+    # Импортируем все списки URL без содержимого (пустые).
+    parent.stepChanged.emit(f'LBLUE|    Импортируем списки URL без содержимого.')
+    for file_name in files_list:
+        json_file = os.path.join(path, file_name)
+        err, data = read_json_file(parent, json_file)
+        if err:
+            if err in (1, 2):
+                parent.error = 1
+            continue
+
+        data['name'] = data['name'].strip().translate(trans_name)
+        content = data.pop('content')
+        data.pop('last_update', None)
+        if parent.version < 6:
+            data['attributes'] = [{'name': 'threat_level', 'value': 3}]
+            data.pop('list_type_update', None)
+            data.pop('schedule', None)
+        elif parent.version < 7.1:
+            data['attributes'] = {}
+        else:
+            if not data['attributes'] or 'threat_level' in data['attributes']:
+                data['attributes'] = {'list_compile_type': 'case_sensitive'}
+
+        if data['name'] in parent.url_lists:
+            parent.stepChanged.emit(f'GRAY|    Список URL "{data["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(parent.url_lists[data['name']], data)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список URL: "{data["name"]}"]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Список URL "{data["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(data)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список URL: "{data["name"]}"]')
+                continue
+            else:
+                parent.url_lists[data['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Список URL "{data["name"]}" импортирован.')
+
+    # Добавляем содержимое в уже добавленные списки URL.
+    parent.stepChanged.emit(f'LBLUE|    Импортируем содержимое списков URL.')
+    for file_name in files_list:
+        json_file = os.path.join(path, file_name)
+        err, data = read_json_file(parent, json_file)
+        if err:
+            if err in (1, 2):
+                parent.error = 1
+            continue
+
+        data['name'] = data['name'].strip().translate(trans_name)
+        try:
+            list_id = parent.url_lists[data['name']]
+        except KeyError:
+            parent.stepChanged.emit(f'RED|    Ошибка! Нет листа URL "{data["name"]}" в списках URL листов NGFW.')
+            parent.stepChanged.emit(f'RED|    Ошибка! Содержимое не добавлено в список URL "{data["name"]}".')
+            error = 1
+            continue
+        if data['content']:
+            err2, result2 = parent.utm.add_nlist_items(list_id, data['content'])
+            if err2 == 1:
+                parent.stepChanged.emit(f'RED|    {result2}  [Список URL: "{data["name"]}"]')
+                error = 1
+            elif err2 == 2:
+                parent.stepChanged.emit(f'GRAY|    {result2}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Содержимое списка URL "{data["name"]}" обновлено. Added {result2} record.')
+        else:
+            parent.stepChanged.emit(f'GRAY|    Список "{data["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Списки URL импортированы в раздел "Библиотеки/Списки URL".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков URL.' if error else out_message)
+
+
+def import_time_restricted_lists(parent, path):
+    """Импортируем содержимое календарей"""
+    parent.stepChanged.emit('BLUE|Импорт списка "Календари" в раздел "Библиотеки/Календари".')
+    json_file = os.path.join(path, 'config_calendars.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    error = 0
+    for item in data:
+        content = item.pop('content')
+        item.pop('last_update', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.version < 6:
+            item['attributes'] = []
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+
+        if item['name'] in parent.list_calendar:
+            parent.stepChanged.emit(f'GRAY|    Список "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_nlist(parent.list_calendar[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список: {item["name"]}]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Список "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_nlist(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Список: "{item["name"]}"]')
+                continue
+            else:
+                parent.list_calendar[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Список "{item["name"]}" импортирован.')
+
+        if parent.version < 6:
+            parent.stepChanged.emit(f'GRAY|       На версию 5 невозможно импортировать сожержимое календарей. Добавьте содержимое вручную.')
+            continue
+        if content:
+            err2, result2 = parent.utm.add_nlist_items(parent.list_calendar[item['name']], content)
+            if err2 == 2:
+                parent.stepChanged.emit(f'GRAY|       {result2}')
+            elif err2 == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Содержимое списка "{item["name"]}" обновлено.')
+        else:
+            parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список "Календари" импортирован в раздел "Библиотеки/Календари".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Календари".' if error else out_message)
+
+
+def import_shaper_list(parent, path):
+    """Импортируем список Полос пропускания раздела библиотеки"""
+    parent.stepChanged.emit('BLUE|Импорт списка "Полосы пропускания" в раздел "Библиотеки/Полосы пропускания".')
+    json_file = os.path.join(path, 'config_shaper_list.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_shaper_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    shaper_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+    error = 0
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in shaper_list:
+            parent.stepChanged.emit(f'GRAY|    Полоса пропускания "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_shaper(shaper_list[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Полоса пропускания: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Полоса пропускания "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_shaper(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Полоса пропускания: "{item["name"]}"]')
+            else:
+                shaper_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Полоса пропускания "{item["name"]}" импортирована.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список "Полосы пропускания" импортирован в раздел "Библиотеки/Полосы пропускания".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Полосы пропускания".' if error else out_message)
+
+
+def import_scada_profiles(parent, path):
+    """Импортируем список профилей АСУ ТП"""
+    parent.stepChanged.emit('BLUE|Импорт списка профилей АСУ ТП в раздел "Библиотеки/Профили АСУ ТП".')
+    json_file = os.path.join(path, 'config_scada_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_scada_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    scada_profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+    error = 0
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.version < 6:
+            new_units = []
+            for unit in item['units']:
+                if unit['protocol'] != 'opcua':
+                    new_units.append(unit)
+            item['units'] = new_units
+
+        if item['name'] in scada_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль АСУ ТП "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_scada(scada_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль АСУ ТП: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль АСУ ТП "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_scada(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль АСУ ТП: "{item["name"]}"]')
+            else:
+                scada_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль АСУ ТП "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список профилей АСУ ТП импортирован в раздел "Библиотеки/Профили АСУ ТП".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Профили АСУ ТП".' if error else out_message)
+
+
+def import_templates_list(parent, path):
+    """
+    Импортируем список шаблонов страниц.
+    После создания шаблона, он инициализируется страницей HTML по умолчанию для данного типа шаблона.
+    """
+    parent.stepChanged.emit('BLUE|Импорт списка шаблонов страниц в раздел "Библиотеки/Шаблоны страниц".')
+    json_file = os.path.join(path, 'config_templates_list.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    html_files = os.listdir(path)
+
+    err, result = parent.utm.get_templates_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    templates_list = {x['name']: x['id'] for x in result}
+    error = 0
+
+    for item in data:
+        if item['name'] in templates_list:
+            parent.stepChanged.emit(f'GRAY|    Шаблон страницы "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template(templates_list[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Шаблон страницы: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Шаблон страницы "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Шаблон страницы: "{item["name"]}"]')
+            else:
+                templates_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Шаблон страницы "{item["name"]}" импортирован.')
+
+        if f"{item['name']}.html" in html_files:
+            with open(os.path.join(path, f'{item["name"]}.html'), "br") as fh:
+                file_data = fh.read()
+            err2, result2 = parent.utm.set_template_data(templates_list[item['name']], file_data)
+            if err2:
+                parent.stepChanged.emit(f'RED|       {result2}')
+                parent.error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|       Страница "{item["name"]}.html" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список шаблонов страниц импортирован в раздел "Библиотеки/Шаблоны страниц".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка шаблонов страниц.' if error else out_message)
+
+
+def import_url_categories(parent, path):
+    """Импортируем группы URL категорий с содержимым на UTM"""
+    parent.stepChanged.emit('BLUE|Импорт категорий URL раздела "Библиотеки/Категории URL".')
+    json_file = os.path.join(path, 'config_url_categories.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    error = 0
+
+    for item in data:
+        if item['name'] not in ['Parental Control', 'Productivity', 'Safe categories', 'Threats',
+                                'Recommended for morphology checking', 'Recommended for virus check']:
+            content = item.pop('content')
+            item.pop('last_update', None)
+            item.pop('guid', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            if parent.version < 6:
+                item['attributes'] = []
+                item.pop('list_type_update', None)
+                item.pop('schedule', None)
+            if item['name'] in parent.list_urlcategorygroup:
+                parent.stepChanged.emit(f'GRAY|    Группа URL категорий "{item["name"]}" уже существует.')
+                err, result = parent.utm.update_nlist(parent.list_urlcategorygroup[item['name']], item)
+                if err:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|    {result}  [Группа URL категорий: {item["name"]}]')
+                    continue
+                else:
+                    parent.stepChanged.emit(f'BLACK|    Группа URL категорий "{item["name"]}" updated.')
+            else:
+                err, result = parent.utm.add_nlist(item)
+                if err:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|    {result}  [Группа URL категорий: "{item["name"]}"]')
+                    continue
+                else:
+                    parent.list_urlcategorygroup[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Группа URL категорий "{item["name"]}" импортирована.')
+                
+            if parent.version < 6:
+                parent.stepChanged.emit(f'GRAY|       На версию 5 невозможно импортировать сожержимое URL категорий. Добавьте содержимое вручную.')
+                continue
+            if content:
+                err2, result2 = parent.utm.add_nlist_items(parent.list_urlcategorygroup[item['name']], content)
+                if err2 == 2:
+                    parent.stepChanged.emit(f'GRAY|       {result2}')
+                elif err2 == 1:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+                else:
+                    parent.stepChanged.emit(f'BLACK|       Содержимое списка "{item["name"]}" обновлено.')
+            else:
+                parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Категории URL категорий импортированы в раздел "Библиотеки/Категории URL".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте URL категорий.' if error else out_message)
+
+
+def import_custom_url_category(parent, path):
+    """Импортируем изменённые категории URL"""
+    parent.stepChanged.emit('BLUE|Импорт категорий URL раздела "Библиотеки/Изменённые категории URL".')
+    json_file = os.path.join(path, 'custom_url_categories.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.get_custom_url_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    custom_url = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        try:
+            item['categories'] = [parent.url_categories[x] for x in item['categories']]
+        except KeyError as keyerr:
+            parent.stepChanged.emit(f'RED|    Error: В правиле "{item["name"]}" обнаружена несуществующая категория {keyerr}. Правило  не добавлено.')
+            continue
+        if item['name'] in custom_url:
+            parent.stepChanged.emit(f'GRAY|    URL категория "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_custom_url(custom_url[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [URL категория: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    URL категория "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_custom_url(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [URL категория: "{item["name"]}"]')
+                continue
+            else:
+                custom_url[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Изменённая категория URL "{item["name"]}" импортирована.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Изменённые категории URL категорий импортированы в раздел "Библиотеки/Изменённые категории URL".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте изменённых категорий URL.' if error else out_message)
+
+
+def import_application_signature(parent, data):
+    """Импортируем список "Приложения" на UTM для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Импорт пользовательских приложений в раздел "Библиотеки/Приложения".')
+    json_file = os.path.join(path, 'config_applications.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, result = parent.utm.get_version71_apps(query={'query': 'owner = You'})
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    apps = {x['name']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item.pop('signature_id', None)
+
+        new_l7categories = []
+        for category in item['l7categories']:
+            try:
+                new_l7categories.append(parent.l7_categories[category])
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error: Категория "{err}" не существует [Правило "{item["name"]}"]. Категория не добавлена.')
+        item['l7categories'] = new_l7categories
+
+        if item['name'] in apps:
+            parent.stepChanged.emit(f'GRAY|    Приложение "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_version71_app(apps[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Приложение: {item["name"]}]')
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Приложение "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_version71_app(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Приложение: "{item["name"]}"]')
+                continue
+            else:
+                apps[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Приложение "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Пользовательские приложения импортированы в раздел "Библиотеки/Приложения".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских приложений.' if error else out_message)
+
+
+def import_app_profiles(parent, path):
+    """Импортируем профили приложений. Только для версии 7.1 и выше."""
+    parent.stepChanged.emit('BLUE|Импорт профилей приложений раздела "Библиотеки/Профили приложений".')
+    json_file = os.path.join(path, 'config_app_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, result = parent.utm.get_l7_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    l7profiles = {x['name']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        new_overrides = []
+        for app in item['overrides']:
+            try:
+                app['id'] = parent.l7_apps[app['id']]
+                new_overrides.append(app)
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error: Не найдено приложение "{err}" [Правило: "{item["name"]}"].')
+        item['overrides'] = new_overrides
+
+        if item['name'] in l7profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль приложений "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_l7_profile(l7profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль приложений: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль приложений "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_l7_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль приложений: "{item["name"]}"]')
+            else:
+                l7profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль приложений "{item["name"]}" импортирован.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили приложений импортированы в раздел "Библиотеки/Профили приложений".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей приложений.' if error else out_message)
+
+
+def import_application_groups(parent, path):
+    """Импортируем группы приложений."""
+    parent.stepChanged.emit('BLUE|Импорт групп приложений раздела "Библиотеки/Группы приложений".')
+    json_file = os.path.join(path, 'config_application_groups.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+    error = 0
+
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_version71_apps()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        apps = {x['name']: x['signature_id'] for x in result}
+    else:
+        apps = parent.l7_apps
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        content = item.pop('content')
+        item.pop('last_update', None)
+        if parent.version < 6:
+            item['attributes'] = []
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+
+        err = execute_add_update_nlist(parent, parent.list_applicationgroup, item, 'Группа приложений')
+        if err:
+            error = 1
+            continue
+
+        if content:
+            new_content = []
+            for app in content:
+                if 'name' not in app:     # Это бывает при некорректном добавлении приложения через API
+                    continue
+                try:
+                    signature_id = apps[app['name']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|       Error: Не найдено приложение "{app["name"]}" [Группа приложений "{item["name"]}"]. Приложение не импортировано.')
+                    error = 1
+                    continue
+                new_content.append({'value': signature_id})
+            content = new_content
+
+            err = execute_add_nlist_items(parent, parent.list_applicationgroup[item['name']], item['name'], content)
+            if err:
+                error = 1
+        else:
+            parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Группы приложений импортированы в раздел "Библиотеки/Группы приложений".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп приложений.' if error else out_message)
+
+
+def import_email_groups(parent, path):
+    """Импортируем группы почтовых адресов."""
+    parent.stepChanged.emit('BLUE|Импорт групп почтовых адресов раздела "Библиотеки/Почтовые адреса".')
+    json_file = os.path.join(path, 'config_email_groups.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_nlist_list('emailgroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    emailgroups = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        content = item.pop('content')
+        item.pop('last_update', None)
+        if parent.version < 6:
+            item['attributes'] = []
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+
+        err = execute_add_update_nlist(parent, emailgroups, item, 'Группа приложений')
+        if err:
+            error = 1
+            continue
+
+        if content:
+            err = execute_add_nlist_items(parent, emailgroups[item['name']], item['name'], content)
+            if err:
+                error = 1
+        else:
+            parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Группы почтовых адресов импортированы в раздел "Библиотеки/Почтовые адреса".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп почтовых адресов.' if error else out_message)
+
+
+def import_phone_groups(parent, path):
+    """Импортируем группы телефонных номеров."""
+    parent.stepChanged.emit('BLUE|Импорт групп телефонных номеров раздела "Библиотеки/Номера телефонов".')
+    json_file = os.path.join(path, 'config_phone_groups.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_nlist_list('phonegroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    phonegroups = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        content = item.pop('content')
+        item.pop('last_update', None)
+        if parent.version < 6:
+            item['attributes'] = []
+            item.pop('list_type_update', None)
+            item.pop('schedule', None)
+
+        err = execute_add_update_nlist(parent, phonegroups, item, 'Группа приложений')
+        if err:
+            error = 1
+            continue
+
+        if content:
+            err = execute_add_nlist_items(parent, phonegroups[item['name']], item['name'], content)
+            if err:
+                error = 1
+        else:
+            parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Группы почтовых адресов импортированы в раздел "Библиотеки/Почтовые адреса".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп почтовых адресов.' if error else out_message)
+
+
+def import_custom_idps_signature(parent, path):
+    """Импортируем пользовательские сигнатуры СОВ. Только для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Импорт пользовательских сигнатур СОВ в раздел "Библиотеки/Сигнатуры СОВ".')
+    json_file = os.path.join(path, 'custom_idps_signatures.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_idps_signatures_list(query={'query': 'owner = You'})
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    signatures = {x['msg']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item.pop('signature_id', None)
+
+        if item['msg'] in signatures:
+            parent.stepChanged.emit(f'GRAY|    Сигнатура СОВ "{item["msg"]}" уже существует.')
+            err, result = parent.utm.update_idps_signature(signatures[item['msg']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сигнатура СОВ: {item["msg"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Сигнатура СОВ "{item["msg"]}" updated.')
+        else:
+            err, result = parent.utm.add_idps_signature(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сигнатура СОВ: "{item["msg"]}"]')
+                continue
+            else:
+                signatures[item['msg']] = result
+                parent.stepChanged.emit(f'BLACK|    Сигнатура СОВ "{item["msg"]}" импортирована.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Пользовательские сигнатуры СОВ импортированы в раздел "Библиотеки/Сигнатуры СОВ".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских сигнатур СОВ.' if error else out_message)
+
+
+def import_idps_profiles(parent, path):
+    """Импортируем профили СОВ"""
+    parent.stepChanged.emit('BLUE|Импорт профилей СОВ в раздел "Библиотеки/Профили СОВ".')
+    json_file = os.path.join(path, 'config_idps_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    if parent.version < 6:
+        parent.stepChanged.emit('RED|    Импорт профилей СОВ на версию 5 не поддерживается.')
+        error = 1
+    elif parent.version < 7.1:
+        err, result = parent.utm.get_nlist_list('ipspolicy')
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        idps = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+        for item in data:
+            if 'filters' in item:
+                parent.stepChanged.emit('RED|    Импорт профилей СОВ версий 7.1 и выше на более старые версии не поддерживается.')
+                error = 1
+                break
+
+            item['name'] = item['name'].strip().translate(trans_name)
+            content = item.pop('content')
+            item.pop('last_update', None)
+
+            err = execute_add_update_nlist(parent, idps, item, 'Профиль СОВ')
+            if err:
+                error = 1
+                continue
+            if content:
+                new_content = []
+                for signature in content:
+                    if 'value' not in signature:
+                        parent.stepChanged.emit(f'bRED|    Сигнатура "{signature["msg"]}" пропущена так как формат не соответствует целевой системе.')
+                        error = 1
+                        continue
+                    new_content.append({'value': signature['value']})
+                content = new_content
+
+                err = execute_add_nlist_items(parent, idps[item['name']], item['name'], content)
+                if err:
+                    error = 1
+            else:
+                parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+    else:
+        err, result = parent.utm.get_idps_profiles_list()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        profiles = {x['name']: x['id'] for x in result}
+
+        err, result = parent.utm.get_idps_signatures_list(query={'query': 'owner = You'})
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        custom_idps = {x['msg']: x['id'] for x in result}
+
+        for item in data:
+            if 'filters' not in item:
+                parent.stepChanged.emit('RED|    Импорт профилей СОВ старых версий не поддерживается для версий 7.1 и выше.')
+                error = 1
+                break
+
+            new_overrides = []
+            for signature in item['overrides']:
+                try:
+                    if 1000000 < signature['signature_id'] < 1099999:
+                        signature['id'] = custom_idps[signature['msg']]
+                    signature.pop('signature_id', None)
+                    signature.pop('msg', None)
+                    new_overrides.append(signature)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error: Не найдена сигнатура "{err}" [Профиль СОВ "{item["name"]}"].')
+                    error = 1
+            item['overrides'] = new_overrides
+
+            if item['name'] in profiles:
+                parent.stepChanged.emit(f'GRAY|    Профиль СОВ "{item["name"]}" уже существует.')
+                err, result = parent.utm.update_idps_profile(profiles[item['name']], item)
+                if err:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|    {result}  [Профиль СОВ: {item["name"]}]')
+                    continue
+                else:
+                    parent.stepChanged.emit(f'BLACK|    Профиль СОВ "{item["name"]}" updated.')
+            else:
+                err, result = parent.utm.add_idps_profile(item)
+                if err:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|    {result}  [Профиль СОВ: "{item["name"]}"]')
+                    continue
+                else:
+                    profiles[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Профиль СОВ "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили СОВ импортированы в раздел "Библиотеки/Профили СОВ".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей СОВ.' if error else out_message)
+
+
+def import_notification_profiles(parent, path):
+    """Импортируем список профилей оповещения"""
+    parent.stepChanged.emit('BLUE|Импорт профилей оповещений в раздел "Библиотеки/Профили оповещений".')
+    json_file = os.path.join(path, 'config_notification_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_notification_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль оповещения "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_notification_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль оповещения: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль оповещения "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_notification_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль оповещения: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль оповещения "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили оповещений импортированы в раздел "Библиотеки/Профили оповещений".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей оповещений.' if error else out_message)
+
+
+def import_netflow_profiles(parent, path):
+    """Импортируем список профилей netflow"""
+    parent.stepChanged.emit('BLUE|Импорт профилей netflow в раздел "Библиотеки/Профили netflow".')
+    json_file = os.path.join(path, 'config_netflow_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_netflow_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль netflow "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_netflow_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль netflow: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль netflow "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_netflow_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль netflow: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль netflow "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили netflow импортированы в раздел "Библиотеки/Профили netflow".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей netflow.' if error else out_message)
+
+
+def import_ssl_profiles(parent, path):
+    """Импортируем список профилей SSL"""
+    parent.stepChanged.emit('BLUE|Импорт профилей SSL в раздел "Библиотеки/Профили SSL".')
+    json_file = os.path.join(path, 'config_ssl_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_ssl_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        if parent.version < 7.1:
+            item.pop('supported_groups', None)
+        else:
+            if 'supported_groups' not in item:
+                item['supported_groups'] = []
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль SSL "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_ssl_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль SSL: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль SSL "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_ssl_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль SSL: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль SSL "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили SSL импортированы в раздел "Библиотеки/Профили SSL".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей SSL.' if error else out_message)
+
+
+def import_lldp_profiles(parent, path):
+    """Импортируем список профилей LLDP"""
+    parent.stepChanged.emit('BLUE|Импорт профилей LLDP в раздел "Библиотеки/Профили LLDP".')
+    json_file = os.path.join(path, 'config_lldp_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_lldp_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль LLDP "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_lldp_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль LLDP: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль LLDP "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_lldp_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль LLDP: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль LLDP "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили LLDP импортированы в раздел "Библиотеки/Профили LLDP".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей LLDP.' if error else out_message)
+
+
+def import_ssl_forward_profiles(parent, path):
+    """Импортируем профили пересылки SSL"""
+    parent.stepChanged.emit('BLUE|Импорт профилей пересылки SSL в раздел "Библиотеки/Профили пересылки SSL".')
+    json_file = os.path.join(path, 'config_ssl_forward_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_ssl_forward_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль пересылки SSL "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_ssl_forward_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль пересылки SSL: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль пересылки SSL "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_ssl_forward_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль пересылки SSL: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль пересылки SSL "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили пересылки SSL импортированы в раздел "Библиотеки/Профили пересылки SSL".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей пересылки SSL.' if error else out_message)
+
+
+def import_hip_objects(parent, path):
+    """Импортируем HIP объекты"""
+    parent.stepChanged.emit('BLUE|Импорт HIP объектов в раздел "Библиотеки/HIP объекты".')
+    json_file = os.path.join(path, 'config_hip_objects.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_hip_objects_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    HIP объект "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_hip_object(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [HIP объект: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    HIP объект "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_hip_object(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [HIP объект: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    HIP объект "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    HIP объекты импортированы в раздел "Библиотеки/HIP объекты".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP объектов.' if error else out_message)
+
+
+def import_hip_profiles(parent, path):
+    """Импортируем HIP профили"""
+    parent.stepChanged.emit('BLUE|Импорт HIP профилей в раздел "Библиотеки/HIP профили".')
+    json_file = os.path.join(path, 'config_hip_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_hip_objects_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    hip_objects = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_hip_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        for obj in item['hip_objects']:
+            obj['id'] = hip_objects[obj['id']]
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    HIP профиль "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_hip_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [HIP профиль: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    HIP профиль "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_hip_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [HIP профиль: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    HIP профиль "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    HIP профили импортированы в раздел "Библиотеки/HIP профили".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP профилей.' if error else out_message)
+
+
+def import_bfd_profiles(parent, path):
+    """Импортируем профили BFD"""
+    parent.stepChanged.emit('BLUE|Импорт профилей BFD в раздел "Библиотеки/Профили BFD".')
+    json_file = os.path.join(path, 'config_bfd_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_bfd_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль BFD "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_bfd_profile(profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль BFD: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль BFD "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_bfd_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль BFD: "{item["name"]}"]')
+                continue
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль BFD "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили BFD импортированы в раздел "Библиотеки/Профили BFD".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей BFD.' if error else out_message)
+
+
+def import_useridagent_syslog_filters(parent, path):
+    """Импортируем syslog фильтры UserID агента"""
+    parent.stepChanged.emit('BLUE|Импорт syslog фильтров UserID агента в раздел "Библиотеки/Syslog фильтры UserID агента".')
+    json_file = os.path.join(path, 'config_useridagent_syslog_filters.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_useridagent_filters_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    filters = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['name'] in filters:
+            parent.stepChanged.emit(f'GRAY|    Фильтр "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_useridagent_filter(filters[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Фильтр: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Фильтр "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_useridagent_filter(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Фильтр: "{item["name"]}"]')
+                continue
+            else:
+                filters[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Фильтр "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили BFD импортированы в раздел "Библиотеки/Syslog фильтры UserID агента".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.' if error else out_message)
+
+
 def pass_function(parent, path):
     """Функция заглушка"""
     parent.stepChanged.emit(f'GRAY|Импорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
@@ -2451,373 +4095,65 @@ func = {
     'NATandRouting': import_nat_rules,
     'LoadBalancing': import_loadbalancing_rules,
     'TrafficShaping': import_shaper_rules,
+    "SecurityPolicies": pass_function,
+    "ContentFiltering": pass_function,
+    "SafeBrowsing": pass_function,
+    "TunnelInspection": pass_function,
+    "SSLInspection": pass_function,
+    "SSHInspection": pass_function,
+    "IntrusionPrevention": pass_function,
+    "Scenarios": pass_function,
+    "MailSecurity": pass_function,
+    "ICAPRules": pass_function,
+    "ICAPServers": pass_function,
+    "DoSRules": pass_function,
+    "DoSProfiles": pass_function,
+    "SCADARules": pass_function,
+    "GlobalPortal": pass_function,
+    "WebPortal": pass_function,
+    "ReverseProxyRules": pass_function,
+    "ReverseProxyServers": pass_function,
+    "WAF": pass_function,
+    "WAFprofiles": pass_function,
+    "CustomWafLayers": pass_function,
+    "SystemWafRules": pass_function,
+    "VPN": pass_function,
+    "ServerRules": pass_function,
+    "ClientRules": pass_function,
+    "VPNNetworks": pass_function,
+    "SecurityProfiles": pass_function,
+    "ServerSecurityProfiles": pass_function,
+    "ClientSecurityProfiles": pass_function,
+    "Morphology": import_morphology_lists,
+    "Services": import_services_list,
+    "ServicesGroups": import_services_groups,
+    "IPAddresses": import_ip_lists,
+    "Useragents": import_useragent_lists,
+    "ContentTypes": import_mime_lists,
+    "URLLists": import_url_lists,
+    "TimeSets": import_time_restricted_lists,
+    "BandwidthPools": import_shaper_list,
+    "SCADAProfiles": import_scada_profiles,
+    "ResponcePages": import_templates_list,
+    "URLCategories": import_url_categories,
+    "OverURLCategories": import_custom_url_category,
+    "Applications": import_application_signature,
+    "ApplicationProfiles": import_app_profiles,
+    "ApplicationGroups": import_application_groups,
+    "Emails": import_email_groups,
+    "Phones": import_phone_groups,
+    "IPDSSignatures": import_custom_idps_signature,
+    "IDPSProfiles": import_idps_profiles,
+    "NotificationProfiles": import_notification_profiles,
+    "NetflowProfiles": import_netflow_profiles,
+    "LLDPProfiles": import_lldp_profiles,
+    "SSLProfiles": import_ssl_profiles,
+    "SSLForwardingProfiles": import_ssl_forward_profiles,
+    "HIDObjects": import_hip_objects,
+    "HIDProfiles": import_hip_profiles,
+    "BfdProfiles": import_bfd_profiles,
+    "UserIdAgentSyslogFilters": import_useridagent_syslog_filters,
 }
-
-
-def import_services(parent):
-    """Импортируем список сервисов раздела библиотеки"""
-    parent.stepChanged.emit('0|Импорт списка сервисов в раздел "Библиотеки/Сервисы"')
-
-    json_file = "data_ug/Libraries/Services/config_services.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта списка сервисов!', '2|Нет сервисов для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_services_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    services_list = {x['name']: x['id'] for x in result}
-    error = 0
-    
-    for item in data:
-        if item['name'] in services_list:
-            parent.stepChanged.emit(f'2|Сервис "{item["name"]}" уже существует.')
-        else:
-            err, result = parent.utm.add_service(item)
-            if err:
-                parent.stepChanged.emit(f'{err}|{result}')
-                if err == 1:
-                    error = 1
-                    parent.error = 1
-            else:
-                services_list[item['name']] = result
-                parent.stepChanged.emit(f'2|Сервис "{item["name"]}" добавлен.')
-
-    out_message = '5|Список сервисов импортирован в раздел "Библиотеки/Сервисы"'
-    parent.stepChanged.emit('6|Произошла ошибка при добавлении сервисов!' if error else out_message)
-
-def import_services_groups(parent):
-    """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
-    parent.stepChanged.emit('0|Импорт групп сервисов раздела "Библиотеки/Группы сервисов".')
-
-    if int(parent.utm.version[:1]) < 7:
-        parent.stepChanged.emit('1|Ошибка! Импорт групп сервисов возможен только на версию 7 или выше.')
-        return
-        
-    err, result = parent.utm.get_services_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    services_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('servicegroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    srv_groups = {x['name']: x['id'] for x in result}
-
-    out_message = '5|Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
-    error = 0
-    
-    if os.path.isdir('data_ug/Libraries/ServicesGroups'):
-        files_list = os.listdir('data_ug/Libraries/ServicesGroups')
-        if files_list:
-            for file_name in files_list:
-                json_file = f"data_ug/Libraries/ServicesGroups/{file_name}"
-                err, services_group = read_json_file(json_file, '2|Ошибка импорта группы сервисов!', '2|Нет группы сервисов для импорта.')
-                if err:
-                    parent.stepChanged.emit(services_group)
-                    parent.error = 1
-                    return
-
-                content = services_group.pop('content')
-                err, result = parent.utm.add_nlist(services_group)
-                if err:
-                    parent.stepChanged.emit(f'{err}|{result}')
-                    if err == 1:
-                        parent.stepChanged.emit(f'1|Ошибка! Группа сервисов "{services_group["name"]}" не импортирована.')
-                        error = 1
-                        continue
-                else:
-                    parent.stepChanged.emit(f'2|Добавлена группа сервисов: "{services_group["name"]}".')
-                    srv_groups[services_group['name']] = result
-                if content:
-                    for item in content:
-                        try:
-                            item['value'] = services_list[item['name']]
-                        except KeyError:
-                            parent.stepChanged.emit(f'4|   Ошибка! Нет сервиса "{item["name"]}" в списке сервисов NGFW.')
-                            parent.stepChanged.emit(f'4|   Ошибка! Сервис "{item["name"]}" не добавлен в группу сервисов "{services_group["name"]}".')
-                    err2, result2 = parent.utm.add_nlist_items(srv_groups[services_group['name']], content)
-                    if err2:
-                        parent.stepChanged.emit(f'{err2}|   {result2}')
-                        if err2 == 1:
-                            error = 1
-                    else:
-                        parent.stepChanged.emit(f'2|   Содержимое группы сервисов "{services_group["name"]}" обновлено.')
-                else:
-                    parent.stepChanged.emit(f'2|   Список "{services_group["name"]}" пуст.')
-        else:
-            out_message = "2|Нет групп сервисов для импорта."
-    else:
-        out_message = "2|Нет групп сервисов для импорта."
-    if error:
-        parent.error = 1
-    parent.stepChanged.emit('6|Произошла ошибка при добавлении групп сервисов!' if error else out_message)
-
-def import_ip_lists(parent):
-    """Импортируем списки IP адресов"""
-    parent.stepChanged.emit('0|Импорт списков IP-адресов раздела "Библиотеки/IP-адреса".')
-
-    if not os.path.isdir('data_ug/Libraries/IPAddresses'):
-        parent.stepChanged.emit("2|Нет списков IP-адресов для импорта.")
-        return
-
-    files_list = os.listdir('data_ug/Libraries/IPAddresses')
-    if not files_list:
-        parent.stepChanged.emit("2|Нет списков IP-адресов для импорта.")
-        return
-
-    error = 0
-    err, result = parent.utm.get_nlists_list('network')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    ngfw_ip_lists = {x['name']: x['id'] for x in result}
-
-    # Добаляем списки IP-адресов без содержимого (пустые).
-    for file_name in files_list:
-        json_file = f"data_ug/Libraries/IPAddresses/{file_name}"
-        err, ip_list = read_json_file(json_file, '2|Ошибка импорта списка IP-адресов!', '2|Нет списка IP-адресов для импорта.')
-        if err:
-            parent.stepChanged.emit(ip_list)
-            parent.error = 1
-            return
-
-        content = ip_list.pop('content')
-        err, result = parent.utm.add_nlist(ip_list)
-        if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                parent.stepChanged.emit(f'1|Ошибка! Список IP-адресов "{ip_list["name"]}" не импортирован.')
-                error = 1
-                continue
-        else:
-            ngfw_ip_lists[ip_list['name']] = result
-            parent.stepChanged.emit(f'2|Добавлен список IP-адресов: "{ip_list["name"]}".')
-
-    # Добавляем содержимое в уже добавленные списки IP-адресов.
-    for file_name in files_list:
-        with open(f"data_ug/Libraries/IPAddresses/{file_name}", "r") as fh:
-            ip_list = json.load(fh)
-        content = ip_list.pop('content')
-        if content:
-            for item in content:
-                if 'list' in item:
-                    try:
-                        item['list'] = ngfw_ip_lists[item['list'][1]]
-                    except KeyError:
-                        parent.stepChanged.emit(f'4|   Ошибка! Нет IP-листа "{item["list"][1]}" в списках IP-адресов NGFW.')
-                        parent.stepChanged.emit(f'4|   Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".')
-                        error = 1
-                        break
-            try:
-                named_list_id = ngfw_ip_lists[ip_list['name']]
-            except KeyError:
-                parent.stepChanged.emit(f'4|   Ошибка! Нет IP-листа "{ip_list["name"]}" в списках IP-адресов NGFW.')
-                parent.stepChanged.emit(f'4|   Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".')
-                error = 1
-                continue
-            err2, result2 = parent.utm.add_nlist_items(named_list_id, content)
-            if err2:
-                parent.stepChanged.emit(f'{err2}|   {result2}')
-                if err2 == 1:
-                    error = 1
-            else:
-                parent.stepChanged.emit(f'2|Содержимое списка "{ip_list["name"]}" обновлено.')
-        else:
-            parent.stepChanged.emit(f'2|Список "{ip_list["name"]}" пуст.')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте списков IP-адресов!' if error else out_message)
-
-def import_url_lists(parent):
-    """Импортировать списки URL на UTM"""
-    parent.stepChanged.emit('0|Импорт списков URL раздела "Библиотеки/Списки URL".')
-        
-    if not os.path.isdir('data_ug/Libraries/URLLists'):
-        parent.stepChanged.emit('2|Нет списков URL для импорта.')
-        return
-
-    files_list = os.listdir('data_ug/Libraries/URLLists')
-    if not files_list:
-        parent.stepChanged.emit('2|Нет списков URL для импорта.')
-        return
-
-    error = 0
-    err, result = parent.utm.get_nlists_list('url')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_list = {x['name']: x['id'] for x in result}
-
-    for file_name in files_list:
-        json_file = f"data_ug/Libraries/URLLists/{file_name}"
-        err, data = read_json_file(json_file, '2|Ошибка импорта списка URL!', '2|Нет списка URL для импорта.')
-        if err:
-            parent.stepChanged.emit(data)
-            parent.error = 1
-            return
-
-        content = data.pop('content')
-        err, result = parent.utm.add_nlist(data)
-        if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                parent.stepChanged.emit(f'1|Ошибка! Список URL "{data["name"]}" не импортирован.')
-                error = 1
-                continue
-        else:
-            url_list[data['name']] = result
-            parent.stepChanged.emit(f'2|Добавлен список URL: "{data["name"]}".')
-
-        if content:
-            err2, result2 = parent.utm.add_nlist_items(url_list[data['name']], content)
-            if err2:
-                parent.stepChanged.emit(f'{err2}|   {result2}')
-                if err2 == 1:
-                    error = 1
-            else:
-                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено. Added {result2} record.')
-        else:
-            parent.stepChanged.emit(f'2|   Список "{data["name"]}" пуст.')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Списки URL импортированы в раздел "Библиотеки/Списки URL".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте списков URL!' if error else out_message)
-
-def import_url_categories(parent):
-    """Импортировать группы URL категорий с содержимым на UTM"""
-    parent.stepChanged.emit('0|Импорт групп URL категорий раздела "Библиотеки/Категории URL".')
-
-    json_file = "data_ug/Libraries/URLCategories/config_categories_url.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта групп URL категорий!', '2|Нет групп URL категорий для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    error = 0
-    err, result = parent.utm.get_nlists_list('urlcategorygroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_category_groups = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_url_categories()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_categories = {x['name']: x['id'] for x in result}
-
-    for item in data:
-        content = item.pop('content')
-        if item['name'] not in ['Parental Control', 'Productivity', 'Safe categories', 'Threats',
-                                'Recommended for morphology checking', 'Recommended for virus check']:
-            err, result = parent.utm.add_nlist(item)
-            if err:
-                parent.stepChanged.emit(f'{err}|{result}')
-                if err == 1:
-                    parent.stepChanged.emit(f'1|Ошибка! Группа URL категорий "{item["name"]}" не импортирована.')
-                    error = 1
-                    continue
-            else:
-                url_category_groups[item['name']] = result
-                parent.stepChanged.emit(f'2|Группа URL категорий "{item["name"]}" добавлена.')
-                
-            for category in content:
-                try:
-                    category_url = {'category_id': url_categories[category['name']]}
-                except KeyError as err:
-                    parent.stepChanged.emit(f'4|   Ошибка! URL категория "{category["name"]}" не импортирована. Нет такой категории на UG NGFW.')
-                    error = 1
-                    continue
-                err2, result2 = parent.utm.add_nlist_item(url_category_groups[item['name']], category_url)
-                if err2:
-                    parent.stepChanged.emit(f'{err2}|   {result2}')
-                    if err2 == 1:
-                        error = 1
-                else:
-                    parent.stepChanged.emit(f'2|   Добавлена категория "{category["name"]}".')
-    if error:
-        parent.error = 1
-    out_message = '5|Группы URL категорий импортированы в раздел "Библиотеки/Категории URL".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте групп URL категорий!' if error else out_message)
-
-def import_application_groups(parent):
-    """Импортировать список "Приложения" на UTM"""
-    parent.stepChanged.emit('0|Импорт групп приложений в раздел "Библиотеки/Приложения".')
-
-    json_file = "data_ug/Libraries/Applications/config_applications.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта групп приложений!', '2|Нет групп приложений для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_l7_apps()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    l7_app_id = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('applicationgroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    list_applicationgroups = {x['name']: x['id'] for x in result}
-
-    error = 0
-    for item in data:
-        content = item.pop('content')
-        err, result = parent.utm.add_nlist(item)
-        if err == 1:
-            parent.stepChanged.emit(f'1|{result}')
-            parent.stepChanged.emit(f'1|Ошибка! Группа приложений "{item["name"]}" не импортирована.')
-            error = 1
-            continue
-        elif err == 2:
-            parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" уже существует.')
-        else:
-            list_applicationgroups[item['name']] = result
-            parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" добавлена.')
-
-        for app in content:
-            app_name = app['value']
-            try:
-                app['value'] = l7_app_id[app_name]
-            except KeyError as err:
-                parent.stepChanged.emit(f'4|   Ошибка! Приложение "{app_name}" не импортировано. Такого приложения нет на UG NGFW.')
-                error = 1
-                continue
-            err2, result2 = parent.utm.add_nlist_item(list_applicationgroups[item['name']], app)
-            if err2 == 1:
-                error = 1
-                parent.stepChanged.emit(f'1|   {result2}')
-            elif err2 == 2:
-                parent.stepChanged.emit(f'2|   Приложение "{app_name}" уже существует.')
-            else:
-                parent.stepChanged.emit(f'2|   Добавлено приложение "{app_name}".')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Группы приложений импортированы в раздел "Библиотеки/Приложения".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте групп приложений!' if error else out_message)
 
 
 def import_content_rules(parent):
@@ -3062,7 +4398,7 @@ def set_apps_values(parent):
     if err:
         parent.stepChanged.emit(f'iRED|{result}')
         return 1
-    parent.l7_apps = {x['name']: x['id'] for x in result}
+    parent.l7_apps = {value: key for key, value in result.items()}
 
     err, result = parent.utm.get_nlists_list('applicationgroup')
     if err:
@@ -3111,6 +4447,39 @@ def set_scenarios_rules(parent):
         return
     parent.scenarios_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
+def execute_add_update_nlist(parent, ngfw_named_list, item, item_note):
+    """Обновляем существующий именованный список или создаём новый именованный список"""
+    if item['name'] in ngfw_named_list:
+        parent.stepChanged.emit(f'GRAY|    {item_note} "{item["name"]}" уже существует.')
+        err, result = parent.utm.update_nlist(ngfw_named_list[item['name']], item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}  [{item_note}: {item["name"]}]')
+            return 1
+        elif err == 2:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        else:
+            parent.stepChanged.emit(f'BLACK|    {item_note} "{item["name"]}" updated.')
+    else:
+        err, result = parent.utm.add_nlist(item)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}  [{item_note}: "{item["name"]}"]')
+            return 1
+        else:
+            ngfw_named_list[item['name']] = result
+            parent.stepChanged.emit(f'BLACK|    {item_note} "{item["name"]}" импортирована.')
+    return 0
+
+def execute_add_nlist_items(parent, list_id, item_name, content):
+    """Импортируем содержимое в именованный список"""
+    err, result = parent.utm.add_nlist_items(list_id, content)
+    if err == 2:
+        parent.stepChanged.emit(f'GRAY|       {result}')
+    elif err == 1:
+        parent.stepChanged.emit(f'RED|       {result}  [Список: "{item_name}"]')
+        return 1
+    else:
+        parent.stepChanged.emit(f'BLACK|       Содержимое списка "{item_name}" обновлено.')
+    return 0
 
 def add_new_nlist(utm, name, nlist_type, content):
     """Добавляем в библиотеку новый nlist с содержимым."""

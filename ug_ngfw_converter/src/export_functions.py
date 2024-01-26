@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.4
+# Версия 0.5
 #
 
 import os, sys, json
@@ -50,12 +50,12 @@ class ExportAll(QThread):
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
         self.default_urlcategorygroup = {
-            'Parental Control': 'URL_CATEGORY_GROUP_PARENTAL_CONTROL',
-            'Productivity': 'URL_CATEGORY_GROUP_PRODUCTIVITY',
-            'Safe categories': 'URL_CATEGORY_GROUP_SAFE',
-            'Threats': 'URL_CATEGORY_GROUP_THREATS',
-            'Recommended for morphology checking': 'URL_CATEGORY_MORPHO_RECOMMENDED',
-            'Recommended for virus check': 'URL_CATEGORY_VIRUSCHECK_RECOMMENDED'
+            'URL_CATEGORY_GROUP_PARENTAL_CONTROL': 'Parental Control',
+            'URL_CATEGORY_GROUP_PRODUCTIVITY': 'Productivity',
+            'URL_CATEGORY_GROUP_SAFE': 'Safe categories',
+            'URL_CATEGORY_GROUP_THREATS': 'Threats',
+            'URL_CATEGORY_MORPHO_RECOMMENDED': 'Recommended for morphology checking',
+            'URL_CATEGORY_VIRUSCHECK_RECOMMENDED': 'Recommended for virus check'
         }
         self.init_struct()
 
@@ -175,12 +175,12 @@ class ExportSelectedPoints(QThread):
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
         self.default_urlcategorygroup = {
-            'Parental Control': 'URL_CATEGORY_GROUP_PARENTAL_CONTROL',
-            'Productivity': 'URL_CATEGORY_GROUP_PRODUCTIVITY',
-            'Safe categories': 'URL_CATEGORY_GROUP_SAFE',
-            'Threats': 'URL_CATEGORY_GROUP_THREATS',
-            'Recommended for morphology checking': 'URL_CATEGORY_MORPHO_RECOMMENDED',
-            'Recommended for virus check': 'URL_CATEGORY_VIRUSCHECK_RECOMMENDED'
+            'URL_CATEGORY_GROUP_PARENTAL_CONTROL': 'Parental Control',
+            'URL_CATEGORY_GROUP_PRODUCTIVITY': 'Productivity',
+            'URL_CATEGORY_GROUP_SAFE': 'Safe categories',
+            'URL_CATEGORY_GROUP_THREATS': 'Threats',
+            'URL_CATEGORY_MORPHO_RECOMMENDED': 'Recommended for morphology checking',
+            'URL_CATEGORY_VIRUSCHECK_RECOMMENDED': 'Recommended for virus check'
         }
         self.init_struct()
 
@@ -1987,6 +1987,1156 @@ def export_shaper_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил пропускной способности.' if error else out_message)
 
 
+def export_morphology_lists(parent, path):
+    """Экспортируем списки морфологии"""
+    parent.stepChanged.emit('BLUE|Экспорт списков морфологии из раздела "Библиотеки/Морфология".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('morphology')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            if parent.version < 6:
+                attributes = {}
+                for attr in item['attributes']:
+                    if attr['name'] == 'threat_level':
+                        attributes['threat_level'] = attr['value']
+                    else:
+                        attributes['threshold'] = attr['value']
+                item['attributes'] = attributes
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            for content in item['content']:
+                content.pop('id', None)
+
+        json_file = os.path.join(path, 'config_morphology_lists.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Списки морфологии выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков морфологии.' if error else out_message)
+
+
+def export_services_list(parent, path):
+    """Экспортируем список сервисов раздела библиотеки"""
+    parent.stepChanged.emit('BLUE|Экспорт списка сервисов из раздела "Библиотеки/Сервисы".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_services_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id')
+            item.pop('guid')
+            item.pop('cc', None)
+            item.pop('readonly', None)
+            for value in item['protocols']:
+                if 'alg' not in value:
+                    value['alg'] = ''
+                if parent.version < 6:
+                    match value['port']:
+                        case '110':
+                            value['proto'] = 'pop3'
+                            value['app_proto'] = 'pop3'
+                        case '995':
+                            value['proto'] = 'pop3s'
+                            value['app_proto'] = 'pop3s'
+                        case '25':
+                            value['app_proto'] = 'smtp'
+                        case '465':
+                            value['app_proto'] = 'smtps'
+                    if 'app_proto' not in value:
+                        value['app_proto'] = ''
+
+        json_file = os.path.join(path, 'config_services_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список сервисов выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка сервисов.' if error else out_message)
+
+
+def export_services_groups(parent, path):
+    """Экспортируем группы сервисов раздела библиотеки. Только для версии 7 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт списка групп сервисов сервисов из раздела "Библиотеки/Группы сервисов".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+    
+    err, data = parent.utm.get_nlist_list('servicegroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id')
+            item.pop('guid')
+            item.pop('editable')
+            item.pop('enabled')
+            item.pop('version')
+            item['name'] = item['name'].strip().translate(trans_name)
+            item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id')
+                content.pop('guid')
+
+        json_file = os.path.join(path, 'config_services_groups_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Группы сервисов выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп сервисов.' if error else out_message)
+
+
+def export_IP_lists(parent, path):
+    """Экспортируем списки IP-адресов и преобразует формат атрибутов списков к версии 7"""
+    parent.stepChanged.emit('BLUE|Экспорт списка IP-адресов из раздела "Библиотеки/IP-адреса".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('network')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            file_name = item['name'].strip().translate(trans_filename)
+            item['name'] = item['name'].strip().translate(trans_name)
+            if parent.version < 6:
+                item['attributes'] = {'threat_level': x['value'] for x in item['attributes']}
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id', None)
+                if 'list' in content:
+                    content['list'] = content['value']
+                    content.pop('value', None)
+                    content.pop('readonly', None)
+                    content.pop('description', None)
+
+            json_file = os.path.join(path, f'{file_name}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(item, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{item["name"]}" выгружен в файл "{json_file}".')
+
+    out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{path}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков IP-адресов.' if error else out_message)
+
+
+def export_useragent_lists(parent, path):
+    """Экспортируем списки useragent и преобразует формат атрибутов списков к версии 7"""
+    parent.stepChanged.emit('BLUE|Экспорт списка "Useragent браузеров" из раздела "Библиотеки/Useragent браузеров".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            for content in item['content']:
+                content.pop('id', None)
+
+        json_file = os.path.join(path, 'config_useragents_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список "Useragent браузеров" выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка "Useragent браузеров".' if error else out_message)
+
+
+def export_mime_lists(parent, path):
+    """Экспортируем списки Типов контента и преобразует формат атрибутов списков к версии 7"""
+    parent.stepChanged.emit('BLUE|Экспорт списка "Типы контента" из раздела "Библиотеки/Типы контента".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('mime')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id', None)
+
+        json_file = os.path.join(path, 'config_mime_types.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список "Типы контента" выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка "Типы контента".' if error else out_message)
+
+
+def export_url_lists(parent, path):
+    """Экспортируем списки URL и преобразует формат атрибутов списков к версии 6"""
+    parent.stepChanged.emit('BLUE|Экспорт списков URL из раздела "Библиотеки/Списки URL".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('url')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            file_name = item['name'].strip().translate(trans_filename)
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {'threat_level': x['value'] for x in item['attributes']}
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id', None)
+
+            json_file = os.path.join(path, f'{file_name}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(item, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список URL "{item["name"]}" выгружен в файл "{json_file}".')
+
+    out_message = f'GREEN|    Списки URL выгружены в каталог "{path}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков URL.' if error else out_message)
+
+
+def export_time_restricted_lists(parent, path):
+    """Экспортируем содержимое календарей и преобразует формат атрибутов списков к версии 7"""
+    parent.stepChanged.emit('BLUE|Экспорт списка "Календари" из раздела "Библиотеки/Календари".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('timerestrictiongroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id', None)
+                if parent.version < 6:
+                    content.pop('fixed_date_from', None)
+                    content.pop('fixed_date_to', None)
+                    content.pop('fixed_date', None)
+
+        json_file = os.path.join(path, 'config_calendars.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список "Календари" выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка "Календари".' if error else out_message)
+
+
+def export_shaper_list(parent, path):
+    """Экспортируем список Полосы пропускания"""
+    parent.stepChanged.emit('BLUE|Экспорт списка "Полосы пропускания" из раздела "Библиотеки/Полосы пропускания".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_shaper_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_shaper_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список "Полосы пропускания" выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка "Полосы пропускания".' if error else out_message)
+
+
+def export_scada_profiles(parent, path):
+    """Экспортируем список профилей АСУ ТП"""
+    parent.stepChanged.emit('BLUE|Экспорт списка профилей АСУ ТП из раздела "Библиотеки/Профили АСУ ТП".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_scada_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_scada_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список "Профили АСУ ТП" выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка "Профили АСУ ТП".' if error else out_message)
+
+
+def export_templates_list(parent, path):
+    """
+    Экспортируем список шаблонов страниц.
+    Выгружает файл HTML только для изменённых страниц шаблонов.
+    """
+    parent.stepChanged.emit('BLUE|Экспорт шаблонов страниц из раздела "Библиотеки/Шаблоны страниц".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_templates_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            err, html_data = parent.utm.get_template_data(item['type'], item['id'])
+            if html_data:
+                with open(os.path.join(path, f'{item["name"]}.html'), "w") as fh:
+                    fh.write(html_data)
+                parent.stepChanged.emit(f'BLACK|    Страница HTML для шаблона "{item["name"]}" выгружена в файл "{item["name"]}.html".')
+
+            item.pop('id', None)
+            item.pop('last_update', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_templates_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Шаблоны страниц выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте шаблонов страниц.' if error else out_message)
+
+
+def export_url_categories(parent, path):
+    """Экспортируем категории URL"""
+    parent.stepChanged.emit('BLUE|Экспорт категорий URL из раздела "Библиотеки/Категории URL".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    revert_urlcategorygroup = {v: k for k, v in parent.default_urlcategorygroup.items()}
+
+    err, data = parent.utm.get_nlist_list('urlcategorygroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = parent.default_urlcategorygroup.get(item['name'], item['name'].strip().translate(trans_name))
+            item.pop('id', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            if parent.version < 6:
+                item['guid'] = revert_urlcategorygroup.get(item['name'], item['guid'])
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                item['list_type_update'] = 'static'
+                item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                if parent.version < 6:
+                    content['category_id'] = content.pop('value')
+                    content['name'] = parent.url_categories[int(content['category_id'])]
+                content.pop('id', None)
+
+        json_file = os.path.join(path, 'config_url_categories.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Категории URL выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте категорий URL.' if error else out_message)
+
+
+def export_custom_url_category(parent, path):
+    """Экспортируем изменённые категории URL"""
+    parent.stepChanged.emit('BLUE|Экспорт изменённых категорий URL из раздела "Библиотеки/Изменённые категории URL".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_custom_url_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('user', None)
+            item.pop('default_categories', None)
+            item.pop('change_date', None)
+            item.pop('cc', None)
+            item['categories'] = [parent.url_categories[x] for x in item['categories']]
+
+        json_file = os.path.join(path, 'custom_url_categories.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Изменённые категории URL выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте изменённых категорий URL.' if error else out_message)
+
+
+def export_applications(parent, path):
+    """Экспортируем список пользовательских приложений для версии 7.1 и выше."""
+    parent.stepChanged.emit('BLUE|Экспорт пользовательских приложений из раздела "Библиотеки/Приложения".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, data = parent.utm.get_version71_apps(query={'query': 'owner = You'})
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('attributes', None)
+            item.pop('cc', None)
+            item['l7categories'] = [parent.l7_categories[x[1]] for x in item['l7categories']]
+
+        json_file = os.path.join(path, 'config_applications.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Пользовательские приложения выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте пользовательских приложений.' if error else out_message)
+
+
+def export_app_profiles(parent, path):
+    """Экспортируем профили приложений. Только для версии 7.1 и выше."""
+    parent.stepChanged.emit('BLUE|Экспорт профилей приложений из раздела "Библиотеки/Профили приложений".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, data = parent.utm.get_l7_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            for app in item['overrides']:
+                app['id'] = parent.l7_apps[app['id']]
+
+        json_file = os.path.join(path, 'config_app_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили приложений выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей приложений.' if error else out_message)
+
+
+def export_application_groups(parent, path):
+    """Экспортируем группы приложений."""
+    parent.stepChanged.emit('BLUE|Экспорт групп приложений из раздела "Библиотеки/Группы приложений".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, data = parent.utm.get_nlist_list('applicationgroup')
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('version', None)
+            item.pop('global', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                item['list_type_update'] = 'static'
+                item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id', None)
+                content.pop('item_id', None)
+                content.pop('attributes', None)
+                content.pop('cc', None)
+                content.pop('description', None)
+                if parent.version < 6:
+                    content['name'] = parent.l7_apps[content['value']]
+                elif parent.version < 7.1:
+                    content['category'] = [parent.l7_categories[x] for x in content['category']]
+                else:
+                    try:
+                        content['l7categories'] = [parent.l7_categories[x[1]] for x in content['l7categories']]
+                    except KeyError:
+                        pass    # Ошибка бывает если ранее было не корректно добавлено приложение через API в версии 7.1.
+
+        json_file = os.path.join(path, 'config_application_groups.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Группы приложений выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп приложений.' if error else out_message)
+
+
+def export_email_groups(parent, path):
+    """Экспортируем группы почтовых адресов."""
+    parent.stepChanged.emit('BLUE|Экспорт групп почтовых адресов из раздела "Библиотеки/Почтовые адреса".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('emailgroup')
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id')
+
+        json_file = os.path.join(path, 'config_email_groups.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Группы почтовых адресов выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп почтовых адресов.' if error else out_message)
+
+
+def export_phone_groups(parent, path):
+    """Экспортируем группы телефонных номеров."""
+    parent.stepChanged.emit('BLUE|Экспорт групп телефонных номеров из раздела "Библиотеки/Номера телефонов".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_nlist_list('phonegroup')
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('editable', None)
+            item.pop('enabled', None)
+            item.pop('global', None)
+            item.pop('version', None)
+            if parent.version < 6:
+                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['attributes'] = {}
+                if item['url']:
+                    item['list_type_update'] = 'dynamic'
+                    item['schedule'] = '0 0-23/1 * * *'
+                    item['attributes']['readonly_data'] = True
+                else:
+                    item['list_type_update'] = 'static'
+                    item['schedule'] = 'disabled'
+            else:
+                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+            for content in item['content']:
+                content.pop('id')
+
+        json_file = os.path.join(path, 'config_phone_groups.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Группы телефонных номеров выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп телефонных номеров.' if error else out_message)
+
+
+def export_custom_idps_signatures(parent, path):
+    """Экспортируем пользовательские сигнатуры СОВ для версии 7.1 и выше."""
+    parent.stepChanged.emit('BLUE|Экспорт пользовательских сигнатур СОВ из раздела "Библиотеки/Сигнатуры СОВ".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_idps_signatures_list(query={'query': 'owner = You'})
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('attributes', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'custom_idps_signatures.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Пользовательские сигнатуры СОВ выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте пользовательских сигнатур СОВ.' if error else out_message)
+
+
+def export_idps_profiles(parent, path):
+    """Экспортируем список профилей СОВ"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей СОВ из раздела "Библиотеки/Профили СОВ".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+
+    error = 0
+    data = []
+
+    if parent.version < 7.1:
+        err, data = parent.utm.get_nlist_list('ipspolicy')
+        if err:
+            parent.stepChanged.emit(f'iRED|{data}')
+            parent.error = 1
+            error = 1
+        else:
+            for item in data:
+                item.pop('id', None)
+                item.pop('guid', None)
+                item.pop('editable', None)
+                item.pop('enabled', None)
+                item.pop('global', None)
+                item.pop('version', None)
+                item['name'] = item['name'].strip().translate(trans_name)
+                if parent.version < 6:
+                    item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                    item.pop('attributes', None)
+                else:
+                    item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+                for content in item['content']:
+                    content.pop('id', None)
+                    content.pop('l10n', None)
+                    content.pop('bugtraq', None)
+                    content.pop('nessus', None)
+                    if 'threat_level' in content.keys():
+                        content['threat'] = content.pop('threat_level')
+    else:
+        err, data = parent.utm.get_idps_profiles_list()
+        if err:
+            parent.stepChanged.emit(f'iRED|{data}')
+            parent.error = 1
+            error = 1
+        else:
+            for item in data:
+                item.pop('id', None)
+                item.pop('cc', None)
+                for app in item['overrides']:
+                    err, result = parent.utm.get_idps_signature_fetch(app['id'])
+                    if err:
+                        parent.stepChanged.emit(f'iRED|{result}')
+                        parent.error = 1
+                        error = 1
+                    else:
+                        app['signature_id'] = result['signature_id']
+                        app['msg'] = result['msg']
+
+    json_file = os.path.join(path, 'config_idps_profiles.json')
+    with open(json_file, 'w') as fh:
+        json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список профилей СОВ выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей СОВ.' if error else out_message)
+
+
+def export_notification_profiles(parent, path):
+    """Экспортируем список профилей оповещения"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей оповещений из раздела "Библиотеки/Профили оповещений".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_notification_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+
+        json_file = os.path.join(path, 'config_notification_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили оповещений выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей оповещений.' if error else out_message)
+
+
+def export_netflow_profiles(parent, path):
+    """Экспортируем список профилей netflow"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей netflow из раздела "Библиотеки/Профили netflow".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_netflow_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+
+        json_file = os.path.join(path, 'config_netflow_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили netflow выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей netflow.' if error else out_message)
+
+
+def export_ssl_profiles(parent, path):
+    """Экспортируем список профилей SSL"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей SSL из раздела "Библиотеки/Профили SSL".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_ssl_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+
+        json_file = os.path.join(path, 'config_ssl_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили SSL выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей SSL.' if error else out_message)
+
+
+def export_lldp_profiles(parent, path):
+    """Экспортируем список профилей LLDP"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей LLDP из раздела "Библиотеки/Профили LLDP".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_lldp_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+
+        json_file = os.path.join(path, 'config_lldp_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили LLDP выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей LLDP.' if error else out_message)
+
+
+def export_ssl_forward_profiles(parent, path):
+    """Экспортируем профили пересылки SSL"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей пересылки SSL из раздела "Библиотеки/Профили пересылки SSL".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_ssl_forward_profiles()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+
+        json_file = os.path.join(path, 'config_ssl_forward_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили пересылки SSL выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей пересылки SSL.' if error else out_message)
+
+
+def export_hip_objects(parent, path):
+    """Экспортируем HIP объекты"""
+    parent.stepChanged.emit('BLUE|Экспорт HIP объектов из раздела "Библиотеки/HIP объекты".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_hip_objects_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_hip_objects.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    HIP объекты выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте HIP объектов.' if error else out_message)
+
+
+def export_hip_profiles(parent, path):
+    """Экспортируем HIP профили"""
+    parent.stepChanged.emit('BLUE|Экспорт HIP профилей из раздела "Библиотеки/HIP профили".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_hip_objects_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    hip_objects = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_hip_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            for obj in item['hip_objects']:
+                obj['id'] = hip_objects[obj['id']]
+
+        json_file = os.path.join(path, 'config_hip_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    HIP профили выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте HIP профилей.' if error else out_message)
+
+
+def export_bfd_profiles(parent, path):
+    """Экспортируем профили BFD"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей BFD из раздела "Библиотеки/Профили BFD".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_bfd_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_bfd_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили BFD выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей BFD.' if error else out_message)
+
+
+def export_useridagent_syslog_filters(parent, path):
+    """Экспортируем syslog фильтры UserID агента"""
+    parent.stepChanged.emit('BLUE|Экспорт syslog фильтров UserID агента из раздела "Библиотеки/Syslog фильтры UserID агента".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_useridagent_filters_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_useridagent_syslog_filters.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Syslog фильтры UserID агента выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте syslog фильтров UserID агента.' if error else out_message)
+
+
 def pass_function(parent, path):
     """Функция заглушка"""
     parent.stepChanged.emit(f'GRAY|Экспорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
@@ -2023,482 +3173,66 @@ func = {
     'NATandRouting': export_nat_rules,
     'LoadBalancing': export_loadbalancing_rules,
     'TrafficShaping': export_shaper_rules,
+    "SecurityPolicies": pass_function,
+    "ContentFiltering": pass_function,
+    "SafeBrowsing": pass_function,
+    "TunnelInspection": pass_function,
+    "SSLInspection": pass_function,
+    "SSHInspection": pass_function,
+    "IntrusionPrevention": pass_function,
+    "Scenarios": pass_function,
+    "MailSecurity": pass_function,
+    "ICAPRules": pass_function,
+    "ICAPServers": pass_function,
+    "DoSRules": pass_function,
+    "DoSProfiles": pass_function,
+    "SCADARules": pass_function,
+    "GlobalPortal": pass_function,
+    "WebPortal": pass_function,
+    "ReverseProxyRules": pass_function,
+    "ReverseProxyServers": pass_function,
+    "WAF": pass_function,
+    "WAFprofiles": pass_function,
+    "CustomWafLayers": pass_function,
+    "SystemWafRules": pass_function,
+    "VPN": pass_function,
+    "ServerRules": pass_function,
+    "ClientRules": pass_function,
+    "VPNNetworks": pass_function,
+    "SecurityProfiles": pass_function,
+    "ServerSecurityProfiles": pass_function,
+    "ClientSecurityProfiles": pass_function,
+    "Morphology": export_morphology_lists,
+    "Services": export_services_list,
+    "ServicesGroups": export_services_groups,
+    "IPAddresses": export_IP_lists,
+    "Useragents": export_useragent_lists,
+    "ContentTypes": export_mime_lists,
+    "URLLists": export_url_lists,
+    "TimeSets": export_time_restricted_lists,
+    "BandwidthPools": export_shaper_list,
+    "SCADAProfiles": export_scada_profiles,
+    "ResponcePages": export_templates_list,
+    "URLCategories": export_url_categories,
+    "OverURLCategories": export_custom_url_category,
+    "Applications": export_applications,
+    "ApplicationProfiles": export_app_profiles,
+    "ApplicationGroups": export_application_groups,
+    "Emails": export_email_groups,
+    "Phones": export_phone_groups,
+    "IPDSSignatures": export_custom_idps_signatures,
+    "IDPSProfiles": export_idps_profiles,
+    "NotificationProfiles": export_notification_profiles,
+    "NetflowProfiles": export_netflow_profiles,
+    "SSLProfiles": export_ssl_profiles,
+    "LLDPProfiles": export_lldp_profiles,
+    "SSLForwardingProfiles": export_ssl_forward_profiles,
+    "HIDObjects": export_hip_objects,
+    "HIDProfiles": export_hip_profiles,
+    "BfdProfiles": export_bfd_profiles,
+    "UserIdAgentSyslogFilters": export_useridagent_syslog_filters,
 }
 
-
-def import_services(parent):
-    """Импортируем список сервисов раздела библиотеки"""
-    parent.stepChanged.emit('0|Импорт списка сервисов в раздел "Библиотеки/Сервисы"')
-
-    json_file = "data_ug/Libraries/Services/config_services.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта списка сервисов!', '2|Нет сервисов для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_services_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    services_list = {x['name']: x['id'] for x in result}
-    error = 0
-    
-    for item in data:
-        if item['name'] in services_list:
-            parent.stepChanged.emit(f'2|Сервис "{item["name"]}" уже существует.')
-        else:
-            err, result = parent.utm.add_service(item)
-            if err:
-                parent.stepChanged.emit(f'{err}|{result}')
-                if err == 1:
-                    error = 1
-                    parent.error = 1
-            else:
-                services_list[item['name']] = result
-                parent.stepChanged.emit(f'2|Сервис "{item["name"]}" добавлен.')
-
-    out_message = '5|Список сервисов импортирован в раздел "Библиотеки/Сервисы"'
-    parent.stepChanged.emit('6|Произошла ошибка при добавлении сервисов!' if error else out_message)
-
-def import_services_groups(parent):
-    """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
-    parent.stepChanged.emit('0|Импорт групп сервисов раздела "Библиотеки/Группы сервисов".')
-
-    if int(parent.utm.version[:1]) < 7:
-        parent.stepChanged.emit('1|Ошибка! Импорт групп сервисов возможен только на версию 7 или выше.')
-        return
-        
-    err, result = parent.utm.get_services_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    services_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('servicegroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    srv_groups = {x['name']: x['id'] for x in result}
-
-    out_message = '5|Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
-    error = 0
-    
-    if os.path.isdir('data_ug/Libraries/ServicesGroups'):
-        files_list = os.listdir('data_ug/Libraries/ServicesGroups')
-        if files_list:
-            for file_name in files_list:
-                json_file = f"data_ug/Libraries/ServicesGroups/{file_name}"
-                err, services_group = read_json_file(json_file, '2|Ошибка импорта группы сервисов!', '2|Нет группы сервисов для импорта.')
-                if err:
-                    parent.stepChanged.emit(services_group)
-                    parent.error = 1
-                    return
-
-                content = services_group.pop('content')
-                err, result = parent.utm.add_nlist(services_group)
-                if err:
-                    parent.stepChanged.emit(f'{err}|{result}')
-                    if err == 1:
-                        parent.stepChanged.emit(f'1|Ошибка! Группа сервисов "{services_group["name"]}" не импортирована.')
-                        error = 1
-                        continue
-                else:
-                    parent.stepChanged.emit(f'2|Добавлена группа сервисов: "{services_group["name"]}".')
-                    srv_groups[services_group['name']] = result
-                if content:
-                    for item in content:
-                        try:
-                            item['value'] = services_list[item['name']]
-                        except KeyError:
-                            parent.stepChanged.emit(f'4|   Ошибка! Нет сервиса "{item["name"]}" в списке сервисов NGFW.')
-                            parent.stepChanged.emit(f'4|   Ошибка! Сервис "{item["name"]}" не добавлен в группу сервисов "{services_group["name"]}".')
-                    err2, result2 = parent.utm.add_nlist_items(srv_groups[services_group['name']], content)
-                    if err2:
-                        parent.stepChanged.emit(f'{err2}|   {result2}')
-                        if err2 == 1:
-                            error = 1
-                    else:
-                        parent.stepChanged.emit(f'2|   Содержимое группы сервисов "{services_group["name"]}" обновлено.')
-                else:
-                    parent.stepChanged.emit(f'2|   Список "{services_group["name"]}" пуст.')
-        else:
-            out_message = "2|Нет групп сервисов для импорта."
-    else:
-        out_message = "2|Нет групп сервисов для импорта."
-    if error:
-        parent.error = 1
-    parent.stepChanged.emit('6|Произошла ошибка при добавлении групп сервисов!' if error else out_message)
-
-def import_ip_lists(parent):
-    """Импортируем списки IP адресов"""
-    parent.stepChanged.emit('0|Импорт списков IP-адресов раздела "Библиотеки/IP-адреса".')
-
-    if not os.path.isdir('data_ug/Libraries/IPAddresses'):
-        parent.stepChanged.emit("2|Нет списков IP-адресов для импорта.")
-        return
-
-    files_list = os.listdir('data_ug/Libraries/IPAddresses')
-    if not files_list:
-        parent.stepChanged.emit("2|Нет списков IP-адресов для импорта.")
-        return
-
-    error = 0
-    err, result = parent.utm.get_nlists_list('network')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    ngfw_ip_lists = {x['name']: x['id'] for x in result}
-
-    # Добаляем списки IP-адресов без содержимого (пустые).
-    for file_name in files_list:
-        json_file = f"data_ug/Libraries/IPAddresses/{file_name}"
-        err, ip_list = read_json_file(json_file, '2|Ошибка импорта списка IP-адресов!', '2|Нет списка IP-адресов для импорта.')
-        if err:
-            parent.stepChanged.emit(ip_list)
-            parent.error = 1
-            return
-
-        content = ip_list.pop('content')
-        err, result = parent.utm.add_nlist(ip_list)
-        if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                parent.stepChanged.emit(f'1|Ошибка! Список IP-адресов "{ip_list["name"]}" не импортирован.')
-                error = 1
-                continue
-        else:
-            ngfw_ip_lists[ip_list['name']] = result
-            parent.stepChanged.emit(f'2|Добавлен список IP-адресов: "{ip_list["name"]}".')
-
-    # Добавляем содержимое в уже добавленные списки IP-адресов.
-    for file_name in files_list:
-        with open(f"data_ug/Libraries/IPAddresses/{file_name}", "r") as fh:
-            ip_list = json.load(fh)
-        content = ip_list.pop('content')
-        if content:
-            for item in content:
-                if 'list' in item:
-                    try:
-                        item['list'] = ngfw_ip_lists[item['list'][1]]
-                    except KeyError:
-                        parent.stepChanged.emit(f'4|   Ошибка! Нет IP-листа "{item["list"][1]}" в списках IP-адресов NGFW.')
-                        parent.stepChanged.emit(f'4|   Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".')
-                        error = 1
-                        break
-            try:
-                named_list_id = ngfw_ip_lists[ip_list['name']]
-            except KeyError:
-                parent.stepChanged.emit(f'4|   Ошибка! Нет IP-листа "{ip_list["name"]}" в списках IP-адресов NGFW.')
-                parent.stepChanged.emit(f'4|   Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".')
-                error = 1
-                continue
-            err2, result2 = parent.utm.add_nlist_items(named_list_id, content)
-            if err2:
-                parent.stepChanged.emit(f'{err2}|   {result2}')
-                if err2 == 1:
-                    error = 1
-            else:
-                parent.stepChanged.emit(f'2|Содержимое списка "{ip_list["name"]}" обновлено.')
-        else:
-            parent.stepChanged.emit(f'2|Список "{ip_list["name"]}" пуст.')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте списков IP-адресов!' if error else out_message)
-
-def import_url_lists(parent):
-    """Импортировать списки URL на UTM"""
-    parent.stepChanged.emit('0|Импорт списков URL раздела "Библиотеки/Списки URL".')
-        
-    if not os.path.isdir('data_ug/Libraries/URLLists'):
-        parent.stepChanged.emit('2|Нет списков URL для импорта.')
-        return
-
-    files_list = os.listdir('data_ug/Libraries/URLLists')
-    if not files_list:
-        parent.stepChanged.emit('2|Нет списков URL для импорта.')
-        return
-
-    error = 0
-    err, result = parent.utm.get_nlists_list('url')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_list = {x['name']: x['id'] for x in result}
-
-    for file_name in files_list:
-        json_file = f"data_ug/Libraries/URLLists/{file_name}"
-        err, data = read_json_file(json_file, '2|Ошибка импорта списка URL!', '2|Нет списка URL для импорта.')
-        if err:
-            parent.stepChanged.emit(data)
-            parent.error = 1
-            return
-
-        content = data.pop('content')
-        err, result = parent.utm.add_nlist(data)
-        if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                parent.stepChanged.emit(f'1|Ошибка! Список URL "{data["name"]}" не импортирован.')
-                error = 1
-                continue
-        else:
-            url_list[data['name']] = result
-            parent.stepChanged.emit(f'2|Добавлен список URL: "{data["name"]}".')
-
-        if content:
-            err2, result2 = parent.utm.add_nlist_items(url_list[data['name']], content)
-            if err2:
-                parent.stepChanged.emit(f'{err2}|   {result2}')
-                if err2 == 1:
-                    error = 1
-            else:
-                parent.stepChanged.emit(f'2|   Содержимое списка "{data["name"]}" обновлено. Added {result2} record.')
-        else:
-            parent.stepChanged.emit(f'2|   Список "{data["name"]}" пуст.')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Списки URL импортированы в раздел "Библиотеки/Списки URL".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте списков URL!' if error else out_message)
-
-def import_url_categories(parent):
-    """Импортировать группы URL категорий с содержимым на UTM"""
-    parent.stepChanged.emit('0|Импорт групп URL категорий раздела "Библиотеки/Категории URL".')
-
-    json_file = "data_ug/Libraries/URLCategories/config_categories_url.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта групп URL категорий!', '2|Нет групп URL категорий для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    error = 0
-    err, result = parent.utm.get_nlists_list('urlcategorygroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_category_groups = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_url_categories()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_categories = {x['name']: x['id'] for x in result}
-
-    for item in data:
-        content = item.pop('content')
-        if item['name'] not in ['Parental Control', 'Productivity', 'Safe categories', 'Threats',
-                                'Recommended for morphology checking', 'Recommended for virus check']:
-            err, result = parent.utm.add_nlist(item)
-            if err:
-                parent.stepChanged.emit(f'{err}|{result}')
-                if err == 1:
-                    parent.stepChanged.emit(f'1|Ошибка! Группа URL категорий "{item["name"]}" не импортирована.')
-                    error = 1
-                    continue
-            else:
-                url_category_groups[item['name']] = result
-                parent.stepChanged.emit(f'2|Группа URL категорий "{item["name"]}" добавлена.')
-                
-            for category in content:
-                try:
-                    category_url = {'category_id': url_categories[category['name']]}
-                except KeyError as err:
-                    parent.stepChanged.emit(f'4|   Ошибка! URL категория "{category["name"]}" не импортирована. Нет такой категории на UG NGFW.')
-                    error = 1
-                    continue
-                err2, result2 = parent.utm.add_nlist_item(url_category_groups[item['name']], category_url)
-                if err2:
-                    parent.stepChanged.emit(f'{err2}|   {result2}')
-                    if err2 == 1:
-                        error = 1
-                else:
-                    parent.stepChanged.emit(f'2|   Добавлена категория "{category["name"]}".')
-    if error:
-        parent.error = 1
-    out_message = '5|Группы URL категорий импортированы в раздел "Библиотеки/Категории URL".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте групп URL категорий!' if error else out_message)
-
-def import_application_groups(parent):
-    """Импортировать список "Приложения" на UTM"""
-    parent.stepChanged.emit('0|Импорт групп приложений в раздел "Библиотеки/Приложения".')
-
-    json_file = "data_ug/Libraries/Applications/config_applications.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта групп приложений!', '2|Нет групп приложений для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_l7_apps()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    l7_app_id = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('applicationgroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    list_applicationgroups = {x['name']: x['id'] for x in result}
-
-    error = 0
-    for item in data:
-        content = item.pop('content')
-        err, result = parent.utm.add_nlist(item)
-        if err == 1:
-            parent.stepChanged.emit(f'1|{result}')
-            parent.stepChanged.emit(f'1|Ошибка! Группа приложений "{item["name"]}" не импортирована.')
-            error = 1
-            continue
-        elif err == 2:
-            parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" уже существует.')
-        else:
-            list_applicationgroups[item['name']] = result
-            parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" добавлена.')
-
-        for app in content:
-            app_name = app['value']
-            try:
-                app['value'] = l7_app_id[app_name]
-            except KeyError as err:
-                parent.stepChanged.emit(f'4|   Ошибка! Приложение "{app_name}" не импортировано. Такого приложения нет на UG NGFW.')
-                error = 1
-                continue
-            err2, result2 = parent.utm.add_nlist_item(list_applicationgroups[item['name']], app)
-            if err2 == 1:
-                error = 1
-                parent.stepChanged.emit(f'1|   {result2}')
-            elif err2 == 2:
-                parent.stepChanged.emit(f'2|   Приложение "{app_name}" уже существует.')
-            else:
-                parent.stepChanged.emit(f'2|   Добавлено приложение "{app_name}".')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Группы приложений импортированы в раздел "Библиотеки/Приложения".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте групп приложений!' if error else out_message)
-
-
-def import_content_rules(parent):
-    """Импортировать список правил фильтрации контента"""
-    parent.stepChanged.emit('0|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
-
-    json_file = "data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта правил фильтрации контента!', '2|Нет правил фильтрации контента для импорта.')
-    if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
-        return
-
-    err, result = parent.utm.get_content_rules()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
-        parent.error = 1
-        return
-    content_rules = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_zones_list()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
-        parent.error = 1
-        return
-    zones_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('network')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
-        parent.error = 1
-        return
-    ips_list = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('urlcategorygroup')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
-        parent.error = 1
-        return
-    url_category_groups = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_url_categories()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
-        parent.error = 1
-        return
-    url_categories = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_nlists_list('url')
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
-        parent.error = 1
-        return
-    url_list = {x['name']: x['id'] for x in result}
-
-    error = 0
-    for item in data:
-        item['position'] = 'last'
-        get_guids_users_and_groups(parent, item)
-        item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
-        item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
-
-        for x in item['url_categories']:
-            try:
-                x[1] = url_category_groups[x[1]] if x[0] == 'list_id' else url_categories[x[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найдена группа URL-категорий {err} для правила "{item["name"]}". Загрузите ктегории URL и повторите попытку.')
-
-        url_oids = []
-        for url_name in item['urls']:
-            try:
-                url_oids.append(url_list[url_name])
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найден URL {err} для правила "{item["name"]}".')
-        item['urls'] = url_oids
-#        parent.set_time_restrictions(item)
-
-        if item['name'] in content_rules:
-            parent.stepChanged.emit(f'2|Правило КФ "{item["name"]}" уже существует.')
-            item.pop('position', None)
-            err, result = parent.utm.update_content_rule(content_rules[item['name']], item)
-            if err:
-                error = 1
-                parent.stepChanged.emit(f'1|{result}')
-            else:
-                parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" обновлено.')
-        else:
-            err, result = parent.utm.add_content_rule(item)
-            if err:
-                error = 1
-                parent.stepChanged.emit(f'1|{result}')
-            else:
-                content_rules[item['name']] = result
-                parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" добавлено.')
-
-    if error:
-        parent.error = 1
-    out_message = '5|Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".'
-    parent.stepChanged.emit('6|Произошла ошибка при импорте правил контентной фильтрации!' if error else out_message)
 
 ###################################### Служебные функции ##########################################
 def get_ips_name(parent, rule_ips, rule_name):
@@ -2626,7 +3360,8 @@ def set_apps_values(parent):
     if err:
         parent.stepChanged.emit(f'iRED|{result}')
         return 1
-    parent.l7_apps = {x['id']: x['name'] for x in result}
+#    parent.l7_apps = {x['id']: x['name'] for x in result}
+    parent.l7_apps = result
 
     err, result = parent.utm.get_nlists_list('applicationgroup')
     if err:
@@ -2700,4 +3435,7 @@ def create_dir(path):
             return 1, f'Ошибка создания каталога:/n{path}'
         else:
             return 0, f'Создан каталог {path}'
-    return 0, f'Каталог {path} уже существует.'
+    else:
+        for file_name in os.listdir(path):
+            os.remove(os.path.join(path, file_name))
+        return 0, f'Каталог {path} уже существует.'

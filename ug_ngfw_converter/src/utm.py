@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.9
+# Версия 3.10
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -579,7 +579,7 @@ class UtmXmlRpc:
         try:
             dns_servers = self._server.v2.settings.custom.dnses.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_dns_servers: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_dns_servers: [{err.faultCode}] — {err.faultString}'
         return 0, dns_servers   # Возвращает список серверов dns
 
     def get_dns_rules(self):
@@ -587,7 +587,7 @@ class UtmXmlRpc:
         try:
             dns_rules = self._server.v1.dns.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_dns_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_dns_rules: [{err.faultCode}] — {err.faultString}'
         return 0, dns_rules['items']    # Возвращает список правил
 
     def get_dns_static_records(self):
@@ -595,7 +595,7 @@ class UtmXmlRpc:
         try:
             static_records = self._server.v1.dns.static.records.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_dns_static_records: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_dns_static_records: [{err.faultCode}] — {err.faultString}'
         return 0, static_records['items']   # Возвращает список статических запией
 
     def add_dns_server(self, dns_server):
@@ -604,9 +604,9 @@ class UtmXmlRpc:
             result = self._server.v2.settings.custom.dns.add(self._auth_token, dns_server)
         except rpc.Fault as err:
             if err.faultCode == 18004:
-                return 2, f"DNS server {dns_server['dns']} уже существует."
+                return 2, f'DNS server "{dns_server["dns"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_dns_server: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_dns_server: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result    # Возвращает ID добавленноё записи
 
@@ -616,9 +616,9 @@ class UtmXmlRpc:
             result = self._server.v1.dns.rule.add(self._auth_token, dns_rule)
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Правило DNS {dns_rule['name']} уже существует."
+                return 2, f'Правило DNS "{dns_rule["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_dns_rule: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_dns_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result    # Возвращает ID добавленноё записи
 
@@ -630,7 +630,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f'Статическая запись DNS "{dns_record["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_dns_static_record: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_dns_static_record: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result    # Возвращает ID добавленноё записи
 ######################################## WCCP  ########################################
@@ -642,7 +642,7 @@ class UtmXmlRpc:
             if err.faultCode == 102:
                 return 2, f'Ошибка: нет прав на чтение конфигурации WCCP. Конфигурация WWCP не выгружена.'
             else:
-                return 1, f"Error utm.get_wccp_list: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.get_wccp_list: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список записей
 
     def add_wccp_rule(self, rule):
@@ -650,7 +650,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.wccp.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_wccp_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_wccp_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -659,7 +659,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.wccp.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_wccp_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_wccp_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -672,7 +672,7 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.netmanager.virtualrouters.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_routers_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_routers_list: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список записей
 
     def add_vrf(self, vrf_info):
@@ -685,7 +685,7 @@ class UtmXmlRpc:
             elif err.faultCode == 1016:
                 return 2, f'Error: В виртуальном маршрутизаторе "{vrf_info["name"]}" указан порт использующийся в другом маршрутизаторе: {vrf_info["interfaces"]}.'
             else:
-                return 1, f"Error utm.add_vrf: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_vrf: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного VRF
 
@@ -696,7 +696,7 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 1020:
                 return 2, f'Error: В виртуальном маршрутизаторе "{rule["name"]}" указан порт использующийся в другом маршрутизаторе: {rule["interfaces"]} [{err.faultString}]'
-            return 1, f"Error utm.update_vrf: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_vrf: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -705,7 +705,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.netmanager.bfd.profiles.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_bfd_profiles: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_bfd_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список профилей
 
     def get_ospf_config(self):
@@ -715,7 +715,7 @@ class UtmXmlRpc:
             ifaces = self._server.v1.netmanager.ospf.interfaces.list(self._auth_token, self.node_name)
             areas = self._server.v1.netmanager.ospf.areas.list(self._auth_token, self.node_name)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_ospf_config: [{err.faultCode}] — {err.faultString}", False, False
+            return 1, f'Error utm.get_ospf_config: [{err.faultCode}] — {err.faultString}', False, False
         return 0, data, ifaces, areas
 
     def get_bgp_config(self):
@@ -726,7 +726,7 @@ class UtmXmlRpc:
             rmaps = self._server.v1.netmanager.bgp.routemaps.list(self._auth_token, self.node_name)
             filters = self._server.v1.netmanager.bgp.filters.list(self._auth_token, self.node_name)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_bgp_config: [{err.faultCode}] — {err.faultString}", False, False, False
+            return 1, f'Error utm.get_bgp_config: [{err.faultCode}] — {err.faultString}', False, False, False
         return 0, data, neigh, rmaps, filters
 
 ##################################### Библиотека  ######################################
@@ -738,7 +738,7 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.content.override.domains.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
-            return 1, f"Error get_custom_url_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error get_custom_url_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_custom_url(self, data):
@@ -751,7 +751,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f'Категория URL: "{data["name"]}" уже существует'
             else:
-                return 1, f"Error utm.add_custom_url: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_custom_url: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result
 
@@ -763,19 +763,18 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Категория URL: {data['name']} - нет отличающихся параметров для изменения."
+                return 2, f'Категория URL: "{data["name"]}" - нет отличающихся параметров для изменения.'
             else:
-                return 1, f"Error utm.update_custom_url: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.update_custom_url: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result
 
     def get_nlists_list(self, list_type):
         """Получить список именованных списков по их типу из Библиотеки"""
-        array = []
         try:
             result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 20000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_nlists_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_nlists_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
 
     def get_nlist_list(self, list_type):
@@ -784,7 +783,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 20000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_nlist_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_nlist_list: [{err.faultCode}] — {err.faultString}'
 
         for item in result['items']:
             if item['editable']:
@@ -825,10 +824,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 409:
                 return 2, f'Список "{named_list["name"]}" уже существует'
-            elif err.faultCode == 111:
-                return 1, f'Error: Недопустимые символы в названии списка "{named_list["name"]}"! Возможно используются русские буквы.'
             else:
-                return 1, f"Error utm.add_nlist: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_nlist: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result    # Возвращает ID списка
 
@@ -840,9 +837,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Список: {named_list['name']} - нет отличающихся параметров для изменения."
+                return 2, f'Список "{named_list["name"]}" - нет отличающихся параметров для изменения.'
             else:
-                return 1, f"Error utm.update_nlist: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.update_nlist: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result
 
@@ -854,7 +851,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 2001:
-                return 2, f"Содержимое: {item} не добавлено, так как уже существует."
+                return 2, f"Содержимое: {item} не добавлено, так как уже существует [err]."
             else:
                 return 1, f"Error utm.add_nlist_item: [{err.faultCode}] — {err.faultString}"
         else:
@@ -884,7 +881,7 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.libraries.services.list(self._auth_token, 0, 5000, {}, [])
         except rpc.Fault as err:
-            return 1, f"Error utm.get_services_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_services_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист сервисов (список словарей).
 
     def add_service(self, service):
@@ -897,7 +894,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f'Сервис "{service["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_service: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_service: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID сервиса
 
@@ -907,9 +904,9 @@ class UtmXmlRpc:
             result = self._server.v1.libraries.service.update(self._auth_token, service_id, service)
         except rpc.Fault as err:
             if err.faultCode == 404:
-                return 2, f"Не удалось обновить сервис '{service['name']}' c id: {service_id}. Данный сервис не найден."
+                return 2, f'Не удалось обновить сервис "{service["name"]}" c id: {service_id}. Данный сервис не найден.'
             else:
-                return 1, f"Error utm.update_service: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.update_service: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -929,11 +926,11 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Полоса пропускания '{shaper['name']}' уже существует. Проверка параметров..."
+                return 2, f'Полоса пропускания "{shaper["name"]}" уже существует.'
             elif err.faultCode == 406:
-                return 2, f"Полоса пропускания '{shaper['name']}' не добавлена! Превышено максимальное количество записей."
+                return 2, f'Полоса пропускания "{shaper["name"]}" не добавлена! Превышено максимальное количество записей.'
             else:
-                return 1, f"Error utm.add_shaper: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_shaper: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID шейпера
 
@@ -945,9 +942,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 404:
-                return 2, f"Не удалось обновить полосу пропускания '{shaper['name']}' c id: {shaper_id}. Данный сервис не найден."
+                return 2, f'Не удалось обновить полосу пропускания "{shaper["name"]}" c id: {shaper_id}. Данная полоса пропускания не найдена.'
             else:
-                return 1, f"Error utm.update_shaper: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.update_shaper: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -959,7 +956,7 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.scada.profiles.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
-            return 1, f"Error utm.get_scada_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_scada_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_scada(self, scada):
@@ -970,9 +967,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Профиль АСУ ТП '{scada['name']}' уже существует. Проверка параметров..."
+                return 2, f'Профиль АСУ ТП "{scada["name"]}" уже существует.'
             else:
-                return 1, f"Error utm.add_scada: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_scada: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID шейпера
 
@@ -983,10 +980,7 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            if err.faultCode == 404:
-                return 2, f"Не удалось обновить Профиль АСУ ТП '{scada['name']}' c id: {scada_id}. Данный сервис не найден."
-            else:
-                return 1, f"Error utm.update_scada: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_scada: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -995,7 +989,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.libraries.response.page.templates.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_templates_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_templates_list: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def add_template(self, template):
@@ -1006,11 +1000,11 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Шаблон страницы '{template['name']}' уже существует. Проверка параметров..."
+                return 2, f'Шаблон страницы "{template["name"]}" уже существует.'
             elif err.faultCode == 111:
-                return 2, f"Шаблон '{template['name']}' не добавлен. Эта ошибка исправлена в версии 7.0.2."
+                return 2, f'Шаблон "{template["name"]}" не добавлен. Эта ошибка исправлена в версии 7.0.2.'
             else:
-                return 1, f"Error utm.add_template: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.add_template: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID шаблона
 
@@ -1022,9 +1016,9 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 404:
-                return 2, f"Не удалось обновить шаблон страницы '{template['name']}' c id: {template_id}. Данная страница не найдена."
+                return 2, f'Не удалось обновить шаблон страницы. Данная страница не найдена.'
             else:
-                return 1, f"Error utm.update_template: [{err.faultCode}] — {err.faultString}"
+                return 1, f'Error utm.update_template: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1033,7 +1027,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.libraries.response.page.template.public.data.fetch(template_type, template_id)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_template_data: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_template_data: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def set_template_data(self, template_id, data):
@@ -1042,33 +1036,29 @@ class UtmXmlRpc:
             data64 = rpc.Binary(data)
             result = self._server.v1.libraries.response.page.template.data.update(self._auth_token, template_id, data64)
         except rpc.Fault as err:
-            return 1, f"Error utm.set_template_data: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.set_template_data: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает True
 
     def get_notification_profiles_list(self):
-        """Получить список профилей оповещения раздела Библиотеки"""
+        """Получить список профилей оповещения"""
         try:
             result = self._server.v1.notification.profiles.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_notification_profiles_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_notification_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список словарей
 
     def add_notification_profile(self, profile):
-        """Добавить профиль оповещения раздела Библиотеки"""
-        if profile['name'] in self.list_notifications.keys():
-            return 2, f'Профиль оповещения "{profile["name"]}" уже существует.'
-        else:
-            try:
-                result = self._server.v1.notification.profile.add(self._auth_token, profile)
-            except rpc.Fault as err:
-                return 1, f'Error utm.add_notification_profiles: [{err.faultCode}] — {err.faultString}'
-            return 0, result     # Возвращает ID добавленного профиля
-        
-    def update_notification_profile(self, profile):
-        """Обновить профиль оповещения раздела Библиотеки"""
+        """Добавить профиль оповещения"""
         try:
-            np_id = self.list_notifications[profile['name']]
-            result = self._server.v1.notification.profile.update(self._auth_token, np_id, profile)
+            result = self._server.v1.notification.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_notification_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+        
+    def update_notification_profile(self, profile_id, profile):
+        """Обновить профиль оповещения"""
+        try:
+            result = self._server.v1.notification.profile.update(self._auth_token, profile_id, profile)
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
@@ -1076,13 +1066,37 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_idps_signatures_list(self):
-        """Получить список сигнатур IDPS"""
+    def get_idps_signatures_list(self, query={}):
+        """Получить список сигнатур IDPS. Только для версии 7.1 и выше."""
         try:
-            result = self._server.v1.idps.signatures.list(self._auth_token, 0, 10000, {}, [])
+            result = self._server.v1.idps.signatures.list(self._auth_token, 0, 50000, query, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_idps_signatures_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list сигнатур
+
+    def add_idps_signature(self, signature):
+        """Добавить сигнатуру IDPS. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.idps.signature.add(self._auth_token, signature)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_idps_signature: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает ID сигнатуры
+
+    def update_idps_signature(self, signature_id, signature):
+        """Обновить сигнатуру IDPS. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.idps.signature.update(self._auth_token, signature_id, signature)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_idps_signature: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
+
+    def get_idps_signature_fetch(self, signature_id):
+        """Получить сигнатуру СОВ по ID. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.idps.signature_fetch(self._auth_token, signature_id)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_idps_signature_fetch: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает словарь
 
     def get_idps_profiles_list(self):
         """Получить список профилей СОВ. Только для версии 7.1 и выше."""
@@ -1092,13 +1106,21 @@ class UtmXmlRpc:
             return 1, f'Error utm.get_idps_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list
 
-    def get_l7_profiles_list(self):
-        """Получить список профилей приложений. Только для версии 7.1 и выше."""
+    def add_idps_profile(self, profile):
+        """Добавить профиль СОВ. Только для версии 7.1 и выше."""
         try:
-            result = self._server.v1.l7.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.idps.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            return 1, f'Error utm.get_l7_profiles_list: [{err.faultCode}] — {err.faultString}'
-        return 0, result['items']   # Возвращает list
+            return 1, f'Error utm.add_idps_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает ID созданного профиля СОВ
+
+    def update_idps_profile(self, profile_id, profile):
+        """Обновить профиль СОВ. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.idps.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_idps_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
 
     def get_netflow_profiles_list(self):
         """Получить список профилей netflow раздела Библиотеки"""
@@ -1115,17 +1137,14 @@ class UtmXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            if err.faultCode == 409:
-                return 2, f'Профиль netflow "{profile["name"]}" уже существует.'
-            else:
-                return 1, f'Error utm.add_netflow_profile: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error utm.add_netflow_profile: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного профиля
 
-    def update_netflow_profile(self, profile):
+    def update_netflow_profile(self, profile_id, profile):
         """Обновить профиль netflow раздела Библиотеки"""
         try:
-            result = self._server.v1.netmanager.netflow.profile.update(self._auth_token, profile['id'], profile)
+            result = self._server.v1.netmanager.netflow.profile.update(self._auth_token, profile_id, profile)
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
@@ -1155,10 +1174,10 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает ID добавленного профиля
 
-    def update_lldp_profile(self, profile):
-        """Обновить профиль LLDP раздела Библиотеки. Только для версии 7.0 и выше"""
+    def update_lldp_profile(self, profile_id, profile):
+        """Обновить профиль LLDP. Только для версии 7.0 и выше"""
         try:
-            result = self._server.v1.netmanager.lldp.profile.update(self._auth_token, profile['id'], profile)
+            result = self._server.v1.netmanager.lldp.profile.update(self._auth_token, profile_id, profile)
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
@@ -1167,7 +1186,7 @@ class UtmXmlRpc:
             return 0, result     # Возвращает True
 
     def get_ssl_profiles_list(self):
-        """Получить список профилей SSL раздела Библиотеки"""
+        """Получить список профилей SSL"""
         try:
             result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, '')
         except rpc.Fault as err:
@@ -1175,7 +1194,7 @@ class UtmXmlRpc:
         return 0, result['items']
 
     def add_ssl_profile(self, profile):
-        """Добавить профиль SSL в Библиотеку"""
+        """Добавить профиль SSL"""
         try:
             result = self._server.v1.content.ssl.profile.add(self._auth_token, profile)
         except TypeError as err:
@@ -1188,10 +1207,10 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает ID добавленного профиля
 
-    def update_ssl_profile(self, profile):
-        """Обновить профиль SSL раздела Библиотеки"""
+    def update_ssl_profile(self, profile_id, profile):
+        """Обновить профиль SSL"""
         try:
-            result = self._server.v1.content.ssl.profile.update(self._auth_token, profile['id'], profile)
+            result = self._server.v1.content.ssl.profile.update(self._auth_token, profile_id, profile)
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
@@ -1199,13 +1218,125 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает True
 
+    def get_ssl_forward_profiles(self):
+        """Получить список профилей пересылки SSL. Только для версии 7.0 и выше"""
+        try:
+            result = self._server.v1.content.ssl.forward.profiles.list(self._auth_token, 0, 100, '')
+        except rpc.Fault as err:
+            return 1, f'Error get_ssl_forward_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_ssl_forward_profile(self, profile):
+        """Добавить профиль пересылки SSL. Только для версии 7.0 и выше"""
+        try:
+            result = self._server.v1.content.ssl.forward.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error add_ssl_forward_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def update_ssl_forward_profile(self, profile_id, profile):
+        """Обновить профиль пересылки SSL. Только для версии 7.0 и выше"""
+        try:
+            result = self._server.v1.content.ssl.forward.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error update_ssl_forward_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def get_hip_objects_list(self):
+        """Получить список объектов HIP"""
+        try:
+            result = self._server.v1.hip.objects.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error get_hip_objects_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_hip_object(self, hip_object):
+        """Добавить объект HIP"""
+        try:
+            result = self._server.v1.hip.object.add(self._auth_token, hip_object)
+        except rpc.Fault as err:
+            return 1, f'Error add_hip_object: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного объекта
+
+    def update_hip_object(self, hip_object_id, hip_object):
+        """Обновить объект HIP"""
+        try:
+            result = self._server.v1.hip.object.update(self._auth_token, hip_object_id, hip_object)
+        except rpc.Fault as err:
+            return 1, f'Error update_hip_object: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
     def get_hip_profiles_list(self):
-        """Получить список профилей HIP раздела Библиотеки"""
+        """Получить список профилей HIP"""
         try:
             result = self._server.v1.hip.profiles.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error get_hip_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
+
+    def add_hip_profile(self, profile):
+        """Добавить профиль HIP"""
+        try:
+            result = self._server.v1.hip.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error add_hip_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def update_hip_profile(self, profile_id, profile):
+        """Обновить профиль HIP"""
+        try:
+            result = self._server.v1.hip.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error update_hip_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_bfd_profiles_list(self):
+        """Получить список профилей BFD"""
+        try:
+            result = self._server.v1.netmanager.bfd.profiles.list(self._auth_token, 0, 1000, {})
+        except rpc.Fault as err:
+            return 1, f'Error get_bfd_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_bfd_profile(self, profile):
+        """Добавить профиль BFD"""
+        try:
+            result = self._server.v1.netmanager.bfd.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error add_bfd_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def update_bfd_profile(self, profile_id, profile):
+        """Обновить профиль BFD"""
+        try:
+            result = self._server.v1.netmanager.bfd.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error update_bfd_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_useridagent_filters_list(self):
+        """Получить Syslog фильтры UserID агента"""
+        try:
+            result = self._server.v1.useridagent.filters.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error get_useridagent_filters_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_useridagent_filter(self, filter_info):
+        """Добавить Syslog фильтр UserID агента"""
+        try:
+            result = self._server.v1.useridagent.filter.add(self._auth_token, filter_info)
+        except rpc.Fault as err:
+            return 1, f'Error add_useridagent_filter: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного фильтра
+
+    def update_useridagent_filter(self, filter_id, filter_info):
+        """Добавить Syslog фильтр UserID агента"""
+        try:
+            result = self._server.v1.useridagent.filter.update(self._auth_token, filter_id, filter_info)
+        except rpc.Fault as err:
+            return 1, f'Error update_useridagent_filter: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
 ################################### Пользователи и устройства #####################################
     def get_groups_list(self):
@@ -2479,6 +2610,60 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает ID изменённого правила
 
+################################### L7 для версии 7.1 и выше #######################################
+    def get_version71_apps(self, query={}):
+        """Получить список пользовательских приложений l7 для версии 7.1 и выше"""
+        if self.version_hight >= 7 and self.version_midle >= 1:
+            try:
+                result = self._server.v1.l7.signatures.list(self._auth_token, 0, 50000, query, [])
+            except rpc.Fault as err:
+                return 1, f'Error utm.get_version71_apps: [{err.faultCode}] — {err.faultString}'
+            return 0, result['items']
+        else:
+            return 1, 'Не корректная версия NGFW. Должна быть 7.1 или выше.'
+
+    def add_version71_app(self, apps_info):
+        """Добавить новое пользовательское приложение l7 для версии 7.1 и выше"""
+        try:
+            result = self._server.v1.l7.signature.add(self._auth_token, apps_info)
+        except rpc.Fault as err:
+            return 1, f"Error utm.add_version71_app: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает ID добавленной сигнатуры
+
+    def update_version71_app(self, apps_id, apps_info):
+        """Обновить пользовательское приложение l7 для версии 7.1 и выше"""
+        try:
+            result = self._server.v1.l7.signature.update(self._auth_token, apps_id, apps_info)
+        except rpc.Fault as err:
+            return 1, f"Error utm.update_version71_app: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result     # Возвращает True
+
+    def get_l7_profiles_list(self):
+        """Получить список профилей приложений. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.l7.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_l7_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает list
+
+    def add_l7_profile(self, profile):
+        """Добавить профиль приложений. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.l7.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_l7_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает ID созданного профиля
+
+    def update_l7_profile(self, profile_id, profile):
+        """Обновить профиль приложений. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.l7.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_l7_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
+
 ####################################### Служебные методы ###########################################
     def get_ip_protocol_list(self):
         """Получить список поддерживаемых IP протоколов"""
@@ -2502,13 +2687,16 @@ class UtmXmlRpc:
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
                 result = self._server.v1.l7.signatures.list(self._auth_token, 0, 50000, {}, [])
-                return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
+#                return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
+                return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 6 or (self.version_hight == 7 and self.version_midle == 0):
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, {}, [])
-                return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]
+#                return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]
+                return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 5:
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, '')
-                return 0, [{'id': x['app_id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
+#                return 0, [{'id': x['app_id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
+                return 0, {x['app_id']: x['name'] for x in result['items']}
         except rpc.Fault as err:
             return 1, f'Error utm.get_l7_apps: [{err.faultCode}] — {err.faultString}'
 
@@ -2527,6 +2715,7 @@ class UtmXmlRpc:
             return 1, f"Error utm.get_l7_categories: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result['items']
+
 #####################################################################################################
 
 class UtmError(Exception): pass

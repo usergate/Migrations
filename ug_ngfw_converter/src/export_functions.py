@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.5
+# Версия 0.6
 #
 
 import os, sys, json
@@ -1987,6 +1987,737 @@ def export_shaper_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил пропускной способности.' if error else out_message)
 
 
+def export_content_rules(parent, path):
+    """Экспортируем список правил фильтрации контента"""
+    parent.stepChanged.emit('BLUE|Экспорт список правил фильтрации контента из раздела "Политики безопасности/Фильтрация контента".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_nlists_list('morphology')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    morphology_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_nlists_list('useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useragent_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_templates_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    templates_list = {x['id']: x['name'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('mime')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    if not parent.scenarios_rules:
+        err = set_scenarios_rules(parent)
+        if err:
+            parent.error = 1
+            return
+
+    duplicate = {}
+    err, data = parent.utm.get_content_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        data.pop()    # удаляем последнее правило (защищённое).
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            if item['name'] in duplicate.keys():
+                num = duplicate[item['name']]
+                num = num + 1
+                duplicate[item['name']] = num
+                item['name'] = f"{item['name']} {num}"
+            else:
+                duplicate[item['name']] = 0
+            item.pop('id', None)
+            item.pop('rownumber', None)
+            item.pop('guid', None)
+            item.pop('deleted_users', None)
+            item.pop('active', None)
+            item['blockpage_template_id'] = templates_list.get(item['blockpage_template_id'], -1)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
+            item['morph_categories'] = [morphology_list[x] for x in item['morph_categories']]
+            item['urls'] = get_urls_name(parent, item['urls'], item['name'])
+            item['referers'] = get_urls_name(parent, item['referers'], item['name'])
+            if 'referer_categories' in item:
+                item['referer_categories'] = get_url_categories_name(parent, item['referer_categories'], item['name'])
+            else:
+                item['referer_categories'] = []     # В версии 5 этого поля нет.
+                item['users_negate'] = False        # В версии 5 этого поля нет.
+                item['position_layer'] = 'local'    # В версии 5 этого поля нет.
+            for x in item['user_agents']:
+                x[1] = useragent_list[x[1]] if x[0] == 'list_id' else x[1]
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            item['content_types'] = [mime_list[x] for x in item['content_types']]
+            if item['scenario_rule_id']:
+                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+            if parent.version < 7:
+                item['time_created'] = ''
+                item['time_updated'] = ''
+            elif parent.version < 7.1:
+                item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+            else:
+                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+
+
+        json_file = os.path.join(path, 'config_content_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила фильтрации контента выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил фильтрации контента.' if error else out_message)
+
+
+def export_safebrowsing_rules(parent, path):
+    """Экспортируем список правил веб-безопасности"""
+    parent.stepChanged.emit('BLUE|Экспорт правил веб-безопасности из раздела "Политики безопасности/Веб-безопасность".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_safebrowsing_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('rownumber', None)
+            item.pop('guid', None)
+            item.pop('deleted_users', None)
+            item.pop('active', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            item['url_list_exclusions'] = get_urls_name(parent, item['url_list_exclusions'], item['name'])
+            if parent.version < 6:
+                item.pop('dst_zones', None)
+                item.pop('dst_ips', None)
+                item.pop('dst_zones_negate', None)
+                item.pop('dst_ips_negate', None)
+                item['position_layer'] = 'local'
+            if parent.version < 7:
+                item['time_created'] = ''
+                item['time_updated'] = ''
+            elif parent.version < 7.1:
+                item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+            else:
+                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+
+        json_file = os.path.join(path, 'config_safebrowsing_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила веб-безопасности выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил веб-безопасности.' if error else out_message)
+
+
+def export_tunnel_inspection_rules(parent, path):
+    """Экспортируем правила инспектирования туннелей"""
+    parent.stepChanged.emit('BLUE|Экспорт правил инспектирования туннелей из раздела "Политики безопасности/Инспектирование туннелей".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_tunnel_inspection_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('guid', None)
+            item['name'] = item['name'].strip().translate(trans_name)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+
+        json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила инспектирования туннелей выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил инспектирования туннелей.' if error else out_message)
+
+
+def export_ssldecrypt_rules(parent, path):
+    """Экспортируем список правил инспектирования SSL"""
+    parent.stepChanged.emit('BLUE|Экспорт правил инспектирования SSL из раздела "Политики безопасности/Инспектирование SSL".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    ssl_forward_profiles = {}
+    if parent.version >= 7:
+        err, result = parent.utm.get_ssl_forward_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        ssl_forward_profiles = {x['id']: x['name'] for x in result}
+        ssl_forward_profiles[-1] = -1
+
+    err, data = parent.utm.get_ssldecrypt_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('rownumber', None)
+            item.pop('guid', None)
+            item.pop('deleted_users', None)
+            item.pop('active', None)
+            item.pop('content_types_negate', None)
+            item.pop('url_list_exclusions', None)
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
+            item['urls'] = get_urls_name(parent, item['urls'], item['name'])
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            item['ssl_profile_id'] = parent.ssl_profiles[item['ssl_profile_id']] if 'ssl_profile_id' in item else 'Default SSL profile'
+            item['ssl_forward_profile_id'] = ssl_forward_profiles[item['ssl_forward_profile_id']] if 'ssl_forward_profile_id' in item else -1
+            if parent.version < 6:
+                item['position_layer'] = 'local'
+            if parent.version < 7:
+                item['time_created'] = ''
+                item['time_updated'] = ''
+            elif parent.version < 7.1:
+                item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+            else:
+                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    item['time_updated'] = ''
+
+        json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила инспектирования SSL выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил инспектирования SSL.' if error else out_message)
+
+
+def export_sshdecrypt_rules(parent, path):
+    """Экспортируем список правил инспектирования SSH"""
+    parent.stepChanged.emit('BLUE|Экспорт правил инспектирования SSH из раздела "Политики безопасности/Инспектирование SSH".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_sshdecrypt_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('rownumber', None)
+            item.pop('guid', None)
+            item.pop('active', None)
+            item.pop('urls_negate', None)
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            item['protocols'] = get_services(parent, item['protocols'], item['name'])
+            if parent.version < 7:
+                item['time_created'] = ''
+                item['time_updated'] = ''
+                item['layer'] = 'Content Rules'
+            elif parent.version < 7.1:
+                item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+                item['layer'] = 'Content Rules'
+            else:
+                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+
+        json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила инспектирования SSH выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил инспектирования SSH.' if error else out_message)
+
+
+def export_idps_rules(parent, path):
+    """Экспортируем список правил СОВ"""
+    parent.stepChanged.emit('BLUE|Экспорт правил СОВ из раздела "Политики безопасности/СОВ".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_nlists_list('ipspolicy')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    idps_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_idps_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('apps', None)
+            item.pop('apps_negate', None)
+            item.pop('cc', None)
+            if item['action'] == 'drop':   # Для версий < 7
+                item['action'] = 'reset'
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['services'] = get_services(parent, item['services'], item['name'])
+            try:
+                item['idps_profiles'] = [idps_profiles[x] for x in item['idps_profiles']]
+            except KeyError as err:
+                parent.stepChanged.emit('bRED|    Error [Правило "{item["name"]}"]: Не найден профиль СОВ "{err}". Проверьте профиль СОВ этого правила.')
+                item['idps_profiles'] = []
+            if parent.version < 6:
+                item['position_layer'] = 'local'
+                item['idps_profiles_exclusions'] = []
+            else:
+                try:
+                    item['idps_profiles_exclusions'] = [idps_profiles[x] for x in item['idps_profiles_exclusions']]
+                except KeyError as err:
+                    parent.stepChanged.emit('bRED|    Error [Правило "{item["name"]}"]: Не найден профиль исключения СОВ "{err}". Проверьте профили СОВ этого правила.')
+                    item['idps_profiles_exclusions'] = []
+
+        json_file = os.path.join(path, 'config_idps_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила СОВ выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил СОВ.' if error else out_message)
+
+
+def export_scada_rules(parent, path):
+    """Экспортируем список правил АСУ ТП"""
+    parent.stepChanged.emit('BLUE|Экспорт правил АСУ ТП из раздела "Политики безопасности/Правила АСУ ТП".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_scada_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    scada_profiles = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_scada_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('cc', None)
+            if parent.version < 6:
+                item['position_layer'] = 'local'
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['services'] = [parent.services_list[x] for x in item['services']]
+            item['scada_profiles'] = [scada_profiles[x] for x in item['scada_profiles']]
+
+        json_file = os.path.join(path, 'config_scada_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила АСУ ТП выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил АСУ ТП.' if error else out_message)
+
+
+def export_scenarios(parent, path):
+    """Экспортируем список сценариев"""
+    parent.stepChanged.emit('BLUE|Экспорт списка сценариев из раздела "Политики безопасности/Сценарии".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.l7_apps:
+        err = set_apps_values(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, result = parent.utm.get_nlists_list('mime')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_scenarios_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('cc', None)
+            for condition in item['conditions']:
+                if condition['kind'] == 'application':
+                    condition['apps'] = get_apps(parent, condition['apps'], item['name'])
+                elif condition['kind'] == 'mime_types':
+                    condition['content_types'] = [mime_list[x] for x in condition['content_types']]
+                elif condition['kind'] == 'url_category':
+                    condition['url_categories'] = get_url_categories_name(parent, condition['url_categories'], item['name'])
+
+        json_file = os.path.join(path, 'config_scenarios.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список сценариев выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка сценариев.' if error else out_message)
+
+
+def export_mailsecurity_rules(parent, path):
+    """Экспортируем список правил защиты почтового трафика"""
+    parent.stepChanged.emit('BLUE|Экспорт правил защиты почтового трафика из раздела "Политики безопасности/Защита почтового трафика".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_nlist_list('emailgroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    email = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_mailsecurity_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('deleted_users', None)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            if parent.version < 6:
+                item['services'] = [['service', "POP3" if x == 'pop' else x.upper()] for x in item.pop('protocol')]
+                if not item['services']:
+                    item['services'] = [['service', 'SMTP'], ['service', 'POP3'], ['service', 'SMTPS'], ['service', 'POP3S']]
+                item['envelope_to_negate'] = False
+                item['envelope_from_negate'] = False
+                item['position_layer'] = 'local'
+            else:
+                item['services'] = get_services(parent, item['services'], item['name'])
+            if 'dst_zones_negate' not in item:      # Этого поля нет в версиях 5 и 6.
+                item['dst_zones_negate'] = False
+            item['envelope_from'] = [[x[0], email[x[1]]] for x in item['envelope_from']]
+            item['envelope_to'] = [[x[0], email[x[1]]] for x in item['envelope_to']]
+            if parent.version < 7.1:
+                item['rule_log'] = False
+
+        json_file = os.path.join(path, 'config_mailsecurity_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список правил защиты почтового трафика выгружен в файл "{json_file}".')
+
+    err, dnsbl, batv = parent.utm.get_mailsecurity_dnsbl()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        dnsbl['white_list'] = get_ips_name(parent, dnsbl['white_list'], item['name'])
+        dnsbl['black_list'] = get_ips_name(parent, dnsbl['black_list'], item['name'])
+
+        json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
+        with open(json_file, 'w') as fh:
+            json.dump(dnsbl, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Настройки DNSBL выгружен в файл "{json_file}".')
+
+        json_file = os.path.join(path, 'config_mailsecurity_batv.json')
+        with open(json_file, 'w') as fh:
+            json.dump(batv, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Настройки BATV выгружен в файл "{json_file}".')
+
+
+def export_icap_rules(parent, path):
+    """Экспортируем список правил ICAP"""
+    parent.stepChanged.emit('BLUE|Экспорт правил ICAP из раздела "Политики безопасности/ICAP-правила".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_nlists_list('mime')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_icap_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    icap_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, err_msg, result, _ = parent.utm.get_loadbalancing_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {err_msg}')
+        parent.error = 1
+        return
+    icap_loadbalancing = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_icap_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            for server in item['servers']:
+                if server[0] == 'lbrule':
+                    try:
+                        server[1] = icap_loadbalancing[server[1]]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'bRED|    Error [Rule: "{item["name"]}"]. Не найден балансировщик серверов ICAP "{err}". Импортируйте балансировщики ICAP и повторите попытку.')
+                        item['servers'] = []
+                elif server[0] == 'profile':
+                    try:
+                        server[1] = icap_servers[server[1]]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'bRED|    Error [Rule: "{item["name"]}"]. Не найден сервер ICAP "{err}". Импортируйте сервера ICAP и повторите попытку.')
+                        item['servers'] = []
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
+            item['urls'] = get_urls_name(parent, item['urls'], item['name'])
+            item['content_types'] = [mime_list[x] for x in item['content_types']]
+            if parent.version < 6:
+                item['position_layer'] = 'local'
+            if parent.version < 7:
+                item['time_created'] = ''
+                item['time_updated'] = ''
+            else:
+                item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+
+        json_file = os.path.join(path, 'config_icap_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила ICAP выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил ICAP.' if error else out_message)
+
+
+def export_icap_servers(parent, path):
+    """Экспортируем список серверов ICAP"""
+    parent.stepChanged.emit('BLUE|Экспорт серверов ICAP из раздела "Политики безопасности/ICAP-серверы".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_icap_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('cc', None)
+            item.pop('active', None)
+            item.pop('error', None)
+
+        json_file = os.path.join(path, 'config_icap_servers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список серверов ICAP выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов ICAP.' if error else out_message)
+
+
+def export_dos_profiles(parent, path):
+    """Экспортируем список профилей DoS"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей DoS из раздела "Политики безопасности/Профили DoS".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_dos_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_dos_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили DoS выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей DoS.' if error else out_message)
+
+
+def export_dos_rules(parent, path):
+    """Экспортируем список правил защиты DoS"""
+    parent.stepChanged.emit('BLUE|Экспорт правил защиты DoS из раздела "Политики безопасности/Правила защиты DoS".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if not parent.scenarios_rules:
+        err = set_scenarios_rules(parent)
+        if err:
+            parent.error = 1
+            return
+
+    err, result = parent.utm.get_dos_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    dos_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_dos_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('active', None)
+            item.pop('rownumber', None)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            item['services'] = get_services(parent, item['services'], item['name'])
+            item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            if item['dos_profile']:
+                item['dos_profile'] = dos_profiles[item['dos_profile']]
+            if item['scenario_rule_id']:
+                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+            if parent.version < 6:
+                item['position_layer'] = 'local'
+
+        json_file = os.path.join(path, 'config_dos_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила защиты DoS выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил защиты DoS.' if error else out_message)
+
+
+#---------------------------------------------------- Библиотека --------------------------------------------------------
 def export_morphology_lists(parent, path):
     """Экспортируем списки морфологии"""
     parent.stepChanged.emit('BLUE|Экспорт списков морфологии из раздела "Библиотеки/Морфология".')
@@ -3173,21 +3904,19 @@ func = {
     'NATandRouting': export_nat_rules,
     'LoadBalancing': export_loadbalancing_rules,
     'TrafficShaping': export_shaper_rules,
-    "SecurityPolicies": pass_function,
-    "ContentFiltering": pass_function,
-    "SafeBrowsing": pass_function,
-    "TunnelInspection": pass_function,
-    "SSLInspection": pass_function,
-    "SSHInspection": pass_function,
-    "IntrusionPrevention": pass_function,
-    "Scenarios": pass_function,
-    "MailSecurity": pass_function,
-    "ICAPRules": pass_function,
-    "ICAPServers": pass_function,
-    "DoSRules": pass_function,
-    "DoSProfiles": pass_function,
-    "SCADARules": pass_function,
-    "GlobalPortal": pass_function,
+    "ContentFiltering": export_content_rules,
+    "SafeBrowsing": export_safebrowsing_rules,
+    "TunnelInspection": export_tunnel_inspection_rules,
+    "SSLInspection": export_ssldecrypt_rules,
+    "SSHInspection": export_sshdecrypt_rules,
+    "IntrusionPrevention": export_idps_rules,
+    "Scenarios": export_scenarios,
+    "MailSecurity": export_mailsecurity_rules,
+    "ICAPRules": export_icap_rules,
+    "ICAPServers": export_icap_servers,
+    "DoSRules": export_dos_rules,
+    "DoSProfiles": export_dos_profiles,
+    "SCADARules": export_scada_rules,
     "WebPortal": pass_function,
     "ReverseProxyRules": pass_function,
     "ReverseProxyServers": pass_function,
@@ -3241,6 +3970,8 @@ def get_ips_name(parent, rule_ips, rule_name):
     for ips in rule_ips:
         if ips[0] == 'geoip_code':
             new_rule_ips.append(ips)
+        if ips[0] == 'mac':
+            new_rule_ips.append(ips)
         try:
             if ips[0] == 'list_id':
                 new_rule_ips.append(['list_id', parent.ip_lists[ips[1]]])
@@ -3263,11 +3994,11 @@ def get_zones_name(parent, zones, rule_name):
 def get_urls_name(parent, urls, rule_name):
     """Получаем имена списков URL. Если список не существует на NGFW, то он пропускается."""
     new_urls = []
-    for url_list_id in urls:
+    for url_id in urls:
         try:
-            new_urls.append(parent.url_lists[url_list_id])
+            new_urls.append(parent.url_lists[url_id])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден список URL c ID: {url_list_id} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error! Не найден список URL c ID: {url_id} для правила {rule_name}.')
     return new_urls
 
 def get_url_categories_name(parent, url_categories, rule_name):
@@ -3338,14 +4069,16 @@ def get_services(parent, service_list, rule_name):
         for item in service_list:
             try:
                 new_service_list.append(['service', parent.services_list[item]])
+            except TypeError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Rule: "{rule_name}"]. Не корректное значение в поле "services" - {err}.')
             except KeyError as err:
-                parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{item}" для правила "{rule_name}".')
+                parent.stepChanged.emit(f'bRED|    Error [Rule: "{rule_name}"]. Не найден сервис "{item}".')
     else:
         for item in service_list:
             try:
                 new_service_list.append(['service', parent.services_list[item[1]]] if item[0] == 'service' else ['list_id', parent.servicegroups_list[item[1]]])
             except KeyError as err:
-                parent.stepChanged.emit(f'bRED|    Error! Не найдена группа сервисов "{item}" для правила "{rule_name}".')
+                parent.stepChanged.emit(f'bRED|    Error [Rule: "{rule_name}"]. Не найдена группа сервисов "{item}".')
     return new_service_list
 
 def set_apps_values(parent):

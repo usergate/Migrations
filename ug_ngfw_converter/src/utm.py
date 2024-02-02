@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.10
+# Версия 3.11
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -1945,7 +1945,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_content_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_content_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_content_rule(self, rule):
@@ -1953,10 +1953,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_content_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_content_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -1965,7 +1962,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_content_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_content_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -1974,7 +1971,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.filtering.options.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_safebrowsing_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_safebrowsing_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_safebrowsing_rule(self, rule):
@@ -1982,7 +1979,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.filtering.options.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_safebrowsing_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_safebrowsing_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -1991,33 +1988,33 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.filtering.options.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_safebrowsing_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_safebrowsing_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
     def get_tunnel_inspection_rules(self):
-        """Получить список правил инспектирования туннелей"""
+        """Получить список правил инспектирования туннелей. Для версии 7.0 и выше."""
         try:
             result = self._server.v1.firewall.tunnel.inspection.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_tunnel_inspection_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_tunnel_inspection_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_tunnel_inspection_rule(self, rule):
-        """Добавить новое правило инспектирования туннелей"""
+        """Добавить новое правило инспектирования туннелей. Для версии 7.0 и выше."""
         try:
             result = self._server.v1.firewall.tunnel.inspection.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
     def update_tunnel_inspection_rule(self, rule_id, rule):
-        """Обновить правило инспектирования туннелей"""
+        """Обновить правило инспектирования туннелей. Для версии 7.0 и выше."""
         try:
             result = self._server.v1.firewall.tunnel.inspection.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2026,7 +2023,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssl.decryption.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_ssldecrypt_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_ssldecrypt_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_ssldecrypt_rule(self, rule):
@@ -2034,7 +2031,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssl.decryption.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2043,7 +2040,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssl.decryption.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2052,7 +2049,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssh.decryption.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_sshdecrypt_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_sshdecrypt_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_sshdecrypt_rule(self, rule):
@@ -2060,7 +2057,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssh.decryption.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2069,7 +2066,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.content.ssh.decryption.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2083,14 +2080,14 @@ class UtmXmlRpc:
                 result = self._server.v1.idps.rules.list(self._auth_token, 0, 1000, {})
                 return 0, result['items']
         except rpc.Fault as err:
-            return 1, f"Error utm.get_idps_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_idps_rules: [{err.faultCode}] — {err.faultString}'
     
     def add_idps_rule(self, rule):
         """Добавить новое правило СОВ"""
         try:
             result = self._server.v1.idps.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_idps_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_idps_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2099,7 +2096,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.idps.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_idps_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_idps_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2113,14 +2110,14 @@ class UtmXmlRpc:
                 result = self._server.v1.scada.rules.list(self._auth_token, 0, 1000, {})
                 return 0, result['items']
         except rpc.Fault as err:
-            return 1, f"Error utm.get_scada_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_scada_rules: [{err.faultCode}] — {err.faultString}'
 
     def add_scada_rule(self, rule):
         """Добавить новое правило АСУ ТП"""
         try:
             result = self._server.v1.scada.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_scada_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_scada_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2129,7 +2126,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.scada.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_scada_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_scada_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2138,40 +2135,31 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.scenarios.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_scenarios_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_scenarios_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_scenarios_rule(self, rule):
         """Добавить новый сценарий в Сценарии"""
-        if rule['name'] in self.scenarios_rules.keys():
-            return 2, f'Сценарий "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.scenarios.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 110:
-                return 1, f'Сценарий "{rule["name"]}" не добавлен — {err.faultString}.'
-            else:
-                return 1, f"Error utm.add_scenarios_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            self.scenarios_rules[rule['name']] = result
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_scenarios_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
-    def update_scenarios_rule(self, rule):
+    def update_scenarios_rule(self, rule_id, rule):
         """Обновить сценарий"""
         try:
-            rule_id = self.scenarios_rules[rule['name']]
             result = self._server.v1.scenarios.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_scenarios_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_scenarios_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_mailsecurity_rules(self):
         """Получить список правил защиты почтового трафика"""
         try:
             result = self._server.v1.mailsecurity.rules.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_mailsecurity_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_mailsecurity_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_mailsecurity_rule(self, rule):
@@ -2179,10 +2167,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.mailsecurity.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_mailsecurity_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_mailsecurity_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2191,7 +2176,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.mailsecurity.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_mailsecurity_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_mailsecurity_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2201,15 +2186,15 @@ class UtmXmlRpc:
             dnsbl = self._server.v1.mailsecurity.dnsbl.config.get(self._auth_token)
             batv = self._server.v1.mailsecurity.batv.config.get(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_mailsecurity_dnsbl: [{err.faultCode}] — {err.faultString}"
-        return 0, (dnsbl, batv)
+            return 1, f'Error utm.get_mailsecurity_dnsbl: [{err.faultCode}] — {err.faultString}'
+        return 0, dnsbl, batv
 
     def set_mailsecurity_dnsbl(self, rule):
         """Установить конфигурацию DNSBL защиты почтового трафика"""
         try:
             result = self._server.v1.mailsecurity.dnsbl.config.set(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.set_mailsecurity_dnsbl: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.set_mailsecurity_dnsbl: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2218,7 +2203,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.mailsecurity.batv.config.set(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.set_mailsecurity_batv: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.set_mailsecurity_batv: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2230,30 +2215,21 @@ class UtmXmlRpc:
             return 1, f'Error utm.get_icap_servers: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список настроек ICAP серверов
 
-    def add_icap_server(self, profile):
+    def add_icap_server(self, server):
         """Добавить новый ICAP сервер"""
-        if profile['name'] in self.icap_servers.keys():
-            return 2, f'\tICAP-сервер "{profile["name"]}" уже существует.'
         try:
-            result = self._server.v1.icap.profile.add(self._auth_token, profile)
+            result = self._server.v1.icap.profile.add(self._auth_token, server)
         except rpc.Fault as err:
-            if err.faultCode == 110:
-                return 1, f'Сервер "{profile["name"]}" не добавлен — {err.faultString}.'
-            else:
-                return 1, f"Error utm.add_icap_server: [{err.faultCode}] — {err.faultString}"
-        else:
-            self.icap_servers[profile['name']] = result
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_icap_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
-    def update_icap_server(self, profile):
+    def update_icap_server(self, server_id, server):
         """Обновить ICAP сервер"""
         try:
-            profile_id = self.icap_servers[profile['name']]
-            result = self._server.v1.icap.profile.update(self._auth_token, profile_id, profile)
+            result = self._server.v1.icap.profile.update(self._auth_token, server_id, server)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_icap_server: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_icap_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_icap_rules(self):
         """Получить список правил ICAP"""
@@ -2263,37 +2239,31 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.icap.rules.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_icap_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_icap_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result if self.version.startswith('5') else result['items']
 
-    def add_icap_rule(self, icap_rules, rule):
+    def add_icap_rule(self, rule):
         """Добавить новое ICAP-правило"""
-        if rule['name'] in icap_rules.keys():
-            return 2, f'\tICAP-правило "{rule["name"]}" уже существует.'
         try:
             result = self._server.v1.icap.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_icap_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            icap_rules[rule['name']] = result
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_icap_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
-    def update_icap_rule(self, icap_rules, rule):
+    def update_icap_rule(self, rule_id, rule):
         """Обновить ICAP-правило"""
         try:
-            rule_id = icap_rules[rule['name']]
             result = self._server.v1.icap.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_icap_rules: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_icap_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_dos_profiles(self):
         """Получить список профилей DoS"""
         try:
             result = self._server.v1.dos.profiles.list(self._auth_token, 0, 100, '')
         except rpc.Fault as err:
-            return 1, f"Error utm.get_dos_profiles: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_dos_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_dos_profile(self, profile):
@@ -2301,25 +2271,23 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.dos.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_dos_profile: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_dos_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_dos_profile(self, profile_id, profile):
         """Обновить профиль DoS"""
         try:
             result = self._server.v1.dos.profile.update(self._auth_token, profile_id, profile)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_dos_profile: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_dos_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_dos_rules(self):
         """Получить список правил защиты DoS"""
         try:
             result = self._server.v1.dos.rules.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_dos_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_dos_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_dos_rule(self, rule):
@@ -2327,7 +2295,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.dos.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_dos_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_dos_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2336,7 +2304,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.dos.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_dos_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_dos_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 

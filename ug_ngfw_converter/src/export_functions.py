@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.6
+# Версия 0.7
 #
 
 import os, sys, json
@@ -2717,6 +2717,191 @@ def export_dos_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил защиты DoS.' if error else out_message)
 
 
+#------------------------------------------------ Глобальный портал  ----------------------------------------------------
+def export_proxyportal_rules(parent, path):
+    """Экспортируем список URL-ресурсов веб-портала"""
+    parent.stepChanged.emit('BLUE|Экспорт списка ресурсов веб-портала из раздела "Глобальный портал/Веб-портал".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_proxyportal_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('rownumber', None)
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            if parent.version < 7:
+                item['transparent_auth'] = False
+            if parent.version < 6:
+                item['mapping_url_ssl_profile_id'] = 0
+                item['mapping_url_certificate_id'] = 0
+                item['position_layer'] = 'local'
+            else:
+                if item['mapping_url_ssl_profile_id']:
+                    item['mapping_url_ssl_profile_id'] = parent.ssl_profiles[item['mapping_url_ssl_profile_id']]
+                if item['mapping_url_certificate_id']:
+                    item['mapping_url_certificate_id'] = parent.ngfw_certs[item['mapping_url_certificate_id']]
+
+        json_file = os.path.join(path, 'config_web_portal.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список ресурсов веб-портала выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка ресурсов веб-портала.' if error else out_message)
+
+
+def export_reverseproxy_servers(parent, path):
+    """Экспортируем список серверов reverse-прокси"""
+    parent.stepChanged.emit('BLUE|Экспорт списка серверов reverse-прокси из раздела "Глобальный портал/Серверы reverse-прокси".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_reverseproxy_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_reverseproxy_servers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список серверов reverse-прокси выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов reverse-прокси.' if error else out_message)
+
+
+def export_reverseproxy_rules(parent, path):
+    """Экспортируем список правил reverse-прокси"""
+    parent.stepChanged.emit('BLUE|Экспорт правил reverse-прокси из раздела "Глобальный портал/Правила reverse-прокси".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_nlists_list('useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useragent_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, err_msg, _, result = parent.utm.get_loadbalancing_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {err_msg}')
+        parent.error = 1
+        return
+    reverse_loadbalancing = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_reverseproxy_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverse_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_client_certificate_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        client_certificate_profiles = {x['id']: x['name'] for x in result}
+
+        err, result = parent.utm.get_waf_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        waf_profiles = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_reverseproxy_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+            item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+            if parent.version < 6:
+                item.pop('from', None)
+                item.pop('to', None)
+                item['ssl_profile_id'] = 0
+                item['position_layer'] = 'local'
+            else:
+                try:
+                    if item['ssl_profile_id']:
+                        item['ssl_profile_id'] = parent.ssl_profiles[item['ssl_profile_id']]
+                except KeyError:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий профиль SSL.')
+                    item['ssl_profile_id'] = 0
+                    item['is_https'] = False
+
+            if item['certificate_id'] > 0:
+                try:
+                    item['certificate_id'] = parent.ngfw_certs[item['certificate_id']]
+                except KeyError:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий сертификат.')
+                    item['certificate_id'] = 0
+                    item['is_https'] = False
+            else:
+                item['certificate_id'] = 0
+
+            try:
+                item['user_agents'] = [['list_id', useragent_list[x[1]]] for x in item['user_agents']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий Useragent.')
+                item['user_agents'] = []
+
+            for x in item['servers']:
+                try:
+                    x[1] = reverse_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий сервер reverse-прокси или балансировщик.')
+                    x = ['profile', 'Example reverse proxy server']
+            if parent.version < 7.1:
+                item['user_agents_negate'] = False
+                item['waf_profile_id'] = 0
+                item['client_certificate_profile_id'] = 0
+            else:
+                item['client_certificate_profile_id'] = client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
+                item['waf_profile_id'] = waf_profiles.get(item['waf_profile_id'], 0)
+
+        json_file = os.path.join(path, 'config_reverseproxy_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила reverse-прокси выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил reverse-прокси.' if error else out_message)
+
+
 #---------------------------------------------------- Библиотека --------------------------------------------------------
 def export_morphology_lists(parent, path):
     """Экспортируем списки морфологии"""
@@ -3917,9 +4102,9 @@ func = {
     "DoSRules": export_dos_rules,
     "DoSProfiles": export_dos_profiles,
     "SCADARules": export_scada_rules,
-    "WebPortal": pass_function,
-    "ReverseProxyRules": pass_function,
-    "ReverseProxyServers": pass_function,
+    "WebPortal": export_proxyportal_rules,
+    "ReverseProxyRules": export_reverseproxy_rules,
+    "ReverseProxyServers": export_reverseproxy_servers,
     "WAF": pass_function,
     "WAFprofiles": pass_function,
     "CustomWafLayers": pass_function,

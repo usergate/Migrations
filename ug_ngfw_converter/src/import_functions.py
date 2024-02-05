@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.6
+# Версия 0.7
 #
 
 import os, sys, json, time
@@ -3394,7 +3394,257 @@ def import_dos_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты DoS.' if error else out_message)
 
 
-#------------------------------------------------ Библиотека ---------------------------------------------------------
+#------------------------------------------ Глобальный портал -----------------------------------------------------------
+def import_proxyportal_rules(parent, path):
+    """Импортируем список URL-ресурсов веб-портала"""
+    parent.stepChanged.emit('BLUE|Импорт списка ресурсов веб-портала в раздел "Глобальный портал/Веб-портал".')
+    json_file = os.path.join(path, 'config_web_portal.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_proxyportal_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    list_proxyportal = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        item.pop('position_layer', None)
+        item['position'] = 'last'
+        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name'])
+        if parent.version < 7:
+            item.pop('transparent_auth', None)
+        if parent.version < 6:
+            item.pop('mapping_url_ssl_profile_id', None)
+            item.pop('mapping_url_certificate_id', None)
+        else:
+            try:
+                if item['mapping_url_ssl_profile_id']:
+                    item['mapping_url_ssl_profile_id'] = parent.ssl_profiles[item['mapping_url_ssl_profile_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+                item['mapping_url_ssl_profile_id'] = 0
+            try:
+                if item['mapping_url_certificate_id']:
+                    item['mapping_url_certificate_id'] = parent.ngfw_certs[item['mapping_url_certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Создайте сертификат и повторите попытку.')
+                item['mapping_url_certificate_id'] = 0
+
+
+        if item['name'] in list_proxyportal:
+            parent.stepChanged.emit(f'GRAY|    Ресурс веб-портала "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_proxyportal_rule(list_proxyportal[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Ресурс веб-портала: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Ресурс веб-портала "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_proxyportal_rule(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Ресурс веб-портала: "{item["name"]}"]')
+                continue
+            else:
+                list_proxyportal[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Ресурс веб-портала "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список ресурсов веб-портала импортирован в раздел "Глобальный портал/Веб-портал".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте ресурсов веб-портала.' if error else out_message)
+
+
+def import_reverseproxy_servers(parent, path):
+    """Импортируем список серверов reverse-прокси"""
+    parent.stepChanged.emit('BLUE|Импорт списка серверов reverse-прокси в раздел "Глобальный портал/Серверы reverse-прокси".')
+    json_file = os.path.join(path, 'config_reverseproxy_servers.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_reverseproxy_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverseproxy_servers = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if item['name'] in reverseproxy_servers:
+            parent.stepChanged.emit(f'GRAY|    Сервер reverse-прокси "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_reverseproxy_server(reverseproxy_servers[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сервер reverse-прокси: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Сервер reverse-прокси "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_reverseproxy_server(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сервер reverse-прокси: "{item["name"]}"]')
+                continue
+            else:
+                reverseproxy_servers[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Сервер reverse-прокси "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список серверов reverse-прокси импортирован в раздел "Глобальный портал/Серверы reverse-прокси".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.' if error else out_message)
+
+
+def import_reverseproxy_rules(parent, path):
+    """Импортируем список правил reverse-прокси"""
+    parent.stepChanged.emit('BLUE|Импорт правил reverse-прокси в раздел "Глобальный портал/Правила reverse-прокси".')
+    json_file = os.path.join(path, 'config_reverseproxy_rules.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, err_msg, _, result = parent.utm.get_loadbalancing_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverse_loadbalancing = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_reverseproxy_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverseproxy_servers = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_nlists_list('useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useragent_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_client_certificate_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        client_certificate_profiles = {x['name']: x['id'] for x in result}
+
+        err, result = parent.utm.get_waf_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        waf_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_reverseproxy_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverseproxy_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        item.pop('position_layer', None)
+        item['src_zones'] = get_zones_id(parent, item['src_zones'], item['name'])
+        item['src_ips'] = get_ips_id(parent, item['src_ips'], item['name'])
+        item['dst_ips'] = get_ips_id(parent, item['dst_ips'], item['name'])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name'])
+        if parent.version < 6:
+            item.pop('ssl_profile_id', None)
+        else:
+            if item['ssl_profile_id']:
+                try:
+                    item['ssl_profile_id'] = parent.ssl_profiles[item['ssl_profile_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+                    item['ssl_profile_id'] = 0
+                    item['is_https'] = False
+            else:
+                item['is_https'] = False
+        if item['certificate_id']:
+            try:
+                item['certificate_id'] = parent.ngfw_certs[item['certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Создайте сертификат и повторите попытку.')
+                item['certificate_id'] = -1
+                item['is_https'] = False
+        else:
+            item['certificate_id'] = -1
+            item['is_https'] = False
+        try:
+            item['user_agents'] = [['list_id',useragent_list[x[1]]] for x in item['user_agents']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден Useragent "{err}". Импортируйте useragent браузеров и повторите попытку.')
+            item['user_agents'] = []
+        try:
+            for x in item['servers']:
+                x[1] = reverseproxy_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик "{err}". Импортируйте reverse-прокси или балансировщик и повторите попытку.')
+            continue
+        if parent.version < 7.1:
+            item.pop('user_agents_negate', None)
+            item.pop('waf_profile_id', None)
+            item.pop('client_certificate_profile_id', None)
+        else:
+            item['position'] = 'last'
+            if item['client_certificate_profile_id']:
+                try:
+                    item['client_certificate_profile_id'] = client_certificate_profiles[item['client_certificate_profile_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{err}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                    item['client_certificate_profile_id'] = 0
+            if item['waf_profile_id']:
+                try:
+                    item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF "{err}". Импортируйте профили WAF и повторите попытку.')
+                    item['waf_profile_id'] = 0
+
+        if item['name'] in reverseproxy_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_reverseproxy_rule(reverseproxy_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило reverse-прокси: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Правило reverse-прокси "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_reverseproxy_rule(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило reverse-прокси: "{item["name"]}"]')
+                continue
+            else:
+                reverseproxy_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило reverse-прокси "{item["name"]}" добавлено.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Правила reverse-прокси импортированы в раздел "Глобальный портал/Правила reverse-прокси".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.' if error else out_message)
+    parent.stepChanged.emit('NOTE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
+
+
+#------------------------------------------------ Библиотека ------------------------------------------------------------
 def import_morphology_lists(parent, path):
     """Импортируем списки морфологии"""
     parent.stepChanged.emit('BLUE|Импорт списков морфологии в раздел "Библиотеки/Морфология".')
@@ -5087,9 +5337,9 @@ func = {
     "DoSRules": import_dos_rules,
     "DoSProfiles": import_dos_profiles,
     "SCADARules": import_scada_rules,
-    "WebPortal": pass_function,
-    "ReverseProxyRules": pass_function,
-    "ReverseProxyServers": pass_function,
+    "WebPortal": import_proxyportal_rules,
+    "ReverseProxyRules": import_reverseproxy_rules,
+    "ReverseProxyServers": import_reverseproxy_servers,
     "WAF": pass_function,
     "WAFprofiles": pass_function,
     "CustomWafLayers": pass_function,

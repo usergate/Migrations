@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.11
+# Версия 3.12
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -1857,7 +1857,7 @@ class UtmXmlRpc:
             icap = self._server.v1.icap.loadbalancing.rules.list(self._auth_token)
             reverse = self._server.v1.reverseproxy.loadbalancing.rules.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f'error utm.get_loadbalancing_rules: [{err.faultCode}] — {err.faultString}'
+            return 1, f'error utm.get_loadbalancing_rules: [{err.faultCode}] — {err.faultString}', 0, 0
         return 0, tcpudp, icap, reverse
 
     def add_virtualserver_rule(self, rule):
@@ -2296,8 +2296,7 @@ class UtmXmlRpc:
             result = self._server.v1.dos.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
             return 1, f'Error utm.add_dos_rule: [{err.faultCode}] — {err.faultString}'
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_dos_rule(self, rule_id, rule):
         """Обновить правило защиты DoS"""
@@ -2305,15 +2304,14 @@ class UtmXmlRpc:
             result = self._server.v1.dos.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
             return 1, f'Error utm.update_dos_rule: [{err.faultCode}] — {err.faultString}'
-        else:
-            return 0, result     # Возвращает True
+        return 0, result     # Возвращает True
 
     def get_proxyportal_rules(self):
         """Получить список ресурсов URL веб-портала"""
         try:
             result = self._server.v1.proxyportal.bookmarks.list(self._auth_token, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_proxyportal_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_proxyportal_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def add_proxyportal_rule(self, rule):
@@ -2321,7 +2319,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.proxyportal.bookmark.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_proxyportal_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_proxyportal_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2330,7 +2328,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.proxyportal.bookmark.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_proxyportal_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_proxyportal_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2346,23 +2344,21 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error utm.get_reverseproxy_servers: [{err.faultCode}] — {err.faultString}'
  
-    def add_reverseproxy_servers(self, profile):
+    def add_reverseproxy_server(self, profile):
         """Добавить новый сервер reverse-прокси"""
         try:
             result = self._server.v1.reverseproxy.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_reverseproxy_servers: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_reverseproxy_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
-    def update_reverseproxy_servers(self, profile_id, profile):
+    def update_reverseproxy_server(self, profile_id, profile):
         """Обновить сервер reverse-прокси"""
         try:
             result = self._server.v1.reverseproxy.profile.update(self._auth_token, profile_id, profile)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_reverseproxy_servers: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_reverseproxy_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_reverseproxy_rules(self):
         """Получить список правил reverse-прокси"""
@@ -2374,28 +2370,31 @@ class UtmXmlRpc:
                 result = self._server.v1.reverseproxy.rules.list(self._auth_token, 0, 100, {})
                 return 0, result['items']
         except rpc.Fault as err:
-            return 1, f"Error utm.get_reverseproxy_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_reverseproxy_rules: [{err.faultCode}] — {err.faultString}'
 
     def add_reverseproxy_rule(self, rule):
         """Добавить новое правило reverse-прокси"""
         try:
             result = self._server.v1.reverseproxy.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_reverseproxy_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_reverseproxy_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_reverseproxy_rule(self, rule_id, rule):
         """Обновить правило reverse-прокси"""
         try:
             result = self._server.v1.reverseproxy.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_reverseproxy_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_reverseproxy_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_waf_profiles(self):
+        """Получить список профилей WAF"""
+        try:
+            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_waf_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
 
     def get_vpn_security_profiles(self):
         """Получить список профилей безопасности VPN"""

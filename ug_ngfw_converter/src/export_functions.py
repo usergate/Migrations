@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.7
+# Версия 0.8
 #
 
 import os, sys, json
@@ -2902,6 +2902,267 @@ def export_reverseproxy_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил reverse-прокси.' if error else out_message)
 
 
+#------------------------------------------------------- VPN ------------------------------------------------------------
+def export_vpn_security_profiles(parent, path):
+    """Экспортируем список профилей безопасности VPN. Для версий 5, 6, 7.0"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей безопасности VPN из раздела "VPN/Профили безопасности VPN".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_vpn_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('cc', None)
+            if parent.version < 6:
+                item['peer_auth'] = 'psk'
+                item['ike_mode'] = 'main'
+                item['ike_version'] = 1
+                item['p2_security'] = item['security']
+                item['p2_key_lifesize'] = 4608000
+                item['p2_key_lifesize_enabled'] = False
+                item['p1_key_lifetime'] = 86400
+                item['p2_key_lifetime'] = 43200
+                item['dpd_interval'] = 60
+                item['dpd_max_failures'] = 5
+                item['dh_groups'] = ['DH_GROUP2_PRIME_1024', 'DH_GROUP14_PRIME_2048']
+
+        json_file = os.path.join(path, 'config_vpn_security_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили безопасности VPN выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей безопасности VPN.' if error else out_message)
+
+
+def export_vpnclient_security_profiles(parent, path):
+    """Экспортируем клиентские профили безопасности VPN. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт клиентских профилей безопасности VPN из раздела "VPN/Клиентские профили безопасности".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_vpn_client_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['certificate_id'] = parent.ngfw_certs.get(item['certificate_id'], 0)
+
+        json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Клиентские профили безопасности VPN выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте клиентских профилей безопасности VPN.' if error else out_message)
+
+
+def export_vpnserver_security_profiles(parent, path):
+    """Экспортируем серверные профили безопасности VPN. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт серверных профилей безопасности VPN из раздела "VPN/Серверные профили безопасности".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_client_certificate_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    client_certificate_profiles = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_vpn_server_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['certificate_id'] = parent.ngfw_certs.get(item['certificate_id'], 0)
+            item['client_certificate_profile_id'] = client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
+
+        json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Серверные профили безопасности VPN выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте серверных профилей безопасности VPN.' if error else out_message)
+
+
+def export_vpn_networks(parent, path):
+    """Экспортируем список сетей VPN"""
+    parent.stepChanged.emit('BLUE|Экспорт списка сетей VPN из раздела "VPN/Сети VPN".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_vpn_networks()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('cc', None)
+            for x in item['networks']:
+                if x[0] == 'list_id':
+                    x[1] = parent.ip_lists[x[1]]
+            if parent.version < 7.1:
+                item['ep_tunnel_all_routes'] = False
+                item['ep_disable_lan_access'] = False
+                item['ep_routes_include'] = []
+                item['ep_routes_exclude'] = []
+            else:
+                for x in item['ep_routes_include']:
+                    if x[0] == 'list_id':
+                        x[1] = parent.ip_lists[x[1]]
+                for x in item['ep_routes_exclude']:
+                    if x[0] == 'list_id':
+                        x[1] = parent.ip_lists[x[1]]
+
+        json_file = os.path.join(path, 'config_vpn_networks.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список сетей VPN выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка сетей VPN.' if error else out_message)
+
+
+def export_vpn_client_rules(parent, path):
+    """Экспортируем список клиентских правил VPN"""
+    parent.stepChanged.emit('BLUE|Экспорт клиентских правил VPN из раздела "VPN/Клиентские правила".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if parent.version < 7.1:
+        err, result = parent.utm.get_vpn_security_profiles()
+    else:
+        err, result = parent.utm.get_vpn_client_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_security_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_vpn_client_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('connection_time', None)
+            item.pop('last_error', None)
+            item.pop('status', None)
+            item.pop('cc', None)
+            item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
+            if parent.version < 6:
+                item['protocol'] = 'l2tp'
+                item['subnet1'] = ''
+                item['subnet2'] = ''
+
+        json_file = os.path.join(path, 'config_vpn_client_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Клиентские правила VPN выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте клиентских правил VPN.' if error else out_message)
+
+
+def export_vpn_server_rules(parent, path):
+    """Экспортируем список серверных правил VPN"""
+    parent.stepChanged.emit('BLUE|Экспорт серверных правил VPN из раздела "VPN/Серверные правила".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    if parent.version < 7.1:
+        err, result = parent.utm.get_vpn_security_profiles()
+    else:
+        err, result = parent.utm.get_vpn_server_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_security_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_vpn_networks()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_networks = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_vpn_server_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('guid', None)
+            item.pop('rownumber', None)
+            item.pop('cc', None)
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['source_ips'] = get_ips_name(parent, item['source_ips'], item['name'])
+            if parent.version < 6:
+                item['dst_ips'] = []
+                item['position_layer'] = 'local'
+            else:
+                item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
+
+            item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
+            item['tunnel_id'] = vpn_networks[item['tunnel_id']]
+            item['auth_profile_id'] = parent.auth_profiles[item['auth_profile_id']]
+            if parent.version >= 7.1:
+                item.pop('allowed_auth_methods', None)
+
+        json_file = os.path.join(path, 'config_vpn_server_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Серверные правила VPN выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте серверных правил VPN.' if error else out_message)
+
+
 #---------------------------------------------------- Библиотека --------------------------------------------------------
 def export_morphology_lists(parent, path):
     """Экспортируем списки морфологии"""
@@ -4109,13 +4370,12 @@ func = {
     "WAFprofiles": pass_function,
     "CustomWafLayers": pass_function,
     "SystemWafRules": pass_function,
-    "VPN": pass_function,
-    "ServerRules": pass_function,
-    "ClientRules": pass_function,
-    "VPNNetworks": pass_function,
-    "SecurityProfiles": pass_function,
-    "ServerSecurityProfiles": pass_function,
-    "ClientSecurityProfiles": pass_function,
+    "ServerRules": export_vpn_server_rules,
+    "ClientRules": export_vpn_client_rules,
+    "VPNNetworks": export_vpn_networks,
+    "SecurityProfiles": export_vpn_security_profiles,
+    "ServerSecurityProfiles": export_vpnserver_security_profiles,
+    "ClientSecurityProfiles": export_vpnclient_security_profiles,
     "Morphology": export_morphology_lists,
     "Services": export_services_list,
     "ServicesGroups": export_services_groups,

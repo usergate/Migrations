@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.7
+# Версия 0.8
 #
 
 import os, sys, json, time
@@ -3643,6 +3643,414 @@ def import_reverseproxy_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.' if error else out_message)
     parent.stepChanged.emit('NOTE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
 
+#--------------------------------------------------- VPN ----------------------------------------------------------------
+def import_vpn_security_profiles(parent, path):
+    """Импортируем список профилей безопасности VPN"""
+    parent.stepChanged.emit('BLUE|Импорт профилей безопасности VPN в раздел "VPN/Профили безопасности VPN".')
+    json_file = os.path.join(path, 'config_vpn_security_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_vpn_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    security_profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.version < 6:
+            item.pop('peer_auth', None)
+            item.pop('ike_mode', None)
+            item.pop('ike_version', None)
+            item.pop('p2_security', None)
+            item.pop('p2_key_lifesize', None)
+            item.pop('p2_key_lifesize_enabled', None)
+            item.pop('p1_key_lifestime', None)
+            item.pop('p2_key_lifestime', None)
+            item.pop('dpd_interval', None)
+            item.pop('dpd_max_failures', None)
+            item.pop('dh_groups', None)
+
+        if item['name'] in security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_vpn_security_profile(security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vpn_security_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: "{item["name"]}"]')
+                continue
+            else:
+                security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили безопасности VPN импортированы в раздел "VPN/Профили безопасности VPN".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей безопасности VPN.' if error else out_message)
+
+def import_vpnclient_security_profiles(parent, path):
+    """Импортируем клиентские профилей безопасности VPN. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Импорт клиентских профилей безопасности VPN в раздел "VPN/Клиентские профили безопасности".')
+    json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_vpn_client_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    security_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['certificate_id']:
+            try:
+                item['certificate_id'] = parent.ngfw_certs[item['certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Импортируйте сертификаты и повторите попытку.')
+                item['certificate_id'] = 0
+
+        if item['name'] in security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_vpn_client_security_profile(security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vpn_client_security_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: "{item["name"]}"]')
+                continue
+            else:
+                security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Клиентские профили безопасности импортированы в раздел "VPN/Клиентские профили безопасности".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских профилей безопасности VPN.' if error else out_message)
+
+def import_vpnserver_security_profiles(parent, path):
+    """Импортируем серверные профилей безопасности VPN. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Импорт серверных профилей безопасности VPN в раздел "VPN/Серверные профили безопасности".')
+    json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_client_certificate_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    client_certificate_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_vpn_server_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    security_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['certificate_id']:
+            try:
+                item['certificate_id'] = parent.ngfw_certs[item['certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Импортируйте сертификаты и повторите попытку.')
+                item['certificate_id'] = 0
+        if item['client_certificate_profile_id']:
+            try:
+                item['client_certificate_profile_id'] = client_certificate_profiles[item['client_certificate_profile_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{err}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                item['client_certificate_profile_id'] = 0
+
+        if item['name'] in security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_vpn_server_security_profile(security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vpn_server_security_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: "{item["name"]}"]')
+                continue
+            else:
+                security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Серверные профили безопасности импортированы в раздел "VPN/Серверные профили безопасности".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных профилей безопасности VPN.' if error else out_message)
+
+
+def import_vpn_networks(parent, path):
+    """Импортируем список сетей VPN"""
+    parent.stepChanged.emit('BLUE|Импорт списка сетей VPN в раздел "VPN/Сети VPN".')
+    json_file = os.path.join(path, 'config_vpn_networks.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_vpn_networks()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_networks = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        new_networks = []
+        for x in item['networks']:
+            try:
+                new_networks.append(['list_id', parent.ip_lists[x[1]]] if x[0] == 'list_id' else x)
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден список IP-адресов "{err}". Импортируйте списки IP-адресов и повторите попытку.')
+        item['networks'] = new_networks
+        if parent.version < 7.1:
+            item.pop('ep_tunnel_all_routes', None)
+            item.pop('ep_disable_lan_access', None)
+            item.pop('ep_routes_include', None)
+            item.pop('ep_routes_exclude', None)
+        else:
+            routes_include = []
+            for x in item['ep_routes_include']:
+                try:
+                    routes_include.append(['list_id', parent.ip_lists[x[1]]] if x[0] == 'list_id' else x)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден список IP-адресов "{err}". Импортируйте списки IP-адресов и повторите попытку.')
+            item['ep_routes_include'] = routes_include
+            routes_exclude = []
+            for x in item['ep_routes_exclude']:
+                try:
+                    routes_exclude.append(['list_id', parent.ip_lists[x[1]]] if x[0] == 'list_id' else x)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден список IP-адресов "{err}". Импортируйте списки IP-адресов и повторите попытку.')
+            item['ep_routes_exclude'] = routes_exclude
+
+        if item['name'] in vpn_networks:
+            parent.stepChanged.emit(f'GRAY|    Сеть VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_vpn_network(vpn_networks[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сеть VPN: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Сеть VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vpn_network(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сеть VPN: "{item["name"]}"]')
+                continue
+            else:
+                vpn_networks[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Сеть VPN "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Список сетей VPN импортирован в раздел "VPN/Сети VPN".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сетей VPN.' if error else out_message)
+
+
+def import_vpn_client_rules(parent, path):
+    """Импортируем список клиентских правил VPN"""
+    parent.stepChanged.emit('BLUE|Импорт списка клиентских правил VPN в раздел "VPN/Клиентские правила".')
+    json_file = os.path.join(path, 'config_vpn_client_rules.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    if parent.version < 7.1:
+        err, result = parent.utm.get_vpn_security_profiles()
+    else:
+        err, result = parent.utm.get_vpn_client_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_security_profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_vpn_client_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_client_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        try:
+            item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности VPN "{err}". Загрузите профили безопасности VPN и повторите попытку.')
+            item['security_profile_id'] = ""
+        if parent.version < 7.1:
+            if 'xauth_login' not in item:
+                item['xauth_login'] = 'vpn'
+                item['xauth_password'] = 'vpn'
+                if parent.version >= 6:
+                    item['protocol'] = 'l2tp'
+                    item['subnet1'] = ''
+                    item['subnet2'] = ''
+            elif parent.version < 6:
+                item.pop('protocol', None)
+                item.pop('subnet1', None)
+                item.pop('subnet2', None)
+        else:
+            item.pop('xauth_login', None)
+            item.pop('xauth_password', None)
+            item.pop('protocol', None)
+            item.pop('subnet1', None)
+            item.pop('subnet2', None)
+
+        if item['name'] in vpn_client_rules:
+            parent.stepChanged.emit(f'GRAY|    Клиентское правило VPN "{item["name"]}" уже существует.')
+            if parent.version < 7:
+                continue    # Ошибка API update_vpn_client_rule для версий 5 и 6.
+            err, result = parent.utm.update_vpn_client_rule(vpn_client_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Клиентское правило VPN: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Клиентское правило VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vpn_client_rule(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Клиентское правило VPN: "{item["name"]}"]')
+                continue
+            else:
+                vpn_client_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Клиентское правило VPN "{item["name"]}" добавлено.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Клиентские правила VPN импортированы в раздел "VPN/Клиентские правила".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских правил VPN.' if error else out_message)
+
+
+def import_vpn_server_rules(parent, path):
+    """Импортируем список серверных правил VPN"""
+    parent.stepChanged.emit('BLUE|Импорт списка серверных правил VPN в раздел "VPN/Серверные правила".')
+    json_file = os.path.join(path, 'config_vpn_server_rules.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    if parent.version < 7.1:
+        err, result = parent.utm.get_vpn_security_profiles()
+    else:
+        err, result = parent.utm.get_vpn_server_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_security_profiles = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_vpn_networks()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_networks = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_vpn_server_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_server_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        item.pop('position_layer', None)
+        item['position'] = 'last'
+        item['src_zones'] = get_zones_id(parent, item['src_zones'], item['name'])
+        item['source_ips'] = get_ips_id(parent, item['source_ips'], item['name'])
+        if parent.version < 6:
+            item.pop('dst_ips', None)
+        else:
+            item['dst_ips'] = get_ips_id(parent, item['dst_ips'], item['name'])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name'])
+        try:
+            item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности VPN "{err}". Загрузите профили безопасности VPN и повторите попытку.')
+            item['security_profile_id'] = ""
+        try:
+            item['tunnel_id'] = vpn_networks[item['tunnel_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найдена сеть VPN "{err}". Загрузите сети VPN и повторите попытку.')
+            item['tunnel_id'] = ""
+        try:
+            item['auth_profile_id'] = parent.auth_profiles[item['auth_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль авторизации "{err}". Загрузите профили авторизации и повторите попытку.')
+            item['auth_profile_id'] = ""
+
+        if item['name'] in vpn_server_rules:
+            parent.stepChanged.emit(f'GRAY|    Серверное правило VPN "{item["name"]}" уже существует.')
+            if parent.version < 6:
+                continue    # Ошибка API update_vpn_client_rule для версий 5.
+            err, result = parent.utm.update_vpn_server_rule(vpn_server_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Серверное правило VPN: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Серверное правило VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vpn_server_rule(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Серверное правило VPN: "{item["name"]}"]')
+                continue
+            else:
+                vpn_server_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Серверное правило VPN "{item["name"]}" добавлено.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Серверные правила VPN импортированы в раздел "VPN/Серверные правила".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных правил VPN.' if error else out_message)
+
 
 #------------------------------------------------ Библиотека ------------------------------------------------------------
 def import_morphology_lists(parent, path):
@@ -5344,13 +5752,12 @@ func = {
     "WAFprofiles": pass_function,
     "CustomWafLayers": pass_function,
     "SystemWafRules": pass_function,
-    "VPN": pass_function,
-    "ServerRules": pass_function,
-    "ClientRules": pass_function,
-    "VPNNetworks": pass_function,
-    "SecurityProfiles": pass_function,
-    "ServerSecurityProfiles": pass_function,
-    "ClientSecurityProfiles": pass_function,
+    "ServerRules": import_vpn_server_rules,
+    "ClientRules": import_vpn_client_rules,
+    "VPNNetworks": import_vpn_networks,
+    "SecurityProfiles": import_vpn_security_profiles,
+    "ServerSecurityProfiles": import_vpnserver_security_profiles,
+    "ClientSecurityProfiles": import_vpnclient_security_profiles,
     "Morphology": import_morphology_lists,
     "Services": import_services_list,
     "ServicesGroups": import_services_groups,

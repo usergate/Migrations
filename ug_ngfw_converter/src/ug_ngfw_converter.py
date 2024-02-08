@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_universal_converter.py
-# Version 0.7
+# Version 0.8
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json

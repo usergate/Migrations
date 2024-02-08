@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.12
+# Версия 3.13
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -2401,7 +2401,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.security.profiles.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_vpn_security_profiles: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_vpn_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def add_vpn_security_profile(self, profile):
@@ -2409,28 +2409,71 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.security.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии профиля "{profile["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_vpn_security_profile: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_vpn_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_vpn_security_profile(self, profile_id, profile):
         """Обновить профиль безопасности VPN"""
         try:
             result = self._server.v1.vpn.security.profile.update(self._auth_token, profile_id, profile)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_vpn_security_profile: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_vpn_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_vpn_client_security_profiles(self):
+        """Получить клиентские профили безопасности VPN. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.vpn.client.security.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_vpn_client_security_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_vpn_client_security_profile(self, profile):
+        """Добавить клиентский профиль безопасности VPN. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.vpn.client.security.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_vpn_client_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_vpn_client_security_profile(self, profile_id, profile):
+        """Обновить клиентский профиль безопасности VPN. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.vpn.client.security.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_vpn_client_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_vpn_server_security_profiles(self):
+        """Получить серверные профили безопасности VPN. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.vpn.server.security.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_vpn_server_security_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_vpn_server_security_profile(self, profile):
+        """Добавить серверный профиль безопасности VPN. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.vpn.server.security.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_vpn_server_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_vpn_server_security_profile(self, profile_id, profile):
+        """Обновить серверный профиль безопасности VPN. Только для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.vpn.server.security.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_vpn_server_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_vpn_networks(self):
         """Получить список сетей VPN"""
         try:
             result = self._server.v1.vpn.tunnels.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_vpn_networks: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_vpn_networks: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def add_vpn_network(self, network):
@@ -2438,28 +2481,23 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.tunnel.add(self._auth_token, network)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{network["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_vpn_network: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_vpn_network: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_vpn_network(self, network_id, network):
         """Обновить сеть VPN"""
         try:
             result = self._server.v1.vpn.tunnel.update(self._auth_token, network_id, network)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_vpn_network: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_vpn_network: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_vpn_server_rules(self):
         """Получить список серверных правил VPN"""
         try:
             result = self._server.v1.vpn.server.rules.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_vpn_server_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_vpn_server_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result if self.version.startswith('5') else result['items']
 
     def add_vpn_server_rule(self, rule):
@@ -2467,10 +2505,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.server.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_vpn_server_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_vpn_server_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
 
@@ -2479,7 +2514,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.server.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_vpn_server_rule: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.update_vpn_server_rule: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
@@ -2488,7 +2523,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.vpn.client.rules.list(self._auth_token)
         except rpc.Fault as err:
-            return 1, f"Error utm.get_vpn_client_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_vpn_client_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
     def add_vpn_client_rule(self, rule):
@@ -2499,12 +2534,8 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.vpn.client.rule.add(self._auth_token, self.node_name, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_vpn_client_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_vpn_client_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_vpn_client_rule(self, rule_id, rule):
         """Обновить клиентское правило VPN"""
@@ -2514,9 +2545,8 @@ class UtmXmlRpc:
             else:
                 result = self._server.v1.vpn.client.rule.update(self._auth_token, self.node_name, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_vpn_client_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает True
+            return 1, f'Error utm.update_vpn_client_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
 ########################################### Оповещения ###########################################
     def get_snmp_rules(self):

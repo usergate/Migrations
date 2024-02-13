@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.13
+# Версия 3.14
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -346,13 +346,33 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает ID добавленного правила
 
-    def get_snmp_engine_id(self):
+    def get_snmp_engine(self):
         """Выгрузить SNMP Engine ID"""
-        try:
-            result = self._server.v1.snmp.engine.id.get(self._auth_token)
-        except rpc.Fault as err:
-            return 1, f'Error utm.get_snmp_engine_id: [{err.faultCode}] — {err.faultString}'
+        if self.version_hight == 5:
+            return 1, 'Error utm.get_snmp_engine: В версии 5 snmp engine не поддерживается.'
+        else:
+            try:
+                if self.version_hight >= 7 and self.version_midle >= 1:
+                    result = self._server.v1.snmp.engine.id.get(self._auth_token, self.node_name)
+                else:
+                    result = self._server.v1.snmp.engine.id.get(self._auth_token)
+            except rpc.Fault as err:
+                return 1, f'Error utm.get_snmp_engine: [{err.faultCode}] — {err.faultString}'
         return 0, result
+
+    def set_snmp_engine(self, engine):
+        """Установить SNMP Engine ID"""
+        if self.version_hight == 5:
+            return 1, 'Error utm.get_snmp_engine: В версии 5 snmp engine не поддерживается.'
+        else:
+            try:
+                if self.version_hight >= 7 and self.version_midle >= 1:
+                    result = self._server.v1.snmp.engine.id.set(self._auth_token, self.node_name, engine)
+                else:
+                    result = self._server.v1.snmp.engine.id.set(self._auth_token, engine)
+            except rpc.Fault as err:
+                return 1, f'Error utm.set_snmp_engine: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
 
     def get_client_certificate_profiles(self):
         """Получить список профилей пользовательских сертификатов"""
@@ -2549,63 +2569,194 @@ class UtmXmlRpc:
         return 0, result     # Возвращает True
 
 ########################################### Оповещения ###########################################
+    def get_snmp_sysname(self):
+        """Получить SNMP имя системы. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.sys.name.get(self._auth_token, self.node_name)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_snmp_sysname: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def set_snmp_sysname(self, name):
+        """Установить SNMP имя системы. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.sys.name.set(self._auth_token, self.node_name, name)
+        except rpc.Fault as err:
+            return 1, f'Error utm.set_snmp_sysname: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def get_snmp_syslocation(self):
+        """Получить SNMP локацию системы. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.sys.location.get(self._auth_token, self.node_name)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_snmp_syslocation: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def set_snmp_syslocation(self, location):
+        """Установить SNMP локацию системы. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.sys.location.set(self._auth_token, self.node_name, location)
+        except rpc.Fault as err:
+            return 1, f'Error utm.set_snmp_syslocation: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def get_snmp_sysdescription(self):
+        """Получить SNMP описание системы. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.sys.description.get(self._auth_token, self.node_name)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_snmp_sysdescription: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def set_snmp_sysdescription(self, description):
+        """Установить SNMP описание системы. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.sys.description.set(self._auth_token, self.node_name, description)
+        except rpc.Fault as err:
+            return 1, f'Error utm.set_snmp_sysdescription: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def get_snmp_security_profiles(self):
+        """Получить профили безопасности SNMP. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.security.profiles.list(self._auth_token, 0, 100, {})
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_snmp_security_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_snmp_security_profile(self, profile):
+        """Добавить профиль безопасности SNMP. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.security.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_snmp_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def update_snmp_security_profile(self, profile_id, profile):
+        """Обновить профиль безопасности SNMP. Для версии 7.1 и выше."""
+        try:
+            result = self._server.v1.snmp.security.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_snmp_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
     def get_snmp_rules(self):
         """Получить список правил SNMP"""
         try:
-            result = self._server.v1.snmp.rules.list(self._auth_token)
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.snmp.rules.list(self._auth_token, 0, 100, {})
+                return 0, result['items']
+            else:
+                result = self._server.v1.snmp.rules.list(self._auth_token)
+                return 0, result
         except rpc.Fault as err:
-            return 1, f"Error utm.get_snmp_rules: [{err.faultCode}] — {err.faultString}"
-        return 0, result
+            return 1, f'Error utm.get_snmp_rules: [{err.faultCode}] — {err.faultString}'
 
     def add_snmp_rule(self, rule):
         """Добавить новое правило SNMP"""
         try:
             result = self._server.v1.snmp.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_snmp_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_snmp_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_snmp_rule(self, rule_id, rule):
         """Обновить правило SNMP"""
         try:
             result = self._server.v1.snmp.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.update_snmp_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID изменённого правила
+            return 1, f'Error utm.update_snmp_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
     def get_notification_alert_rules(self):
         """Получить список правил оповещений"""
         try:
             result = self._server.v1.notification.alert.rules.list(self._auth_token, 0, 100, {})
         except rpc.Fault as err:
-            return 1, f"Error utm.get_notification_alert_rules: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.get_notification_alert_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result if int(self.version[:1]) < 7 else result['items']
 
     def add_notification_alert_rule(self, rule):
-        """Добавить новое правило SNMP"""
+        """Добавить новое правило оповещений"""
         try:
             result = self._server.v1.notification.alert.rule.add(self._auth_token, rule)
         except rpc.Fault as err:
-            if err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии правила "{rule["name"]}". Возможно используются русские буквы.'
-            else:
-                return 1, f"Error utm.add_notification_alert_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленного правила
+            return 1, f'Error utm.add_notification_alert_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
 
     def update_notification_alert_rule(self, rule_id, rule):
-        """Обновить правило SNMP"""
+        """Обновить правило оповещений"""
         try:
             result = self._server.v1.notification.alert.rule.update(self._auth_token, rule_id, rule)
         except rpc.Fault as err:
-            return 1, f"Error utm.update_notification_alert_rule: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID изменённого правила
+            return 1, f'Error utm.update_notification_alert_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+################################## WAF для версии 7.1 и выше #######################################
+    def get_waf_technology_list(self):
+        """Получить список технологий WAF"""
+        try:
+            result = self._server.v1.waf.system.rules.technologies.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_waf_technology_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей: {'id': <int>; 'name': <str>}
+
+    def get_waf_system_layers_list(self):
+        """Получить список системных слоёв WAF"""
+        try:
+            result = self._server.v1.waf.system.layers.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_waf_system_layers_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_waf_custom_layers_list(self):
+        """Получить список персональных слоёв WAF"""
+        try:
+            result = self._server.v1.waf.custom.layers.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_waf_custom_layers_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_waf_custom_layer(self, layer):
+        """Добавить персональный слой WAF"""
+        try:
+            result = self._server.v1.waf.custom.layer.add(self._auth_token, layer)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_waf_custom_layer: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает ID
+
+    def update_waf_custom_layer(self, layer_id, layer):
+        """Обновить персональный слой WAF"""
+        try:
+            result = self._server.v1.waf.custom.layer.update(self._auth_token, layer_id, layer)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_waf_custom_layer: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
+
+    def get_waf_profiles_list(self):
+        """Получить список профилей WAF"""
+        try:
+            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_waf_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей
+
+    def add_waf_profile(self, profile):
+        """Добавить профиль WAF"""
+        try:
+            result = self._server.v1.waf.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_waf_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает ID
+
+    def update_waf_profile(self, profile_id, profile):
+        """Добавить профиль WAF"""
+        try:
+            result = self._server.v1.waf.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_waf_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
 
 ################################### L7 для версии 7.1 и выше #######################################
     def get_version71_apps(self, query={}):

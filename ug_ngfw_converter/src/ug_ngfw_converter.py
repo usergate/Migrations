@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_universal_converter.py
-# Version 0.8
+# Version 1.0
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -77,10 +77,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication([])
-#    app.setStyle("Fusion")
-#    app.setStyleSheet(cs.Style.app)
     window = MainWindow()
-#    window.resize(1300, 800)
     window.show()
     app.exec()
 

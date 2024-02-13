@@ -296,7 +296,7 @@ class SelectExportMode(SelectMode):
         if self.selected_points:
             self.disable_buttons()
             if self.thread is None:
-                self.thread = ef.ExportSelectedPoints(self.utm, self.current_path, self.selected_points)
+                self.thread = ef.ExportSelectedPoints(self.utm, self.parent.get_config_path(), self.current_path, self.selected_points)
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -391,7 +391,7 @@ class SelectImportMode(SelectMode):
                 }
                 self.set_arguments(arguments)
 
-                self.thread = tf.ImportSelectedPoints(self.utm, self.current_path, self.selected_points, arguments)
+                self.thread = tf.ImportSelectedPoints(self.utm, self.parent.get_config_path(), self.current_path, self.selected_points, arguments)
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -903,6 +903,11 @@ class MainTree(QTreeWidget):
             "HIDProfiles": "HID профили",
             "BfdProfiles": "Профили BFD",
             "UserIdAgentSyslogFilters": "Syslog фильтры UserID агента",
+            "Notifications": "Оповещения",
+            "AlertRules": "Правила оповещений",
+            "SNMP": "SNMP",
+            "SNMPParameters": "Параметры SNMP",
+            "SNMPSecurityProfiles": "Профили безопасности SNMP",
         }
         
         self.over_compliances = {v: k for k, v in self.compliances.items()}
@@ -934,11 +939,14 @@ class MainTree(QTreeWidget):
                 "Профили СОВ", "Профили оповещений", "Профили netflow", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
             ],
+            "Оповещения": [
+                "Правила оповещений", "SNMP", "Параметры SNMP", "Профили безопасности SNMP",
+            ],
         }
 
         self.restricted_items = {
             "7.1": (
-                "Маршруты", "OSPF", "BGP",
+                "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"),
             "7.0": (
                 "Профили пользовательских сертификатов",
@@ -951,9 +959,8 @@ class MainTree(QTreeWidget):
                 "Профили АСУ ТП",
                 "Профили приложений", "Приложения",
                 "Сигнатуры СОВ",
-                "HID объекты", "HID профили",
-                "Профили BFD",
-                "Syslog фильтры UserID агента",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "Параметры SNMP", "Профили безопасности SNMP",
             ),
             "6.1": (
                 "Профили пользовательских сертификатов",
@@ -966,9 +973,8 @@ class MainTree(QTreeWidget):
                 "Сигнатуры СОВ",
                 "Профили LLDP",
                 "Профили пересылки SSL",
-                "HID объекты", "HID профили",
-                "Профили BFD",
-                "Syslog фильтры UserID агента",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "Параметры SNMP", "Профили безопасности SNMP",
             ),
             "5.0": (
                 "Профили пользовательских сертификатов",
@@ -982,6 +988,7 @@ class MainTree(QTreeWidget):
                 "Группы сервисов", "Профили приложений", "Приложения",
                 "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "Параметры SNMP", "Профили безопасности SNMP",
             ),
         }
 

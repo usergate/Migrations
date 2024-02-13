@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.8
+# Версия 1.0
 #
 
 import os, sys, json
@@ -36,10 +36,10 @@ class ExportAll(QThread):
     """Экспортируем всю конфигурацию с NGFW"""
     stepChanged = pyqtSignal(str)
     
-    def __init__(self, utm, base_path, all_points):
+    def __init__(self, utm, config_path, all_points):
         super().__init__()
         self.utm = utm
-        self.base_path = base_path
+        self.config_path = config_path      # Путь к каталогу с конфигурацией данного узла
         self.all_points = all_points
         self.ssl_profiles = {}
         self.servicegroups_list = {}
@@ -144,10 +144,10 @@ class ExportAll(QThread):
     def run(self):
         """Экспортируем всё в пакетном режиме"""
         for item in self.all_points:
-            top_level_path = os.path.join(self.base_path, item['path'])
+            top_level_path = os.path.join(self.config_path, item['path'])
             for point in item['points']:
                 current_path = os.path.join(top_level_path, point)
-                print(current_path)
+#                print(current_path)
                 if point in func:
 #                    print(point)
                     func[point](self, current_path)
@@ -161,9 +161,10 @@ class ExportSelectedPoints(QThread):
     """Экспортируем выделенный раздел конфигурации с NGFW"""
     stepChanged = pyqtSignal(str)
     
-    def __init__(self, utm, selected_path, selected_points):
+    def __init__(self, utm, config_path, selected_path, selected_points):
         super().__init__()
         self.utm = utm
+        self.config_path = config_path
         self.selected_path = selected_path
         self.selected_points = selected_points
         self.ssl_profiles = {}
@@ -357,6 +358,17 @@ def export_general_settings(parent, path):
 
     out_message = f'GREEN|    Настройки модулей выгружены в файл "{json_file}".'
     parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек модулей!' if error else out_message)
+
+    """Экспортируем SNMP Engine ID. Для версий 6 и 7.0"""
+    if 5 < parent.version < 7.1:
+        parent.stepChanged.emit('BLUE|Экспорт SNMP Engine ID из раздела "UserGate/Настройки/Модули/SNMP Engine ID".')
+        engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
+        err, msg = create_dir(engine_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+        else:
+            export_snmp_engine(parent, engine_path)
 
 
     """Экспортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
@@ -1684,8 +1696,10 @@ def export_userid_agent(parent, path):
         error = 1
     else:
         data.pop('cc', None)
-        data['tcp_ca_certificate_id'] = parent.ngfw_certs[data['tcp_ca_certificate_id']]
-        data['tcp_server_certificate_id'] = parent.ngfw_certs[data['tcp_server_certificate_id']]
+        if data['tcp_ca_certificate_id']:
+            data['tcp_ca_certificate_id'] = parent.ngfw_certs[data['tcp_ca_certificate_id']]
+        if data['tcp_server_certificate_id']:
+            data['tcp_server_certificate_id'] = parent.ngfw_certs[data['tcp_server_certificate_id']]
         data['ignore_networks'] = [['list_id', parent.ip_lists[x[1]]] for x in data['ignore_networks']]
 
         json_file = os.path.join(path, 'userid_agent_config.json')
@@ -2900,6 +2914,89 @@ def export_reverseproxy_rules(parent, path):
 
     out_message = f'GREEN|    Правила reverse-прокси выгружен в файл "{json_file}".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил reverse-прокси.' if error else out_message)
+
+#------------------------------------------------------- WAF ------------------------------------------------------------
+def export_waf_custom_layers(parent, path):
+    """Экспортируем персональные WAF-слои. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт персональных слоёв WAF из раздела "WAF/Персональные WAF-слои".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_waf_custom_layers_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+
+        json_file = os.path.join(path, 'config_waf_custom_layers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Персональные WAF-слои выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте персональных слоёв WAF.' if error else out_message)
+
+
+def export_waf_profiles_list(parent, path):
+    """Экспортируем профили WAF. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей WAF из раздела "WAF/WAF-профили".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_waf_technology_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_technology = {x['id']: x['name'] for x in result}
+
+    err, result = parent.utm.get_waf_custom_layers_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_custom_layers = {x['id']: x['name'] for x in result}
+
+    err, result = parent.utm.get_waf_system_layers_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_system_layers = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_waf_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            for layer in item['layers']:
+                if layer['type'] == 'custom_layer':
+                    layer['id'] = waf_custom_layers[layer['id']]
+                else:
+                    layer['id'] = waf_system_layers[layer['id']]
+                    layer['protection_technologies'] = [waf_technology[x] for x in layer['protection_technologies']]
+
+        json_file = os.path.join(path, 'config_waf_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили WAF выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей WAF.' if error else out_message)
 
 
 #------------------------------------------------------- VPN ------------------------------------------------------------
@@ -4313,7 +4410,191 @@ def export_useridagent_syslog_filters(parent, path):
     out_message = f'GREEN|    Syslog фильтры UserID агента выгружены в файл "{json_file}".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте syslog фильтров UserID агента.' if error else out_message)
 
+#--------------------------------------------------- Оповещения ---------------------------------------------------------
+def export_snmp_rules(parent, path):
+    """Экспортируем список правил SNMP"""
+    parent.stepChanged.emit('BLUE|Экспорт списка правил SNMP из раздела "Диагностика и мониторинг/Оповещения/SNMP".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
 
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_snmp_security_profiles()
+        if err:
+            parent.stepChanged.emit(f'iRED|{result}')
+            parent.error = 1
+            return
+        snmp_security_profiles = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_snmp_rules()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('id', None)
+            item.pop('cc', None)
+            if parent.version >= 7.1:
+                item['snmp_security_profile'] = snmp_security_profiles.get(item['snmp_security_profile'], 0)
+
+        json_file = os.path.join(path, 'config_snmp_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список правил SNMP выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил SNMP.' if error else out_message)
+
+
+def export_notification_alert_rules(parent, path):
+    """Экспортируем список правил оповещений"""
+    parent.stepChanged.emit('BLUE|Экспорт правил оповещений из раздела "Диагностика и мониторинг/Оповещения/Правила оповещений".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_notification_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'iRED|{result}')
+        parent.error = 1
+        return
+    list_notifications = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_nlist_list('emailgroup')
+    if err:
+        parent.stepChanged.emit(f'iRED|{result}')
+        parent.error = 1
+        return
+    email_group = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, result = parent.utm.get_nlist_list('phonegroup')
+    if err:
+        parent.stepChanged.emit(f'iRED|{result}')
+        parent.error = 1
+        return
+    phone_group = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    err, data = parent.utm.get_notification_alert_rules()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item['notification_profile_id'] = list_notifications[item['notification_profile_id']]
+            item['emails'] = [[x[0], email_group[x[1]]] for x in item['emails']]
+            item['phones'] = [[x[0], phone_group[x[1]]] for x in item['phones']]
+
+        json_file = os.path.join(path, 'config_alert_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Правила оповещений выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.' if error else out_message)
+
+
+def export_snmp_security_profiles(parent, path):
+    """Экспортируем профили безопасности SNMP. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт профилей безопасности SNMP из раздела "Диагностика и мониторинг/Оповещения/Профили безопасности SNMP".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+    error = 0
+
+    err, data = parent.utm.get_snmp_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        error = 1
+    else:
+        for item in data:
+            item.pop('id', None)
+            item.pop('cc', None)
+            item.pop('readonly', None)
+
+        json_file = os.path.join(path, 'config_snmp_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Профили безопасности SNMP выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей безопасности SNMP.' if error else out_message)
+
+
+def export_snmp_settings(parent, path):
+    """Экспортируем параметры SNMP. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Экспорт параметров SNMP из раздела "Диагностика и мониторинг/Оповещения/Параметры SNMP".')
+    err, msg = create_dir(path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+    else:
+        export_snmp_engine(parent, path)
+        export_snmp_sys_name(parent, path)
+        export_snmp_sys_location(parent, path)
+        export_snmp_sys_description(parent, path)
+
+    parent.stepChanged.emit(f'GREEN|    Параметры SNMP выгружены в каталог "{path}".')
+
+def export_snmp_engine(parent, path):
+    err, data = parent.utm.get_snmp_engine()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте SNMP Engine ID.')
+    else:
+        json_file = os.path.join(path, 'config_snmp_engine.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    SNMP Engine ID выгружено в файл "{json_file}".')
+
+def export_snmp_sys_name(parent, path):
+    err, data = parent.utm.get_snmp_sysname()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте значения SNMP SysName.')
+    else:
+        json_file = os.path.join(path, 'config_snmp_sysname.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Значение SNMP SysName выгружено в файл "{json_file}".')
+
+def export_snmp_sys_location(parent, path):
+    err, data = parent.utm.get_snmp_syslocation()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте значения SNMP SysLocation.')
+    else:
+        json_file = os.path.join(path, 'config_snmp_syslocation.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Значение SNMP SysLocation выгружено в файл "{json_file}".')
+
+def export_snmp_sys_description(parent, path):
+    err, data = parent.utm.get_snmp_sysdescription()
+    if err:
+        parent.stepChanged.emit(f'iRED|{data}')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте значения SNMP SysDescription.')
+    else:
+        json_file = os.path.join(path, 'config_snmp_sysdescription.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Значение SNMP SysDescription выгружено в файл "{json_file}".')
+
+#------------------------------------------------------------------------------------------------------------------------
 def pass_function(parent, path):
     """Функция заглушка"""
     parent.stepChanged.emit(f'GRAY|Экспорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
@@ -4366,9 +4647,8 @@ func = {
     "WebPortal": export_proxyportal_rules,
     "ReverseProxyRules": export_reverseproxy_rules,
     "ReverseProxyServers": export_reverseproxy_servers,
-    "WAF": pass_function,
-    "WAFprofiles": pass_function,
-    "CustomWafLayers": pass_function,
+    "WAFprofiles": export_waf_profiles_list,
+    "CustomWafLayers": export_waf_custom_layers,
     "SystemWafRules": pass_function,
     "ServerRules": export_vpn_server_rules,
     "ClientRules": export_vpn_client_rules,
@@ -4405,8 +4685,11 @@ func = {
     "HIDProfiles": export_hip_profiles,
     "BfdProfiles": export_bfd_profiles,
     "UserIdAgentSyslogFilters": export_useridagent_syslog_filters,
+    "AlertRules": export_notification_alert_rules,
+    "SNMP": export_snmp_rules,
+    "SNMPParameters": export_snmp_settings,
+    "SNMPSecurityProfiles": export_snmp_security_profiles,
 }
-
 
 ###################################### Служебные функции ##########################################
 def get_ips_name(parent, rule_ips, rule_name):
@@ -4605,7 +4888,7 @@ def translate_iface_name(ngfw_version, path, data):
         iface_name = {x['name']: x['name'] for x in data}
     return iface_name
 
-def create_dir(path):
+def create_dir(path, delete='yes'):
     if not os.path.isdir(path):
         try:
             os.makedirs(path)
@@ -4614,6 +4897,7 @@ def create_dir(path):
         else:
             return 0, f'Создан каталог {path}'
     else:
-        for file_name in os.listdir(path):
-            os.remove(os.path.join(path, file_name))
+        if delete == 'yes':
+            for file_name in os.listdir(path):
+                os.remove(os.path.join(path, file_name))
         return 0, f'Каталог {path} уже существует.'

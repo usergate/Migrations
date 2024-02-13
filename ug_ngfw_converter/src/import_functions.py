@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 0.8
+# Версия 1.0
 #
 
 import os, sys, json, time
@@ -56,12 +56,12 @@ class ImportAll(QThread):
         self.scenarios_rules = {}           # Устанавливается через функцию set_scenarios_rules()
         self.error = 0
         self.default_urlcategorygroup = {
-            'Parental Control': 'URL_CATEGORY_GROUP_PARENTAL_CONTROL',
-            'Productivity': 'URL_CATEGORY_GROUP_PRODUCTIVITY',
-            'Safe categories': 'URL_CATEGORY_GROUP_SAFE',
-            'Threats': 'URL_CATEGORY_GROUP_THREATS',
-            'Recommended for morphology checking': 'URL_CATEGORY_MORPHO_RECOMMENDED',
-            'Recommended for virus check': 'URL_CATEGORY_VIRUSCHECK_RECOMMENDED'
+            'URL_CATEGORY_GROUP_PARENTAL_CONTROL': 'Parental Control',
+            'URL_CATEGORY_GROUP_PRODUCTIVITY': 'Productivity',
+            'URL_CATEGORY_GROUP_SAFE': 'Safe categories',
+            'URL_CATEGORY_GROUP_THREATS': 'Threats',
+            'URL_CATEGORY_MORPHO_RECOMMENDED': 'Recommended for morphology checking',
+            'URL_CATEGORY_VIRUSCHECK_RECOMMENDED': 'Recommended for virus check'
         }
         self.init_struct()
 
@@ -158,24 +158,24 @@ class ImportAll(QThread):
 
     def run(self):
         """Импортируем всё в пакетном режиме"""
+        path_dict = {}
         for item in self.all_points:
             top_level_path = os.path.join(self.config_path, item['path'])
             for point in item['points']:
-                current_path = os.path.join(top_level_path, point)
-                if point in func:
-                    func[point](self, current_path)
-                else:
-                    self.error = 1
-                    self.stepChanged.emit(f'RED|Не найдена функция для импорта "{point}".')
+                path_dict[point] = os.path.join(top_level_path, point)
+        for key, value in func.items():
+            if key in path_dict:
+                value(self, path_dict[key])
         self.stepChanged.emit('iORANGE|Импорт конфигурации прошёл с ошибками!\n' if self.error else 'iGREEN|Импорт всей конфигурации прошёл успешно.\n')
 
 
 class ImportSelectedPoints(QThread):
     """Импортируем выделенный раздел конфигурации на NGFW"""
     stepChanged = pyqtSignal(str)
-    def __init__(self, utm, selected_path, selected_points, arguments):
+    def __init__(self, utm, config_path, selected_path, selected_points, arguments):
         super().__init__()
         self.utm = utm
+        self.config_path = config_path
         self.selected_path = selected_path
         self.selected_points = selected_points
         self.iface_settings = arguments['iface_settings']
@@ -308,6 +308,10 @@ def import_general_settings(parent, path):
     import_ui(parent, path)
     import_ntp_settings(parent, path)
     import_modules(parent, path)
+    if 5 < parent.version < 7.1:
+        parent.stepChanged.emit('BLUE|Импорт SNMP Engine ID в раздел "UserGate/Настройки/Модули/SNMP Engine ID".')
+        engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
+        import_snmp_engine(parent, engine_path)
     import_cache_settings(parent, path)
     import_web_portal_settings(parent, path)
     import_upstream_proxy_settings(parent, path)
@@ -969,7 +973,7 @@ def import_dns_servers(parent, path):
 
 def import_dns_rules(parent, path):
     """Импортируем список правил DNS прокси"""
-    parent.stepChanged.emit('BLUE|Импорт списка правил DNS-прокси раздела "Сеть/DNS/Правила DNS".')
+    parent.stepChanged.emit('BLUE|Импорт правил DNS-прокси раздела "Сеть/DNS/Правила DNS".')
     error = 0
     json_file = os.path.join(path, 'config_dns_rules.json')
     err, rules = read_json_file(parent, json_file)
@@ -993,8 +997,8 @@ def import_dns_rules(parent, path):
                 else:
                     parent.stepChanged.emit(f'BLACK|    Правило DNS прокси "{item["name"]}" добавлено.')
 
-    out_message = 'GREEN|    Список правил DNS-прокси импортирован.'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка правил DNS-прокси!' if error else out_message)
+    out_message = 'GREEN|    Правила DNS-прокси импортированы.'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил DNS-прокси!' if error else out_message)
 
 
 def import_dns_static(parent, path):
@@ -1031,7 +1035,7 @@ def import_dns_config(parent, path):
 
 def import_vrf(parent, path):
     """Импортируем список виртуальных маршрутизаторов"""
-    parent.stepChanged.emit('BLUE|Импорт списка виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
+    parent.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
     parent.stepChanged.emit('bRED|    Добавляемые маршруты будут в не активном состоянии. Необходимо будет проверить маршрутизацию и включить их.')
     parent.stepChanged.emit('bRED|    Если вы используете BGP, по окончании импорта включите фильтры BGP-соседей и Routemaps в свойствах соседей.')
     error = 0
@@ -1117,7 +1121,7 @@ def import_vrf(parent, path):
 
 def import_wccp_rules(parent, path):
     """Импортируем список правил WCCP"""
-    parent.stepChanged.emit('BLUE|Импорт списка правил WCCP в раздел "Сеть/WCCP".')
+    parent.stepChanged.emit('BLUE|Импорт правил WCCP в раздел "Сеть/WCCP".')
     error = 0
     json_file = os.path.join(path, 'config_wccp.json')
     err, data = read_json_file(parent, json_file)
@@ -1168,13 +1172,13 @@ def import_wccp_rules(parent, path):
                 else:
                     parent.stepChanged.emit(f'BLACK|    Правило WCCP "{item["name"]}" добавлено.')
 
-    out_message = 'GREEN|    Список правил WCCP импортирован в раздел "Сеть/WCCP".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта списка правил WCCP!' if error else out_message)
+    out_message = 'GREEN|    Правила WCCP импортированы в раздел "Сеть/WCCP".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта правил WCCP!' if error else out_message)
 
 
 def import_local_groups(parent, path):
     """Импортируем список локальных групп пользователей"""
-    parent.stepChanged.emit('BLUE|Импорт списка локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
+    parent.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
     error = 0
     json_file = os.path.join(path, 'config_groups.json')
     err, groups = read_json_file(parent, json_file)
@@ -1226,13 +1230,13 @@ def import_local_groups(parent, path):
                 else:
                     parent.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
 
-    out_message = 'GREEN|    Список локальных групп пользователей импортирован в раздел "Пользователи и устройства/Группы".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта списка локальных групп пользователей!' if error else out_message)
+    out_message = 'GREEN|    Локальные группы пользователей импортирован в раздел "Пользователи и устройства/Группы".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных групп пользователей!' if error else out_message)
 
 
 def import_local_users(parent, path):
     """Импортируем список локальных пользователей"""
-    parent.stepChanged.emit('BLUE|Импорт списка локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
+    parent.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
     error = 0
     json_file = os.path.join(path, 'config_users.json')
     err, users = read_json_file(parent, json_file)
@@ -1273,13 +1277,13 @@ def import_local_users(parent, path):
                 else:
                     parent.stepChanged.emit(f'BLACK|       Пользователь "{item["name"]}" добавлен в группу "{group}".')
 
-    out_message = 'GREEN|    Список локальных пользователей импортирован в раздел "Пользователи и устройства/Пользователи".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта списка локальных пользователей!' if error else out_message)
+    out_message = 'GREEN|    Локальные пользователи импортированы в раздел "Пользователи и устройства/Пользователи".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных пользователей!' if error else out_message)
 
 
 def import_ldap_servers(parent, path):
     """Импортируем список серверов LDAP"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверов LDAP в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit('BLUE|Импорт серверов LDAP в раздел "Пользователи и устройства/Серверы аутентификации".')
     error = 0
     json_file = os.path.join(path, 'config_ldap_servers.json')
     err, data = read_json_file(parent, json_file)
@@ -1314,13 +1318,13 @@ def import_ldap_servers(parent, path):
                     parent.stepChanged.emit(f'BLACK|    Сервер аутентификации LDAP "{item["name"]}" добавлен.')
                     parent.stepChanged.emit(f'NOTE|    Необходимо включить "{item["name"]}", ввести пароль и импортировать keytab файл.')
 
-    out_message = 'GREEN|    Список серверов LDAP импортирован в раздел "Пользователи и устройства/Серверы аутентификации".'
+    out_message = 'GREEN|    Сервера LDAP импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов LDAP!' if error else out_message)
 
 
 def import_ntlm_server(parent, path):
     """Импортируем список серверов NTLM"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверов NTLM в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit('BLUE|Импорт серверов NTLM в раздел "Пользователи и устройства/Серверы аутентификации".')
     error = 0
     json_file = os.path.join(path, 'config_ntlm_servers.json')
     err, data = read_json_file(parent, json_file)
@@ -1354,13 +1358,13 @@ def import_ntlm_server(parent, path):
                     parent.stepChanged.emit(f'BLACK|    Сервер аутентификации NTLM "{item["name"]}" добавлен.')
                     parent.stepChanged.emit(f'NOTE|    Необходимо включить "{item["name"]}".')
 
-    out_message = 'GREEN|    Список серверов NTLM импортирован в раздел "Пользователи и устройства/Серверы аутентификации".'
+    out_message = 'GREEN|    Сервера NTLM импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов NTLM!' if error else out_message)
 
 
 def import_radius_server(parent, path):
     """Импортируем список серверов RADIUS"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверов RADIUS в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit('BLUE|Импорт серверов RADIUS в раздел "Пользователи и устройства/Серверы аутентификации".')
     error = 0
     json_file = os.path.join(path, 'config_radius_servers.json')
     err, data = read_json_file(parent, json_file)
@@ -1394,13 +1398,13 @@ def import_radius_server(parent, path):
                     parent.stepChanged.emit(f'BLACK|    Сервер аутентификации RADIUS "{item["name"]}" добавлен.')
                     parent.stepChanged.emit(f'NOTE|    Необходимо включить "{item["name"]}" и ввести пароль.')
 
-    out_message = 'GREEN|    Список серверов RADIUS импортирован в раздел "Пользователи и устройства/Серверы аутентификации".'
+    out_message = 'GREEN|    Сервера RADIUS импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов RADIUS!' if error else out_message)
 
 
 def import_tacacs_server(parent, path):
     """Импортируем список серверов TACACS+"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверов TACACS+ в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit('BLUE|Импорт серверов TACACS+ в раздел "Пользователи и устройства/Серверы аутентификации".')
     error = 0
     json_file = os.path.join(path, 'config_tacacs_servers.json')
     err, data = read_json_file(parent, json_file)
@@ -1434,13 +1438,13 @@ def import_tacacs_server(parent, path):
                     parent.stepChanged.emit(f'BLACK|    Сервер аутентификации TACACS+ "{item["name"]}" добавлен.')
                     parent.stepChanged.emit(f'NOTE|    Необходимо включить "{item["name"]}" и ввести секретный ключ.')
 
-    out_message = 'GREEN|    Список серверов TACACS+ импортирован в раздел "Пользователи и устройства/Серверы аутентификации".'
+    out_message = 'GREEN|    Сервера TACACS+ импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов TACACS+!' if error else out_message)
 
 
 def import_saml_server(parent, path):
     """Импортируем список серверов SAML"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверов SAML в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit('BLUE|Импорт серверов SAML в раздел "Пользователи и устройства/Серверы аутентификации".')
     error = 0
     json_file = os.path.join(path, 'config_saml_servers.json')
     err, data = read_json_file(parent, json_file)
@@ -1480,7 +1484,7 @@ def import_saml_server(parent, path):
                     parent.stepChanged.emit(f'BLACK|    Сервер аутентификации SAML "{item["name"]}" добавлен.')
                     parent.stepChanged.emit(f'NOTE|    Необходимо включить "{item["name"]}" и загрузить SAML metadata.')
 
-    out_message = 'GREEN|    Список серверов SAML импортирован в раздел "Пользователи и устройства/Серверы аутентификации".'
+    out_message = 'GREEN|    Сервера SAML импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов SAML!' if error else out_message)
 
 
@@ -1555,7 +1559,7 @@ def import_2fa_profiles(parent, path):
 
 def import_auth_profiles(parent, path):
     """Импортируем список профилей аутентификации"""
-    parent.stepChanged.emit('BLUE|Импорт списка профилей аутентификации в раздел "Пользователи и устройства/Профили аутентификации".')
+    parent.stepChanged.emit('BLUE|Импорт профилей аутентификации в раздел "Пользователи и устройства/Профили аутентификации".')
     error = 0
     json_file = os.path.join(path, 'config_auth_profiles.json')
     err, data = read_json_file(parent, json_file)
@@ -1632,13 +1636,13 @@ def import_auth_profiles(parent, path):
                 parent.auth_profiles[item['name']] = result
                 parent.stepChanged.emit(f'BLACK|    Профиль аутентификации "{item["name"]}" добавлен.')
 
-    out_message = 'GREEN|    Список профилей аутентификации импортирован в раздел "Пользователи и устройства/Профили аутентификации".'
+    out_message = 'GREEN|    Профили аутентификации импортированы в раздел "Пользователи и устройства/Профили аутентификации".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта профилей аутентификации.' if error else out_message)
 
 
 def import_captive_profiles(parent, path):
     """Импортируем список Captive-профилей"""
-    parent.stepChanged.emit('BLUE|Импорт списка Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
+    parent.stepChanged.emit('BLUE|Импорт Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
     error = 0
     json_file = os.path.join(path, 'config_captive_profiles.json')
     err, data = read_json_file(parent, json_file)
@@ -1741,13 +1745,13 @@ def import_captive_profiles(parent, path):
                 captive_profiles[item['name']] = result
                 parent.stepChanged.emit(f'BLACK|    Captive-профиль "{item["name"]}" добавлен.')
 
-    out_message = 'GREEN|    Список Captive-профилей импортирован в раздел "Пользователи и устройства/Captive-профили".'
+    out_message = 'GREEN|    Captive-профили импортированы в раздел "Пользователи и устройства/Captive-профили".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта Captive-профилей.' if error else out_message)
 
 
 def import_captive_portal_rules(parent, path):
     """Импортируем список правил Captive-портала"""
-    parent.stepChanged.emit('BLUE|Импорт списка правил Captive-портала в раздел "Пользователи и устройства/Captive-портал".')
+    parent.stepChanged.emit('BLUE|Импорт правил Captive-портала в раздел "Пользователи и устройства/Captive-портал".')
     error = 0
     json_file = os.path.join(path, 'config_captive_portal_rules.json')
     err, data = read_json_file(parent, json_file)
@@ -1805,7 +1809,7 @@ def import_captive_portal_rules(parent, path):
                 captive_portal_rules[item['name']] = result
                 parent.stepChanged.emit(f'BLACK|    Правило Captive-портала "{item["name"]}" добавлено.')
 
-    out_message = 'GREEN|    Список правил Captive-портала импортирован в раздел "Пользователи и устройства/Captive-портал".'
+    out_message = 'GREEN|    Правила Captive-портала импортированы в раздел "Пользователи и устройства/Captive-портал".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта правил Captive-портала.' if error else out_message)
 
 
@@ -1907,8 +1911,10 @@ def import_userid_agent(parent, path):
             parent.error = 1
         return
     else:
-        data['tcp_ca_certificate_id'] = parent.ngfw_certs[data['tcp_ca_certificate_id']]
-        data['tcp_server_certificate_id'] = parent.ngfw_certs[data['tcp_server_certificate_id']]
+        if data['tcp_ca_certificate_id']:
+            data['tcp_ca_certificate_id'] = parent.ngfw_certs[data['tcp_ca_certificate_id']]
+        if data['tcp_server_certificate_id']:
+            data['tcp_server_certificate_id'] = parent.ngfw_certs[data['tcp_server_certificate_id']]
         data['ignore_networks'] = [['list_id', parent.ip_lists[x[1]]] for x in data['ignore_networks']]
 
         err, result = parent.utm.set_useridagent_config(data)
@@ -2117,7 +2123,7 @@ def import_firewall_rules(parent, path):
 
 def import_nat_rules(parent, path):
     """Импортируем список правил NAT"""
-    parent.stepChanged.emit('BLUE|Импорт списка правил NAT в раздел "Политики сети/NAT и маршрутизация".')
+    parent.stepChanged.emit('BLUE|Импорт правил NAT в раздел "Политики сети/NAT и маршрутизация".')
     parent.stepChanged.emit('LBLUE|    После импорта правила NAT будут в не активном состоянии. Необходимо проверить и включить нужные.')
     error = 0
     json_file = os.path.join(path, 'config_nat_rules.json')
@@ -2199,7 +2205,7 @@ def import_nat_rules(parent, path):
 
 def import_loadbalancing_rules(parent, path):
     """Импортируем список правил балансировки нагрузки"""
-    parent.stepChanged.emit('BLUE|Импорт списка правил балансировки нагрузки в раздел "Политики сети/Балансировка нагрузки".')
+    parent.stepChanged.emit('BLUE|Импорт правил балансировки нагрузки в раздел "Политики сети/Балансировка нагрузки".')
     parent.stepChanged.emit('LBLUE|    После импорта правила балансировки будут в не активном состоянии. Необходимо проверить и включить нужные.')
     error = 0
     err, tcpudp, icap, reverse = parent.utm.get_loadbalancing_rules()
@@ -2340,7 +2346,7 @@ def import_loadbalancing_rules(parent, path):
 
 def import_shaper_rules(parent, path):
     """Импортируем список правил пропускной способности"""
-    parent.stepChanged.emit('BLUE|Импорт списка правил пропускной способности в раздел "Политики сети/Пропускная способность".')
+    parent.stepChanged.emit('BLUE|Импорт правил пропускной способности в раздел "Политики сети/Пропускная способность".')
     parent.stepChanged.emit('LBLUE|    После импорта правила пропускной способности будут в не активном состоянии. Необходимо проверить и включить нужные.')
     error = 0
     json_file = os.path.join(path, 'config_shaper_rules.json')
@@ -3464,7 +3470,7 @@ def import_proxyportal_rules(parent, path):
 
 def import_reverseproxy_servers(parent, path):
     """Импортируем список серверов reverse-прокси"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверов reverse-прокси в раздел "Глобальный портал/Серверы reverse-прокси".')
+    parent.stepChanged.emit('BLUE|Импорт серверов reverse-прокси в раздел "Глобальный портал/Серверы reverse-прокси".')
     json_file = os.path.join(path, 'config_reverseproxy_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
@@ -3502,7 +3508,7 @@ def import_reverseproxy_servers(parent, path):
                 parent.stepChanged.emit(f'BLACK|    Сервер reverse-прокси "{item["name"]}" добавлен.')
     if error:
         parent.error = 1
-    out_message = 'GREEN|    Список серверов reverse-прокси импортирован в раздел "Глобальный портал/Серверы reverse-прокси".'
+    out_message = 'GREEN|    Сервера reverse-прокси импортированы в раздел "Глобальный портал/Серверы reverse-прокси".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.' if error else out_message)
 
 
@@ -3642,6 +3648,131 @@ def import_reverseproxy_rules(parent, path):
     out_message = 'GREEN|    Правила reverse-прокси импортированы в раздел "Глобальный портал/Правила reverse-прокси".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.' if error else out_message)
     parent.stepChanged.emit('NOTE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
+
+#--------------------------------------------------- WAF ----------------------------------------------------------------
+def import_waf_custom_layers(parent, path):
+    """Импортируем персональные WAF-слои. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Импорт персональных слоёв WAF в раздел "WAF/Персональные WAF-слои".')
+    json_file = os.path.join(path, 'config_waf_custom_layers.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_waf_custom_layers_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_custom_layers = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['name'] in waf_custom_layers:
+            parent.stepChanged.emit(f'GRAY|    Персональный WAF-слой "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_waf_custom_layer(waf_custom_layers[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Персональный WAF-слой: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Персональный WAF-слой "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_waf_custom_layer(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Персональный WAF-слой: "{item["name"]}"]')
+                continue
+            else:
+                waf_custom_layers[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Персональный WAF-слой "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Персональные WAF-слои импортированы в раздел "WAF/Персональные WAF-слои".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте персональных слоёв WAF.' if error else out_message)
+
+
+def import_waf_profiles(parent, path):
+    """Импортируем профили WAF. Для версии 7.1 и выше"""
+    parent.stepChanged.emit('BLUE|Импорт профилей WAF в раздел "WAF/WAF-профили".')
+    json_file = os.path.join(path, 'config_waf_profiles.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_waf_technology_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_technology = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_waf_custom_layers_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_custom_layers = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_waf_system_layers_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_system_layers = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_waf_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    waf_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        new_layers = []
+        for layer in item['layers']:
+            if layer['type'] == 'custom_layer':
+                try:
+                    layer['id'] = waf_custom_layers[layer['id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Профиль "{item["name"]}"]. Не найден персональный WAF-слой "{err}". Импортируйте персональные WAF-слои и повторите попытку.')
+                    continue
+            else:
+                try:
+                    layer['id'] = waf_system_layers[layer['id']]
+                    layer['protection_technologies'] = [waf_technology[x] for x in layer['protection_technologies']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Error [Профиль "{item["name"]}"]. Произошла ошибка в системном WAF-слое "{layer["id"]}" -  "{err}".')
+                    continue
+            new_layers.append(layer)
+        item['layers'] = new_layers
+
+        if item['name'] in waf_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль WAF "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_waf_profile(waf_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль WAF: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль WAF "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_waf_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль WAF: "{item["name"]}"]')
+                continue
+            else:
+                waf_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль WAF "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили WAF импортированы в раздел "WAF/WAF-профили".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей WAF.' if error else out_message)
 
 #--------------------------------------------------- VPN ----------------------------------------------------------------
 def import_vpn_security_profiles(parent, path):
@@ -3886,7 +4017,7 @@ def import_vpn_networks(parent, path):
 
 def import_vpn_client_rules(parent, path):
     """Импортируем список клиентских правил VPN"""
-    parent.stepChanged.emit('BLUE|Импорт списка клиентских правил VPN в раздел "VPN/Клиентские правила".')
+    parent.stepChanged.emit('BLUE|Импорт клиентских правил VPN в раздел "VPN/Клиентские правила".')
     json_file = os.path.join(path, 'config_vpn_client_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
@@ -3966,7 +4097,7 @@ def import_vpn_client_rules(parent, path):
 
 def import_vpn_server_rules(parent, path):
     """Импортируем список серверных правил VPN"""
-    parent.stepChanged.emit('BLUE|Импорт списка серверных правил VPN в раздел "VPN/Серверные правила".')
+    parent.stepChanged.emit('BLUE|Импорт серверных правил VPN в раздел "VPN/Серверные правила".')
     json_file = os.path.join(path, 'config_vpn_server_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
@@ -5696,68 +5827,311 @@ def import_useridagent_syslog_filters(parent, path):
     out_message = 'GREEN|    Профили BFD импортированы в раздел "Библиотеки/Syslog фильтры UserID агента".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.' if error else out_message)
 
+#--------------------------------------------------- Оповещения ---------------------------------------------------------
+def import_snmp_rules(parent, path):
+    """Импортируем список правил SNMP"""
+    parent.stepChanged.emit('BLUE|Импорт списка правил SNMP в раздел "Диагностика и мониторинг/Оповещения/SNMP".')
+    json_file = os.path.join(path, 'config_snmp_rules.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
 
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_snmp_security_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        snmp_security_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_snmp_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    snmp_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.version >= 7.1:
+            if 'snmp_security_profile' in item:
+                if item['snmp_security_profile']:
+                    try:
+                        item['snmp_security_profile'] = snmp_security_profiles[item['snmp_security_profile']]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности SNMP "{err}". Импортируйте профили безопасности SNMP и повторите попытку.')
+                        item['snmp_security_profile'] = 0
+                        error = 1
+            else:
+                item['snmp_security_profile'] = 0
+                item['enabled'] = False
+                item.pop('username', None)
+                item.pop('auth_type', None)
+                item.pop('auth_alg', None)
+                item.pop('auth_password', None)
+                item.pop('private_alg', None)
+                item.pop('private_password', None)
+                if item['version'] == 3:
+                    item['version'] = 2
+                    item['community'] = 'public'
+        else:
+            if 'snmp_security_profile' in item:
+                item.pop('snmp_security_profile', None)
+                item.pop('enabled', None)
+                item['username'] = ''
+                item['auth_type'] = ''
+                item['auth_alg'] = 'md5'
+                item['auth_password'] = False
+                item['private_alg'] = 'aes'
+                item['private_password'] = False
+                if item['version'] == 3:
+                    item['version'] = 2
+                    item['community'] = 'public'
+
+        if item['name'] in snmp_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило SNMP "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_snmp_rule(snmp_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило SNMP: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Правило SNMP "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_snmp_rule(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило SNMP: "{item["name"]}"]')
+                continue
+            else:
+                snmp_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило SNMP "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Правила SNMP импортированы в раздел "Диагностика и мониторинг/Оповещения/SNMP".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил SNMP.' if error else out_message)
+
+
+def import_notification_alert_rules(parent, path):
+    """Импортируем список правил оповещений"""
+    parent.stepChanged.emit('BLUE|Импорт правил оповещений в раздел "Диагностика и мониторинг/Оповещения/Правила оповещений".')
+    json_file = os.path.join(path, 'config_alert_rules.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_notification_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    list_notifications = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_nlist_list('emailgroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    email_group = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_nlist_list('phonegroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    phone_group = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    err, result = parent.utm.get_notification_alert_rules()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    alert_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+
+    for item in data:
+        try:
+            item['notification_profile_id'] = list_notifications[item['notification_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль оповещений "{err}". Импортируйте профили оповещений и повторите попытку.')
+            error = 1
+            continue
+        new_emails = []
+        for x in item['emails']:
+            try:
+                new_emails.append(['list_id', email_group[x[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найдена группа почтовых адресов "{err}". Загрузите почтовые адреса и повторите попытку.')
+        item['emails'] = new_emails
+        new_phones = []
+        for x in item['phones']:
+            try:
+                new_phones.append(['list_id', phone_group[x[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найдена группа телефонных номеров "{err}". Загрузите номера телефонов и повторите попытку.')
+        item['phones'] = new_phones
+
+        if item['name'] in alert_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило оповещения "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_notification_alert_rule(alert_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило оповещения: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Правило оповещения "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_notification_alert_rule(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило оповещения: "{item["name"]}"]')
+                continue
+            else:
+                alert_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило оповещения "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Правила оповещений импортированы в раздел "Диагностика и мониторинг/Оповещения/Правила оповещений".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил оповещений.' if error else out_message)
+
+
+def import_snmp_security_profiles(parent, path):
+    """Импортируем профили безопасности SNMP"""
+    parent.stepChanged.emit('BLUE|Импорт профилей безопасности SNMP в раздел "Диагностика и мониторинг/Оповещения/Профили безопасности SNMP".')
+    json_file = os.path.join(path, 'config_snmp_rules.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_snmp_security_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    snmp_security_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['name'] in snmp_security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности SNMP "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_snmp_security_profile(snmp_security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности SNMP: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности SNMP "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_snmp_security_profile(item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности SNMP: "{item["name"]}"]')
+                continue
+            else:
+                snmp_security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности SNMP "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+    out_message = 'GREEN|    Профили безопасности SNMP импортированы в раздел "Диагностика и мониторинг/Оповещения/Профили безопасности SNMP".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей безопасности SNMP.' if error else out_message)
+
+
+def import_snmp_settings(parent, path):
+    """Импортируем параметры SNMP. Для версии 7.1 и выше."""
+    parent.stepChanged.emit('BLUE|Импорт параметров SNMP в раздел "Диагностика и мониторинг/Оповещения/Параметры SNMP".')
+
+    import_snmp_engine(parent, path)
+    import_snmp_sys_name(parent, path)
+    import_snmp_sys_location(parent, path)
+    import_snmp_sys_description(parent, path)
+
+    parent.stepChanged.emit('GREEN|    Параметры SNMP импортированы  в раздел "Диагностика и мониторинг/Оповещения/Параметры SNMP".')
+
+def import_snmp_engine(parent, path):
+    error = 0
+    json_file = os.path.join(path, 'config_snmp_engine.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            error = 1
+    else:
+        err, result = parent.utm.set_snmp_engine(data)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте SNMP Engine ID.')
+    else:
+        parent.stepChanged.emit('BLACK|    SNMP Engine ID импортирован.')
+
+def import_snmp_sys_name(parent, path):
+    error = 0
+    json_file = os.path.join(path, 'config_snmp_sysname.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            error = 1
+    else:
+        err, result = parent.utm.set_snmp_sysname(data)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте значения SNMP SysName.')
+    else:
+        parent.stepChanged.emit('BLACK|    Значение SNMP SysName импортировано.')
+
+def import_snmp_sys_location(parent, path):
+    error = 0
+    json_file = os.path.join(path, 'config_snmp_syslocation.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            error = 1
+    else:
+        err, result = parent.utm.set_snmp_syslocation(data)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте значения SNMP SysLocation.')
+    else:
+        parent.stepChanged.emit('BLACK|    Значение SNMP SysLocation импортировано.')
+
+def import_snmp_sys_description(parent, path):
+    error = 0
+    json_file = os.path.join(path, 'config_snmp_sysdescription.json')
+    err, data = read_json_file(parent, json_file)
+    if err:
+        if err in (1, 2):
+            error = 1
+    else:
+        err, result = parent.utm.set_snmp_sysdescription(data)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте значения SNMP SysDescription.')
+    else:
+        parent.stepChanged.emit('BLACK|    Значение SNMP SysDescription импортировано.')
+
+#------------------------------------------------------------------------------------------------------------------------
 def pass_function(parent, path):
     """Функция заглушка"""
     parent.stepChanged.emit(f'GRAY|Импорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
 
 func = {
-    'GeneralSettings': import_general_settings,
-    'DeviceManagement': pass_function,
-    'Administrators': pass_function,
-    'Certificates': pass_function,
-    'UserCertificateProfiles': import_users_certificate_profiles,
-    'Zones': import_zones,
-    'Interfaces': import_vlans,
-    'Gateways': import_gateways,
-    'DHCP': import_dhcp_subnets,
-    'DNS': import_dns_config,
-    'VRF': import_vrf,
-    'WCCP': import_wccp_rules,
-    'Routes': pass_function,
-    'OSPF': pass_function,
-    'BGP': pass_function,
-    'Groups': import_local_groups,
-    'Users': import_local_users,
-    'AuthServers': import_auth_servers,
-    'AuthProfiles': import_auth_profiles,
-    'CaptivePortal': import_captive_portal_rules,
-    'CaptiveProfiles': import_captive_profiles,
-    'TerminalServers': import_terminal_servers,
-    'MFAProfiles': import_2fa_profiles,
-    'UserIDagent': import_userid_agent,
-    'BYODPolicies': import_byod_policy,
-    'BYODDevices': pass_function,
-    'Firewall': import_firewall_rules,
-    'NATandRouting': import_nat_rules,
-    'LoadBalancing': import_loadbalancing_rules,
-    'TrafficShaping': import_shaper_rules,
-    "ContentFiltering": import_content_rules,
-    "SafeBrowsing": import_safebrowsing_rules,
-    "TunnelInspection": import_tunnel_inspection_rules,
-    "SSLInspection": import_ssldecrypt_rules,
-    "SSHInspection": import_sshdecrypt_rules,
-    "IntrusionPrevention": import_idps_rules,
-    "Scenarios": import_scenarios,
-    "MailSecurity": import_mailsecurity,
-    "ICAPRules": import_icap_rules,
-    "ICAPServers": import_icap_servers,
-    "DoSRules": import_dos_rules,
-    "DoSProfiles": import_dos_profiles,
-    "SCADARules": import_scada_rules,
-    "WebPortal": import_proxyportal_rules,
-    "ReverseProxyRules": import_reverseproxy_rules,
-    "ReverseProxyServers": import_reverseproxy_servers,
-    "WAF": pass_function,
-    "WAFprofiles": pass_function,
-    "CustomWafLayers": pass_function,
-    "SystemWafRules": pass_function,
-    "ServerRules": import_vpn_server_rules,
-    "ClientRules": import_vpn_client_rules,
-    "VPNNetworks": import_vpn_networks,
-    "SecurityProfiles": import_vpn_security_profiles,
-    "ServerSecurityProfiles": import_vpnserver_security_profiles,
-    "ClientSecurityProfiles": import_vpnclient_security_profiles,
     "Morphology": import_morphology_lists,
     "Services": import_services_list,
     "ServicesGroups": import_services_groups,
@@ -5787,8 +6161,66 @@ func = {
     "HIDProfiles": import_hip_profiles,
     "BfdProfiles": import_bfd_profiles,
     "UserIdAgentSyslogFilters": import_useridagent_syslog_filters,
+    'Zones': import_zones,
+    'Interfaces': import_vlans,
+    'Gateways': import_gateways,
+    'AuthServers': import_auth_servers,
+    'AuthProfiles': import_auth_profiles,
+    'CaptiveProfiles': import_captive_profiles,
+    'CaptivePortal': import_captive_portal_rules,
+    'Groups': import_local_groups,
+    'Users': import_local_users,
+    'TerminalServers': import_terminal_servers,
+    'MFAProfiles': import_2fa_profiles,
+    'UserIDagent': import_userid_agent,
+    'BYODPolicies': import_byod_policy,
+    'BYODDevices': pass_function,
+    'Certificates': pass_function,
+    'UserCertificateProfiles': import_users_certificate_profiles,
+    'GeneralSettings': import_general_settings,
+    'DeviceManagement': pass_function,
+    'Administrators': pass_function,
+    'DNS': import_dns_config,
+    'DHCP': import_dhcp_subnets,
+    'VRF': import_vrf,
+    'WCCP': import_wccp_rules,
+    'Routes': pass_function,
+    'OSPF': pass_function,
+    'BGP': pass_function,
+    'Firewall': import_firewall_rules,
+    'NATandRouting': import_nat_rules,
+    "ICAPServers": import_icap_servers,
+    "ReverseProxyServers": import_reverseproxy_servers,
+    'LoadBalancing': import_loadbalancing_rules,
+    'TrafficShaping': import_shaper_rules,
+    "ContentFiltering": import_content_rules,
+    "SafeBrowsing": import_safebrowsing_rules,
+    "TunnelInspection": import_tunnel_inspection_rules,
+    "SSLInspection": import_ssldecrypt_rules,
+    "SSHInspection": import_sshdecrypt_rules,
+    "IntrusionPrevention": import_idps_rules,
+    "Scenarios": import_scenarios,
+    "MailSecurity": import_mailsecurity,
+    "ICAPRules": import_icap_rules,
+    "DoSProfiles": import_dos_profiles,
+    "DoSRules": import_dos_rules,
+    "SCADARules": import_scada_rules,
+    "CustomWafLayers": import_waf_custom_layers,
+    "SystemWafRules": pass_function,
+    "WAFprofiles": import_waf_profiles,
+    "WebPortal": import_proxyportal_rules,
+    "ReverseProxyRules": import_reverseproxy_rules,
+    "ServerSecurityProfiles": import_vpnserver_security_profiles,
+    "ClientSecurityProfiles": import_vpnclient_security_profiles,
+    "SecurityProfiles": import_vpn_security_profiles,
+    "VPNNetworks": import_vpn_networks,
+    "ServerRules": import_vpn_server_rules,
+    "ClientRules": import_vpn_client_rules,
+    "AlertRules": import_notification_alert_rules,
+    "SNMPSecurityProfiles": import_snmp_security_profiles,
+    "SNMP": import_snmp_rules,
+    "SNMPParameters": import_snmp_settings,
 }
-
 
 ############################# Служебные функции #####################################
 def get_ips_id(parent, rule_ips, rule_name):

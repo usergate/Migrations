@@ -9,5 +9,5 @@
 <b>dhcp_subnet</b> - Перенос настроек DHCP с одного узла на другой.<br>
 <b>fpr-ug6_convert_config</b> - Конвертация конфигурации Cisco FPR на NGFW UserGate версии 6.<br>
 <b>fpr-ug7_convert_config</b> - Конвертация конфигурации Cisco FPR на NGFW UserGate версии 7.<br>
-<b>ug_convert_config</b> - Экспорт/импорт конфигурации NGFW UserGate (терминальное). Не поддерживает версию 7.1<br>
+<b>ug_convert_config</b> - Экспорт/импорт конфигурации NGFW UserGate (консольное). Не поддерживает версию 7.1<br>
 <b>ug__ngfw_converter</b> - Экспорт/импорт конфигурации NGFW UserGate (графическое). Поддерживает все версии ngfw.<br>

@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_universal_converter.py
-# Version 1.0
+# Version 1.1
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout,
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW")
+        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 1.1)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()

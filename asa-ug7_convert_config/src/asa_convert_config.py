@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Программа предназначена для переноса конфигурации с устройств Cisco ASA на NGFW UserGate версии 7.
-# Версия 2.9
+# Версия 2.10
 #
 
 import os, sys, json
@@ -387,28 +387,24 @@ def convert_file(utm, file_name):
             "vlan_id": 0,
             "link": ""
         }
-        if tmp_block[0][0] == 'vlan':
-            for item in tmp_block:
-                match item:
-                    case [key, value]:
-                        if key == 'vlan':
-                            iface['vlan_id'] = int(value)
-                        elif key == 'nameif':
-                            try:
-                                iface['zone_id'] = zones[value]['name']
-                                iface['mtu'] = iface_mtu[value]
-                            except KeyError:
-                                print(f"\033[33m\tНе найдено MTU для интерфейса {value}. Зона интерфейса будет установлена в Undefined.\033[0m")
-                                iface['zone_id'] = 0
-                                iface['mtu'] = 1500
-#                            iface['name'] = ''
-#                            iface['link'] = ''
-                            
-                        elif key == 'description':
-                            iface['description'] = value
-                    case [key, _, ip, mask]:
-                        if key == 'ip':
-                            iface['ipv4'].append(pack_ip_address(ip, mask))
+        for item in tmp_block:
+            match item[0]:
+                case 'description':
+                    iface['description'] = ' '.join(item[1:])
+                case 'vlan':
+                    iface['vlan_id'] = int(item[1])
+                case 'nameif':
+                    try:
+                        iface['name'] = item[1]
+                        iface['zone_id'] = zones[item[1]]['name']
+                        iface['mtu'] = iface_mtu[item[1]]
+                    except KeyError:
+                        print(f"\033[33m\tНе найдено MTU для интерфейса '{item[1]}'. Зона интерфейса будет установлена в Undefined.\033[0m")
+                        iface['zone_id'] = 0
+                        iface['mtu'] = 1500
+                case 'ip':
+                    iface['ipv4'].append(pack_ip_address(item[2], item[3]))
+        if iface['vlan_id']:
             interfaces.append(iface)
 
     def convert_route(array):
@@ -1476,7 +1472,6 @@ def convert_file(utm, file_name):
 
     def convert_nat_rule(rule_block):
         """Конвертируем правило NAT"""
-#        print(ip_dict[ip_list]['content'][0]['value'], "\t", rule_block)
         if ('inactive' in rule_block) or ('interface' in rule_block):
             print(f'\033[36mПравило NAT "{rule_block}" пропущено так как не активно или содержит интерфейс.\033[0m')
             return

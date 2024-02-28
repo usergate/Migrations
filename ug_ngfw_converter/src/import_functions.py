@@ -155,7 +155,6 @@ class ImportAll(QThread):
             return
         self.mime_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
-
     def run(self):
         """Импортируем всё в пакетном режиме"""
         path_dict = {}
@@ -1063,6 +1062,7 @@ def import_vrf(parent, path):
         for item in data:
             for x in item['routes']:
                 x['enabled'] = False
+                x['name'] = x['name'].translate(trans_name)
             if item['ospf']:
                 item['ospf']['enabled'] = False
                 for x in item['ospf']['interfaces']:
@@ -4331,7 +4331,15 @@ def import_services_groups(parent, path):
                 parent.stepChanged.emit(f'BLACK|    Группа сервисов "{item["name"]}" добавлена.')
 
         if content:
-            err2, result2 = parent.utm.add_nlist_items(parent.servicegroups_list[item['name']], content)
+            new_content = []
+            for service in content:
+                try:
+                    service['value'] = parent.services_list[service['name'].strip().translate(trans_name)]
+                    new_content.append(service)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|       Error: Не найден сервис "{err}". Загрузите сервисы и повторите попытку.')
+
+            err2, result2 = parent.utm.add_nlist_items(parent.servicegroups_list[item['name']], new_content)
             if err2 == 1:
                 parent.stepChanged.emit(f'RED|       {result2}  [Группа сервисов: "{item["name"]}"]')
                 error = 1
@@ -4339,6 +4347,8 @@ def import_services_groups(parent, path):
                 parent.stepChanged.emit(f'GRAY|       {result2}')
             else:
                 parent.stepChanged.emit(f'BLACK|       Содержимое группы сервисов "{item["name"]}" обновлено.')
+        else:
+            parent.stepChanged.emit(f'GRAY|       Нет содержимого в группе сервисов "{item["name"]}".')
 
     if error:
         parent.error = 1

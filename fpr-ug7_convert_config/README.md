@@ -1,7 +1,7 @@
 <h2 align="center">Конвертация конфигурации с Cisco FPR на NGFW UserGate</h2>
 <h3 align="center">(Версия 1.0)</h3>
 
-Программа предназначена для переноса конфигурации с оборудования Cisco FPR на NGFW UserGate версии 7.
+Программа предназначена для переноса конфигурации с оборудования Cisco FPR на NGFW UserGate версии 7.0
 
 <p align="center"><img src="main_image.png"></p>
 

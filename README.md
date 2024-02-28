@@ -11,3 +11,4 @@
 <b>fpr-ug7_convert_config</b> - Конвертация конфигурации Cisco FPR на NGFW UserGate версии 7.<br>
 <b>ug_convert_config</b> - Экспорт/импорт конфигурации NGFW UserGate (консольное). Не поддерживает версию 7.1<br>
 <b>ug__ngfw_converter</b> - Экспорт/импорт конфигурации NGFW UserGate (графическое). Поддерживает все версии ngfw.<br>
+<b>universal_converter</b> - Перенос конфигурации сторонних вендоров на NGFW UserGate. Поддерживает все версии ngfw.<br>

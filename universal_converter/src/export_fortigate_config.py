@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 0.1
+# Версия 0.2
 #
 
 import os, sys, json
@@ -30,7 +30,7 @@ import copy
 import common_func as func
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import zone_services, character_map, character_map_for_name, character_map_file_name, ug_services
+from services import zone_services, character_map, character_map_for_name, character_map_file_name, character_map_userlogin, ug_services, ip_proto
 
 
 trans_table = str.maketrans(character_map)
@@ -46,9 +46,12 @@ class ConvertFortigateConfig(QThread):
         self.current_fg_path = current_fg_path
         self.current_ug_path = current_ug_path
         self.error = 0
+        self.services = {}
+        self.ip_lists = set()
+        self.url_lists = set()
 
     def run(self):
-#        convert_config_file(self, self.current_fg_path)
+        convert_config_file(self, self.current_fg_path)
 
         json_file = os.path.join(self.current_fg_path, 'config.json')
         err, data = func.read_json_file(self, json_file)
@@ -56,8 +59,20 @@ class ConvertFortigateConfig(QThread):
             self.error = 1
         else:
             convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
-            convert_dns_servers(self, self.current_ug_path, data['config system dns'])
-            convert_url_list(self, self.current_ug_path, data['config wanopt content-delivery-network-rule'])
+            convert_dns_servers(self, self.current_ug_path, data)
+            convert_notification_profile(self, self.current_ug_path, data['config system email-server'])
+            convert_services(self, self.current_ug_path, data)
+            convert_service_groups(self, self.current_ug_path, data['config firewall service group'])
+            convert_ntp_settings(self, self.current_ug_path, data['config system ntp'])
+            convert_ip_lists(self, self.current_ug_path, data)
+            convert_url_lists(self, self.current_ug_path, data)
+            convert_auth_servers(self, self.current_ug_path, data)
+            convert_user_groups(self, self.current_ug_path, data)
+            convert_local_users(self, self.current_ug_path, data)
+            convert_web_portal_resources(self, self.current_ug_path, data['config vpn ssl web user-bookmark'])
+            convert_time_sets(self, self.current_ug_path, data)
+            convert_dnat_rule(self, self.current_ug_path, data['config firewall vip'])
+            convert_loadbalancing_rule(self, self.current_ug_path, data['config firewall vip'])
 
         if self.error:
             self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.')
@@ -78,7 +93,8 @@ def convert_config_file(parent, path):
     bad_cert_block = {'config firewall ssh local-key',
                       'config firewall ssh local-ca',
                       'config vpn certificate ca',
-                      'config vpn certificate local'}
+                      'config vpn certificate local',
+                      'config web-proxy explicit'}
     fg_config_file = os.path.join(path, config_file)
     try:
         with open(fg_config_file, "r") as fh:
@@ -142,9 +158,9 @@ def make_edit_block(parent, data):
 
 def make_conf_block(parent, data):
     """Конвертируем блок config"""
-#        print('\n--- make_config_block ---')
-#        for x in data:
-#            print(x)
+#    print('\n--- make_config_block ---')
+#    for x in data:
+#        print(x)
     block = {}
     name = {}
     while data:
@@ -237,9 +253,9 @@ def convert_vpn_interfaces(parent, path, interfaces):
     parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.' if not ifaces else out_message)
 
 
-def convert_dns_servers(parent, path, dns_info):
+def convert_dns_servers(parent, path, data):
     """Заполняем список системных DNS"""
-    parent.stepChanged.emit('BLUE|Конвертация серверов DNS.')
+    parent.stepChanged.emit('BLUE|Конвертация настроек DNS.')
     section_path = os.path.join(path, 'Network')
     current_path = os.path.join(section_path, 'DNS')
     err, msg = func.create_dir(current_path, delete='no')
@@ -249,7 +265,7 @@ def convert_dns_servers(parent, path, dns_info):
         return
 
     dns_servers = []
-    for key, value in dns_info.items():
+    for key, value in data['config system dns'].items():
         if key in {'primary', 'secondary'}:
             dns_servers.append({'dns': value, 'is_bad': False})
         
@@ -260,20 +276,394 @@ def convert_dns_servers(parent, path, dns_info):
     out_message = f'BLACK|    Настройки серверов DNS выгружены в файл "{json_file}".'
     parent.stepChanged.emit('GRAY|    Нет серверов DNS для экспорта.' if not dns_servers else out_message)
 
-def convert_url_list(parent, path, urls_block):
-    """Конвертируем URL-листы."""
-    parent.stepChanged.emit('BLUE|Конвертация списков URL.')
+    """Создаём правило DNS прокси Сеть->DNS->DNS-прокси->Правила DNS"""
+    if 'config user domain-controller' in data:
+        dns_rules = []
+        for key, value in data['config user domain-controller'].items():
+            dns_rules.append({
+                "name": key,
+                "description": "Портировано с Fortigate",
+                "enabled": True,
+                "domains": [f'*.{value["domain-name"]}'],
+                "dns_servers": [value["ip-address"]],
+            })
+
+        json_file = os.path.join(current_path, 'config_dns_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(dns_rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Правила DNS в DNS-прокси выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил DNS для экспорта.')
+
+
+def convert_notification_profile(parent, path, email_info):
+    """Конвертируем почтовый адрес и профиль оповещения"""
+    parent.stepChanged.emit('BLUE|Конвертация почтового адреса и профиля оповещения.')
     section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'URLLists')
-    print(current_path)
+
+    if 'server' in email_info:
+        current_path = os.path.join(section_path, 'NotificationProfiles')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
+
+        notification = [{
+            'type': 'smtp',
+            'name': 'System email-server',
+            'description': 'Перенесено с Fortigate',
+            'host': email_info['server'],
+            'port': 25,
+            'security': 'none',
+            'authentication': False,
+            'login': 'mailserveruser'
+        }]
+
+        json_file = os.path.join(current_path, 'config_notification_profiles.json')
+        with open(json_file, 'w') as fh:
+            json.dump(notification, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Профиль оповещения SMTP выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет профиля оповещения для экспорта.')
+
+    if 'reply-to' in email_info:
+        current_path = os.path.join(section_path, 'Emails')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
+
+        emails = [{
+            'name': 'System email-server',
+            'description': 'Перенесено с Fortigate',
+            'type': 'emailgroup',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {},
+            'content': [{'value': email_info['reply-to']}]
+        }]
+
+        json_file = os.path.join(current_path, 'config_email_groups.json')
+        with open(json_file, 'w') as fh:
+            json.dump(emails, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Почтовый адрес выгружен в группу почтовых адресов "System email-server" в файле "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет почтового адреса для экспорта.')
+
+
+def convert_any_service(proto, name):
+    """Конвертируем objects не имеющие портов в список сервисов"""
+    service = {
+        'name': name,
+        'description': f'{name} packet',
+        'protocols': [
+            {
+                'proto': proto,
+                'port': '',
+                'app_proto': '',
+                'source_port': '',
+                'alg': ''
+            }
+        ]
+    }
+    return service
+
+
+def convert_services(parent, path, data):
+    """Конвертируем сетевые сервисы."""
+    parent.stepChanged.emit('BLUE|Конвертация сетевых сервисов.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'Services')
     err, msg = func.create_dir(current_path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}.')
         parent.error = 1
         return
 
-    urls_list = []
-    for key, value in urls_block.items():
+    services = {}
+
+    for key, value in data['config system session-helper'].items():
+        protocol = {
+            'proto': ip_proto[value['protocol']],
+            'port': value['port'],
+            'app_proto': '',
+            'source_port': '',
+            'alg': ''
+        }
+        if value['name'] in services:
+            services[value['name']]['protocols'].append(protocol)
+        else:
+            services[value['name']] = {
+                'name': ug_services.get(value['name'], value['name']),
+                'description': '',
+                'protocols': [protocol]
+            }
+
+    services_proto = {'110': 'pop3', '995': 'pop3s', '25': 'smtp', '465': 'smtps'}
+
+    for key, value in data['config firewall service custom'].items():
+        protocols = []
+        if 'tcp-portrange' in value:
+            for port in value['tcp-portrange'].replace(':', ' ').strip().split():
+                if port[:2] == '0-':
+                    port = f'1-{port[2:]}'
+                protocols.append(
+                    {
+                        'proto': services_proto.get(port, 'tcp'),
+                        'port': port if port != '0' else '',
+                        'app_proto': services_proto.get(port, ''),
+                        'source_port': '',
+                        'alg': ''
+                    }
+                )
+        if 'udp-portrange' in value:
+            for port in value['udp-portrange'].strip().split():
+                if port[:2] == '0-':
+                    port = f'1-{port[2:]}'
+                protocols.append(
+                    {
+                        'proto': 'udp',
+                        'port': port if port != '0' else '',
+                        'app_proto': '',
+                        'source_port': '',
+                        'alg': ''
+                    }
+                )
+
+        service_name = key.strip().translate(trans_name)
+        if service_name in services:
+            services[service_name]['protocols'].extend(protocols)
+        else:
+            if service_name == 'ALL':
+                continue
+            if service_name == 'ALL_TCP':
+                services[service_name] = convert_any_service('tcp', 'ALL_TCP')
+            elif service_name == 'ALL_UDP':
+                services[service_name] = convert_any_service('udp', 'ALL_UDP')
+            else:
+                if 'protocol' in value and value['protocol'] == 'ICMP':
+                    services[service_name] = convert_any_service('icmp', service_name)
+                elif 'protocol' in value and value['protocol'] == 'ICMP6':
+                    services[service_name] = convert_any_service('ipv6-icmp', service_name)
+                elif 'protocol-number' in value:
+                    try:
+                        proto = ip_proto[value['protocol-number']]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'bRED|    Протокол "{service_name}" номер протокола: {err} не поддерживается UG NGFW.')
+                    else:
+                        services[service_name] = convert_any_service(proto, ug_services.get(service_name, service_name))
+                else:
+                    services[service_name] = {
+                        'name': ug_services.get(service_name, service_name),
+                        'description': value.get('category', ''),
+                        'protocols': protocols
+                    }
+
+    json_file = os.path.join(current_path, 'config_services_list.json')
+    with open(json_file, 'w') as fh:
+        json.dump(list(services.values()), fh, indent=4, ensure_ascii=False)
+    parent.services = services
+
+    out_message = f'BLACK|    Сервисы выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет сетевых сервисов для экспорта.' if not services else out_message)
+
+
+def convert_service_groups(parent, path, services):
+    """Конвертируем группы сервисов"""
+    parent.stepChanged.emit('BLUE|Конвертация групп сервисов.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'ServicesGroups')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit('RED|    {msg}.')
+        parent.error = 1
+        return
+
+    services_groups = []
+    for key, value in services.items():
+        srv_group = {
+            'name': key.strip().translate(trans_name),
+            'description': '',
+            'type': 'servicegroup',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {},
+            'content': []
+        }
+        for item in value['member'].strip().split():
+            service = copy.deepcopy(parent.services[item])
+            for x in service['protocols']:
+                x.pop('source_port', None)
+                x.pop('app_proto', None)
+                x.pop('alg', None)
+            srv_group['content'].append(service)
+
+        services_groups.append(srv_group)
+
+    json_file = os.path.join(current_path, 'config_services_groups_list.json')
+    with open(json_file, "w") as fh:
+        json.dump(services_groups, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'BLACK|    Группы сервисов выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет групп сервисов для экспорта.' if not services_groups else out_message)
+
+
+def convert_ntp_settings(parent, path, ntp_info):
+    """Конвертируем настройки NTP"""
+    parent.stepChanged.emit('BLUE|Конвертация настроек NTP.')
+    section_path = os.path.join(path, 'UserGate')
+    current_path = os.path.join(section_path, 'GeneralSettings')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    if ntp_info:
+        ntp_server = {
+            'ntp_servers': [],
+            'ntp_enabled': True,
+            'ntp_synced': True if ntp_info['ntpsync'] == 'enable' else False
+        }
+
+        for i, value in ntp_info['ntpserver'].items():
+            ntp_server['ntp_servers'].append(value['server'])
+            if int(i) == 2:
+                break
+        if ntp_server['ntp_servers']:
+            json_file = os.path.join(current_path, 'config_ntp.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ntp_server, fh, indent=4, ensure_ascii=False)
+        else:
+            ntp_info = []
+
+    out_message = f'BLACK|    Настройки NTP выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет серверов NTP для экспорта.' if not ntp_info else out_message)
+
+
+def convert_ip_lists(parent, path, data):
+    """Конвертируем списки IP-адресов"""
+    parent.stepChanged.emit('BLUE|Конвертация списков IP-адресов.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    ip_list = {
+        'name': '',
+        'description': '',
+        'type': 'network',
+        'url': '',
+        'list_type_update': 'static',
+        'schedule': 'disabled',
+        'attributes': {'threat_level': 3},
+        'content': []
+    }
+    data['ngfw_ip_lists'] = {}
+
+    for list_name, value in data['config firewall address'].items():
+        if 'subnet' in value:
+            ip_list['name'] = list_name.strip().translate(trans_name)
+            ip_list['description'] = value.get('comment', '')
+            ip, mask = value['subnet'].split()
+            subnet = ipaddress.ip_network(f'{ip}/{mask}')
+            ip_list['content'] = [{'value': f'{ip}/{subnet.prefixlen}'}]
+        elif 'type' in value and value['type'] == 'iprange':
+            ip_list['name'] = list_name.strip().translate(trans_name)
+            ip_list['description'] = value.get('comment', '')
+            ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
+        else:
+            continue
+
+        data['ngfw_ip_lists'][ip_list['name']] = {
+            'uuid': value['uuid'],
+            'fqdn': ip_list['content']
+        }
+
+        json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+        with open(json_file, 'w') as fh:
+            json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+
+    for list_name, value in data['config firewall multicast-address'].items():
+        ip_list['name'] = 'Multicast - ' + list_name.strip().translate(trans_name)
+        if value["start-ip"] == value["end-ip"]:
+            ip_list['content'] = [{'value': value["start-ip"]}]
+        else:
+            ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
+
+        data['ngfw_ip_lists'][ip_list['name']] = {
+            'uuid': '',
+            'fqdn': ip_list['content']
+        }
+
+        json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
+        with open(json_file, 'w') as fh:
+            json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+
+    for list_name, value in data['config firewall addrgrp'].items():
+        ip_list['content'] = []
+        members = value['member'].split()
+        for item in members:
+            if item in data['ngfw_ip_lists']:
+                ip_list['content'].append({'list': item})
+            else:
+                try:
+                    ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
+                    ip_list['content'].append({'value': item})
+                except ValueError:
+                    pass
+
+        if ip_list['content']:
+            ip_list['name'] = list_name.strip().translate(trans_name)
+            ip_list['description'] = value.get('comment', '')
+
+            data['ngfw_ip_lists'][ip_list['name']] = {
+                'uuid': value['uuid'],
+                'fqdn': ip_list['content']
+            }
+
+            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+
+    out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
+    parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.' if not ip_list['name'] else out_message)
+
+
+def convert_url_lists(parent, path, data):
+    """Конвертируем списки URL"""
+    parent.stepChanged.emit('BLUE|Конвертация списков URL.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'URLLists')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    url_list = {
+        'name': '',
+        'description': '',
+        'type': 'url',
+        'url': '',
+        'list_type_update': 'static',
+        'schedule': 'disabled',
+        'attributes': {'list_compile_type': 'case_insensitive'},
+        'content': []
+    }
+    data['ngfw_urls_lists'] = {}
+
+    for key, value in data['config wanopt content-delivery-network-rule'].items():
         _, pattern = key.split(':')
         if pattern == '//':
             list_name = 'All URLs (default)'
@@ -281,33 +671,552 @@ def convert_url_list(parent, path, urls_block):
             list_name = pattern.replace('/', '')
 
         if 'host-domain-name-suffix' not in value and list_name != 'All URLs (default)':
-            parent.stepChanged.emit(f'rNOTE|    Запись "{key}" не конвертирована так как не имеет host-domain-name-suffix.')
+            parent.stepChanged.emit(f'rNOTE|       Запись "{key}" не конвертирована так как не имеет host-domain-name-suffix.')
             continue
-        for suffix in value.get('host-domain-name-suffix', '').split(' '):
-            print('    ', suffix)
 
-    return        
+        suffixes = work_with_rules(value['rules']) if 'rules' in value else []
 
-    url_list = {
-        "name": name,
-        "description": "",
-        "type": "url",
-        "url": "",
-        "list_type_update": "static",
-        "schedule": "disabled",
-        "attributes": {"list_compile_type": "case_sensitive", "threat_level": 3},
-        "content": [{"value": url}]
-    }
+        url_list['content'] = []
+        for domain_name in value.get('host-domain-name-suffix', '').split(' '):
+            if suffixes:
+                url_list['content'].extend([{'value': f'{domain_name}/{x}' if domain_name else x} for x in suffixes])
+            else:
+                url_list['content'].extend([{'value': domain_name}])
+        if url_list['content']:
+            url_list['name'] = list_name.strip().translate(trans_name)
+            url_list['description'] = value.get('comment', '')
 
-    json_file = os.path.join(current_path, 'config_dns_servers.json')
+        json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+        with open(json_file, 'w') as fh:
+            json.dump(url_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+
+    for list_name, value in data['config firewall address'].items():
+        if 'type' in value and value['type'] == 'fqdn':
+            url_list['name'] = list_name.strip().translate(trans_name)
+            url_list['description'] = value.get('comment', '')
+            url_list['content'] = [{'value': value['fqdn']}]
+
+            data['ngfw_urls_lists'][url_list['name']] = {
+                'uuid': value['uuid'],
+                'fqdn': url_list['content']
+            }
+
+            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(url_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+
+    for list_name, value in data['config firewall addrgrp'].items():
+        url_list['content'] = []
+        members = value['member'].split()
+        for item in members:
+            if item in data['ngfw_urls_lists']:
+                url_list['content'].extend(data['ngfw_urls_lists'][item]['fqdn'])
+        if url_list['content']:
+            url_list['name'] = list_name.strip().translate(trans_name)
+            url_list['description'] = value.get('comment', '')
+
+            data['ngfw_urls_lists'][url_list['name']] = {
+                'uuid': value['uuid'],
+                'fqdn': url_list['content']
+            }
+
+            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(url_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+
+    for list_name, value in data['config firewall wildcard-fqdn custom'].items():
+        if list_name in data['ngfw_urls_lists']:
+            list_name = f'{list_name} - wildcard-fqdn'
+        url_list['name'] = list_name.strip().translate(trans_name)
+        url_list['description'] = value.get('comment', '')
+        url_list['content'] = [{'value': value['wildcard-fqdn']}]
+
+        data['ngfw_urls_lists'][url_list['name']] = {
+            'uuid': value['uuid'],
+            'fqdn': url_list['content']
+        }
+
+        json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+        with open(json_file, 'w') as fh:
+            json.dump(url_list, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+
+    out_message = f'GREEN|    Списки URL выгружены в каталог "{current_path}".'
+    parent.stepChanged.emit('GRAY|    Нет списков URL для экспорта.' if not url_list['name'] else out_message)
+
+
+def work_with_rules(rules):
+    """
+    Для функции convert_url_lists().
+    Преобразование структуры 'config wanopt content-delivery-network-rule'.
+    """
+    patterns = set()
+    for _, rule in rules.items():
+        for _, entries in rule['match-entries'].items():
+            value = entries['pattern']
+            patterns.add(value[1:] if value.startswith('/') else value)
+    return patterns
+
+
+def convert_auth_servers(parent, path, data):
+    """Конвертируем серверов авторизации"""
+    parent.stepChanged.emit('BLUE|Конвертация серверов аутентификации.')
+    section_path = os.path.join(path, 'UsersAndDevices')
+    current_path = os.path.join(section_path, 'AuthServers')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+    success = False
+
+    if 'config user ldap' in data:
+        ldap_servers = []
+        for key, value in data['config user ldap'].items():
+            if value['dn']:
+                tmp_dn1 = [x.split('=') for x in value['dn'].split(',')]
+                tmp_dn2 = [b for a, b in tmp_dn1 if a == 'dc']
+                dn = '.'.join(tmp_dn2)
+            ldap_servers.append({
+                "name": f'{key.strip().translate(trans_name)} - AD Auth server',
+                "description": "LDAP-коннектор импортирован с Fortigate.",
+                "enabled": False,
+                "ssl": False,
+                "address": value['server'],
+                "bind_dn": value['username'].replace('\\', '', 1),
+                "password": "",
+                "domains": [dn],
+                "roots": [value['dn']] if value['dn'] else [],
+                "keytab_exists": False
+            })
+        json_file = os.path.join(current_path, 'config_ldap_servers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(ldap_servers, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Настройки серверов аутентификации LDAP выгружены в файл "{json_file}".')
+        success = True
+
+    if 'config user radius' in data:
+        radius_servers = []
+        for key, value in data['config user radius'].items():
+            radius_servers.append({
+                "name": f'{key.strip().translate(trans_name)} - Radius Auth server',
+                "description": "Radius auth server импортирован с Fortigate.",
+                "enabled": False,
+                "addresses": [
+                    {'host': value['server'], 'port': 1812}
+                ]
+            })
+        json_file = os.path.join(current_path, 'config_radius_servers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(radius_servers, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Настройки серверов аутентификации RADIUS выгружены в файл "{json_file}".')
+        success = True
+
+    out_message = f'GREEN|    Настройки серверов аутентификации конвертированы.'
+    parent.stepChanged.emit('GRAY|    Нет серверов аутентификации для экспорта.' if not success else out_message)
+
+
+def convert_user_groups(parent, path, data):
+    """Конвертируем локальные группы пользователей"""
+    parent.stepChanged.emit('BLUE|Конвертация локальных групп пользователей.')
+    section_path = os.path.join(path, 'UsersAndDevices')
+    current_path = os.path.join(section_path, 'Groups')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    users = {x for x in data['config user local']}
+
+    groups = []
+    for key, value in data['config user group'].items():
+        groups.append({
+            "name": key,
+            "description": "",
+            "is_ldap": False,
+            "is_transient": False,
+            "users": [x for x in value['member'].split() if x in users] if 'member' in value else []
+        })
+
+    json_file = os.path.join(current_path, 'config_groups.json')
     with open(json_file, 'w') as fh:
-        json.dump(dns_servers, fh, indent=4, ensure_ascii=False)
+        json.dump(groups, fh, indent=4, ensure_ascii=False)
 
-    out_message = f'BLACK|    Настройки серверов DNS выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет серверов DNS для экспорта.' if not dns_servers else out_message)
+    out_message = f'GREEN|    Список локальных групп пользователей выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет локальных групп пользователей для экспорта.' if not groups else out_message)
 
-#    err, protocol_names = utm.get_ip_protocol_list()
-#    exit_if_error(err, protocol_names)
+
+def convert_local_users(parent, path, data):
+    """Конвертируем локальных пользователей"""
+    parent.stepChanged.emit('BLUE|Конвертация локальных пользователей.')
+    section_path = os.path.join(path, 'UsersAndDevices')
+    current_path = os.path.join(section_path, 'Users')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    users = {}
+    trans_userlogin = str.maketrans(character_map_userlogin)
+    for key, value in data['config user local'].items():
+        if value['type'] == 'password':
+            users[key] = {
+                "name": key,
+                "enabled": False if value.get('status', None) == 'disable' else True,
+                "auth_login": key.strip().translate(trans_userlogin),
+                "is_ldap": False,
+                "static_ip_addresses": [],
+                "ldap_dn": "",
+                "emails": [value['email-to']] if value.get('email-to', None) else [],
+                "phones": [],
+                "first_name": "",
+                "last_name": "",
+                "groups": [],
+            }
+
+    for key, value in data['config user group'].items():
+        users_in_group = [x for x in value['member'].split() if x in users] if 'member' in value else []
+        for user in users_in_group:
+            users[user]['groups'].append(key)
+
+    json_file = os.path.join(current_path, 'config_users.json')
+    with open(json_file, 'w') as fh:
+        json.dump([x for x in users.values()], fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список локальных пользователей выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет локальных пользователей для экспорта.' if not users else out_message)
+
+
+def convert_web_portal_resources(parent, path, data):
+    """Конвертируем ресурсы веб-портала"""
+    parent.stepChanged.emit('BLUE|Конвертация ресурсов веб-портала.')
+    section_path = os.path.join(path, 'GlobalPortal')
+    current_path = os.path.join(section_path, 'WebPortal')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    resources = []
+    for key, value in data.items():
+        user_group = key.split('#')[1]
+        for key1, value1 in value.items():
+            for key2, value2 in value1.items():
+                url = None
+                icon = 'default.svg'
+                if 'apptype' in value2 and value2['apptype'] in {'rdp', 'ftp'}:
+                    if value2['apptype'] == 'rdp':
+                        url = f'rdp://{value2["host"]}'
+                        icon = 'rdp.svg'
+                    elif value2['apptype'] == 'ftp':
+                        url = f'ftp://{value2["folder"]}'
+                elif 'url' in value2:
+                    url = value2['url']
+                    value2['apptype'] = 'http'
+                if url:
+                    resources.append({
+                        'name': f'Resource {value2["apptype"]}-{key2}',
+                        'description': 'Перенесено с Fortigate',
+                        'enabled': True,
+                        'url': url,
+                        'additional_urls': [],
+                        'users': [['group', user_group]] if user_group else [],
+                        'icon': icon,
+                        'mapping_url': '',
+                        'mapping_url_ssl_profile_id': 0,
+                        'mapping_url_certificate_id': 0,
+                        'position_layer': 'local',
+                        'rdp_check_session_alive': True if value2['apptype'] == 'rdp' else False,
+                        'transparent_auth': True if value2['apptype'] == 'rdp' else False
+                    })
+
+    json_file = os.path.join(current_path, 'config_web_portal.json')
+    with open(json_file, 'w') as fh:
+        json.dump(resources, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список ресурсов веб-портала выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет ресурсов веб-портала для экспорта.' if not resources else out_message)
+
+
+def convert_time_sets(parent, path, data):
+    """Конвертируем time set (календари)"""
+    parent.stepChanged.emit('BLUE|Конвертация календарей.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'TimeSets')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    week = {
+        "monday": 1,
+        "tuesday": 2,
+        "wednesday": 3,
+        "thursday": 4,
+        "friday": 5,
+        "saturday": 6,
+        "sunday": 7
+    }
+    timerestrictiongroup = []
+    for key, value in data['config firewall schedule onetime'].items():
+        if value:
+            time_from, fixed_date_from = value['start'].split()
+            time_to, fixed_date_to = value['end'].split()
+            timerestrictiongroup.append({
+                "name": key.strip().translate(trans_name),
+                "description": "Портировано с Fortigate",
+                "type": "timerestrictiongroup",
+                "url": "",
+                "list_type_update": "static",
+                "schedule": "disabled",
+                "attributes": {},
+                "content": [
+                    {
+                        'name': key.strip().translate(trans_name),
+                        'type': 'range',
+                        'time_to': time_to,
+                        'time_from': time_from,
+                        'fixed_date_to': f'{fixed_date_to.replace("/", "-")}T00:00:00',
+                        'fixed_date_from': f'{fixed_date_from.replace("/", "-")}T00:00:00'
+                    }
+                ]
+            })
+
+    for key, value in data['config firewall schedule recurring'].items():
+        if value:
+            schedule = {
+                "name": key.strip().translate(trans_name),
+                "description": "Портировано с Fortigate",
+                "type": "timerestrictiongroup",
+                "url": "",
+                "list_type_update": "static",
+                "schedule": "disabled",
+                "attributes": {},
+                "content": [
+                    {
+                        'name': key.strip().translate(trans_name),
+                        'type': 'weekly',
+                        'days': [week[day] for day in value['day'].split()]
+                    }
+                ]
+            }
+            if 'start' in value:
+                schedule['content'][0]['time_from'] = value['start']
+                schedule['content'][0]['time_to'] = value['end']
+            timerestrictiongroup.append(schedule)
+
+    json_file = os.path.join(current_path, 'config_calendars.json')
+    with open(json_file, 'w') as fh:
+        json.dump(timerestrictiongroup, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Список календарей выгружен в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет календарей для экспорта.' if not timerestrictiongroup else out_message)
+
+
+def convert_dnat_rule(parent, path, data):
+    """Конвертируем object 'config firewall vip' в правила DNAT или Port-форвардинга"""
+    parent.stepChanged.emit('BLUE|Конвертация правил DNAT/Порт-форвардинга.')
+    section_path = os.path.join(path, 'NetworkPolicies')
+    current_path = os.path.join(section_path, 'NATandRouting')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    rules = []
+    ips_for_rules = set()
+    for key, value in data.items():
+        if value and 'type' not in value:
+            if 'mappedip' in value:
+                services = []
+                port_mappings = []
+                if value['extip'] in ips_for_rules:
+                    list_id = value['extip']
+                else:
+                    ips_for_rules.add(value['extip'])
+                    list_id = create_ip_list(parent, path, value['extip'], key)
+                create_ip_list(parent, path, value['mappedip'], key)
+                if 'service' in value:
+                    services = [['service' if x in parent.services else 'list_id', x] for x in value['service'].split()]
+                elif 'mappedport' in value:
+                    port_mappings = [{
+                        'proto': value['protocol'] if 'protocol' in value else 'tcp',
+                        'src_port': int(value['extport']),
+                        'dst_port': int(value['mappedport'])
+                    }]
+                rule = {
+                    'name': f'Rule {key.strip().translate(trans_name)}',
+                    'description': value['comment'] if 'comment' in value else 'Портировано с Fortigate',
+                    'action': 'port-mapping' if port_mappings else 'dnat',
+                    'position': 'last',
+                    'zone_in': ['Untrusted'],
+                    'zone_out': [],
+                    'source_ip': [],
+                    'dest_ip': [['list_id', list_id]],
+                    'service': services,
+                    'target_ip': value['mappedip'],
+                    'gateway': '',
+                    'enabled': False,
+                    'log': False,
+                    'log_session_start': False,
+                    'target_snat': True,
+                    'snat_target_ip': value['extip'],
+                    'zone_in_nagate': False,
+                    'zone_out_nagate': False,
+                    'source_ip_nagate': False,
+                    'dest_ip_nagate': False,
+                    'port_mappings': port_mappings,
+                    'direction': "input",
+                    'users': [],
+                    'scenario_rule_id': False
+                }
+                rules.append(rule)
+                parent.stepChanged.emit(f'BLACK|    Создано правило {rule["action"]} "{rule["name"]}".')
+
+    json_file = os.path.join(current_path, 'config_nat_rules.json')
+    with open(json_file, 'w') as fh:
+        json.dump(rules, fh, indent=4, ensure_ascii=False)
+
+    out_message = f'GREEN|    Павила DNAT/Порт-форвардинга выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет правил DNAT/Порт-форвардинга для экспорта.' if not rules else out_message)
+
+
+def convert_loadbalancing_rule(parent, path, data):
+    """Конвертируем object 'config firewall vip' в правила балансировки нагрузки"""
+    parent.stepChanged.emit('BLUE|Конвертация правил балансировки нагрузки.')
+    section_path = os.path.join(path, 'NetworkPolicies')
+    current_path = os.path.join(section_path, 'LoadBalancing')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    rules = []
+    ssl_certificate = False
+    for key, value in data.items():
+        if value and value.get('type', None) == 'server-load-balance':
+            if 'ssl-certificate' in value:
+                ssl_certificate = True
+            hosts = []
+            for server in value['realservers'].values():
+                hosts.append({
+                    'ip_address': server['ip'],
+                    'port': int(server['port']),
+                    'weight': 50,
+                    'mode': 'masq',
+                    'snat': True
+                })
+            rule = {
+                'name': f'Rule {key.strip().translate(trans_name)}',
+                'description': value['comment'] if 'comment' in value else 'Портировано с Fortigate',
+                'enabled': False,
+                'protocol': 'tcp' if value['server-type'] in {'http', 'https'} else value['server-type'],
+                'scheduler': 'wrr',
+                'ip_address': value['extip'],
+                'port': int(value['extport']),
+                'hosts': hosts,
+                'fallback': False,
+                'monitoring': {
+                    'kind': 'ping',
+                    'service': 'tcp',
+                    'request': '',
+                    'response': '',
+                    'interval': 60,
+                    'timeout': 60,
+                    'failurecount': 10
+                },
+                'src_zones': ['Untrusted'],
+                'src_zones_nagate': False,
+                'src_ips': [],
+                'src_ips_nagate': False
+            }
+            rules.append(rule)
+            parent.stepChanged.emit(f'BLACK|    Создано правило балансировки нагрузки "{rule["name"]}".')
+
+    json_file = os.path.join(current_path, 'config_loadbalancing_tcpudp.json')
+    with open(json_file, 'w') as fh:
+        json.dump(rules, fh, indent=4, ensure_ascii=False)
+
+    if ssl_certificate:
+        parent.stepChanged.emit(f'LBLUE|    В правилах Fortigate использовались сертификаты, после импорта конфигурации удалите соответсвующие правила балансировки нагрузки и')
+        parent.stepChanged.emit(f'LBLUE|    создайте правила reverse-прокси, предварительно загрузив необходимые сертификаты.')
+    out_message = f'GREEN|    Павила балансировки нагрузки выгружены в файл "{json_file}".'
+    parent.stepChanged.emit('GRAY|    Нет правил балансировки нагрузки для экспорта.' if not rules else out_message)
+
+
+def convert_ace(parent, path, data):
+    """Конвертируем object 'config firewall policy' в правила МЭ"""
+    parent.stepChanged.emit('BLUE|Конвертация правил межсетевого экрана.')
+    section_path = os.path.join(path, 'NetworkPolicies')
+    current_path = os.path.join(section_path, 'Firewall')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+#data['ngfw_urls_lists'][url_list['name']]
+#data['ngfw_ip_lists'][ip_list['name']]
+#ip_list['name'] = list_name.strip().translate(trans_name)
+
+    rules = {}
+    for key, value in data.items():
+        rules[key] = {
+            'name': f'Rule - {value["name"] if value.get("name", None) else key}',
+            'description': 'Портировано с Fortigate',
+            'action': value['action'] if value.get('action', None) else 'drop',
+            'position': 'last',
+            'scenario_rule_id': False,     # При импорте заменяется на UID или "0". 
+            'src_zones': [],
+            'dst_zones': [],
+            'src_ips': [],
+            'dst_ips': [],
+            'services': [],
+            'apps': [],
+            'users': [],
+            'enabled': False,
+            'limit': True,
+            'limit_value': '3/h',
+            'limit_burst': 5,
+            'log': False,
+            'log_session_start': True,
+            'src_zones_negate': False,
+            'dst_zones_negate': False,
+            'src_ips_negate': False,
+            'dst_ips_negate': False,
+            'services_negate': False,
+            'apps_negate': False,
+            'fragmented': 'ignore',
+            'time_restrictions': [],
+            'send_host_icmp': '',
+        }
+        rules.append(rule)
+        parent.stepChanged.emit(f'BLACK|    Создано правило МЭ "{rule["name"]}".')
+
+    json_file = os.path.join(current_path, 'config_firewall_rules.json')
+    with open(json_file, 'w') as fh:
+        json.dump([v for _, v in sorted(rules.items())], fh, indent=4, ensure_ascii=False)
+
+    if rules:
+        parent.stepChanged.emit(f'LBLUE|    После импорта правил МЭ, необходимо в каждом правиле указать зону источника и зону назначения.')
+        parent.stepChanged.emit(f'LBLUE|    Создайте необходимое количество зоны и присвойте зону каждому интерфейсу.')
+        parent.stepChanged.emit(f'GREEN|    Павила межсетевого экрана выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
+
+
+#    subnet = ipaddress.ip_network(f'{ip}/{mask}')
+#    tmp_dict['content'].append({'value': f'{ip}/{subnet.prefixlen}'})
+
     # default_vrf = {
         # "name": "default",
         # "descriprion": "",
@@ -318,279 +1227,6 @@ def convert_url_list(parent, path, urls_block):
         # "rip": {},
         # "pimsm": {}
     # }
-    # time_zone = {
-        # "2": "Europe/Kaliningrad",
-        # "3": "Europe/Moscow",
-        # "4": "Europe/Samara",
-        # "5": "Asia/Yekaterinburg",
-        # "6": "Asia/Omsk",
-        # "7": "Asia/Krasnoyarsk",
-        # "8": "Asia/Irkutsk",
-        # "9": "Asia/Yakutsk",
-        # "10": "Asia/Vladivostok",
-        # "11": "Asia/Magadan",
-        # "12": "Asia/Kamchatka"
-    # }
-    # ntp = {
-        # "ntp_servers": [],
-        # "ntp_enabled": True,
-        # "ntp_synced": True
-    # }
-
-def convert_modules(x):
-    """Выгружаем UserGate->Настройки->Модули"""
-    data = {
-        "auth_captive": f"auth.{x[1]}",
-        "logout_captive": f"logout.{x[1]}",
-        "block_page_domain": f"block.{x[1]}",
-        "ftpclient_captive": f"ftpclient.{x[1]}",
-        "ftp_proxy_enabled": False,
-        "http_cache_mode": "off",
-        "http_cache_docsize_max": 1,
-        "http_cache_precache_size": 64,
-    }
-    if not os.path.isdir('data/UserGate/GeneralSettings'):
-        os.makedirs('data/UserGate/GeneralSettings')
-    with open('data/UserGate/GeneralSettings/config_settings.json', 'w') as fh:
-        json.dump(data, fh, indent=4, ensure_ascii=False)
-
-def convert_zone(zone_name, mtu):
-    """Создаём зону"""
-    if x[1].lower() != 'management':
-        zone = {
-            "name": zone_name.translate(trans_name),
-            "description": "",
-            "dos_profiles": [
-                {
-                    "enabled": True,
-                    "kind": "syn",
-                    "alert_threshold": 3000,
-                    "drop_threshold": 6000,
-                    "aggregate": False,
-                    "excluded_ips": []
-                },
-                {
-                    "enabled": True,
-                    "kind": "udp",
-                    "alert_threshold": 3000,
-                    "drop_threshold": 6000,
-                    "aggregate": False,
-                    "excluded_ips": []
-                },
-                {
-                    "enabled": True,
-                    "kind": "icmp",
-                    "alert_threshold": 100,
-                    "drop_threshold": 200,
-                    "aggregate": False,
-                    "excluded_ips": []
-                }
-            ],
-            "services_access": [
-                {
-                    'enabled': True,
-                    'service_id': 1,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 2,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 4,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 5,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 6,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 7,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 8,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 9,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 10,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 11,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 12,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 13,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 14,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 15,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 16,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 17,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 18,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 19,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 20,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 21,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 22,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 23,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 24,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 25,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 26,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 27,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 28,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 29,
-                    'allowed_ips': []
-                },
-                {
-                    'enabled': False,
-                    'service_id': 30,
-                    'allowed_ips': []
-                }
-            ],
-            "readonly": False,
-            "enable_antispoof": False,
-            "antispoof_invert": False,
-            "networks": [],
-            "sessions_limit_enabled": False,
-            "sessions_limit_threshold": 0,
-            "sessions_limit_exclusions": [],
-        }
-        zones[zone_name] = zone
-        iface_mtu[zone_name] = int(mtu)
-
-def convert_zone_access(array):
-    """Устанавливаем контроль доступа для зоны"""
-    match array:
-        case [service, 'domain-lookup', zone_name]:
-            if zone_name in zones:
-                for service in zones[zone_name]['services_access']:
-                    if service['service_id'] == 9:
-                        service['enabled'] = True
-        case ['telnet' | 'ssh', ip, mask, zone_name]:
-            if zone_name in zones:
-                if ip in ('version', 'key-exchange', 'cipher'):
-                    return
-                ipv4 = pack_ip_address(ip, mask)
-                for service in zones[zone_name]['services_access']:
-                    if service['service_id'] == 14:
-                        service['enabled'] = True
-                        service['allowed_ips'].append(ipv4)
-        case ['http', ip, mask, zone_name]:
-            if zone_name in zones:
-                ipv4 = pack_ip_address(ip, mask)
-                for service in zones[zone_name]['services_access']:
-                    if service['service_id'] == 4:
-                        service['enabled'] = True
-                    elif service['service_id'] == 8:
-                        service['enabled'] = True
-                        service['allowed_ips'].append(ipv4)
-
-def convert_dns_rules(rule_name, tmp_block):
-    """Создаём правило DNS прокси Сеть->DNS->DNS-прокси->Правила DNS"""
-    dns_rule = {
-        "name": rule_name,
-        "description": "",
-        "enabled": True,
-        "domains": [],
-        "dns_servers": [],
-    }
-    for item in tmp_block:
-        match item[0]:
-            case 'name-server':
-                dns_rule['dns_servers'].append(item[1])
-            case 'domain-name':
-                dns_rule['domains'].append(f'*.{item[1]}')
-    if dns_rule['domains']:
-        dns_rules.append(dns_rule)
-    else:
-        for x in dns_rule['dns_servers']:
-            system_dns.append({'dns': x, 'is_bad': False})
 
 def convert_route(array):
     """Конвертируем шлюзы и статические маршруты в VRF по умолчанию"""
@@ -629,352 +1265,6 @@ def convert_route(array):
         }
         default_vrf['routes'].append(route)
 
-def convert_auth_servers(x, tmp_block):
-    """Конвертируем сервера авторизации"""
-    match x:
-        case ['aaa-server', auth_server_name, 'protocol', protocol]:
-            if protocol.startswith('tacacs'):
-                auth_servers[auth_server_name] = {
-                    "name": f"{auth_server_name} (tacacs)",
-                    "description": "tacacs",
-                    "enabled": True,
-                    "use_single_connection": False,
-                    "timeout": 4,
-                    "address": "",
-                    "port": 49,
-                    "secret": "",
-            }
-            if protocol == 'radius':
-                auth_servers[auth_server_name] = {
-                    "name": f"{auth_server_name} (radius)",
-                    "description": "radius",
-                    "enabled": True,
-                    "secret": "",
-                    "addresses": []
-            }
-            if protocol == 'ldap':
-                auth_servers[auth_server_name] = {
-                    "name": f"{auth_server_name} (ldap)",
-                    "description": "ldap",
-                    "enabled": True,
-                    "ssl": False,
-                    "address": "",
-                    "bind_dn": "",
-                    "password": "",
-                    "domains": [],
-                    "roots": [],
-                    "keytab_exists": False
-            }
-            if protocol == 'kerberos':
-                auth_servers[auth_server_name] = {
-                    "name": f"{auth_server_name} (kerberos)",
-                    "description": "ldap",
-                    "enabled": True,
-                    "ssl": False,
-                    "address": "",
-                    "bind_dn": "",
-                    "password": "",
-                    "domains": [],
-                    "roots": [],
-                    "keytab_exists": False
-            }
-        case ['aaa-server', auth_server_name, zone_name, 'host', ip]:
-            if auth_server_name in auth_servers:
-                if auth_servers[auth_server_name]['description'] == 'tacacs':
-                    auth_servers[auth_server_name]['address'] = ip
-                    for item in tmp_block:
-                        if item[0] == 'key':
-                            auth_servers[auth_server_name]['secret'] = item[1]
-                        if item[0] == 'timeout':
-                            auth_servers[auth_server_name]['timeout'] = int(item[1])
-                        if item[0] == 'server-port':
-                            auth_servers[auth_server_name]['port'] = item[1]
-                if auth_servers[auth_server_name]['description'] == 'radius':
-                    address = {'host': ip, 'port': 1812}
-                    for item in tmp_block:
-                        if item[0] == 'key':
-                            auth_servers[auth_server_name]['secret'] = item[1]
-                        elif item[0] == 'authentication-port':
-                            address['port'] = item[1]
-                    auth_servers[auth_server_name]['addresses'].append(address)
-                if auth_servers[auth_server_name]['description'] == 'ldap':
-                    if not auth_servers[auth_server_name]['address']:
-                        auth_servers[auth_server_name]['address'] = ip
-                        dn = ''
-                        for item in tmp_block:
-                            if item[0] == 'ldap-base-dn':
-                                dn = ".".join([y[1] for y in [x.split("=") for x in item[1].split(",")]]).lower()
-                                auth_servers[auth_server_name]['domains'].append(dn)
-                                auth_servers[auth_server_name]['roots'].append(item[1])
-                            elif item[0] == 'ldap-login-dn':
-                                login = item[1] if '=' in item[1] else f"{item[1]}@{dn}"
-                                auth_servers[auth_server_name]['bind_dn'] = login
-                            elif item[0] == 'ldap-login-password':
-                                auth_servers[auth_server_name]['password'] = item[1]
-                            elif item[0] == 'ldap-over-ssl' and item[1] == 'enable':
-                                auth_servers[auth_server_name]['ssl'] = True
-                            elif item[0] == 'kerberos-realm':
-                                auth_servers[auth_server_name]['domains'].append(item[1])
-                                auth_servers[auth_server_name]['roots'].append(item[1])
-                                auth_servers[auth_server_name]['bind_dn'] = f"login@{item[1]}"
-                                auth_servers[auth_server_name]['password'] = "secret"
-                    else:
-                        convert_auth_servers(['aaa-server', f'{auth_server_name} ({ip})', 'protocol', 'ldap'], [])
-                        convert_auth_servers(['aaa-server', f'{auth_server_name} ({ip})', zone_name, 'host', ip], tmp_block)
-
-def convert_time_sets(rule_name, tmp_block):
-    """Конвертируем time set (календари)"""
-    week = {
-        "Monday": 1,
-        "Tuesday": 2,
-        "Wednesday": 3,
-        "Thursday": 4,
-        "Friday": 5,
-        "Saturday": 6,
-        "Sunday": 7
-    }
-    timerestrictiongroup[rule_name] = {
-        "name": rule_name.translate(trans_name),
-        "description": "",
-        "type": "timerestrictiongroup",
-        "url": "",
-        "list_type_update": "static",
-        "schedule": "disabled",
-        "attributes": {},
-        "content": []
-    }
-    i = 0
-    for item in tmp_block:
-        i += 1
-        time_restriction = {
-            "name": f"{timerestrictiongroup[rule_name]['name']} {i}",
-            "type": "span" if item[0] == "absolute" else "weekly"
-        }
-        match item:
-            case ['absolute', 'start' | 'end', time, day, month, year]:
-                if item[1] == 'start':
-                    time_restriction['time_from'] = time
-                    time_restriction['fixed_date_from'] = dt.strptime(f"{day}-{month}-{year}", '%d-%B-%Y').strftime('%Y-%m-%dT%H:%M:%S')
-                elif item[1] == 'end':
-                    time_restriction['time_to'] = time
-                    time_restriction['fixed_date_to'] = dt.strptime(f"{day}-{month}-{year}", '%d-%B-%Y').strftime('%Y-%m-%dT%H:%M:%S')
-            case ['absolute', 'start', start_time, start_day, start_month, start_year, 'end', end_time, end_day, end_month, end_year]:
-                time_restriction['time_from'] = start_time
-                time_restriction['fixed_date_from'] = dt.strptime(f"{start_day}-{start_month}-{start_year}", '%d-%B-%Y').strftime('%Y-%m-%dT%H:%M:%S')
-                time_restriction['time_to'] = end_time
-                time_restriction['fixed_date_to'] = dt.strptime(f"{end_day}-{end_month}-{end_year}", '%d-%B-%Y').strftime('%Y-%m-%dT%H:%M:%S')
-            case ['absolute', 'end', end_time, end_day, end_month, end_year, 'start', start_time, start_day, start_month, start_year]:
-                time_restriction['time_from'] = start_time
-                time_restriction['fixed_date_from'] = dt.strptime(f"{start_day}-{start_month}-{start_year}", '%d-%B-%Y').strftime('%Y-%m-%dT%H:%M:%S')
-                time_restriction['time_to'] = end_time
-                time_restriction['fixed_date_to'] = dt.strptime(f"{end_day}-{end_month}-{end_year}", '%d-%B-%Y').strftime('%Y-%m-%dT%H:%M:%S')
-            case ['periodic', *time_set]:
-                if time_set[0] in ('weekend', 'weekdays', 'daily'):
-                    time_restriction['time_from'] = time_set[1] if time_set[1] != 'to' else '00:00'
-                    time_restriction['time_to'] = time_set[len(time_set)-1]
-                    if time_set[0] == 'daily':
-                        time_restriction['type'] = 'daily'
-                    else:
-                        time_restriction['days'] = [6, 7] if time_set[0] == 'weekend' else [1, 2, 3, 4, 5]
-                else:
-                    start, end = time_set[:time_set.index('to')], time_set[time_set.index('to')+1:]
-                    days = set()
-                    for x in start:
-                        if week.get(x, None):
-                            days.add(week[x])
-                        else:
-                            time_restriction['time_from'] = x
-                    for x in end:
-                        if week.get(x, None):
-                            days = {y for y in range(min(days), week[x]+1)}
-                        else:
-                            time_restriction['time_to'] = x
-                    if not time_restriction.get('time_from', None):
-                        time_restriction['time_from'] = "00:00"
-                    if not time_restriction.get('time_to', None):
-                        time_restriction['time_to'] = "23:59"
-                    if days:
-                        time_restriction['days'] = sorted(list(days))
-                    else:
-                        time_restriction['type'] = 'daily'
-
-        timerestrictiongroup[rule_name]['content'].append(time_restriction)
-
-def convert_settings_ui(x):
-    """Конвертируем часовой пояс и настройки интерфейса"""
-    data = {
-        "ui_timezone": time_zone.get(x[3], "Europe/Moscow"),
-        "ui_language": "ru",
-        "web_console_ssl_profile_id": "Default SSL profile (web console)",
-        "response_pages_ssl_profile_id": "Default SSL profile",
-        "webui_auth_mode": "password"
-    }
-
-    if not os.path.isdir('data/UserGate/GeneralSettings'):
-        os.makedirs('data/UserGate/GeneralSettings')
-    with open('data/UserGate/GeneralSettings/config_settings_ui.json', 'w') as fh:
-        json.dump(data, fh, indent=4, ensure_ascii=False)
-
-def convert_ntp_settings(x):
-    """Конвертируем настройки для NTP"""
-    match x:
-        case ['ntp', 'server', ip, *other]:
-            if len(ntp['ntp_servers']) < 2:
-                ntp['ntp_servers'].append(ip)
-
-#def convert_dhcp_settings(line):
-#    """Конвертируем настройки DHCP"""
-#    nonlocal dhcp_enabled
-#    if not dhcp_enabled:
-#        while True:
-#            task = input('\033[36mКонвертировать настройки DHCP subnets? ["yes", "no"]: \033[0m')
-#            if task == "no":
-#                dhcp_enabled = 1
-#                return
-#            elif task == "yes":
-#                dhcp_enabled = 2
-#                break
-#    elif dhcp_enabled == 1:
-#        return
-#    
-#    match line:
-#        case ['dhcp', 'address', ip_range, zone_name]:
-#            err, data = utm.get_interfaces_list()
-#            exit_if_error(err, data)
-#            dst_ports = {x['name']: x.get('ipv4', None) for x in data if not x['name'].startswith('tunnel')}
-#
-#            print(f"\n\033[36mКонвертируется DHCP subnet\033[0m {ip_range} \033[36mУкажите порт UG-NGFW для него.\033[0m")
-#            print(f"\033[36mСуществуют следующие порты:\033[0m {sorted(dst_ports.keys())}")
-#            while True:
-#                port = input("\033[36mВведите имя порта:\033[0m ")
-#                if port not in dst_ports:
-#                    print("\033[31m\tВы ввели несуществующий порт.\033[0m")
-#                else:
-#                    break
-#
-#            ips = ip_range.split('-')
-#
-#            if dst_ports[port]:
-#                gateway = ipaddress.ip_interface(dst_ports[port][0])
-#            else:
-#                while True:
-#                    gateway = input(f"\n\033[36mУ данного порта нет IP-адреса. Введите IP шлюза для subnet\033[0m {ip_range} [{ips[0]}/24]: ")
-#                    try:
-#                        gateway = ipaddress.ip_interface(gateway)
-#                    except ValueError:
-#                        print("\033[31m Введённый адрес не является IP-адресом.\033[0m")
-#                    else:
-#                        break
-#            while True:
-#                if ipaddress.ip_address(ips[0]) not in gateway.network:
-#                    print(f"\033[31mIP-адреса диапазона {ip_range} не принадлежат подсети {gateway.network}\033[0m")
-#                    gateway = input(f"\n\033[36mВведите IP шлюза для subnet\033[0m {ip_range} [{ips[0]}/24]: ")
-#                    gateway = ipaddress.ip_interface(gateway)
-#                else:
-#                    break
-#
-#            dhcp[zone_name] = {
-#                "node_name": utm.node_name,
-#                "name": f"DHCP server for {zone_name}",
-#                "enabled": False,
-#                "description": "Перенесено с Cisco ASA",
-#                "start_ip": ips[0],
-#                "end_ip": ips[1],
-#                "lease_time": 3600,
-#                "domain": "",
-#                "gateway": str(gateway.ip),
-#                "boot_filename": "",
-#                "boot_server_ip": "",
-#                "iface_id": port,
-#                "netmask": str(gateway.netmask),
-#                "nameservers": [],
-#                "ignored_macs": [],
-#                "hosts": [],
-#                "options": [],
-#                "cc": 0
-#            }
-#        case ['dhcp', 'reserve-address', ip, mac, zone_name]:
-#            dhcp[zone_name]['cc'] += 1
-#            mac_address = ":".join([f"{x[:2]}:{x[2:]}" for x in mac.split('.')])
-#            dhcp[zone_name]['hosts'].append({"mac": mac_address.upper(), "ipv4": ip, "hostname": f"any{dhcp[zone_name]['cc']}"})
-#        case ['dhcp', 'dns', *ips]:
-#            for item in dhcp:
-#                for name_server in ips:
-#                    dhcp[item]['nameservers'].append(name_server)
-#        case ['dhcp', 'lease', lease]:
-#            for item in dhcp:
-#                dhcp[item]['lease_time'] = int(lease) if (120 < int(lease) < 3600000) else 3600
-#        case ['dhcp', 'domain', name]:
-#            for item in dhcp:
-#                dhcp[item]['domain'] = name
-#        case ['dhcp', 'option', code, 'ip'|'ascii', *ips]:
-#            for item in dhcp:
-#                dhcp[item]['options'].append([int(code), ", ".join(ips)])
-#########################################################################################
-#                    if code == '3':
-#                        dhcp[item]['gateway'] = ips[0]
-#                    else:
-
-def convert_local_users(user_name, attribute):
-    """Конвертируем локального пользователя"""
-    if attribute == 'password':
-        trans_table_for_users = str.maketrans(character_map_for_users)
-        local_user = {
-            "groups": [],
-            "name": user_name,
-            "enabled": True,
-            "auth_login": user_name.translate(trans_table_for_users),
-            "icap_clients": [],
-            "is_ldap": False,
-            "static_ip_addresses": [],
-            "ldap_dn": "",
-            "emails": [],
-            "first_name": "",
-            "last_name": "",
-            "phones": []
-        }
-        users[user_name] = local_user
-
-def convert_user_identity_domains(line):
-    """Определяем домены идентификации"""
-    match line:
-        case ['domain', domain, 'aaa-server', server]:
-            domain = domain.split(".")
-            identity_domains[domain[0]] = auth_servers[server]['domains'][0]
-        case ['default-domain', domain]:
-            if domain != 'LOCAL':
-                domain = domain.split(".")
-                identity_domains['default'] = identity_domains[domain[0]]
-
-def convert_user_groups_object_group(name, object_block):
-    """Конвертируем локальные группы пользователей"""
-    group = {
-        "name": name,
-        "description": "",
-        "is_ldap": False,
-        "is_transient": False,
-        "users": []
-    }
-    for item in object_block:
-        match item:
-            case ['user', user]:
-                user_list = user.split("\\")
-                if user_list[0] == 'LOCAL' and user_list[1] in users:
-                    group['users'].append(user_list[1])
-                elif user_list[0] in identity_domains:
-                    group['users'].append(f"{user_list[1]} ({identity_domains[user_list[0]]}\\{user_list[1]})")
-                else:
-                    if len(user_list) == 1:
-                        if 'default' in identity_domains:
-                            group['users'].append(f"{user_list[0]} ({identity_domains['default']}\\{user_list[0]})")
-                        else:
-                            group['users'].append(user_list[0])
-            case ['group-object', group_name]:
-                group['users'].extend(groups[group_name]['users'])
-            case ['description', *content]:
-                group['description'] = " ".join(content)
-
-    groups[name] = group
 
 def get_service_number(service):
     """Получить цифровое значение сервиса из его имени"""
@@ -983,505 +1273,6 @@ def get_service_number(service):
     elif service in service_ports:
         return service_ports.get(service, service)
 
-def convert_service_object(name, object_block):
-    """Конвертируем сетевой сервис"""
-    service = {
-        "name": name,
-        "description": "",
-        "protocols": []
-    }
-    port = ''
-    source_port = ''
-    proto = ''
-
-    for item in object_block:
-        match item:
-            case ['service', protocol]:
-                if protocol.isdigit():
-                    protocol = ip_proto.get(protocol, None)
-                if protocol and protocol in ip_protocol_list:
-                    proto = protocol
-                else:
-                    print(f"\033[31m\tСервис {name} не конвертирован. Протокол {protocol} не поддерживается в UG NGFW.\033[0m")
-                    return
-            case ['service', 'icmp', *other]:
-                proto = 'icmp'
-            case ['service', 'sctp', *other]:
-                proto = 'sctp'
-            case ['service', 'tcp' | 'udp', *other]:
-                proto = item[1]
-                match other:
-                    case ['source', 'eq', src_port]:
-                        source_port = get_service_number(src_port)
-                    case ['source', 'range', port1, port2]:
-                        source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                    case ['destination', 'eq', dst_port]:
-                        port = get_service_number(dst_port)
-                    case ['destination', 'range', port1, port2]:
-                        port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                    case ['source', 'eq', src_port, 'destination', protocol, *dst_ports]:
-                        source_port = get_service_number(src_port)
-                        port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                    case ['source', 'range', port1, port2, 'destination', protocol, *dst_ports]:
-                        source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                        port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                    case _:
-                        print(f"\033[31m\tСервис {name} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.\033[0m")
-            case ['description', *content]:
-                service['description'] = " ".join(content)
-
-    service['protocols'].append(
-        {
-            'proto': proto,
-            'port': port,
-            'source_port': source_port,
-         }
-    )
-    services[name] = service
-
-def convert_network_object(name, object_block):
-    """Конвертируем object network в список IP-адресов"""
-    tmp_dict = {
-        "name": name,
-        "description": "",
-        "type": "network",
-        "url": "",
-        "attributes": {"threat_level": 3},
-        "content": []
-    }
-    for item in object_block:
-        match item:
-            case ['nat', *other]:
-                convert_dnat_rule(name, item)
-                return
-            case ['subnet', ip, mask]:
-                subnet = ipaddress.ip_network(f'{ip}/{mask}')
-                tmp_dict['content'].append({'value': f'{ip}/{subnet.prefixlen}'})
-                tmp_dict['type'] = 'network'
-            case ['host', ip]:
-                tmp_dict['content'].append({'value': ip})
-                tmp_dict['type'] = 'network'
-            case ['range', start_ip, end_ip]:
-                tmp_dict['content'].append({'value': f'{start_ip}-{end_ip}'})
-                tmp_dict['type'] = 'network'
-            case ['fqdn', domain_name]:
-                tmp_dict['content'].append({'value': domain_name})
-                tmp_dict['type'] = 'url'
-            case ['fqdn', 'v4', domain_name]:
-                tmp_dict['content'].append({'value': domain_name})
-                tmp_dict['type'] = 'url'
-            case ['description', *content]:
-                tmp_dict['description'] = " ".join(content)
-            case _:
-                print("Error:", name, object_block)
-
-    if tmp_dict['type'] == 'url':
-        url_dict[name] = tmp_dict
-    else:
-        ip_dict[name] = tmp_dict
-
-def convert_network_object_group(name, object_block):
-    """Конвертируем object-group network в список IP-адресов и список URL если object-group содержит объект с FQDN"""
-    ip_list = {
-        'name': name,
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'attributes': {'threat_level': 3},
-        'content': []
-    }
-    url_list = {
-        'name': name,
-        'description': '',
-        'type': 'url',
-        'url': '',
-        'attributes': {'threat_level': 3},
-        'content': []
-    }
-    for item in object_block:
-        match item:
-            case ['network-object', 'host', ip]:
-                ip_list['content'].append({'value': ip})
-            case ['network-object', 'object', object_name]:
-                try:
-                    ip_list['content'].extend(ip_dict[object_name]['content'])
-                except KeyError:
-                    url_list['content'].extend(url_dict[object_name]['content'])
-            case ['network-object', ip, mask]:
-                subnet = ipaddress.ip_network(f'{ip}/{mask}')
-                ip_list['content'].append({'value': f'{ip}/{subnet.prefixlen}'})
-            case ['group-object', group_name]:
-                try:
-                    ip_list['content'].extend(ip_dict[group_name]['content'])
-                except KeyError:
-                    pass
-                try:
-                    url_list['content'].extend(url_dict[group_name]['content'])
-                except KeyError:
-                    pass
-            case ['description', *content]:
-                ip_list['description'] = ' '.join(content)
-                url_list['description'] = ' '.join(content)
-
-    if ip_list['content']:
-        ip_dict[name] = ip_list
-    if url_list['content']:
-        url_dict[name] = url_list
-
-def convert_service_object_group(descr, object_block):
-    """Конвертируем object-group service в список сервисов"""
-    service = {
-        "name": descr[0],
-        "description": "",
-        "protocols": []
-    }
-
-    for item in object_block:
-        proto_array = []
-        source_port = ''
-        port = ''
-        match item:
-            case ['service-object', 'object', object_name]:
-                service['protocols'].extend(services[object_name]['protocols'])
-            case ['service-object', 'icmp', *other]:
-                proto_array.insert(0, 'icmp')
-            case ['service-object', 'icmp6', *other]:
-                proto_array.insert(0, 'ipv6-icmp')
-            case ['service-object', 'sctp', *other]:
-                proto_array.insert(0, 'sctp')
-            case ['service-object', 'tcp'|'udp'|'tcp-udp', *other]:
-                proto_array = item[1].split('-')
-                match other:
-                    case ['source', 'eq', src_port]:
-                        source_port = get_service_number(src_port)
-                    case ['source', 'range', port1, port2]:
-                        source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                    case ['destination', 'eq', dst_port]:
-                        port = get_service_number(dst_port)
-                    case ['destination', 'range', port1, port2]:
-                        port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                    case ['source', 'eq', src_port, 'destination', protocol, *dst_ports]:
-                        source_port = get_service_number(src_port)
-                        port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                    case ['source', 'range', port1, port2, 'destination', protocol, *dst_ports]:
-                        source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                        port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                    case ['source'|'destination', 'lt'|'gt'|'neq', *tmp]:
-                        print(f"\033[33mСервис {item} в правиле {descr[0]} не конвертирован.\n\tОператоры lt, gt, neq не поддерживаются в UG NGFW.\033[0m")
-                        continue
-            case ['service-object', protocol]:
-                if protocol.isdigit():
-                    protocol = ip_proto.get(protocol, None)
-                if protocol and protocol in ip_protocol_list:
-                    proto_array.insert(0, protocol)
-                else:
-                    print(f"\033[33mСервис {item} в {descr[0]} не конвертирован.\n\tНельзя задать протокол {protocol} в UG NGFW.\033[0m")
-                    continue
-            case ['port-object', 'eq'|'range', *dst_ports]:
-                proto_array = descr[1].split('-')
-                port = get_service_number(dst_ports[0]) if item[1] == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-            case ['group-object', group_name]:
-                service['protocols'].extend(services[group_name]['protocols'])
-            case ['description', *content]:
-                service['description'] = " ".join(content)
-
-        for proto in proto_array:
-            service['protocols'].append(
-                {
-                    "proto": proto,
-                    "port": port,
-                    "source_port": source_port,
-                 }
-            )
-
-    services[descr[0]] = service
-
-def convert_protocol_object_group(name, object_block):
-    """Конвертируем object-group protocol в список сервисов"""
-    service = {
-        "name": name,
-        "description": "",
-        "protocols": []
-    }
-
-    for item in object_block:
-        proto = set()
-        match item:
-            case ['protocol-object', protocol]:
-                if protocol.isdigit():
-                    protocol = ip_proto.get(protocol, None)
-                if protocol and protocol in ip_protocol_list:
-                    proto.add(protocol)
-                elif protocol == 'ip':
-                    proto.update({'tcp', 'udp'})
-                else:
-                    print(f"\033[33mСервис {item} в {name} не конвертирован.\n\tНельзя задать протокол {protocol} в UG NGFW.\033[0m")
-                    continue
-            case ['description', *content]:
-                service['description'] = " ".join(content)
-        for x in proto:
-            service['protocols'].append(
-                {
-                    "proto": x,
-                    "port": "",
-                    "source_port": "",
-                }
-            )
-    services[name] = service
-
-def convert_icmp_object_group(name):
-    """Конвертируем object-group icmp в список сервисов"""
-    service = {
-        'name': 'Any ICMP',
-        'description': '',
-        'protocols': [
-            {
-                'proto': 'icmp',
-                'port': '',
-                'source_port': '',
-            }
-        ]
-    }
-    services[name] = service
-
-def convert_access_group(x):
-    """
-    Конвертируе access-group. Сопоставляем имя access-list с зоной интерфейса и определяем источник это или назначение.
-    """
-    if x[0] not in direction:
-        direction[x[0]] = {
-            "src_zones": [],
-            "dst_zones": []
-        }
-    match x:
-        case [access_list_name, 'in', 'interface', zone_name]:
-            direction[access_list_name]['src_zones'].append(zone_name.translate(trans_name))
-        case [access_list_name, 'out', 'interface', zone_name]:
-            direction[access_list_name]['dst_zones'].append(zone_name.translate(trans_name))
-        case [access_list_name, 'interface', ifname, 'global']:
-            pass
-        case _:
-            direction.pop(x[0], None)
-
-def create_ip_list(ip, mask=None):
-    """Возвращает имя IP листа в функцию get_ips()"""
-    ip_list = {
-        "name": f"host {ip}",
-        "description": "",
-        "type": "network",
-        "url": "",
-        "attributes": {"thread_level": 3},
-        "content": []
-    }
-    if mask:
-        subnet = ipaddress.ip_network(f'{ip}/{mask}')
-        ip_list['content'].append({"value": f'{ip}/{subnet.prefixlen}'})
-        ip_list['name'] = f'subnet {ip}_{subnet.prefixlen}'
-    else:
-        ip_list['content'].append({"value": ip})
-
-    ip_dict[ip_list['name']] = ip_list
-    return ["list_id", ip_list['name']]
-
-def get_ips(ips_mode, address, rule, deq):
-    match address:
-        case 'any'|'any4'|'any6':
-            pass
-        case 'object'|'object-group':
-            ip_or_service_list = deq.popleft()
-            if ip_or_service_list in ip_dict:
-                rule[ips_mode].append(["list_id", ip_or_service_list])
-            elif ip_or_service_list in url_dict:
-                rule[ips_mode].append(["urllist_id", ip_or_service_list])
-            elif ip_or_service_list in services:
-                rule['services'].clear()
-                rule['services'].append(["service", ip_or_service_list])
-        case 'host':
-            ip = deq.popleft()
-            rule[ips_mode].append(create_ip_list(ip))
-        case 'interface':
-            ip = deq.popleft()
-        case _:
-            try:
-                ipaddress.ip_address(address)   # проверяем что это IP-адрес или получаем ValueError
-                mask = deq.popleft()
-                rule[ips_mode].append(create_ip_list(address, mask))
-            except (ValueError, IndexError):
-                pass
-
-def create_service(name, ips_mode, protocol, port1, port2=None):
-    """Для ACE. Создаём сервис, заданный непосредственно в правиле, а не в сервисной группе."""
-    if port2:
-        port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-    else:
-        port = get_service_number(port1)
-    if protocol in {'tcp', 'udp','sctp'}:
-            service = {
-                "name": name,
-                "description": "",
-                "protocols": [
-                    {
-                        "proto": protocol,
-                        "port": "",
-                        "source_port": ""
-                    }
-                ]
-            }
-            if ips_mode == 'src_ips':
-                service['protocols'][0]['source_port'] = port
-            else:
-                service['protocols'][0]['port'] = port
-    elif protocol in services:
-        service = copy.deepcopy(services[protocol])
-        service['name'] = name
-        for item in service['protocols']:
-            if ips_mode == 'src_ips':
-                item['source_port'] = port
-            else:
-                item['port'] = port
-
-    services[name] = service
-
-#def convert_ace(acs_name, rule_block, remark):
-#    """
-#    Конвертируем ACE в правило МЭ.
-#    Не активные ACE пропускаются. ACE не назначенные интерфейсам пропускаются.
-#    ACE с именами ASA интерфейсов пропускаются.
-#    ACE c security-group и object-group-security пропускаются.
-#    """
-#        if (acs_name not in direction) or ('inactive' in rule_block) or ('interface' in rule_block):
-#    if acs_name not in direction:
-#        return
-#    for value in ('inactive', 'interface', 'security-group', 'object-group-security'):
-#        if value in rule_block:
-#            print(f'\033[36mACE: {" ".join(rule_block)} - не пропущено так как содержит параметр: "{value}".\033[0m')
-#            return#
-#
-#    nonlocal rule_number
-#    rule_number += 1
-#    deq = deque(rule_block)
-#    rule = {
-#        "name": f"Rule {rule_number} ({acs_name})",
-#        "description": ", ".join(remark),
-#        "action": "drop" if deq.popleft() == 'deny' else "accept",
-#        "position": "last",
-#        "scenario_rule_id": False,     # При импорте заменяется на UID или "0". 
-#        "src_zones": [],
-#        "dst_zones": [],
-#        "src_ips": [],
-#        "dst_ips": [],
-#        "services": [],
-#        "apps": [],
-#        "users": [],
-#        "enabled": False,
-#        "limit": True,
-#        "limit_value": "3/h",
-#        "limit_burst": 5,
-#        "log": False,
-#        "log_session_start": True,
-#        "src_zones_negate": False,
-#        "dst_zones_negate": False,
-#        "src_ips_negate": False,
-#        "dst_ips_negate": False,
-#        "services_negate": False,
-#        "apps_negate": False,
-#        "fragmented": "ignore",
-#        "time_restrictions": [],
-#        "send_host_icmp": "",
-#    }
-#    rule['src_zones'].extend(direction[acs_name]['src_zones'])
-#    rule['dst_zones'].extend(direction[acs_name]['dst_zones'])
-#
-#    protocol = deq.popleft()
-#    match protocol:
-#        case 'object'|'object-group':
-#            protocol = deq.popleft()
-#            rule['services'].append(["service", protocol])
-#        case 'ip':
-#            pass
-#        case 'icmp':
-#            rule['services'].append(["service", "Any ICMP"])
-#        case 'tcp':
-#            rule['services'].append(["service", "Any TCP"])
-#        case 'udp':
-#            rule['services'].append(["service", "Any UDP"])
-#        case 'sctp':
-#            if 'Any SCTP' not in services:
-#                service = {
-#                    "name": 'Any SCTP',
-#                    "description": "",
-#                    "protocols": [{"proto": "sctp", "port": "", "source_port": ""}]
-#                }
-#                services['Any SCTP'] = service
-#            rule['services'].append(["service", "Any SCTP"])
-#
-#    argument = deq.popleft()
-#    match argument:
-#        case 'object-group-user':
-#            rule['users'].append(['group', deq.popleft()])
-#        case 'user':
-#            user = deq.popleft()
-#            match user:
-#                case 'any':
-#                    rule['users'].append(['special', 'known_user'])
-#                case 'none':
-#                    rule['users'].append(['special', 'unknown_user'])
-#                case _:
-#                    user_list = user.split("\\")
-#                    if user_list[0] == 'LOCAL' and user_list[1] in users:
-#                        rule['users'].append(['user', user_list[1]])
-#                    elif user_list[0] in identity_domains:
-#                        rule['users'].append(["user", f"{identity_domains[user_list[0]]}\\{user_list[1]}"])
-#        case 'user-group':
-#            group = deq.popleft()
-#            group_list = group.split("\\\\")
-#            if group_list[0] in identity_domains:
-#                rule['users'].append(["group", f"{identity_domains[group_list[0]]}\\{group_list[1]}"])
-##            case 'interface':
-##                zone = deq.popleft()
-##                if zone in zones:
-##                    rule['dst_zones'].append(zone)
-#        case _:
-#            ips_mode = 'src_ips'
-#            get_ips(ips_mode, argument, rule, deq)
-#    while deq:
-#        argument = deq.popleft()
-#        match argument:
-#            case 'lt'|'gt'|'neq':
-#                return
-#            case 'eq':
-#                port = deq.popleft()
-#                service_name = f'Eq {port} (Rule {rule_number})'
-#                create_service(service_name, ips_mode, protocol, port)
-#                rule['services'].clear()
-#                rule['services'].append(["service", service_name])
-#            case 'range':
-#                port1 = deq.popleft()
-#                port2 = deq.popleft()
-#                service_name = f'Range {port1}-{port2} (Rule {rule_number})'
-#                create_service(service_name, ips_mode, protocol, port1, port2)
-#                rule['services'].clear()
-#                rule['services'].append(["service", service_name])
-#            case 'object-group':
-#                ips_mode = 'dst_ips'
-#                get_ips(ips_mode, argument, rule, deq)
-#            case 'log':
-#                other = list(deq)
-#                deq.clear()
-#                if 'time-range' in other:
-#                    time_object = other.index('time-range') + 1
-#                    rule['time_restrictions'].append(time_object)
-#            case 'time-range':
-#                rule['time_restrictions'].append(deq.popleft())
-##                case 'interface':
-##                    zone = deq.popleft()
-##                    if zone in zones:
-##                        rule['dst_zones'].append(zone)
-#            case _:
-#                ips_mode = 'dst_ips'
-#                get_ips(ips_mode, argument, rule, deq)
-#
-#    fw_rules.append(rule)
 
 #def convert_webtype_ace(acs_name, rule_block, remark):
 #    """
@@ -1533,167 +1324,6 @@ def create_service(name, ips_mode, protocol, port1, port2=None):
 #        "users_negate": False
 #    }
 #
-#    while deq:
-#        parameter = deq.popleft()
-#        match parameter:
-#            case 'url':
-#                url = deq.popleft()
-#                url_list_name = f"For {acs_name}-{cfrule_number}"
-#                if not create_url_list(url, url_list_name, rule):
-#                    return
-#            case 'tcp':
-#                address = deq.popleft()
-#                get_ips('dst_ips', address, rule, deq)
-#            case 'time_range':
-#                rule['time_restrictions'].append(deq.popleft())
-#            case 'time-range':
-#                rule['time_restrictions'].append(deq.popleft())
-#
-#    cf_rules.append(rule)
-
-#def convert_dnat_rule(ip_list, rule_block):
-#    """Конвертируем object network в правило DNAT или Port-форвардинг"""
-##        print(ip_dict[ip_list]['content'][0]['value'], "\t", rule_block)
-#    if ('inactive' in rule_block) or ('interface' in rule_block):
-#        print(f'\033[36mПравило NAT "{rule_block}" пропущено так как не активно или содержит интерфейс.\033[0m')
-#        return
-#
-#    nonlocal natrule_number
-#    natrule_number += 1
-#    rule = {
-#        "name": f"Rule {natrule_number} ({ip_list})",
-#        "description": "",
-#        "action": "dnat",
-#        "position": "last",
-#        "zone_in": [],
-#        "zone_out": [],
-#        "source_ip": [],
-#        "dest_ip": [],
-#        "service": [],
-#        "target_ip": ip_dict[ip_list]['content'][0]['value'],
-#        "gateway": "",
-#        "enabled": False,
-#        "log": False,
-#        "log_session_start": True,
-#        "target_snat": False,
-#        "snat_target_ip": "",
-#        "zone_in_nagate": False,
-#        "zone_out_nagate": False,
-#        "source_ip_nagate": False,
-#        "dest_ip_nagate": False,
-#        "port_mappings": [],
-#        "direction": "input",
-#        "users": [],
-#        "scenario_rule_id": False
-#    }
-#    zone_out, zone_in = rule_block[1][1:-1].split(',')
-#    if len(rule_block) == 3 or 'net-to-net' in rule_block:
-#        rule['zone_in'] = [zone_in] if zone_in != 'any' else []
-#    if rule_block[2] == 'static':
-#        if rule_block[3] in ip_dict:
-#            rule['dest_ip'].append(["list_id", rule_block[3]])
-#            rule['snat_target_ip'] = ip_dict[rule_block[3]]['content'][0]['value']
-#        elif f"host {rule_block[3]}" in ip_dict:
-#            rule['dest_ip'].append(["list_id", f"host {rule_block[3]}"])
-#            rule['snat_target_ip'] = ip_dict[f"host {rule_block[3]}"]['content'][0]['value']
-#        else:
-#            rule['dest_ip'].append(create_ip_list(rule_block[3]))
-#            rule['snat_target_ip'] = rule_block[3]
-#
-#        if 'service' in rule_block:
-#            i = rule_block.index('service')
-#            proto = rule_block[i+1]
-#            src_port = rule_block[i+3]
-#            dst_port = rule_block[i+2]
-#            if src_port == dst_port:
-#                if dst_port in ug_services:
-#                    rule['service'].append(["service", ug_services[dst_port]])
-#                elif dst_port in services:
-#                    rule['service'].append(["service", dst_port])
-#                else :
-#                    service = {
-#                        "name": dst_port,
-#                        "description": f'Service for DNAT rule (Rule {natrule_number})',
-#                        "protocols": [{"proto": proto, "port": service_ports.get(dst_port, dst_port), "source_port": ""}]
-#                    }
-#                    services[dst_port] = service
-#                    rule['service'].append(["service", dst_port])
-#            else:
-#                rule['action'] = 'port_mapping'
-#                rule['port_mappings'].append({"proto": proto,
-#                                              "src_port": int(service_ports.get(src_port, src_port)),
-#                                              "dst_port": int(service_ports.get(dst_port, dst_port))})
-#    else:
-#        return
-#
-#    nat_rules.append(rule)
-
-#def convert_nat_rule(rule_block):
-#    """Конвертируем правило NAT"""
-#    if ('inactive' in rule_block) or ('interface' in rule_block):
-#        print(f'\033[36mПравило NAT "{rule_block}" пропущено так как не активно или содержит интерфейс.\033[0m')
-#        return
-#
-#    nonlocal natrule_number
-#    natrule_number += 1
-#    rule = {
-#        "name": f"Rule {natrule_number} NAT",
-#        "description": "",
-#        "action": "nat",
-#        "position": "last",
-#        "zone_in": [],
-#        "zone_out": [],
-#        "source_ip": [],
-#        "dest_ip": [],
-#        "service": [],
-#        "target_ip": "",
-#        "gateway": "",
-#        "enabled": False,
-#        "log": False,
-#        "log_session_start": True,
-#        "target_snat": False,
-#        "snat_target_ip": "",
-#        "zone_in_nagate": False,
-#        "zone_out_nagate": False,
-#        "source_ip_nagate": False,
-#        "dest_ip_nagate": False,
-#        "port_mappings": [],
-#        "direction": "input",
-#        "users": [],
-#        "scenario_rule_id": False
-#    }
-#    zone_in, zone_out = rule_block[1][1:-1].split(',')
-#    rule['zone_in'] = [zone_in.translate(trans_name)] if zone_in != 'any' else []
-#    rule['zone_out'] = [zone_out.translate(trans_name)] if zone_out != 'any' else []
-#    
-#    if 'dynamic' in rule_block:
-#        i = rule_block.index('dynamic')
-#        if rule_block[i+1] != 'any':
-#            if rule_block[i+1] == 'pat-pool':
-#                i += 1
-#            if rule_block[i+1] in ip_dict:
-#                rule['source_ip'].append(["list_id", rule_block[i+1]])
-#            elif f"host {rule_block[i+1]}" in ip_dict:
-#                rule['source_ip'].append(["list_id", f"host {rule_block[i+1]}"])
-#            else:
-#                rule['source_ip'].append(create_ip_list(rule_block[i+1]))
-#        if rule_block[i+2] != 'any':
-#            if rule_block[i+2] == 'pat-pool':
-#                i += 1
-#            if rule_block[i+2] in ip_dict:
-#                rule['dest_ip'].append(["list_id", rule_block[i+2]])
-#            elif f"host {rule_block[i+2]}" in ip_dict:
-#                rule['dest_ip'].append(["list_id", f"host {rule_block[i+2]}"])
-#            else:
-#                rule['dest_ip'].append(create_ip_list(rule_block[i+2]))
-#        if 'description' in rule_block:
-#            i = rule_block.index('description')
-#            rule['description'] = " ".join(rule_block[i+1:])
-#    else:
-#        return
-#
-#    nat_rules.append(rule)
-
 #----------------------------------------------------------------------------------------
 def aaa():
     with open(f"data_ca/{file_name}.txt", "r") as fh:
@@ -1843,21 +1473,6 @@ def aaa():
     with open('data/UsersAndDevices/AuthServers/config_ldap_servers.json', 'w') as fh:
         json.dump(ldap_servers, fh, indent=4, ensure_ascii=False)
     
-    if not os.path.isdir('data/UsersAndDevices/Users'):
-        os.makedirs('data/UsersAndDevices/Users')
-    with open('data/UsersAndDevices/Users/config_users.json', 'w') as fh:
-        json.dump(list(users.values()), fh, indent=4, ensure_ascii=False)
-    
-    if not os.path.isdir('data/UsersAndDevices/Groups'):
-        os.makedirs('data/UsersAndDevices/Groups')
-    with open('data/UsersAndDevices/Groups/config_groups.json', 'w') as fh:
-        json.dump(list(groups.values()), fh, indent=4, ensure_ascii=False)
-    
-    if not os.path.isdir('data/Libraries/TimeSets'):
-        os.makedirs('data/Libraries/TimeSets')
-    with open('data/Libraries/TimeSets/config_calendars.json', 'w') as fh:
-        json.dump(list(timerestrictiongroup.values()), fh, indent=4, ensure_ascii=False)
-    
     if not os.path.isdir('data/Libraries/Services'):
         os.makedirs('data/Libraries/Services')
     with open('data/Libraries/Services/config_services.json', 'w') as fh:
@@ -1869,27 +1484,6 @@ def aaa():
         with open(f'data/Libraries/URLLists/{list_name}.json', 'w') as fh:
             json.dump(value, fh, indent=4, ensure_ascii=False)
     
-    if not os.path.isdir('data/Libraries/IPAddresses'):
-        os.makedirs('data/Libraries/IPAddresses')
-    for list_name, value in ip_dict.items():
-        with open(f'data/Libraries/IPAddresses/{list_name}.json', 'w') as fh:
-            json.dump(value, fh, indent=4, ensure_ascii=False)
-    
-    if not os.path.isdir('data/NetworkPolicies/Firewall'):
-        os.makedirs('data/NetworkPolicies/Firewall')
-    with open('data/NetworkPolicies/Firewall/config_firewall_rules.json', 'w') as fh:
-        json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
-    
-    if not os.path.isdir('data/SecurityPolicies/ContentFiltering'):
-        os.makedirs('data/SecurityPolicies/ContentFiltering')
-    with open('data/SecurityPolicies/ContentFiltering/config_content_rules.json', 'w') as fh:
-        json.dump(cf_rules, fh, indent=4, ensure_ascii=False)
-    
-    if not os.path.isdir('data/NetworkPolicies/NATandRouting'):
-        os.makedirs('data/NetworkPolicies/NATandRouting')
-    with open('data/NetworkPolicies/NATandRouting/config_nat_rules.json', 'w') as fh:
-        json.dump(nat_rules, fh, indent=4, ensure_ascii=False)
-
 ############################################# Служебные функции ###################################################
 def pack_ip_address(ip, mask):
     if ip == '0':
@@ -1898,6 +1492,21 @@ def pack_ip_address(ip, mask):
         mask = '128.0.0.0'
     ip_address = ipaddress.ip_interface(f'{ip}/{mask}')
     return f'{ip}/{ip_address.network.prefixlen}'
+
+def get_ips(parent, rule_ips, rule_name):
+    """
+    Получить UID-ы списков IP-адресов и URL-листов.
+    Если списки не найдены, то они создаются или пропускаются, если невозможно создать."""
+    new_rule_ips = []
+    for ips in rule_ips.split():
+        try:
+            if ips[0] == 'list_id':
+                new_rule_ips.append(['list_id', utm.list_ip[ips[1]]])
+            elif ips[0] == 'urllist_id':
+                new_rule_ips.append(['urllist_id', utm.list_url[ips[1]]])
+        except KeyError as err:
+            print(f'\t\033[33mНе найден адрес источника/назначения {err} для правила "{rule_name}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
+    return new_rule_ips
 
 def get_guids_users_and_groups(utm, item):
     """
@@ -1948,29 +1557,6 @@ def get_guids_users_and_groups(utm, item):
                 users.append(x)
         item['users'] = users
 
-def get_zones(utm, zones, rule_name):
-    """Получить UID-ы зон. Если зона не существует на NGFW, то она пропускается."""
-    new_zones = []
-    for zone in zones:
-        try:
-            new_zones.append(utm.zones[zone])
-        except KeyError as err:
-            print(f'\t\033[33mЗона {err} для правила "{rule_name}" не найдена.\n\tЗагрузите список зон и повторите попытку.\033[0m')
-    return new_zones
-
-def get_ips(utm, rule_ips, rule_name):
-    """Получить UID-ы списков IP-адресов и URL-листов. Если списки не существует на NGFW, то они пропускается."""
-    new_rule_ips = []
-    for ips in rule_ips:
-        try:
-            if ips[0] == 'list_id':
-                new_rule_ips.append(['list_id', utm.list_ip[ips[1]]])
-            elif ips[0] == 'urllist_id':
-                new_rule_ips.append(['urllist_id', utm.list_url[ips[1]]])
-        except KeyError as err:
-            print(f'\t\033[33mНе найден адрес источника/назначения {err} для правила "{rule_name}".\n\tЗагрузите списки IP-адресов и URL и повторите попытку.\033[0m')
-    return new_rule_ips
-
 def set_time_restrictions(utm, item):
     if item['time_restrictions']:
         try:
@@ -1995,6 +1581,35 @@ def set_urls_and_categories(utm, item):
         except KeyError as err:
             print(f'\t\033[33mНе найден URL {err} для правила "{item["name"]}".\n\tЗагрузите списки URL и повторите попытку.\033[0m')
             item['urls'] = []
+
+def create_ip_list(parent, path, ip, rule_name):
+    """Создаём IP-лист для правила. Возвращаем имя ip-листа."""
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return ip
+
+    ip_list = {
+        'name': ip,
+        'description': f'IP-лист создан для правил dnat/port-forwarding',
+        'type': 'network',
+        'url': '',
+        'list_type_update': 'static',
+        'schedule': 'disabled',
+        'attributes': {'threat_level': 3},
+        'content': [{'value': ip}]
+    }
+
+    json_file = os.path.join(current_path, f'{ip_list["name"]}.json')
+    with open(json_file, 'w') as fh:
+        json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'NOTE|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
+
+    return ip_list['name']
+
 
 def main():
     convert_file()

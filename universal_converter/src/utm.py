@@ -871,7 +871,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 2001:
-                return 2, f"Содержимое: {item} не добавлено, так как уже существует [err]."
+                return 2, f"Содержимое: {item} не добавлено, так как уже существует [{err}]."
             else:
                 return 1, f"Error utm.add_nlist_item: [{err.faultCode}] — {err.faultString}"
         else:

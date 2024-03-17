@@ -207,6 +207,33 @@ character_map_for_name = {
     '\\': None,
 }
 
+character_map_userlogin = {
+    '-': '_',
+    ' ': '_',
+    '.': '_',
+    '"': None,
+    "'": None,
+    '!': None,
+    '?': None,
+    '@': None,
+    ';': None,
+    '$': None,
+    '%': None,
+    '&': None,
+    '^': None,
+    '[': None,
+    ']': None,
+    '{': None,
+    '}': None,
+    '*': None,
+    '+': '_',
+    '<': None,
+    '>': None,
+    '|': "_",
+    '/': None,
+    '\\': None,
+}
+
 ip_proto = {
     '0': 'ip',          # ASA
     '1': 'icmp',        # ASA
@@ -214,9 +241,11 @@ ip_proto = {
     '3': 'ggp',
     '4': 'ipip',        # ASA
     '5': 'st',
+    '6': 'tcp',
     '8': 'egp',
     '9': 'igp',
-    "11": 'pup',
+    '11': 'pup',
+    '17': 'udp',
     '20': 'hmp',
     '22': 'xns-idp',
     '27': 'rdp',
@@ -264,13 +293,16 @@ ip_proto = {
 
 ug_services = {
     'https': 'HTTPS',
+    'ftp': 'FTP',
     'imap4': 'IMAP',
     'ntp': 'NTP',
     'pop3': 'POP3',
     'postgresql': 'Postgres SQL',
+    'sip': 'SIP',
     'smtp': 'SMTP',
     'snmp': 'SNMP',
     'ssh': 'SSH',
+    'tftp': 'TFTP',
     'www': 'HTTP',
     '873': 'Rsync',
     '80': 'HTTP',

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.0
+# Версия 1.1
 #
 
 import os, sys, json, time
@@ -368,20 +368,19 @@ def import_ui(parent, path):
 def import_ntp_settings(parent, path):
     """Импортируем настройки NTP"""
     parent.stepChanged.emit('BLUE|Импорт настроек NTP раздела "UserGate/Настройки/Настройка времени сервера".')
-    error = 0
-
     json_file = os.path.join(path, 'config_ntp.json')
     err, data = read_json_file(parent, json_file)
     if err:
+        return
+    error = 0
+
+    data.pop('utc_time', None)
+    data.pop('ntp_synced', None)
+    err, result = parent.utm.add_ntp_config(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
         error = 1
-    else:
-        data.pop('utc_time', None)
-        data.pop('ntp_synced', None)
-        err, result = parent.utm.add_ntp_config(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-            parent.error = 1
+        parent.error = 1
 
     out_message = 'GREEN|    Импортированы настройки NTP в раздел "UserGate/Настройки/Настройка времени сервера".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек NTP.' if error else out_message)
@@ -395,7 +394,7 @@ def import_modules(parent, path):
     err, data = read_json_file(parent, json_file)
     if err:
         parent.stepChanged.emit(f'{data}|        HTTP(S)-прокси порт не установлен.')
-        if err != 3: error = 1
+        if err == 1: error = 1
     else:
         err, result = parent.utm.set_proxy_port(data)
         if err:
@@ -408,32 +407,32 @@ def import_modules(parent, path):
     json_file = os.path.join(path, 'config_settings_modules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        params = {
-            'auth_captive': 'Домен Auth captive-портала',
-            'logout_captive': 'Домен Logout captive-портала',
-            'block_page_domain': 'Домен страницы блокировки',
-            'ftpclient_captive': 'FTP поверх HTTP домен',
-            'ftp_proxy_enabled': 'FTP поверх HTTP',
-            'tunnel_inspection_zone_config': 'Зона для инспектируемых туннелей',
-            'lldp_config': 'Настройка LLDP'
-        }
-        if parent.version < 7.1:
-            data.pop('tunnel_inspection_zone_config', None)
-            data.pop('lldp_config', None)
-        else:
-            zone_name = data['tunnel_inspection_zone_config']['target_zone']
-            data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_zones.get(zone_name, 8)
+        return
 
-        for key, value in data.items():
-            err, result = parent.utm.set_settings_param(key, value)
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                parent.error = 1
-            else:
-                parent.stepChanged.emit(f'BLACK|    Параметр "{params[key]}" установлен в значение "{value}".')
+    params = {
+        'auth_captive': 'Домен Auth captive-портала',
+        'logout_captive': 'Домен Logout captive-портала',
+        'block_page_domain': 'Домен страницы блокировки',
+        'ftpclient_captive': 'FTP поверх HTTP домен',
+        'ftp_proxy_enabled': 'FTP поверх HTTP',
+        'tunnel_inspection_zone_config': 'Зона для инспектируемых туннелей',
+        'lldp_config': 'Настройка LLDP'
+    }
+    if parent.version < 7.1:
+        data.pop('tunnel_inspection_zone_config', None)
+        data.pop('lldp_config', None)
+    else:
+        zone_name = data['tunnel_inspection_zone_config']['target_zone']
+        data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_zones.get(zone_name, 8)
+
+    for key, value in data.items():
+        err, result = parent.utm.set_settings_param(key, value)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+            parent.error = 1
+        else:
+            parent.stepChanged.emit(f'BLACK|    Параметр "{params[key]}" установлен в значение "{value}".')
 
     out_message = 'GREEN|    Импортирован раздел "UserGate/Настройки/Модули".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек модулей.' if error else out_message)
@@ -446,7 +445,7 @@ def import_cache_settings(parent, path):
     json_file = os.path.join(path, 'config_proxy_settings.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
+        if err == 1: error = 1
     else:
         if parent.version < 7:
             data.pop('add_via_enabled', None)
@@ -478,19 +477,19 @@ def import_cache_settings(parent, path):
     err, exceptions = read_json_file(parent, json_file)
     if err:
         parent.stepChanged.emit(f'{exceptions}|        Исключения кеширования не импортированы.')
-        if err != 3: error = 1
-    else:
-        err, nlist = parent.utm.get_nlist_list('httpcwl')
-        for item in exceptions:
-            err, result = parent.utm.add_nlist_item(nlist['id'], item)
-            if err == 1:
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                parent.error = 1
-            elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
-            else:
-                parent.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
+        return
+
+    err, nlist = parent.utm.get_nlist_list('httpcwl')
+    for item in exceptions:
+        err, result = parent.utm.add_nlist_item(nlist['id'], item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+            parent.error = 1
+        elif err == 2:
+            parent.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
+        else:
+            parent.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
 
     out_message = 'GREEN|    Импортирован раздел "UserGate/Настройки/Настройки кэширования HTTP".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек кэширования HTTP.' if error else out_message)
@@ -505,84 +504,82 @@ def import_web_portal_settings(parent, path):
     json_file = os.path.join(path, 'config_web_portal.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
+        return
+
+    err, result = parent.utm.get_templates_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    list_templates = {x['name']: x['id'] for x in result}
+
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_client_certificate_profiles()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        client_certificate_profiles = {x['name']: x['id'] for x in result}
+
+    if parent.version >= 6:
+        try:
+            data['ssl_profile_id'] = parent.ssl_profiles[data['ssl_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Не найден профиль SSL {err}". Загрузите профили SSL и повторите попытку.')
+            parent.stepChanged.emit(error_message)
+            parent.error = 1
+            return
     else:
-        err, result = parent.utm.get_templates_list()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        list_templates = {x['name']: x['id'] for x in result}
+        data.pop('ssl_profile_id', None)
 
-        if parent.version >= 7.1:
-            err, result = parent.utm.get_client_certificate_profiles()
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                return
-            client_certificate_profiles = {x['name']: x['id'] for x in result}
+    if parent.version >= 7.1:
+        data['client_certificate_profile_id'] = client_certificate_profiles.get(data['client_certificate_profile_id'], 0)
+        if not data['client_certificate_profile_id']:
+            data['cert_auth_enabled'] = False
+    else:
+        data.pop('client_certificate_profile_id', None)
 
-        if parent.version >= 6:
-            try:
-                data['ssl_profile_id'] = parent.ssl_profiles[data['ssl_profile_id']]
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Не найден профиль SSL {err}". Загрузите профили SSL и повторите попытку.')
-                parent.stepChanged.emit(error_message)
-                parent.error = 1
-                return
-        else:
-            data.pop('ssl_profile_id', None)
+    try:
+        data['user_auth_profile_id'] = parent.auth_profiles[data['user_auth_profile_id']]
+    except KeyError as err:
+        parent.stepChanged.emit(f'RED|    Не найден профиль аутентификации {err}". Загрузите профили аутентификации и повторите попытку.')
+        parent.stepChanged.emit(error_message)
+        parent.error = 1
+        return
+    try:
+        data['certificate_id'] = parent.ngfw_certs[data['certificate_id']]
+    except KeyError as err:
+        parent.stepChanged.emit(f'RED|    Не найден сертификат {err}". Загрузите сертификаты и повторите попытку.')
+        parent.stepChanged.emit(error_message)
+        parent.error = 1
+        return
 
-        if parent.version >= 7.1:
-            data['client_certificate_profile_id'] = client_certificate_profiles.get(data['client_certificate_profile_id'], 0)
-            if not data['client_certificate_profile_id']:
-                data['cert_auth_enabled'] = False
-        else:
-            data.pop('client_certificate_profile_id', None)
+    data['proxy_portal_template_id'] = list_templates.get(data['proxy_portal_template_id'], -1)
+    data['proxy_portal_login_template_id'] = list_templates.get(data['proxy_portal_login_template_id'], -1)
 
-        try:
-            data['user_auth_profile_id'] = parent.auth_profiles[data['user_auth_profile_id']]
-        except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Не найден профиль аутентификации {err}". Загрузите профили аутентификации и повторите попытку.')
-            parent.stepChanged.emit(error_message)
-            parent.error = 1
-            return
-        try:
-            data['certificate_id'] = parent.ngfw_certs[data['certificate_id']]
-        except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Не найден сертификат {err}". Загрузите сертификаты и повторите попытку.')
-            parent.stepChanged.emit(error_message)
-            parent.error = 1
-            return
-
-        data['proxy_portal_template_id'] = list_templates.get(data['proxy_portal_template_id'], -1)
-        data['proxy_portal_login_template_id'] = list_templates.get(data['proxy_portal_login_template_id'], -1)
-
-
-        err, result = parent.utm.set_proxyportal_config(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            error = 1
+    err, result = parent.utm.set_proxyportal_config(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        error = 1
 
     parent.stepChanged.emit(error_message if error else out_message)
 
 def import_upstream_proxy_settings(parent, path):
-    """Импортируем настройки вышестоящего прокси"""
+    """Импортируем настройки вышестоящего прокси. Только для версии 7.1 и выше."""
     if parent.version >= 7.1:
         parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
-        error = 0
-
         json_file = os.path.join(path, 'upstream_proxy_settings.json')
         err, data = read_json_file(parent, json_file)
         if err:
+            return
+        error = 0
+
+        err, result = parent.utm.set_upstream_proxy_settings(data)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
             error = 1
-        else:
-            err, result = parent.utm.set_upstream_proxy_settings(data)
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                parent.error = 1
+            parent.error = 1
 
         out_message = 'GREEN|    Импортированы настройки вышестоящего прокси в раздел "UserGate/Настройки/Вышестоящий прокси".'
         parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек вышестоящего прокси!' if error else out_message)
@@ -590,25 +587,24 @@ def import_upstream_proxy_settings(parent, path):
 def import_users_certificate_profiles(parent, path):
     """Импортируем профили пользовательских сертификатов. Только для версии 7.1 и выше."""
     parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Профили пользовательских сертификатов".')
-    error = 0
-
     json_file = os.path.join(path, 'users_certificate_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        for item in data:
-            item['ca_certificates'] = [parent.ngfw_certs[x] for x in item['ca_certificates']]
+        return
+    error = 0
 
-            err, result = parent.utm.add_client_certificate_profile(item)
-            if err == 1:
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                parent.error = 1
-            elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}')
-            else:
-                parent.stepChanged.emit(f'BLACK|    Импортирован профиль "{item["name"]}".')
+    for item in data:
+        item['ca_certificates'] = [parent.ngfw_certs[x] for x in item['ca_certificates']]
+
+        err, result = parent.utm.add_client_certificate_profile(item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+            parent.error = 1
+        elif err == 2:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        else:
+            parent.stepChanged.emit(f'BLACK|    Импортирован профиль "{item["name"]}".')
 
     out_message = 'GREEN|    Импортированы профили пользовательских сертификатов в раздел "UserGate/Профили пользовательских сертификатов".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта профилей пользовательских сертификатов!' if error else out_message)
@@ -617,101 +613,100 @@ def import_users_certificate_profiles(parent, path):
 def import_zones(parent, path):
     """Импортируем зоны на NGFW, если они есть."""
     parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
-    error = 0
-
     json_file = os.path.join(path, 'config_zones.json')
     err, zones = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        service_for_zones = {v: k for k, v in zone_services.items()}
+        return
+    error = 0
 
-        for zone in zones:
-            zone['name'] = zone['name'].translate(trans_name)
+    service_for_zones = {v: k for k, v in zone_services.items()}
+
+    for zone in zones:
+        zone['name'] = zone['name'].translate(trans_name)
+        for service in zone['services_access']:
+            service['service_id'] = service_for_zones[service['service_id']]
+        if parent.version < 7.1:
+            zone.pop('sessions_limit_enabled', None)
+            zone.pop('sessions_limit_threshold', None)
+            zone.pop('sessions_limit_exclusions', None)
+            if zone['networks'] and isinstance(zone['networks'][0], list):
+                zone['networks'] = []
+                zone['enable_antispoof'] = False
+                zone['antispoof_invert'] = False
+                parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" удалены списки IP-адресов в защите от IP-спуфинга. Списки поддерживаются только в версии 7.1 и выше.')
+
+            # Удаляем сервисы зон версии 7.1 которых нет в более старых версиях.
+            new_services_access = []
             for service in zone['services_access']:
-                service['service_id'] = service_for_zones[service['service_id']]
-            if parent.version < 7.1:
-                zone.pop('sessions_limit_enabled', None)
-                zone.pop('sessions_limit_threshold', None)
-                zone.pop('sessions_limit_exclusions', None)
-                if zone['networks'] and isinstance(zone['networks'][0], list):
+                if service['service_id'] not in (31, 32, 33):
+                    new_services_access.append(service)
+            zone['services_access'] = new_services_access
+
+        elif parent.version >= 7.1:
+            sessions_limit_exclusions = []
+            for item in zone['sessions_limit_exclusions']:
+                try:
+                    item[1] = parent.ip_lists[item[1]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не найден список IP-адресов {err}. Список IP-адресов для ограничения сессий не импортирован.')
+                    parent.error = 1
+                    error = 1
+                    continue
+                sessions_limit_exclusions.append(item)
+            zone['sessions_limit_exclusions'] = sessions_limit_exclusions
+
+            content = []
+            zone_networks = []
+            for net in zone['networks']:
+                if isinstance(net, str):
+                    content.append({'value': net})
+                else:
+                    if net[0] == 'list_id':
+                        try:
+                            net[1] = parent.ip_lists[net[1]]
+                        except KeyError as err:
+                            parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не найден список IP-адресов {err}. Список IP-адресов в защите от IP-спуфинга не импортирован.')
+                            parent.error = 1
+                            error = 1
+                            continue
+                    zone_networks.append(net)
+            zone['networks'] = zone_networks
+            if content:
+                nlist_name = f'For zone {zone["name"]}'
+                err, list_id = add_new_nlist(parent.utm, nlist_name, 'network', content)
+                if err == 1:
+                    parent.stepChanged.emit(f'RED|    {list_id}')
+                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не создан список IP-адресов в защите от IP-спуфинга.')
+                    parent.error = 1
+                    error = 1
                     zone['networks'] = []
-                    zone['enable_antispoof'] = False
-                    zone['antispoof_invert'] = False
-                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" удалены списки IP-адресов в защите от IP-спуфинга. Списки поддерживаются только в версии 7.1 и выше.')
+                elif err == 2:
+                    parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}" уже существует.')
+                    zone['networks'] = [['list_id', parent.ip_lists[nlist_name]]]
+                else:
+                    zone['networks'] = [['list_id', list_id]]
+                    parent.ip_lists[nlist_name] = list_id
+                    parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}".')
 
-                # Удаляем сервисы зон версии 7.1 которых нет в более старых версиях.
-                new_services_access = []
-                for service in zone['services_access']:
-                    if service['service_id'] not in (31, 32, 33):
-                        new_services_access.append(service)
-                zone['services_access'] = new_services_access
-
-            elif parent.version >= 7.1:
-                sessions_limit_exclusions = []
-                for item in zone['sessions_limit_exclusions']:
-                    try:
-                        item[1] = parent.ip_lists[item[1]]
-                    except KeyError as err:
-                        parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не найден список IP-адресов {err}. Список IP-адресов для ограничения сессий не импортирован.')
-                        parent.error = 1
-                        error = 1
-                        continue
-                    sessions_limit_exclusions.append(item)
-                zone['sessions_limit_exclusions'] = sessions_limit_exclusions
-
-                content = []
-                zone_networks = []
-                for net in zone['networks']:
-                    if isinstance(net, str):
-                        content.append({'value': net})
-                    else:
-                        if net[0] == 'list_id':
-                            try:
-                                net[1] = parent.ip_lists[net[1]]
-                            except KeyError as err:
-                                parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не найден список IP-адресов {err}. Список IP-адресов в защите от IP-спуфинга не импортирован.')
-                                parent.error = 1
-                                error = 1
-                                continue
-                        zone_networks.append(net)
-                zone['networks'] = zone_networks
-                if content:
-                    nlist_name = f'For zone {zone["name"]}'
-                    err, list_id = add_new_nlist(parent.utm, nlist_name, 'network', content)
-                    if err == 1:
-                        parent.stepChanged.emit(f'RED|    {list_id}')
-                        parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не создан список IP-адресов в защите от IP-спуфинга.')
-                        parent.error = 1
-                        error = 1
-                        zone['networks'] = []
-                    elif err == 2:
-                        parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}" уже существует.')
-                        zone['networks'] = [['list_id', parent.ip_lists[nlist_name]]]
-                    else:
-                        zone['networks'] = [['list_id', list_id]]
-                        parent.ip_lists[nlist_name] = list_id
-                        parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}".')
-
-            err, result = parent.utm.add_zone(zone)
+        err, result = parent.utm.add_zone(zone)
+        if err == 1:
+            error = 1
+            parent.error = 1
+            parent.stepChanged.emit(f'RED|    {result}')
+        elif err == 2:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+            err, result2 = parent.utm.update_zone(parent.ngfw_zones[zone['name']], zone)
             if err == 1:
                 error = 1
                 parent.error = 1
-                parent.stepChanged.emit(f'RED|    {result}')
+                parent.stepChanged.emit(f'RED|    {result2}')
             elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}')
-                err, result2 = parent.utm.update_zone(parent.ngfw_zones[zone['name']], zone)
-                if err == 1:
-                    error = 1
-                    parent.error = 1
-                    parent.stepChanged.emit(f'RED|    {result2}')
-                elif err == 2:
-                    parent.stepChanged.emit(f'GRAY|    {result2}')
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" updated.')
+                parent.stepChanged.emit(f'GRAY|    {result2}')
             else:
-                parent.ngfw_zones[zone["name"]] = result
-                parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" добавлена.')
+                parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" updated.')
+        else:
+            parent.ngfw_zones[zone["name"]] = result
+            parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" добавлена.')
 
     out_message = 'GREEN|    Зоны импортированы в раздел "Сеть/Зоны".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.' if error else out_message)
@@ -803,7 +798,7 @@ def import_gateways(parent, path):
     json_file = os.path.join(path, 'config_gateways.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
+        error = 1 if err == 1 else 0
     else:
         err, result = parent.utm.get_gateways_list()
         if err:
@@ -867,7 +862,7 @@ def import_gateways(parent, path):
     json_file = os.path.join(path, 'config_gateway_failover.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
+        error = 1 if err == 1 else 0
     else:
         err, result = parent.utm.set_gateway_failover(data)
         if err:
@@ -928,17 +923,17 @@ def import_dns_proxy(parent, path):
     json_file = os.path.join(path, 'config_dns_proxy.json')
     err, result = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        if parent.version < 6.0:
-            result.pop('dns_receive_timeout', None)
-            result.pop('dns_max_attempts', None)
-        for key, value in result.items():
-            err, result = parent.utm.set_settings_param(key, value)
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                error = 1
+        return
+
+    if parent.version < 6.0:
+        result.pop('dns_receive_timeout', None)
+        result.pop('dns_max_attempts', None)
+    for key, value in result.items():
+        err, result = parent.utm.set_settings_param(key, value)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            error = 1
 
     out_message = 'GREEN|    Настройки DNS-прокси импортированы.'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DNS-прокси!' if error else out_message)
@@ -951,20 +946,20 @@ def import_dns_servers(parent, path):
     json_file = os.path.join(path, 'config_dns_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        for item in data:
-            item.pop('id', None)
-            item.pop('is_bad', None)
-            err, result = parent.utm.add_dns_server(item)
-            if err == 1:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                error = 1
-            elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}')
-            else:
-                parent.stepChanged.emit(f'BLACK|    DNS сервер "{item["dns"]}" добавлен.')
+        return
+
+    for item in data:
+        item.pop('id', None)
+        item.pop('is_bad', None)
+        err, result = parent.utm.add_dns_server(item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            error = 1
+        elif err == 2:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        else:
+            parent.stepChanged.emit(f'BLACK|    DNS сервер "{item["dns"]}" добавлен.')
 
     out_message = 'GREEN|    Системные DNS-сервера импортированы.'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте системных DNS-серверов!' if error else out_message)
@@ -977,24 +972,24 @@ def import_dns_rules(parent, path):
     json_file = os.path.join(path, 'config_dns_rules.json')
     err, rules = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        dns_rules = [x['name'] for x in parent.utm._server.v1.dns.rules.list(parent.utm._auth_token, 0, 1000, {})['items']]
-        for item in rules:
-            if parent.version >= 6.0:
-                item['position'] = 'last'
-            if item['name'] in dns_rules:
-                parent.stepChanged.emit(f'GRAY|    Правило DNS прокси "{item["name"]}" уже существует.')
+        return
+
+    dns_rules = [x['name'] for x in parent.utm._server.v1.dns.rules.list(parent.utm._auth_token, 0, 1000, {})['items']]
+    for item in rules:
+        if parent.version >= 6.0:
+            item['position'] = 'last'
+        if item['name'] in dns_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило DNS прокси "{item["name"]}" уже существует.')
+        else:
+            err, result = parent.utm.add_dns_rule(item)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                error = 1
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
             else:
-                err, result = parent.utm.add_dns_rule(item)
-                if err == 1:
-                    parent.stepChanged.emit(f'RED|    {result}')
-                    parent.error = 1
-                    error = 1
-                elif err == 2:
-                    parent.stepChanged.emit(f'GRAY|    {result}')
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Правило DNS прокси "{item["name"]}" добавлено.')
+                parent.stepChanged.emit(f'BLACK|    Правило DNS прокси "{item["name"]}" добавлено.')
 
     out_message = 'GREEN|    Правила DNS-прокси импортированы.'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил DNS-прокси!' if error else out_message)
@@ -1003,22 +998,22 @@ def import_dns_rules(parent, path):
 def import_dns_static(parent, path):
     """Импортируем статические записи DNS прокси"""
     parent.stepChanged.emit('BLUE|Импорт статических записей DNS-прокси раздела "Сеть/DNS/Статические записи".')
-    error = 0
     json_file = os.path.join(path, 'config_dns_static.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        for item in data:
-            err, result = parent.utm.add_dns_static_record(item)
-            if err == 1:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                error = 1
-            elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}')
-            else:
-                parent.stepChanged.emit(f'BLACK|    Статическая запись DNS "{item["name"]}" добавлена.')
+        return
+    error = 0
+
+    for item in data:
+        err, result = parent.utm.add_dns_static_record(item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            error = 1
+        elif err == 2:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        else:
+            parent.stepChanged.emit(f'BLACK|    Статическая запись DNS "{item["name"]}" добавлена.')
 
     out_message = 'GREEN|    Статические записи DNS-прокси импортированы.'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте статических записей DNS-прокси!' if error else out_message)
@@ -1037,83 +1032,83 @@ def import_vrf(parent, path):
     parent.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
     parent.stepChanged.emit('bRED|    Добавляемые маршруты будут в не активном состоянии. Необходимо будет проверить маршрутизацию и включить их.')
     parent.stepChanged.emit('bRED|    Если вы используете BGP, по окончании импорта включите фильтры BGP-соседей и Routemaps в свойствах соседей.')
-    error = 0
     json_file = os.path.join(path, 'config_vrf.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        err, result = parent.utm.get_routes_list()
+        return
+    error = 0
+
+    err, result = parent.utm.get_routes_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    virt_routes = {x['name']: x['id'] for x in result}
+
+    if parent.version >= 7.1:
+        err, result = parent.utm.get_bfd_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
             parent.error = 1
             return
-        virt_routes = {x['name']: x['id'] for x in result}
+        bfd_profiles = {x['name']: x['id'] for x in result}
+        bfd_profiles[-1] = -1
 
-        if parent.version >= 7.1:
-            err, result = parent.utm.get_bfd_profiles()
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                return
-            bfd_profiles = {x['name']: x['id'] for x in result}
-            bfd_profiles[-1] = -1
-    
-        for item in data:
-            for x in item['routes']:
-                x['enabled'] = False
-                x['name'] = x['name'].translate(trans_name)
-            if item['ospf']:
-                item['ospf']['enabled'] = False
-                for x in item['ospf']['interfaces']:
-                    if parent.version < 7.1:
-                        x.pop('bfd_profile', None) 
-                    else:
-                        try:
-                            x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
-                        except KeyError:
-                            x['bfd_profile'] = -1
-                            parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD для VRF "{item["name"]}". Установлено значение по умолчанию.')
-            if item['rip']:
-                item['rip']['enabled'] = False
-            if item['pimsm']:
-                item['pimsm']['enabled'] = False
-            if item['bgp']:
-                item['bgp']['enabled'] = False
+    for item in data:
+        for x in item['routes']:
+            x['enabled'] = False
+            x['name'] = x['name'].translate(trans_name)
+        if item['ospf']:
+            item['ospf']['enabled'] = False
+            for x in item['ospf']['interfaces']:
+                if parent.version < 7.1:
+                    x.pop('bfd_profile', None) 
+                else:
+                    try:
+                        x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
+                    except KeyError:
+                        x['bfd_profile'] = -1
+                        parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD для VRF "{item["name"]}". Установлено значение по умолчанию.')
+        if item['rip']:
+            item['rip']['enabled'] = False
+        if item['pimsm']:
+            item['pimsm']['enabled'] = False
+        if item['bgp']:
+            item['bgp']['enabled'] = False
+            if parent.version < 7:
+                item['bgp']['as_number'] = str(item['bgp']['as_number'])
+            for x in item['bgp']['neighbors']:
+                x['filter_in'] = []
+                x['filter_out'] = []
+                x['routemap_in'] = []
+                x['routemap_out'] = []
                 if parent.version < 7:
-                    item['bgp']['as_number'] = str(item['bgp']['as_number'])
-                for x in item['bgp']['neighbors']:
-                    x['filter_in'] = []
-                    x['filter_out'] = []
-                    x['routemap_in'] = []
-                    x['routemap_out'] = []
-                    if parent.version < 7:
-                        x['remote_asn'] = str(x['remote_asn'])
-                    if parent.version < 7.1:
-                        x.pop('bfd_profile', None) 
-                    else:
-                        try:
-                            x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
-                        except KeyError:
-                            x['bfd_profile'] = -1
-                            parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD для VRF "{item["name"]}". Установлено значение по умолчанию.')
+                    x['remote_asn'] = str(x['remote_asn'])
+                if parent.version < 7.1:
+                    x.pop('bfd_profile', None) 
+                else:
+                    try:
+                        x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
+                    except KeyError:
+                        x['bfd_profile'] = -1
+                        parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD для VRF "{item["name"]}". Установлено значение по умолчанию.')
 
-            if item['name'] in virt_routes:
-                err, result = parent.utm.update_vrf(virt_routes[item['name']], item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    {result}  [vrf: "{item["name"]}"]')
-                    parent.error = 1
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Виртуальный маршрутизатор "{item["name"]}" updated.')
+        if item['name'] in virt_routes:
+            err, result = parent.utm.update_vrf(virt_routes[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [vrf: "{item["name"]}"]')
+                parent.error = 1
+                error = 1
             else:
-                err, result = parent.utm.add_vrf(item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    {result}  [vrf: "{item["name"]}"]')
-                    parent.error = 1
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Создан виртуальный маршрутизатор "{item["name"]}".')
+                parent.stepChanged.emit(f'BLACK|    Виртуальный маршрутизатор "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_vrf(item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [vrf: "{item["name"]}"]')
+                parent.error = 1
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Создан виртуальный маршрутизатор "{item["name"]}".')
 
     out_message = 'GREEN|    Виртуальные маршрутизаторы импортированы в раздел "Сеть/Виртуальные маршрутизаторы".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта виртуальных маршрутизаторов!' if error else out_message)
@@ -1122,55 +1117,55 @@ def import_vrf(parent, path):
 def import_wccp_rules(parent, path):
     """Импортируем список правил WCCP"""
     parent.stepChanged.emit('BLUE|Импорт правил WCCP в раздел "Сеть/WCCP".')
-    error = 0
     json_file = os.path.join(path, 'config_wccp.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        error = 1
-    else:
-        err, result = parent.utm.get_wccp_list()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        wccp_rules = {x['name']: x['id'] for x in result}
+        return
+    error = 0
 
-        for item in data:
-            if parent.version < 7:
-                item['ports'] = [str(x) for x in item['ports']]
-            if parent.version == 7.0:
-                item['mask_value'] = ""
-            if item['routers']:
-                routers = []
-                for x in item['routers']:
-                    if x[0] == 'list_id':
-                        try:
-                            x[1] = parent.ip_lists[x[1]]
-                        except KeyError as err:
-                            parent.stepChanged.emit(f'ORANGE|    Не найден список {err} для правила "{item["name"]}". Загрузите списки IP-адресов и повторите попытку.')
-                            continue
-                    routers.append(x)
-                item['routers'] = routers
+    err, result = parent.utm.get_wccp_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    wccp_rules = {x['name']: x['id'] for x in result}
 
-            if item['name'] in wccp_rules:
-                if parent.version >= 6:
-                    err, result = parent.utm.update_wccp_rule(wccp_rules[item['name']], item)
-                    if err:
-                        parent.stepChanged.emit(f'RED|    {result}')
-                        parent.error = 1
-                        error = 1
-                    else:
-                        parent.stepChanged.emit(f'GRAY|    Правило WCCP "{item["name"]}" уже существует. Произведено обновление.')
-                else:
-                    parent.stepChanged.emit(f'GRAY|    Правило WCCP "{item["name"]}" уже существует.')
-            else:
-                err, result = parent.utm.add_wccp_rule(item)
+    for item in data:
+        if parent.version < 7:
+            item['ports'] = [str(x) for x in item['ports']]
+        if parent.version == 7.0:
+            item['mask_value'] = ""
+        if item['routers']:
+            routers = []
+            for x in item['routers']:
+                if x[0] == 'list_id':
+                    try:
+                        x[1] = parent.ip_lists[x[1]]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'ORANGE|    Не найден список {err} для правила "{item["name"]}". Загрузите списки IP-адресов и повторите попытку.')
+                        continue
+                routers.append(x)
+            item['routers'] = routers
+
+        if item['name'] in wccp_rules:
+            if parent.version >= 6:
+                err, result = parent.utm.update_wccp_rule(wccp_rules[item['name']], item)
                 if err:
                     parent.stepChanged.emit(f'RED|    {result}')
                     parent.error = 1
                     error = 1
                 else:
-                    parent.stepChanged.emit(f'BLACK|    Правило WCCP "{item["name"]}" добавлено.')
+                    parent.stepChanged.emit(f'GRAY|    Правило WCCP "{item["name"]}" уже существует. Произведено обновление.')
+            else:
+                parent.stepChanged.emit(f'GRAY|    Правило WCCP "{item["name"]}" уже существует.')
+        else:
+            err, result = parent.utm.add_wccp_rule(item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Правило WCCP "{item["name"]}" добавлено.')
 
     out_message = 'GREEN|    Правила WCCP импортированы в раздел "Сеть/WCCP".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта правил WCCP!' if error else out_message)
@@ -1179,12 +1174,11 @@ def import_wccp_rules(parent, path):
 def import_local_groups(parent, path):
     """Импортируем список локальных групп пользователей"""
     parent.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
-    error = 0
     json_file = os.path.join(path, 'config_groups.json')
     err, groups = read_json_file(parent, json_file)
     if err:
-        parent.error = 1
         return
+    error = 0
 
     for item in groups:
         users = item.pop('users')
@@ -1237,12 +1231,11 @@ def import_local_groups(parent, path):
 def import_local_users(parent, path):
     """Импортируем список локальных пользователей"""
     parent.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
-    error = 0
     json_file = os.path.join(path, 'config_users.json')
     err, users = read_json_file(parent, json_file)
     if err:
-        parent.error = 1
         return
+    error = 0
 
     for item in users:
         user_groups = item.pop('groups', None)
@@ -1284,13 +1277,11 @@ def import_local_users(parent, path):
 def import_ldap_servers(parent, path):
     """Импортируем список серверов LDAP"""
     parent.stepChanged.emit('BLUE|Импорт серверов LDAP в раздел "Пользователи и устройства/Серверы аутентификации".')
-    error = 0
     json_file = os.path.join(path, 'config_ldap_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_ldap_servers()
     if err == 1:
@@ -1325,13 +1316,11 @@ def import_ldap_servers(parent, path):
 def import_ntlm_server(parent, path):
     """Импортируем список серверов NTLM"""
     parent.stepChanged.emit('BLUE|Импорт серверов NTLM в раздел "Пользователи и устройства/Серверы аутентификации".')
-    error = 0
     json_file = os.path.join(path, 'config_ntlm_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_ntlm_servers()
     if err == 1:
@@ -1365,13 +1354,11 @@ def import_ntlm_server(parent, path):
 def import_radius_server(parent, path):
     """Импортируем список серверов RADIUS"""
     parent.stepChanged.emit('BLUE|Импорт серверов RADIUS в раздел "Пользователи и устройства/Серверы аутентификации".')
-    error = 0
     json_file = os.path.join(path, 'config_radius_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_radius_servers()
     if err == 1:
@@ -1405,13 +1392,11 @@ def import_radius_server(parent, path):
 def import_tacacs_server(parent, path):
     """Импортируем список серверов TACACS+"""
     parent.stepChanged.emit('BLUE|Импорт серверов TACACS+ в раздел "Пользователи и устройства/Серверы аутентификации".')
-    error = 0
     json_file = os.path.join(path, 'config_tacacs_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_tacacs_servers()
     if err == 1:
@@ -1445,13 +1430,11 @@ def import_tacacs_server(parent, path):
 def import_saml_server(parent, path):
     """Импортируем список серверов SAML"""
     parent.stepChanged.emit('BLUE|Импорт серверов SAML в раздел "Пользователи и устройства/Серверы аутентификации".')
-    error = 0
     json_file = os.path.join(path, 'config_saml_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_saml_servers()
     if err:
@@ -1500,13 +1483,11 @@ def import_auth_servers(parent, path):
 def import_2fa_profiles(parent, path):
     """Импортируем список 2FA профилей"""
     parent.stepChanged.emit('BLUE|Импорт списка 2FA профилей в раздел "Пользователи и устройства/Профили MFA".')
-    error = 0
     json_file = os.path.join(path, 'config_2fa_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_notification_profiles_list()
     if err:
@@ -1560,13 +1541,11 @@ def import_2fa_profiles(parent, path):
 def import_auth_profiles(parent, path):
     """Импортируем список профилей аутентификации"""
     parent.stepChanged.emit('BLUE|Импорт профилей аутентификации в раздел "Пользователи и устройства/Профили аутентификации".')
-    error = 0
     json_file = os.path.join(path, 'config_auth_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, ldap, radius, tacacs, ntlm, saml = parent.utm.get_auth_servers()
     if err:
@@ -1643,13 +1622,11 @@ def import_auth_profiles(parent, path):
 def import_captive_profiles(parent, path):
     """Импортируем список Captive-профилей"""
     parent.stepChanged.emit('BLUE|Импорт Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
-    error = 0
     json_file = os.path.join(path, 'config_captive_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_templates_list()
     if err:
@@ -1752,13 +1729,11 @@ def import_captive_profiles(parent, path):
 def import_captive_portal_rules(parent, path):
     """Импортируем список правил Captive-портала"""
     parent.stepChanged.emit('BLUE|Импорт правил Captive-портала в раздел "Пользователи и устройства/Captive-портал".')
-    error = 0
     json_file = os.path.join(path, 'config_captive_portal_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_captive_profiles()
     if err:
@@ -1816,13 +1791,11 @@ def import_captive_portal_rules(parent, path):
 def import_terminal_servers(parent, path):
     """Импортируем список терминальных серверов"""
     parent.stepChanged.emit('BLUE|Импорт списка терминальных серверов в раздел "Пользователи и устройства/Терминальные серверы".')
-    error = 0
     json_file = os.path.join(path, 'config_terminal_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_terminal_servers()
     if err:
@@ -1859,13 +1832,11 @@ def import_terminal_servers(parent, path):
 def import_byod_policy(parent, path):
     """Импортируем список Политики BYOD"""
     parent.stepChanged.emit('BLUE|Импорт списка "Политики BYOD" в раздел "Пользователи и устройства/Политики BYOD".')
-    error = 0
     json_file = os.path.join(path, 'config_byod_policy.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_byod_policy()
     if err:
@@ -1907,9 +1878,8 @@ def import_userid_agent(parent, path):
     json_file = os.path.join(path, 'userid_agent_config.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
-        return
+        if err == 1:
+            error = 1
     else:
         if data['tcp_ca_certificate_id']:
             data['tcp_ca_certificate_id'] = parent.ngfw_certs[data['tcp_ca_certificate_id']]
@@ -1928,8 +1898,7 @@ def import_userid_agent(parent, path):
     json_file = os.path.join(path, 'userid_agent_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Настройки UserID агент не импортированы.')
         return
 
     err, result = parent.utm.get_useridagent_filters()
@@ -1994,8 +1963,6 @@ def import_firewall_rules(parent, path):
     json_file = os.path.join(path, 'config_firewall_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     if not parent.l7_apps:
@@ -2071,6 +2038,8 @@ def import_firewall_rules(parent, path):
             item.pop('ips_profile', None)
             item.pop('l7_profile', None)
             item.pop('hip_profiles', None)
+            if parent.version >= 6:
+                item.pop('apps_negate', None)
         else:
             item.pop('apps', None)
             if 'ips_profile' in item and item['ips_profile']:
@@ -2125,13 +2094,11 @@ def import_nat_rules(parent, path):
     """Импортируем список правил NAT"""
     parent.stepChanged.emit('BLUE|Импорт правил NAT в раздел "Политики сети/NAT и маршрутизация".')
     parent.stepChanged.emit('LBLUE|    После импорта правила NAT будут в не активном состоянии. Необходимо проверить и включить нужные.')
-    error = 0
     json_file = os.path.join(path, 'config_nat_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     if not parent.scenarios_rules:
         err = set_scenarios_rules(parent)
@@ -2207,12 +2174,12 @@ def import_loadbalancing_rules(parent, path):
     """Импортируем список правил балансировки нагрузки"""
     parent.stepChanged.emit('BLUE|Импорт правил балансировки нагрузки в раздел "Политики сети/Балансировка нагрузки".')
     parent.stepChanged.emit('LBLUE|    После импорта правила балансировки будут в не активном состоянии. Необходимо проверить и включить нужные.')
-    error = 0
     err, tcpudp, icap, reverse = parent.utm.get_loadbalancing_rules()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
         parent.error = 1
         return
+    error = 0
     tcpudp_rules = {x['name'].strip().translate(trans_name): x['id'] for x in tcpudp}
     icap_loadbalancing = {x['name'].strip().translate(trans_name): x['id'] for x in icap}
     reverse_rules = {x['name'].strip().translate(trans_name): x['id'] for x in reverse}
@@ -2220,8 +2187,8 @@ def import_loadbalancing_rules(parent, path):
     json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
+        if err == 1:
+            error = 1
     else:
         if data:
             for item in data:
@@ -2257,8 +2224,8 @@ def import_loadbalancing_rules(parent, path):
     json_file = os.path.join(path, 'config_loadbalancing_icap.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
+        if err == 1:
+            error = 1
     else:
         err, result = parent.utm.get_icap_servers()
         if err:
@@ -2299,8 +2266,8 @@ def import_loadbalancing_rules(parent, path):
     json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
+        if err == 1:
+            error = 1
     else:
         err, result = parent.utm.get_reverseproxy_servers()
         if err:
@@ -2348,13 +2315,11 @@ def import_shaper_rules(parent, path):
     """Импортируем список правил пропускной способности"""
     parent.stepChanged.emit('BLUE|Импорт правил пропускной способности в раздел "Политики сети/Пропускная способность".')
     parent.stepChanged.emit('LBLUE|    После импорта правила пропускной способности будут в не активном состоянии. Необходимо проверить и включить нужные.')
-    error = 0
     json_file = os.path.join(path, 'config_shaper_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     if not parent.l7_apps:
         err = set_apps_values(parent)
@@ -2441,8 +2406,6 @@ def import_content_rules(parent, path):
     json_file = os.path.join(path, 'config_content_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     err, result = parent.utm.get_nlists_list('morphology')
@@ -2556,13 +2519,11 @@ def import_content_rules(parent, path):
 def import_safebrowsing_rules(parent, path):
     """Импортируем список правил веб-безопасности"""
     parent.stepChanged.emit('BLUE|Импорт правил веб-безопасности в раздел "Политики безопасности/Веб-безопасность".')
-    error = 0
     json_file = os.path.join(path, 'config_safebrowsing_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_safebrowsing_rules()
     if err:
@@ -2610,13 +2571,11 @@ def import_safebrowsing_rules(parent, path):
 def import_tunnel_inspection_rules(parent, path):
     """Импортируем список правил инспектирования туннелей"""
     parent.stepChanged.emit('BLUE|Импорт правил инспектирования туннелей в раздел "Политики безопасности/Инспектирование туннелей".')
-    error = 0
     json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, rules = parent.utm.get_tunnel_inspection_rules()
     if err:
@@ -2661,13 +2620,11 @@ def import_tunnel_inspection_rules(parent, path):
 def import_ssldecrypt_rules(parent, path):
     """Импортируем список правил инспектирования SSL"""
     parent.stepChanged.emit('BLUE|Импорт правил инспектирования SSL в раздел "Политики безопасности/Инспектирование SSL".')
-    error = 0
     json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     ssl_forward_profiles = {}
     if parent.version >= 7:
@@ -2745,13 +2702,11 @@ def import_ssldecrypt_rules(parent, path):
 def import_sshdecrypt_rules(parent, path):
     """Импортируем список правил инспектирования SSH"""
     parent.stepChanged.emit('BLUE|Импорт правил инспектирования SSH в раздел "Политики безопасности/Инспектирование SSH".')
-    error = 0
     json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, rules = parent.utm.get_sshdecrypt_rules()
     if err:
@@ -2802,13 +2757,11 @@ def import_sshdecrypt_rules(parent, path):
 def import_idps_rules(parent, path):
     """Импортируем список правил СОВ"""
     parent.stepChanged.emit('BLUE|Импорт правил СОВ в раздел "Политики безопасности/СОВ".')
-    error = 0
     json_file = os.path.join(path, 'config_idps_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_nlists_list('ipspolicy')
     if err:
@@ -2880,8 +2833,6 @@ def import_scada_rules(parent, path):
     json_file = os.path.join(path, 'config_scada_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -2950,8 +2901,6 @@ def import_scenarios(parent, path):
     json_file = os.path.join(path, 'config_scenarios.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3026,8 +2975,6 @@ def import_mailsecurity_rules(parent, path):
     json_file = os.path.join(path, 'config_mailsecurity_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3114,12 +3061,12 @@ def import_mailsecurity_antispam(parent, path):
     json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in [1, 2]:
+        if err == 1:
             error = 1
     else:
         data['white_list'] = get_ips_id(parent, data['white_list'], 'antispam DNSBL')
         data['black_list'] = get_ips_id(parent, data['black_list'], 'antispam DNSBL')
-                
+
         err, result = parent.utm.set_mailsecurity_dnsbl(data)
         if err:
             error = 1
@@ -3131,7 +3078,7 @@ def import_mailsecurity_antispam(parent, path):
     json_file = os.path.join(path, 'config_mailsecurity_batv.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in [1, 2]:
+        if err == 1:
             error = 1
     else:
         err, result = parent.utm.set_mailsecurity_batv(data)
@@ -3153,8 +3100,6 @@ def import_icap_rules(parent, path):
     json_file = os.path.join(path, 'config_icap_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3238,8 +3183,6 @@ def import_icap_servers(parent, path):
     json_file = os.path.join(path, 'config_icap_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3283,8 +3226,6 @@ def import_dos_profiles(parent, path):
     json_file = os.path.join(path, 'config_dos_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3327,8 +3268,6 @@ def import_dos_rules(parent, path):
     json_file = os.path.join(path, 'config_dos_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3407,8 +3346,6 @@ def import_proxyportal_rules(parent, path):
     json_file = os.path.join(path, 'config_web_portal.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3474,8 +3411,6 @@ def import_reverseproxy_servers(parent, path):
     json_file = os.path.join(path, 'config_reverseproxy_servers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3518,8 +3453,6 @@ def import_reverseproxy_rules(parent, path):
     json_file = os.path.join(path, 'config_reverseproxy_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3656,8 +3589,6 @@ def import_waf_custom_layers(parent, path):
     json_file = os.path.join(path, 'config_waf_custom_layers.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3699,8 +3630,6 @@ def import_waf_profiles(parent, path):
     json_file = os.path.join(path, 'config_waf_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3781,8 +3710,6 @@ def import_vpn_security_profiles(parent, path):
     json_file = os.path.join(path, 'config_vpn_security_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3837,8 +3764,6 @@ def import_vpnclient_security_profiles(parent, path):
     json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3886,8 +3811,6 @@ def import_vpnserver_security_profiles(parent, path):
     json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -3949,8 +3872,6 @@ def import_vpn_networks(parent, path):
     json_file = os.path.join(path, 'config_vpn_networks.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -4021,8 +3942,6 @@ def import_vpn_client_rules(parent, path):
     json_file = os.path.join(path, 'config_vpn_client_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -4101,8 +4020,6 @@ def import_vpn_server_rules(parent, path):
     json_file = os.path.join(path, 'config_vpn_server_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -4187,13 +4104,11 @@ def import_vpn_server_rules(parent, path):
 def import_morphology_lists(parent, path):
     """Импортируем списки морфологии"""
     parent.stepChanged.emit('BLUE|Импорт списков морфологии в раздел "Библиотеки/Морфология".')
-    error = 0
     json_file = os.path.join(path, 'config_morphology_lists.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
+    error = 0
 
     err, result = parent.utm.get_nlists_list('morphology')
     if err:
@@ -4259,10 +4174,7 @@ def import_services_list(parent, path):
     json_file = os.path.join(path, 'config_services_list.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
-
     error = 0
     
     for item in data:
@@ -4299,8 +4211,6 @@ def import_services_groups(parent, path):
     json_file = os.path.join(path, 'config_services_groups_list.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -4375,8 +4285,6 @@ def import_ip_lists(parent, path):
         json_file = os.path.join(path, file_name)
         err, data = read_json_file(parent, json_file)
         if err:
-            if err in (1, 2):
-                parent.error = 1
             continue
 
         data['name'] = data['name'].strip().translate(trans_name)
@@ -4412,8 +4320,6 @@ def import_ip_lists(parent, path):
         json_file = os.path.join(path, file_name)
         err, data = read_json_file(parent, json_file)
         if err:
-            if err in (1, 2):
-                parent.error = 1
             continue
 
         data['name'] = data['name'].strip().translate(trans_name)
@@ -4464,8 +4370,6 @@ def import_useragent_lists(parent, path):
     json_file = os.path.join(path, 'config_useragents_list.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     error = 0
@@ -4530,8 +4434,6 @@ def import_mime_lists(parent, path):
     json_file = os.path.join(path, 'config_mime_types.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     error = 0
@@ -4609,8 +4511,6 @@ def import_url_lists(parent, path):
         json_file = os.path.join(path, file_name)
         err, data = read_json_file(parent, json_file)
         if err:
-            if err in (1, 2):
-                parent.error = 1
             continue
 
         data['name'] = data['name'].strip().translate(trans_name)
@@ -4653,8 +4553,6 @@ def import_url_lists(parent, path):
         json_file = os.path.join(path, file_name)
         err, data = read_json_file(parent, json_file)
         if err:
-            if err in (1, 2):
-                parent.error = 1
             continue
 
         data['name'] = data['name'].strip().translate(trans_name)
@@ -4689,8 +4587,6 @@ def import_time_restricted_lists(parent, path):
     json_file = os.path.join(path, 'config_calendars.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     error = 0
@@ -4728,14 +4624,25 @@ def import_time_restricted_lists(parent, path):
             parent.stepChanged.emit(f'GRAY|       На версию 5 невозможно импортировать сожержимое календарей. Добавьте содержимое вручную.')
             continue
         if content:
-            err2, result2 = parent.utm.add_nlist_items(parent.list_calendar[item['name']], content)
-            if err2 == 2:
-                parent.stepChanged.emit(f'GRAY|       {result2}')
-            elif err2 == 1:
-                error = 1
-                parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+            if parent.utm.version == '7.1.0.1672R':
+                for value in content:
+                    err2, result2 = parent.utm.add_nlist_item(parent.list_calendar[item['name']], value)
+                    if err2 == 2:
+                        parent.stepChanged.emit(f'GRAY|       {result2}')
+                    elif err2 == 1:
+                        error = 1
+                        parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+                    else:
+                        parent.stepChanged.emit(f'BLACK|       Элемент "{value["name"]}" списка "{item["name"]}" добавлен.')
             else:
-                parent.stepChanged.emit(f'BLACK|       Содержимое списка "{item["name"]}" обновлено.')
+                err2, result2 = parent.utm.add_nlist_items(parent.list_calendar[item['name']], content)
+                if err2 == 2:
+                    parent.stepChanged.emit(f'GRAY|       {result2}')
+                elif err2 == 1:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+                else:
+                    parent.stepChanged.emit(f'BLACK|       Содержимое списка "{item["name"]}" обновлено.')
         else:
             parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
 
@@ -4751,8 +4658,6 @@ def import_shaper_list(parent, path):
     json_file = os.path.join(path, 'config_shaper_list.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     err, result = parent.utm.get_shaper_list()
@@ -4793,8 +4698,6 @@ def import_scada_profiles(parent, path):
     json_file = os.path.join(path, 'config_scada_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     err, result = parent.utm.get_scada_list()
@@ -4845,8 +4748,6 @@ def import_templates_list(parent, path):
     json_file = os.path.join(path, 'config_templates_list.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     html_files = os.listdir(path)
@@ -4898,8 +4799,6 @@ def import_url_categories(parent, path):
     json_file = os.path.join(path, 'config_url_categories.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     error = 0
@@ -4960,8 +4859,6 @@ def import_custom_url_category(parent, path):
     json_file = os.path.join(path, 'custom_url_categories.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     error = 0
@@ -5009,8 +4906,6 @@ def import_application_signature(parent, path):
     json_file = os.path.join(path, 'config_applications.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     if not parent.l7_apps:
@@ -5070,8 +4965,6 @@ def import_app_profiles(parent, path):
     json_file = os.path.join(path, 'config_app_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     if not parent.l7_apps:
@@ -5127,8 +5020,6 @@ def import_application_groups(parent, path):
     json_file = os.path.join(path, 'config_application_groups.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     if not parent.l7_apps:
@@ -5194,8 +5085,6 @@ def import_email_groups(parent, path):
     json_file = os.path.join(path, 'config_email_groups.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     err, result = parent.utm.get_nlist_list('emailgroup')
@@ -5239,8 +5128,6 @@ def import_phone_groups(parent, path):
     json_file = os.path.join(path, 'config_phone_groups.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     err, result = parent.utm.get_nlist_list('phonegroup')
@@ -5284,8 +5171,6 @@ def import_custom_idps_signature(parent, path):
     json_file = os.path.join(path, 'custom_idps_signatures.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
 
     err, result = parent.utm.get_idps_signatures_list(query={'query': 'owner = You'})
@@ -5329,8 +5214,6 @@ def import_idps_profiles(parent, path):
     json_file = os.path.join(path, 'config_idps_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5438,8 +5321,6 @@ def import_notification_profiles(parent, path):
     json_file = os.path.join(path, 'config_notification_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5482,8 +5363,6 @@ def import_netflow_profiles(parent, path):
     json_file = os.path.join(path, 'config_netflow_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5526,8 +5405,6 @@ def import_ssl_profiles(parent, path):
     json_file = os.path.join(path, 'config_ssl_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5575,8 +5452,6 @@ def import_lldp_profiles(parent, path):
     json_file = os.path.join(path, 'config_lldp_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5619,8 +5494,6 @@ def import_ssl_forward_profiles(parent, path):
     json_file = os.path.join(path, 'config_ssl_forward_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5663,8 +5536,6 @@ def import_hip_objects(parent, path):
     json_file = os.path.join(path, 'config_hip_objects.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5706,8 +5577,6 @@ def import_hip_profiles(parent, path):
     json_file = os.path.join(path, 'config_hip_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5758,8 +5627,6 @@ def import_bfd_profiles(parent, path):
     json_file = os.path.join(path, 'config_bfd_profiles.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5801,11 +5668,9 @@ def import_useridagent_syslog_filters(parent, path):
     json_file = os.path.join(path, 'config_useridagent_syslog_filters.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
-    error = 0
 
+    error = 0
     err, result = parent.utm.get_useridagent_filters_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
@@ -5844,8 +5709,6 @@ def import_snmp_rules(parent, path):
     json_file = os.path.join(path, 'config_snmp_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -5931,8 +5794,6 @@ def import_notification_alert_rules(parent, path):
     json_file = os.path.join(path, 'config_alert_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -6016,8 +5877,6 @@ def import_snmp_security_profiles(parent, path):
     json_file = os.path.join(path, 'config_snmp_rules.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            parent.error = 1
         return
     error = 0
 
@@ -6065,17 +5924,17 @@ def import_snmp_settings(parent, path):
     parent.stepChanged.emit('GREEN|    Параметры SNMP импортированы  в раздел "Диагностика и мониторинг/Оповещения/Параметры SNMP".')
 
 def import_snmp_engine(parent, path):
-    error = 0
     json_file = os.path.join(path, 'config_snmp_engine.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            error = 1
-    else:
-        err, result = parent.utm.set_snmp_engine(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.set_snmp_engine(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте SNMP Engine ID.')
@@ -6083,17 +5942,17 @@ def import_snmp_engine(parent, path):
         parent.stepChanged.emit('BLACK|    SNMP Engine ID импортирован.')
 
 def import_snmp_sys_name(parent, path):
-    error = 0
     json_file = os.path.join(path, 'config_snmp_sysname.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            error = 1
-    else:
-        err, result = parent.utm.set_snmp_sysname(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.set_snmp_sysname(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте значения SNMP SysName.')
@@ -6101,17 +5960,17 @@ def import_snmp_sys_name(parent, path):
         parent.stepChanged.emit('BLACK|    Значение SNMP SysName импортировано.')
 
 def import_snmp_sys_location(parent, path):
-    error = 0
     json_file = os.path.join(path, 'config_snmp_syslocation.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            error = 1
-    else:
-        err, result = parent.utm.set_snmp_syslocation(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.set_snmp_syslocation(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте значения SNMP SysLocation.')
@@ -6119,17 +5978,17 @@ def import_snmp_sys_location(parent, path):
         parent.stepChanged.emit('BLACK|    Значение SNMP SysLocation импортировано.')
 
 def import_snmp_sys_description(parent, path):
-    error = 0
     json_file = os.path.join(path, 'config_snmp_sysdescription.json')
     err, data = read_json_file(parent, json_file)
     if err:
-        if err in (1, 2):
-            error = 1
-    else:
-        err, result = parent.utm.set_snmp_sysdescription(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
+        return
+
+    error = 0
+    err, result = parent.utm.set_snmp_sysdescription(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте значения SNMP SysDescription.')
@@ -6501,9 +6360,9 @@ def read_json_file(parent, json_file_path):
         with open(json_file_path, "r") as fh:
             data = json.load(fh)
     except FileNotFoundError as err:
-        parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
-        parent.error = 1
-        return 2, 'RED'
+        parent.stepChanged.emit(f'ORANGE|    Нет данных для импорта!')
+        parent.stepChanged.emit(f'dGRAY|    Не найден файл "{json_file_path}" с сохранённой конфигурацией.')
+        return 2, 'ORANGE'
     except ValueError as err:
         parent.error = 1
         parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')

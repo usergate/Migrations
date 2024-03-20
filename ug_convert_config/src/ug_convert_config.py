@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Версия 3.4
+# Версия 3.7
 # Программа предназначена для переноса конфигурации с UTM версии 5 и 6 на версии 6 и 7
 # или между устройствами 6-ой версии.
 #
@@ -4723,6 +4723,7 @@ class UTM(UtmXmlRpc):
             print(f'\t{data}')
             sys.exit(1)
         iface_name = self.translate_iface_name(data)
+        iface_name['undefined'] = 'undefined'
 
         _, data = self.get_gateways_list()
 
@@ -4736,7 +4737,7 @@ class UTM(UtmXmlRpc):
             item.pop('cc', None)
             if 'name' in item and not item['name']:
                 item['name'] = item['ipv4']
-            item['iface'] = iface_name[item['iface']] if item['iface'] else 'undefined'
+            item['iface'] = iface_name[item.get('iface', 'undefined')]
             if self.version.startswith('5'):
                 item['is_automatic'] = False
                 item['vrf'] = 'default'

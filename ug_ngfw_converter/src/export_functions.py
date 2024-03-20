@@ -794,7 +794,7 @@ def export_gateways_list(parent, path):
             item.pop('cc', None)
             if not 'name' in item or not item['name']:
                 item['name'] = item['ipv4']
-            item['iface'] = iface_names[item.get('iface', 'undefined')]
+            item['iface'] = iface_names[item['iface']] if item['iface'] else 'undefined'
             if parent.version < 6:
                 item['is_automatic'] = False
                 item['vrf'] = 'default'

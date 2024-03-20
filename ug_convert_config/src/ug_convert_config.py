@@ -4737,7 +4737,7 @@ class UTM(UtmXmlRpc):
             item.pop('cc', None)
             if 'name' in item and not item['name']:
                 item['name'] = item['ipv4']
-            item['iface'] = iface_name[item.get('iface', 'undefined')]
+            item['iface'] = iface_name[item['iface']] if item['iface'] else 'undefined'
             if self.version.startswith('5'):
                 item['is_automatic'] = False
                 item['vrf'] = 'default'

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.0
+# Версия 1.4
 #
 
 import os, sys, json
@@ -774,6 +774,7 @@ def export_gateways_list(parent, path):
         return
     else:
         iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        iface_names['undefined'] = 'undefined'
 
     err, result = parent.utm.get_gateways_list()
     if err:
@@ -793,7 +794,7 @@ def export_gateways_list(parent, path):
             item.pop('cc', None)
             if not 'name' in item or not item['name']:
                 item['name'] = item['ipv4']
-            item['iface'] = iface_names[item['iface']] if item['iface'] else 'undefined'
+            item['iface'] = iface_names[item.get('iface', 'undefined')]
             if parent.version < 6:
                 item['is_automatic'] = False
                 item['vrf'] = 'default'

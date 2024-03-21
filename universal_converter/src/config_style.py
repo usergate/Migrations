@@ -20,19 +20,6 @@ color = {
     'NOTE': "#556682",
 }
 
-#class Color(str, Enum):
-#    BLACK = "#000000"
-#    RED = "#8b0000"
-#    ORANGE = "#ff8c00"
-#    MORANGE = "#ff8c00"
-#    LBLUE = "#1e90ff"
-#    BLUE = "#00008b"
-#    GRAY = "#696969"
-#    GREEN = "#006400"
-#    MGREEN = "#006400"
-#    NORM = "steelblue"
-
-
 class Style(str, Enum):
     Test = ("""
         * {

@@ -18,17 +18,18 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
-# Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.1
+# Классы импорта разделов конфигурации на NGFW UserGate.
+# Версия 1.4
 #
 
-import os, sys, json, time
+import os, sys, json, time, copy
 from datetime import datetime as dt
 import xmlrpc.client as rpc
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import zone_services, character_map_file_name, character_map_for_name
 
 
+rpc.MAXINT = 2**64 - 1
 trans_filename = str.maketrans(character_map_file_name)
 trans_name = str.maketrans(character_map_for_name)
 
@@ -1031,7 +1032,7 @@ def import_vrf(parent, path):
     """Импортируем список виртуальных маршрутизаторов"""
     parent.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
     parent.stepChanged.emit('bRED|    Добавляемые маршруты будут в не активном состоянии. Необходимо будет проверить маршрутизацию и включить их.')
-    parent.stepChanged.emit('bRED|    Если вы используете BGP, по окончании импорта включите фильтры BGP-соседей и Routemaps в свойствах соседей.')
+    parent.stepChanged.emit('bRED|    Если вы используете BGP, по окончании импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
     json_file = os.path.join(path, 'config_vrf.json')
     err, data = read_json_file(parent, json_file)
     if err:

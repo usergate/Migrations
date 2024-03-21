@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 #  common_func.py
 #  
@@ -20,6 +19,7 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
+
 import os, json
 from PyQt6.QtWidgets import QMessageBox
 

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.14
+# Версия 3.15
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -694,6 +694,17 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error utm.get_routers_list: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список записей
+
+    def get_vrf_by_id(self, vrf_id):
+        """Получить список VRFs со всей конфигурацией"""
+        try:
+            if self.version.startswith('5'):
+                result = self._server.v1.netmanager.route.fetch(self._auth_token, self.node_name, vrf_id)
+            else:
+                result = self._server.v1.netmanager.virtualrouter.fetch(self._auth_token, vrf_id)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_vrf_by_id: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает vfr
 
     def add_vrf(self, vrf_info):
         """Добавить виртуальный маршрутизатор"""

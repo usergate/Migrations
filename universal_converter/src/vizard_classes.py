@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 0.3
+# Версия 1.0
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -923,7 +923,7 @@ class VlanWindow(QDialog):
 
 
 class CreateDhcpSubnetsWindow(QDialog):
-    """Окно настройки VLAN-ов. Для установки порта и зоны каждого VLAN."""
+    """Окно настройки subnets для DHCP."""
     def __init__(self, parent, ngfw_ports, new_subnets):
         super().__init__(parent)
         self.parent = parent

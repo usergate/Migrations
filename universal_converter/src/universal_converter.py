@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 1.0
+# Version 1.1
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,15 +32,16 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 1.0)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 1.1)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
-        self._base_ug_path = 'data_ug'
-        self._base_fort_path = 'data_fg'
-        self._base_cp_path = 'data_cp'
-        self._base_asa_path = 'data_asa'
-        self._base_fpr_path = 'data_fpr'
+        self._base_ug_path = 'data_usergate'
+        self._base_asa_path = 'data_cisco_asa'
+        self._base_fpr_path = 'data_cisco_fpr'
+        self._base_cp_path = 'data_checkpoint'
+        self._base_fort_path = 'data_fortigate'
+        self._base_huawei_path = 'data_huawei'
         self._current_ug_path = None    # Полный путь к каталогу с конфигурацией узла UG NGFW
 
         self.stacklayout = QStackedLayout()
@@ -57,10 +58,11 @@ class MainWindow(QMainWindow):
         if err:
             func.message_alert(self, msg, '')
         else:
-            func.create_dir(self._base_fort_path, delete='no')
-            func.create_dir(self._base_cp_path, delete='no')
             func.create_dir(self._base_asa_path, delete='no')
             func.create_dir(self._base_fpr_path, delete='no')
+            func.create_dir(self._base_cp_path, delete='no')
+            func.create_dir(self._base_fort_path, delete='no')
+            func.create_dir(self._base_huawei_path, delete='no')
             self.stacklayout.widget(0).enable_buttons()
 
     def get_vendor_base_path(self, vendor):
@@ -74,6 +76,8 @@ class MainWindow(QMainWindow):
                 return self._base_cp_path
             case 'Fortigate':
                 return self._base_fort_path
+            case 'Huawei':
+                return self._base_huawei_path
 
     def get_base_ug_path(self):
         """Получаем имя базового каталога конфигураций UG NGFW"""

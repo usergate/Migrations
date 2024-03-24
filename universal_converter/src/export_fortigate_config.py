@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.0
+# Версия 1.1
 #
 
 import os, sys, json
@@ -1488,8 +1488,8 @@ def pack_ip_address(ip, mask):
         ip = '0.0.0.0'
     if mask == '0':
         mask = '128.0.0.0'
-    subnet = ipaddress.ip_network(f'{ip}/{mask}')
-    return f'{ip}/{subnet.prefixlen}'
+    interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    return f'{ip}/{interface.network.prefixlen}'
 
 def get_ips(parent, path, rule_ips, rule_name):
     """

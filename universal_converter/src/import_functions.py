@@ -341,14 +341,20 @@ def import_ui(parent, path):
     if parent.version == 5.0:
         data.pop('web_console_ssl_profile_id', None)
         data.pop('response_pages_ssl_profile_id', None)
-    else:
+    if 'web_console_ssl_profile_id' in data:
         try:
             params[parent.ssl_profiles[data['web_console_ssl_profile_id']]] = data['web_console_ssl_profile_id']
-            params[parent.ssl_profiles[data['response_pages_ssl_profile_id']]] = data['response_pages_ssl_profile_id']
             data['web_console_ssl_profile_id'] = parent.ssl_profiles[data['web_console_ssl_profile_id']]
-            data['response_pages_ssl_profile_id'] = parent.ssl_profiles[data['response_pages_ssl_profile_id']]
         except KeyError as err:
             data.pop('web_console_ssl_profile_id', None)
+            parent.stepChanged.emit(f'RED|    Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+            error = 1
+            parent.error = 1
+    if 'response_pages_ssl_profile_id' in data:
+        try:
+            params[parent.ssl_profiles[data['response_pages_ssl_profile_id']]] = data['response_pages_ssl_profile_id']
+            data['response_pages_ssl_profile_id'] = parent.ssl_profiles[data['response_pages_ssl_profile_id']]
+        except KeyError as err:
             data.pop('response_pages_ssl_profile_id', None)
             parent.stepChanged.emit(f'RED|    Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
             error = 1
@@ -625,7 +631,10 @@ def import_zones(parent, path):
     for zone in zones:
         zone['name'] = zone['name'].translate(trans_name)
         for service in zone['services_access']:
-            service['service_id'] = service_for_zones[service['service_id']]
+            try:
+                service['service_id'] = service_for_zones[service['service_id']]
+            except KeyError:
+                service['service_id'] = 3
         if parent.version < 7.1:
             zone.pop('sessions_limit_enabled', None)
             zone.pop('sessions_limit_threshold', None)
@@ -862,8 +871,10 @@ def import_gateways(parent, path):
     error = 0
     json_file = os.path.join(path, 'config_gateway_failover.json')
     err, data = read_json_file(parent, json_file)
-    if err:
-        error = 1 if err == 1 else 0
+    if err == 1:
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при обновлении настроек проверки сети!')
+    elif err in (2, 3):
+        pass
     else:
         err, result = parent.utm.set_gateway_failover(data)
         if err:
@@ -871,8 +882,8 @@ def import_gateways(parent, path):
             parent.error = 1
             error = 1
 
-    out_message = 'GREEN|    Настройки проверки сети обновлены.'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при обновлении настроек проверки сети!' if error else out_message)
+        out_message = 'GREEN|    Настройки проверки сети обновлены.'
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при обновлении настроек проверки сети!' if error else out_message)
 
 
 def import_dhcp_subnets(parent, path):
@@ -6360,16 +6371,17 @@ def read_json_file(parent, json_file_path):
     try:
         with open(json_file_path, "r") as fh:
             data = json.load(fh)
+    except ValueError as err:
+        parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
+        parent.error = 1
+        return 1, 'RED'
     except FileNotFoundError as err:
-        parent.stepChanged.emit(f'ORANGE|    Нет данных для импорта!')
+        parent.stepChanged.emit(f'rNOTE|    Нет данных для импорта!')
         parent.stepChanged.emit(f'dGRAY|    Не найден файл "{json_file_path}" с сохранённой конфигурацией.')
         return 2, 'ORANGE'
-    except ValueError as err:
-        parent.error = 1
-        parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
-        return 1, 'RED'
     if not data:
-        parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
+        parent.stepChanged.emit(f'rNOTE|    Нет данных для импорта!')
+        parent.stepChanged.emit(f'dGRAY|    Файл "{json_file_path}" пуст.')
         return 3, 'GRAY'
     return 0, data
 

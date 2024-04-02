@@ -13,6 +13,7 @@ import common_func as func
 import config_style as cs
 import export_fortigate_config as fg
 import export_cisco_fpr_config as fpr
+import export_huawei_config as huawei
 import import_functions as tf
 from utm import UtmXmlRpc
 
@@ -280,7 +281,7 @@ class SelectExportMode(QWidget):
         frame_nodeinfo.setLayout(hbox_nodeinfo)
 
         list_item_font = QFont("Serif", pointSize=14, weight=600)
-        vendors = ['Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate']
+        vendors = ['Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate', 'Huawei']
         self.vendor_list = QListWidget()
         self.vendor_list.setMaximumWidth(150)
         for vendor in vendors:
@@ -386,6 +387,8 @@ class SelectExportMode(QWidget):
                         return
                     case 'Fortigate':
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
+                    case 'Huawei':
+                        self.thread = huawei.ConvertHuaweiConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()

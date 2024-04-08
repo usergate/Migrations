@@ -19,17 +19,14 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.4
+# Версия 1.5
 #
 
 import os, sys, json
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import zone_services, character_map_file_name, character_map_for_name
-
-
-trans_filename = str.maketrans(character_map_file_name)
-trans_name = str.maketrans(character_map_for_name)
+from services import zone_services, trans_filename, trans_name, default_urlcategorygroup
+from common_func import read_bin_file
 
 
 class ExportAll(QThread):
@@ -41,119 +38,27 @@ class ExportAll(QThread):
         self.utm = utm
         self.config_path = config_path      # Путь к каталогу с конфигурацией данного узла
         self.all_points = all_points
-        self.ssl_profiles = {}
-        self.servicegroups_list = {}
-        self.l7_categories = {}             # Устанавливаются через функцию set_appps_values()
-        self.l7_apps = {}                   # -- // --
-        self.list_applicationgroup = {}     # -- // --
         self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
-        self.default_urlcategorygroup = {
-            'URL_CATEGORY_GROUP_PARENTAL_CONTROL': 'Parental Control',
-            'URL_CATEGORY_GROUP_PRODUCTIVITY': 'Productivity',
-            'URL_CATEGORY_GROUP_SAFE': 'Safe categories',
-            'URL_CATEGORY_GROUP_THREATS': 'Threats',
-            'URL_CATEGORY_MORPHO_RECOMMENDED': 'Recommended for morphology checking',
-            'URL_CATEGORY_VIRUSCHECK_RECOMMENDED': 'Recommended for virus check'
-        }
-        self.init_struct()
-
-    def init_struct(self):
-        """Звполняем служебные структуры данных"""
-        err, result = self.utm.get_zones_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.zones = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список сертификатов
-        err, result = self.utm.get_certificates_list()
-        if err:
-            parent.stepChanged.emit(f'iRED|{result}')
-            return
-        self.ngfw_certs = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список профилей аутентификации
-        err, result = self.utm.get_auth_profiles()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.auth_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список локальных групп
-        err, result = self.utm.get_groups_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_groups = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список локальных пользователей
-        err, result = self.utm.get_users_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_users = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список профилей SSL
-        if self.version > 5:
-            err, result = self.utm.get_ssl_profiles_list()
-            if err:
-                self.stepChanged.emit(f'iRED|{result}')
-                return
-            self.ssl_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список IP-листов
-        err, result = self.utm.get_nlists_list('network')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.ip_lists = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список URL-листов
-        err, result = self.utm.get_nlists_list('url')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.url_lists = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список групп категорий URL
-        err, result = self.utm.get_nlists_list('urlcategorygroup')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_urlcategorygroup = {x['id']: self.default_urlcategorygroup.get(x['name'], x['name'].strip().translate(trans_name)) for x in result}
-        # Получаем список категорий URL
-        err, result = self.utm.get_url_categories()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.url_categories = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список календарей
-        err, result = self.utm.get_nlists_list('timerestrictiongroup')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_calendar = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список сервисов
-        err, result = self.utm.get_services_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.services_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список групп сервисов
-        if self.version >= 7:
-            err, result = self.utm.get_nlists_list('servicegroup')
-            if err:
-                self.stepChanged.emit(f'iRED|{result}')
-                return
-            self.servicegroups_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
     def run(self):
         """Экспортируем всё в пакетном режиме"""
+        err, self.ngfw_data = read_bin_file(self)
+        if err:
+            self.stepChanged.emit('iRED|Экспорт конфигурации с UserGate NGFW прерван!')
+            return
+
         for item in self.all_points:
             top_level_path = os.path.join(self.config_path, item['path'])
             for point in item['points']:
                 current_path = os.path.join(top_level_path, point)
-#                print(current_path)
                 if point in func:
-#                    print(point)
                     func[point](self, current_path)
                 else:
                     self.error = 1
                     self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
+
         self.stepChanged.emit('iORANGE|Экспорт конфигурации прошёл с ошибками!\n' if self.error else 'iGREEN|Экспорт всей конфигурации прошёл успешно.\n')
 
 
@@ -167,108 +72,17 @@ class ExportSelectedPoints(QThread):
         self.config_path = config_path
         self.selected_path = selected_path
         self.selected_points = selected_points
-        self.ssl_profiles = {}
-        self.servicegroups_list = {}
-        self.l7_categories = {}             # Устанавливаются через set_appps_values()
-        self.l7_apps = {}                   # -- // --
-        self.list_applicationgroup = {}     # -- // --
         self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
-        self.default_urlcategorygroup = {
-            'URL_CATEGORY_GROUP_PARENTAL_CONTROL': 'Parental Control',
-            'URL_CATEGORY_GROUP_PRODUCTIVITY': 'Productivity',
-            'URL_CATEGORY_GROUP_SAFE': 'Safe categories',
-            'URL_CATEGORY_GROUP_THREATS': 'Threats',
-            'URL_CATEGORY_MORPHO_RECOMMENDED': 'Recommended for morphology checking',
-            'URL_CATEGORY_VIRUSCHECK_RECOMMENDED': 'Recommended for virus check'
-        }
-        self.init_struct()
-
-    def init_struct(self):
-        """Звполняем служебные структуры данных"""
-        err, result = self.utm.get_zones_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.zones = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список сертификатов
-        err, result = self.utm.get_certificates_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.ngfw_certs = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список профилей аутентификации
-        err, result = self.utm.get_auth_profiles()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.auth_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список локальных групп
-        err, result = self.utm.get_groups_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_groups = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список локальных пользователей
-        err, result = self.utm.get_users_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_users = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список профилей SSL
-        if self.version > 5:
-            err, result = self.utm.get_ssl_profiles_list()
-            if err:
-                self.stepChanged.emit(f'iRED|{result}')
-                return
-            self.ssl_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список IP-листов
-        err, result = self.utm.get_nlists_list('network')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.ip_lists = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список URL-листов
-        err, result = self.utm.get_nlists_list('url')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.url_lists = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список групп категорий URL
-        err, result = self.utm.get_nlists_list('urlcategorygroup')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_urlcategorygroup = {x['id']: self.default_urlcategorygroup.get(x['name'], x['name'].strip().translate(trans_name)) for x in result}
-        # Получаем список категорий URL
-        err, result = self.utm.get_url_categories()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.url_categories = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список календарей
-        err, result = self.utm.get_nlists_list('timerestrictiongroup')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.list_calendar = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список сервисов
-        err, result = self.utm.get_services_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.services_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-        # Получаем список групп сервисов
-        if self.version >= 7:
-            err, result = self.utm.get_nlists_list('servicegroup')
-            if err:
-                self.stepChanged.emit(f'iRED|{result}')
-                return
-            self.servicegroups_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
     def run(self):
         """Экспортируем определённый раздел конфигурации"""
+        err, self.ngfw_data = read_bin_file(self)
+        if err:
+            self.stepChanged.emit('iRED|Экспорт конфигурации с UserGate NGFW прерван!')
+            return
+
         for point in self.selected_points:
             current_path = os.path.join(self.selected_path, point)
             if point in func:
@@ -310,9 +124,9 @@ def export_general_settings(parent, path):
             data['webui_auth_mode'] = result
 
         if parent.version > 5:
-            if parent.ssl_profiles:
-                data['web_console_ssl_profile_id'] = parent.ssl_profiles[data['web_console_ssl_profile_id']]
-                data['response_pages_ssl_profile_id'] = parent.ssl_profiles[data['response_pages_ssl_profile_id']]
+            if parent.ngfw_data['ssl_profiles']:
+                data['web_console_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['web_console_ssl_profile_id']]
+                data['response_pages_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['response_pages_ssl_profile_id']]
             else:
                 data.pop('web_console_ssl_profile_id', None)
                 data.pop('response_pages_ssl_profile_id', None)
@@ -341,7 +155,7 @@ def export_general_settings(parent, path):
     else:
         if parent.version >= 7.1:
             zone_number = data['tunnel_inspection_zone_config']['target_zone']
-            data['tunnel_inspection_zone_config']['target_zone'] = parent.zones.get(zone_number, 'Unknown')
+            data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_data['zones'].get(zone_number, 'Unknown')
         json_file = os.path.join(path, 'config_settings_modules.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
@@ -462,7 +276,7 @@ def export_general_settings(parent, path):
         error = 1
     else:
         if parent.version > 5:
-            data['ssl_profile_id'] = parent.ssl_profiles[data['ssl_profile_id']]
+            data['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['ssl_profile_id']]
         else:
             data['ssl_profile_id'] = "Default SSL profile"
         if parent.version >= 7.1:
@@ -470,10 +284,10 @@ def export_general_settings(parent, path):
         else:
             data['client_certificate_profile_id'] = 0
 
-        data['user_auth_profile_id'] = parent.auth_profiles.get(data['user_auth_profile_id'], 1)
+        data['user_auth_profile_id'] = parent.ngfw_data['auth_profiles'].get(data['user_auth_profile_id'], 1)
         data['proxy_portal_template_id'] = list_templates.get(data['proxy_portal_template_id'], -1)
         data['proxy_portal_login_template_id'] = list_templates.get(data['proxy_portal_login_template_id'], -1)
-        data['certificate_id'] = parent.ngfw_certs.get(data['certificate_id'], -1)
+        data['certificate_id'] = parent.ngfw_data['certs'].get(data['certificate_id'], -1)
 
         json_file = os.path.join(path, 'config_web_portal.json')
         with open(json_file, 'w') as fh:
@@ -593,7 +407,7 @@ def export_users_certificate_profiles(parent, path):
         for item in result:
             item.pop('id', None)
             item.pop('cc', None)
-            item['ca_certificates'] = [parent.ngfw_certs[x] for x in item['ca_certificates']]
+            item['ca_certificates'] = [parent.ngfw_data['certs'][x] for x in item['ca_certificates']]
 
         json_file = os.path.join(path, 'users_certificate_profiles.json')
         with open(json_file, 'w') as fh:
@@ -632,9 +446,9 @@ def export_zones(parent, path):
             elif parent.version >= 7.1:
                 for net in zone['networks']:
                     if net[0] == 'list_id':
-                        net[1] = parent.ip_lists[net[1]]
+                        net[1] = parent.ngfw_data['ip_lists'][net[1]]
                 for item in zone['sessions_limit_exclusions']:
-                    item[1] = parent.ip_lists[item[1]]
+                    item[1] = parent.ngfw_data['ip_lists'][item[1]]
 
             # Удаляем неиспользуемые в настоящий момент сервисы зон: 3, 16, 20, 21 (в zone_services = false).
             new_services_access = []
@@ -694,7 +508,7 @@ def export_interfaces_list(parent, path):
             item.pop('running', None)
             item.pop('node_name', None)
             if item['zone_id']:
-                item['zone_id'] = parent.zones.get(item['zone_id'], 0)
+                item['zone_id'] = parent.ngfw_data['zones'].get(item['zone_id'], 0)
             item['netflow_profile'] = list_netflow.get(item['netflow_profile'], 'undefined')
             lldp_profile = item.get('lldp_profile', 'undefined')
             item['lldp_profile'] = list_lldp.get(lldp_profile, 'undefined')
@@ -1247,7 +1061,7 @@ def export_wccp(parent, path):
             item.pop('cc', None)
             if item['routers']:
                 for x in item['routers']:
-                    x[1] = parent.ip_lists[x[1]] if x[0] == 'list_id' else x[1]
+                    x[1] = parent.ngfw_data['ip_lists'][x[1]] if x[0] == 'list_id' else x[1]
 
         json_file = os.path.join(path, 'config_wccp.json')
         with open(json_file, 'w') as fh:
@@ -1322,7 +1136,7 @@ def export_local_users(parent, path):
                 item['first_name'] = ""
             if not item['last_name']:
                 item['last_name'] = ""
-            item['groups'] = [parent.list_groups[guid] for guid in item['groups']]
+            item['groups'] = [parent.ngfw_data['local_groups'][guid] for guid in item['groups']]
 
         json_file = os.path.join(path, 'config_users.json')
         with open(json_file, 'w') as fh:
@@ -1369,7 +1183,7 @@ def export_auth_servers(parent, path):
         parent.stepChanged.emit(f'BLACK|    Список серверов NTLM выгружен в файл "{json_file}".')
 
         for item in saml:
-            item['certificate_id'] = parent.ngfw_certs.get(item['certificate_id'], 0)
+            item['certificate_id'] = parent.ngfw_data['certs'].get(item['certificate_id'], 0)
         json_file = os.path.join(path, 'config_saml_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(saml, fh, indent=4, ensure_ascii=False)
@@ -1518,11 +1332,17 @@ def export_captive_profiles(parent, path):
             item['name'] = item['name'].strip().translate(trans_name)
             item['captive_template_id'] = list_templates.get(item['captive_template_id'], -1)
             item['notification_profile_id'] = list_notifications.get(item['notification_profile_id'], -1)
-            item['user_auth_profile_id'] = parent.auth_profiles[item['user_auth_profile_id']]
+            try:
+                item['user_auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['user_auth_profile_id']]
+            except KeyError:
+                parent.stepChanged.emit('bRED|    Не найден профиль аутентификации для Captive-профиля "{item["name"]}". Профиль установлен в дефолтное значение.')
+                item['user_auth_profile_id'] = 'Example user auth profile'
+#                for k, v in parent.ngfw_data['auth_profiles'].items():
+#                    print(k, '-', v)
             if (6 <= parent.version < 7.1):
                 item['ta_groups'] = [list_groups[guid] for guid in item['ta_groups']]
             else:
-                item['ta_groups'] = [parent.list_groups[guid] for guid in item['ta_groups']]
+                item['ta_groups'] = [parent.ngfw_data['local_groups'][guid] for guid in item['ta_groups']]
             if parent.version < 6:
                 item['ta_expiration_date'] = ''
             else:
@@ -1682,7 +1502,7 @@ def export_userid_agent(parent, path):
             item.pop('id', None)
             item.pop('status', None)
             item.pop('cc', None)
-            item['auth_profile_id'] = parent.auth_profiles[item['auth_profile_id']]
+            item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
             if 'filters' in item:
                 item['filters'] = [useridagent_filters[x] for x in item['filters']]
 
@@ -1698,10 +1518,10 @@ def export_userid_agent(parent, path):
     else:
         data.pop('cc', None)
         if data['tcp_ca_certificate_id']:
-            data['tcp_ca_certificate_id'] = parent.ngfw_certs[data['tcp_ca_certificate_id']]
+            data['tcp_ca_certificate_id'] = parent.ngfw_data['certs'][data['tcp_ca_certificate_id']]
         if data['tcp_server_certificate_id']:
-            data['tcp_server_certificate_id'] = parent.ngfw_certs[data['tcp_server_certificate_id']]
-        data['ignore_networks'] = [['list_id', parent.ip_lists[x[1]]] for x in data['ignore_networks']]
+            data['tcp_server_certificate_id'] = parent.ngfw_data['certs'][data['tcp_server_certificate_id']]
+        data['ignore_networks'] = [['list_id', parent.ngfw_data['ip_lists'][x[1]]] for x in data['ignore_networks']]
 
         json_file = os.path.join(path, 'userid_agent_config.json')
         with open(json_file, 'w') as fh:
@@ -1720,12 +1540,6 @@ def export_firewall_rules(parent, path):
         parent.error = 1
         return
     error = 0
-
-    if not parent.l7_apps:
-        err = set_apps_values(parent)
-        if err:
-            parent.error = 1
-            return
 
     if not parent.scenarios_rules:
         err = set_scenarios_rules(parent)
@@ -1943,12 +1757,6 @@ def export_shaper_rules(parent, path):
         return
     error = 0
 
-    if not parent.l7_apps:
-        err = set_apps_values(parent)
-        if err:
-            parent.error = 1
-            return
-
     if not parent.scenarios_rules:
         err = set_scenarios_rules(parent)
         if err:
@@ -2033,12 +1841,12 @@ def export_content_rules(parent, path):
         return
     templates_list = {x['id']: x['name'] for x in result}
 
-    err, result = parent.utm.get_nlists_list('mime')
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+#    err, result = parent.utm.get_nlists_list('mime')
+#    if err:
+#        parent.stepChanged.emit(f'RED|    {result}')
+#        parent.error = 1
+#        return
+#    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
     if not parent.scenarios_rules:
         err = set_scenarios_rules(parent)
@@ -2087,7 +1895,7 @@ def export_content_rules(parent, path):
             for x in item['user_agents']:
                 x[1] = useragent_list[x[1]] if x[0] == 'list_id' else x[1]
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
-            item['content_types'] = [mime_list[x] for x in item['content_types']]
+            item['content_types'] = [parent.ngfw_data['mime'][x] for x in item['content_types']]
             if item['scenario_rule_id']:
                 item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
             if parent.version < 7:
@@ -2236,7 +2044,7 @@ def export_ssldecrypt_rules(parent, path):
             item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
             item['urls'] = get_urls_name(parent, item['urls'], item['name'])
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
-            item['ssl_profile_id'] = parent.ssl_profiles[item['ssl_profile_id']] if 'ssl_profile_id' in item else 'Default SSL profile'
+            item['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][item['ssl_profile_id']] if 'ssl_profile_id' in item else 'Default SSL profile'
             item['ssl_forward_profile_id'] = ssl_forward_profiles[item['ssl_forward_profile_id']] if 'ssl_forward_profile_id' in item else -1
             if parent.version < 6:
                 item['position_layer'] = 'local'
@@ -2402,7 +2210,7 @@ def export_scada_rules(parent, path):
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
             item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
             item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
-            item['services'] = [parent.services_list[x] for x in item['services']]
+            item['services'] = [parent.ngfw_data['services'][x] for x in item['services']]
             item['scada_profiles'] = [scada_profiles[x] for x in item['scada_profiles']]
 
         json_file = os.path.join(path, 'config_scada_rules.json')
@@ -2423,19 +2231,6 @@ def export_scenarios(parent, path):
         return
     error = 0
 
-    if not parent.l7_apps:
-        err = set_apps_values(parent)
-        if err:
-            parent.error = 1
-            return
-
-    err, result = parent.utm.get_nlists_list('mime')
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-
     err, data = parent.utm.get_scenarios_rules()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
@@ -2450,7 +2245,7 @@ def export_scenarios(parent, path):
                 if condition['kind'] == 'application':
                     condition['apps'] = get_apps(parent, condition['apps'], item['name'])
                 elif condition['kind'] == 'mime_types':
-                    condition['content_types'] = [mime_list[x] for x in condition['content_types']]
+                    condition['content_types'] = [parent.ngfw_data['mime'][x] for x in condition['content_types']]
                 elif condition['kind'] == 'url_category':
                     condition['url_categories'] = get_url_categories_name(parent, condition['url_categories'], item['name'])
 
@@ -2546,12 +2341,12 @@ def export_icap_rules(parent, path):
         return
     error = 0
 
-    err, result = parent.utm.get_nlists_list('mime')
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+#    err, result = parent.utm.get_nlists_list('mime')
+#    if err:
+#        parent.stepChanged.emit(f'RED|    {result}')
+#        parent.error = 1
+#        return
+#    mime_list = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
     err, result = parent.utm.get_icap_servers()
     if err:
@@ -2596,7 +2391,7 @@ def export_icap_rules(parent, path):
             item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
             item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
             item['urls'] = get_urls_name(parent, item['urls'], item['name'])
-            item['content_types'] = [mime_list[x] for x in item['content_types']]
+            item['content_types'] = [parent.ngfw_data['mime'][x] for x in item['content_types']]
             if parent.version < 6:
                 item['position_layer'] = 'local'
             if parent.version < 7:
@@ -2763,9 +2558,9 @@ def export_proxyportal_rules(parent, path):
                 item['position_layer'] = 'local'
             else:
                 if item['mapping_url_ssl_profile_id']:
-                    item['mapping_url_ssl_profile_id'] = parent.ssl_profiles[item['mapping_url_ssl_profile_id']]
+                    item['mapping_url_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][item['mapping_url_ssl_profile_id']]
                 if item['mapping_url_certificate_id']:
-                    item['mapping_url_certificate_id'] = parent.ngfw_certs[item['mapping_url_certificate_id']]
+                    item['mapping_url_certificate_id'] = parent.ngfw_data['certs'][item['mapping_url_certificate_id']]
 
         json_file = os.path.join(path, 'config_web_portal.json')
         with open(json_file, 'w') as fh:
@@ -2873,7 +2668,7 @@ def export_reverseproxy_rules(parent, path):
             else:
                 try:
                     if item['ssl_profile_id']:
-                        item['ssl_profile_id'] = parent.ssl_profiles[item['ssl_profile_id']]
+                        item['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][item['ssl_profile_id']]
                 except KeyError:
                     parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий профиль SSL.')
                     item['ssl_profile_id'] = 0
@@ -2881,7 +2676,7 @@ def export_reverseproxy_rules(parent, path):
 
             if item['certificate_id'] > 0:
                 try:
-                    item['certificate_id'] = parent.ngfw_certs[item['certificate_id']]
+                    item['certificate_id'] = parent.ngfw_data['certs'][item['certificate_id']]
                 except KeyError:
                     parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий сертификат.')
                     item['certificate_id'] = 0
@@ -3061,7 +2856,7 @@ def export_vpnclient_security_profiles(parent, path):
         for item in data:
             item.pop('id', None)
             item.pop('cc', None)
-            item['certificate_id'] = parent.ngfw_certs.get(item['certificate_id'], 0)
+            item['certificate_id'] = parent.ngfw_data['certs'].get(item['certificate_id'], 0)
 
         json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
         with open(json_file, 'w') as fh:
@@ -3097,7 +2892,7 @@ def export_vpnserver_security_profiles(parent, path):
         for item in data:
             item.pop('id', None)
             item.pop('cc', None)
-            item['certificate_id'] = parent.ngfw_certs.get(item['certificate_id'], 0)
+            item['certificate_id'] = parent.ngfw_data['certs'].get(item['certificate_id'], 0)
             item['client_certificate_profile_id'] = client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
 
         json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
@@ -3130,7 +2925,7 @@ def export_vpn_networks(parent, path):
             item.pop('cc', None)
             for x in item['networks']:
                 if x[0] == 'list_id':
-                    x[1] = parent.ip_lists[x[1]]
+                    x[1] = parent.ngfw_data['ip_lists'][x[1]]
             if parent.version < 7.1:
                 item['ep_tunnel_all_routes'] = False
                 item['ep_disable_lan_access'] = False
@@ -3139,10 +2934,10 @@ def export_vpn_networks(parent, path):
             else:
                 for x in item['ep_routes_include']:
                     if x[0] == 'list_id':
-                        x[1] = parent.ip_lists[x[1]]
+                        x[1] = parent.ngfw_data['ip_lists'][x[1]]
                 for x in item['ep_routes_exclude']:
                     if x[0] == 'list_id':
-                        x[1] = parent.ip_lists[x[1]]
+                        x[1] = parent.ngfw_data['ip_lists'][x[1]]
 
         json_file = os.path.join(path, 'config_vpn_networks.json')
         with open(json_file, 'w') as fh:
@@ -3249,7 +3044,7 @@ def export_vpn_server_rules(parent, path):
 
             item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
             item['tunnel_id'] = vpn_networks[item['tunnel_id']]
-            item['auth_profile_id'] = parent.auth_profiles[item['auth_profile_id']]
+            item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
             if parent.version >= 7.1:
                 item.pop('allowed_auth_methods', None)
 
@@ -3754,7 +3549,7 @@ def export_url_categories(parent, path):
         return
     error = 0
 
-    revert_urlcategorygroup = {v: k for k, v in parent.default_urlcategorygroup.items()}
+    revert_urlcategorygroup = {v: k for k, v in default_urlcategorygroup.items()}
 
     err, data = parent.utm.get_nlist_list('urlcategorygroup')
     if err:
@@ -3763,7 +3558,7 @@ def export_url_categories(parent, path):
         error = 1
     else:
         for item in data:
-            item['name'] = parent.default_urlcategorygroup.get(item['name'], item['name'].strip().translate(trans_name))
+            item['name'] = default_urlcategorygroup.get(item['name'], item['name'].strip().translate(trans_name))
             item.pop('id', None)
             item.pop('editable', None)
             item.pop('enabled', None)
@@ -3780,7 +3575,7 @@ def export_url_categories(parent, path):
             for content in item['content']:
                 if parent.version < 6:
                     content['category_id'] = content.pop('value')
-                    content['name'] = parent.url_categories[int(content['category_id'])]
+                    content['name'] = parent.ngfw_data['url_categories'][int(content['category_id'])]
                 content.pop('id', None)
 
         json_file = os.path.join(path, 'config_url_categories.json')
@@ -3813,7 +3608,7 @@ def export_custom_url_category(parent, path):
             item.pop('default_categories', None)
             item.pop('change_date', None)
             item.pop('cc', None)
-            item['categories'] = [parent.url_categories[x] for x in item['categories']]
+            item['categories'] = [parent.ngfw_data['url_categories'][x] for x in item['categories']]
 
         json_file = os.path.join(path, 'custom_url_categories.json')
         with open(json_file, 'w') as fh:
@@ -3833,12 +3628,6 @@ def export_applications(parent, path):
         return
     error = 0
 
-    if not parent.l7_apps:
-        err = set_apps_values(parent)
-        if err:
-            parent.error = 1
-            return
-
     err, data = parent.utm.get_version71_apps(query={'query': 'owner = You'})
     if err:
         parent.stepChanged.emit(f'iRED|{data}')
@@ -3849,7 +3638,7 @@ def export_applications(parent, path):
             item.pop('id', None)
             item.pop('attributes', None)
             item.pop('cc', None)
-            item['l7categories'] = [parent.l7_categories[x[1]] for x in item['l7categories']]
+            item['l7categories'] = [parent.ngfw_data['l7_categories'][x[1]] for x in item['l7categories']]
 
         json_file = os.path.join(path, 'config_applications.json')
         with open(json_file, 'w') as fh:
@@ -3869,12 +3658,6 @@ def export_app_profiles(parent, path):
         return
     error = 0
 
-    if not parent.l7_apps:
-        err = set_apps_values(parent)
-        if err:
-            parent.error = 1
-            return
-
     err, data = parent.utm.get_l7_profiles_list()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
@@ -3885,7 +3668,7 @@ def export_app_profiles(parent, path):
             item.pop('id', None)
             item.pop('cc', None)
             for app in item['overrides']:
-                app['id'] = parent.l7_apps[app['id']]
+                app['id'] = parent.ngfw_data['l7_apps'][app['id']]
 
         json_file = os.path.join(path, 'config_app_profiles.json')
         with open(json_file, 'w') as fh:
@@ -3904,12 +3687,6 @@ def export_application_groups(parent, path):
         parent.error = 1
         return
     error = 0
-
-    if not parent.l7_apps:
-        err = set_apps_values(parent)
-        if err:
-            parent.error = 1
-            return
 
     err, data = parent.utm.get_nlist_list('applicationgroup')
     if err:
@@ -3939,12 +3716,12 @@ def export_application_groups(parent, path):
                 content.pop('cc', None)
                 content.pop('description', None)
                 if parent.version < 6:
-                    content['name'] = parent.l7_apps[content['value']]
+                    content['name'] = parent.ngfw_data['l7_apps'][content['value']]
                 elif parent.version < 7.1:
-                    content['category'] = [parent.l7_categories[x] for x in content['category']]
+                    content['category'] = [parent.ngfw_data['l7_categories'][x] for x in content['category']]
                 else:
                     try:
-                        content['l7categories'] = [parent.l7_categories[x[1]] for x in content['l7categories']]
+                        content['l7categories'] = [parent.ngfw_data['l7_categories'][x[1]] for x in content['l7categories']]
                     except KeyError:
                         pass    # Ошибка бывает если ранее было не корректно добавлено приложение через API в версии 7.1.
 
@@ -4703,9 +4480,9 @@ def get_ips_name(parent, rule_ips, rule_name):
             new_rule_ips.append(ips)
         try:
             if ips[0] == 'list_id':
-                new_rule_ips.append(['list_id', parent.ip_lists[ips[1]]])
+                new_rule_ips.append(['list_id', parent.ngfw_data['ip_lists'][ips[1]]])
             elif ips[0] == 'urllist_id':
-                new_rule_ips.append(['urllist_id', parent.url_lists[ips[1]]])
+                new_rule_ips.append(['urllist_id', parent.ngfw_data['url_lists'][ips[1]]])
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error! Не найден список {ips[0]} для правила {rule_name}.')
     return new_rule_ips
@@ -4715,7 +4492,7 @@ def get_zones_name(parent, zones, rule_name):
     new_zones = []
     for zone_id in zones:
         try:
-            new_zones.append(parent.zones[zone_id])
+            new_zones.append(parent.ngfw_data['zones'][zone_id])
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error! Не найдена зона c ID: {zone_id} для правила {rule_name}.')
     return new_zones
@@ -4725,7 +4502,7 @@ def get_urls_name(parent, urls, rule_name):
     new_urls = []
     for url_id in urls:
         try:
-            new_urls.append(parent.url_lists[url_id])
+            new_urls.append(parent.ngfw_data['url_lists'][url_id])
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error! Не найден список URL c ID: {url_id} для правила {rule_name}.')
     return new_urls
@@ -4736,9 +4513,9 @@ def get_url_categories_name(parent, url_categories, rule_name):
     for arr in url_categories:
         try:
             if arr[0] == 'list_id':
-                new_urls.append(['list_id', parent.list_urlcategorygroup[arr[1]]])
+                new_urls.append(['list_id', parent.ngfw_data['url_categorygroups'][arr[1]]])
             elif arr[0] == 'category_id':
-                new_urls.append(['category_id', parent.url_categories[arr[1]]])
+                new_urls.append(['category_id', parent.ngfw_data['url_categories'][arr[1]]])
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error! Не найдена категория URL {arr} для правила {rule_name}.')
     return new_urls
@@ -4748,7 +4525,7 @@ def get_time_restrictions_name(parent, times, rule_name):
     new_times = []
     for cal_id in times:
         try:
-            new_times.append(parent.list_calendar[cal_id])
+            new_times.append(parent.ngfw_data['calendars'][cal_id])
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error! Не найден календарь c ID: {cal_id} для правила {rule_name}.')
     return new_times
@@ -4765,7 +4542,7 @@ def get_names_users_and_groups(parent, users, rule_name):
                 new_users.append(item)
             case 'user':
                 try:
-                    user_name = parent.list_users[item[1]]
+                    user_name = parent.ngfw_data['local_users'][item[1]]
                 except KeyError:
                     err, user_name = parent.utm.get_ldap_user_name(item[1])
                     if err:
@@ -4778,7 +4555,7 @@ def get_names_users_and_groups(parent, users, rule_name):
                     new_users.append(['user', user_name])
             case 'group':
                 try:
-                    group_name = parent.list_groups[item[1]]
+                    group_name = parent.ngfw_data['local_groups'][item[1]]
                 except KeyError:
                     err, group_name = parent.utm.get_ldap_group_name(item[1])
                     if err:
@@ -4797,7 +4574,7 @@ def get_services(parent, service_list, rule_name):
     if parent.version < 7:
         for item in service_list:
             try:
-                new_service_list.append(['service', parent.services_list[item]])
+                new_service_list.append(['service', parent.ngfw_data['services'][item]])
             except TypeError as err:
                 parent.stepChanged.emit(f'bRED|    Error [Rule: "{rule_name}"]. Не корректное значение в поле "services" - {err}.')
             except KeyError as err:
@@ -4805,33 +4582,10 @@ def get_services(parent, service_list, rule_name):
     else:
         for item in service_list:
             try:
-                new_service_list.append(['service', parent.services_list[item[1]]] if item[0] == 'service' else ['list_id', parent.servicegroups_list[item[1]]])
+                new_service_list.append(['service', parent.ngfw_data['services'][item[1]]] if item[0] == 'service' else ['list_id', parent.ngfw_data['service_groups'][item[1]]])
             except KeyError as err:
                 parent.stepChanged.emit(f'bRED|    Error [Rule: "{rule_name}"]. Не найдена группа сервисов "{item}".')
     return new_service_list
-
-def set_apps_values(parent):
-    """Устанавливаем в parent значения атрибутов: l7_categories, l7_apps, list_applicationgroup"""
-    err, result = parent.utm.get_l7_categories()
-    if err:
-        parent.stepChanged.emit(f'iRED|{result}')
-        return 1
-    parent.l7_categories = {x['id']: x['name'] for x in result}
-
-    err, result = parent.utm.get_l7_apps()
-    if err:
-        parent.stepChanged.emit(f'iRED|{result}')
-        return 1
-#    parent.l7_apps = {x['id']: x['name'] for x in result}
-    parent.l7_apps = result
-
-    err, result = parent.utm.get_nlists_list('applicationgroup')
-    if err:
-        parent.stepChanged.emit(f'iRED|{result}')
-        return 1
-    parent.list_applicationgroup = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-
-    return 0
 
 def get_apps(parent, array_apps, rule_name):
     """Определяем имя приложения или группы приложений по ID."""
@@ -4842,18 +4596,18 @@ def get_apps(parent, array_apps, rule_name):
                 new_app_list.append(['ro_group', 'All'])
             else:
                 try:
-                    new_app_list.append(['ro_group', parent.l7_categories[app[1]]])
+                    new_app_list.append(['ro_group', parent.ngfw_data['l7_categories'][app[1]]])
                 except KeyError as err:
                     parent.stepChanged.emit(f'bRED|    Error! Не найдена категория l7 №{err} для правила "{rule_name}".')
                     parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и UTM не получил список категорий l7. Установите лицензию и повторите попытку.')
         elif app[0] == 'group':
             try:
-                new_app_list.append(['group', parent.list_applicationgroup[app[1]]])
+                new_app_list.append(['group', parent.ngfw_data['application_groups'][app[1]]])
             except KeyError as err:
                 parent.stepChanged.emit(f'bRED|    Error! Не найдена группа приложений l7 №{err} для правила "{rule_name}".')
         elif app[0] == 'app':
             try:
-                new_app_list.append(['app', parent.l7_apps[app[1]]])
+                new_app_list.append(['app', parent.ngfw_data['l7_apps'][app[1]]])
             except KeyError as err:
                 parent.stepChanged.emit(f'bRED|    Error! Не найдено приложение №{err} для правила "{rule_name}".')
                 parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и UTM не получил список приложений l7. Установите лицензию и повторите попытку.')

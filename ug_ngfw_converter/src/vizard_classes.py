@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.1
+# Версия 1.5
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -9,10 +9,12 @@ from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter)
+import config_style as cs
 import export_functions as ef
 import import_functions as tf
-import config_style as cs
+import get_temporary_data as gtd
 from utm import UtmXmlRpc
+from common_func import create_dir, message_inform, message_question, message_alert
 
 
 class SelectAction(QWidget):
@@ -207,6 +209,19 @@ class SelectMode(QWidget):
         self.current_path = os.path.join(self.parent.get_config_path(), selected_item['path'])
         self.selected_points = selected_item['points']
 
+    def init_temporary_data(self, mode):
+        """
+        Запускаем в потоке itd.GetTemporaryData() для получения часто используемых данных с NGFW.
+        """
+        if self.thread is None:
+            self.disable_buttons()
+            self.thread = gtd.GetExportTemporaryData(self.utm) if mode == 'export' else gtd.GetImportTemporaryData(self.utm)
+            self.thread.stepChanged.connect(self.on_step_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
+        else:
+            message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         path_logfile = os.path.join(self.parent.get_config_path(), log_file)
@@ -277,6 +292,7 @@ class SelectExportMode(SelectMode):
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
                     self.tree.change_items_status()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
+                    self.init_temporary_data('export')
                 else:
                     self.run_page_0()
             else:
@@ -294,7 +310,7 @@ class SelectExportMode(SelectMode):
             case 2:
                 err, msg = self.utm.login()
         if err:
-            message_alert(self, '', msg)
+            message_alert(self, msg, '')
             self.run_page_0()
 
         if self.selected_points:
@@ -321,7 +337,7 @@ class SelectExportMode(SelectMode):
             case 2:
                 err, msg = self.utm.login()
         if err:
-            message_alert(self, '', msg)
+            message_alert(self, msg, '')
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
@@ -363,6 +379,7 @@ class SelectImportMode(SelectMode):
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
                     self.tree.change_items_status()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
+                    self.init_temporary_data('import')
                 else:
                     self.run_page_0()
             else:
@@ -380,7 +397,7 @@ class SelectImportMode(SelectMode):
             case 2:
                 err, msg = self.utm.login()
         if err:
-            message_alert(self, '', msg)
+            message_alert(self, msg, '')
             self.run_page_0()
 
         if self.selected_points:
@@ -417,7 +434,7 @@ class SelectImportMode(SelectMode):
             case 2:
                 err, msg = self.utm.login()
         if err:
-            message_alert(self, '', msg)
+            message_alert(self, msg, '')
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
@@ -598,10 +615,12 @@ class SelectConfigDirectoryWindow(QDialog):
     def _send_accept(self):
         if self.config_directory.currentText():
             self.main_window.set_config_path(self.config_directory.currentText())
-            if create_dir(self, self.main_window.get_config_path()):
-                self.accept()
-            else:
+            err, msg = create_dir(self.main_window.get_config_path(), delete='no')
+            if err:
                 self.main_window.del_config_path()
+                message_alert(self, msg, '')
+            else:
+                self.accept()
 
 
 class LoginWindow(QDialog):
@@ -655,7 +674,7 @@ class LoginWindow(QDialog):
             self.utm = UtmXmlRpc(self.ngfw_ip.text(), self.login.text(), self.password.text())
             err, result = self.utm.connect()
             if err:
-                message_alert(self, result, 'Не удалось подключиться с указанными параметрами!')
+                message_alert(self, 'Не удалось подключиться с указанными параметрами!', result)
             else:
                 self.accept()
 
@@ -1070,29 +1089,10 @@ class MainTree(QTreeWidget):
             array.append({'path': item_text, 'points': item_childs})
         return array
 
+#----------------------------------------------------------------------------------------------------------------------------
+def main(args):
+    return 0
 
-#-------------------------------------- Служебные функции --------------------------------------------------
-def create_dir(self, folder):
-    if not os.path.isdir(folder):
-        try:
-            os.makedirs(folder)
-        except Exception as err:
-            message_alert(self, err, f"Ошибка создания каталога:\n{folder}")
-            return False
-        else:
-            return True
-    else:
-        return True
-
-def message_inform(self, title, message):
-    """Общее информационное окно. Принимает родителя, заголовок и текст сообщения"""
-    QMessageBox.information(self, title, message, defaultButton=QMessageBox.StandardButton.Ok)
-
-def message_question(self, title, message):
-    """Общее окно подтверждения. Принимает родителя, заголовок и текст сообщения"""
-    result = QMessageBox.question(self, title, message, defaultButton=QMessageBox.StandardButton.No)
-    return 'yes' if result == QMessageBox.StandardButton.Yes else 'no'
-
-def message_alert(self, err, message):
-    """Алерт при любых ошибках"""
-    QMessageBox.critical(self, "Ошибка!", f"{message}\n\n{err}", buttons=QMessageBox.StandardButton.Cancel)
+if __name__ == '__main__':
+    import sys
+    sys.exit(main(sys.argv))

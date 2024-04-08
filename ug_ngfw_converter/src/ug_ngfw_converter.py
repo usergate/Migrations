@@ -18,20 +18,21 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_universal_converter.py
-# Version 1.4
+# Version 1.5
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
-import vizard_classes as vc
-from PyQt6.QtGui import QIcon, QFont, QPalette
+from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QSize, Qt, QObject
-from PyQt6.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QStackedLayout, QFileDialog, QFrame
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
+import vizard_classes as vc
+import common_func as func
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 1.4)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 1.5)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
@@ -48,7 +49,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
 
         # Создаём каталог data в текущей директории. Если успешно, активируем кнопки экспорта/импорта.
-        if vc.create_dir(self, self._base_config_path):
+        err, msg = func.create_dir(self._base_config_path, delete='no')
+        if err:
+            func.message_alert(self, msg, '')
+        else:
             self.stacklayout.widget(0).enable_buttons()
 
     def get_base_config_path(self):
@@ -68,7 +72,13 @@ class MainWindow(QMainWindow):
         self._current_config_path = None
 
     def closeEvent(self, event):
-        """Делаем logout с UTM при закрытии программы если ранее был login."""
+        """
+        При закрытии программы:
+        1. Удаляем временный файл temporary_data.bin
+        2. Делаем logout с NGFW если ранее был login
+        """
+        if os.path.isfile('temporary_data.bin'):
+            os.remove('temporary_data.bin')
         for i in (1, 2):
             if self.stacklayout.widget(i).utm:
                 self.stacklayout.widget(i).utm.logout()
@@ -80,7 +90,6 @@ def main():
     window = MainWindow()
     window.show()
     app.exec()
-
 
 if __name__ == '__main__':
     main()

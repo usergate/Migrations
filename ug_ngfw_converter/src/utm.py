@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.15
+# Версия 3.16
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -26,6 +26,8 @@ class UtmXmlRpc:
         self.version_midle = None
         self.version_low = None
         self.version_other = None
+
+        rpc.MAXINT = 2**64 - 1
 
     def connect(self):
         """Подключиться к UTM"""
@@ -694,6 +696,17 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error utm.get_routers_list: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает список записей
+
+    def get_vrf_by_id(self, vrf_id):
+        """Получить список VRFs со всей конфигурацией"""
+        try:
+            if self.version.startswith('5'):
+                result = self._server.v1.netmanager.route.fetch(self._auth_token, self.node_name, vrf_id)
+            else:
+                result = self._server.v1.netmanager.virtualrouter.fetch(self._auth_token, vrf_id)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_vrf_by_id: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает vfr
 
     def add_vrf(self, vrf_info):
         """Добавить виртуальный маршрутизатор"""
@@ -1730,6 +1743,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 1:
                 return 2, f'Не возможно получить имя доменного пользователя. Проверьте что версия NGFW 5.0.6.4973 (6.1.7) или выше.'
+            elif err.faultCode == 404:
+                return 2, f'Не возможно получить имя доменного пользователя. Возможно не доступен контроллер домена.'
             else:
                 return 1, f'Error utm.get_ldap_user_name: [{err.faultCode}] — {err.faultString}'
         name = result['name']
@@ -1746,6 +1761,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 1:
                 return 2, f'Не возможно получить имя доменной группы. Проверьте что версия UTM 5.0.6.4973 (6.1.7) или выше.'
+            elif err.faultCode == 404:
+                return 2, f'Не возможно получить имя доменной группы. Возможно не доступен контроллер домена.'
             else:
                 return 1, f'Error utm.get_ldap_group_name: [{err.faultCode}] — {err.faultString}'
         data = [x.split('=') for x in result['name'].split(',')]
@@ -2494,7 +2511,10 @@ class UtmXmlRpc:
             result = self._server.v1.vpn.tunnels.list(self._auth_token)
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_networks: [{err.faultCode}] — {err.faultString}'
-        return 0, result
+        if self.version_hight >= 7 and self.version_midle >= 1:
+            return 0, result['items'] if int(self.version_other[:4]) > 1703 else result
+        else:
+            return 0, result
 
     def add_vpn_network(self, network):
         """Добавить новую сеть VPN"""
@@ -2544,7 +2564,10 @@ class UtmXmlRpc:
             result = self._server.v1.vpn.client.rules.list(self._auth_token)
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_client_rules: [{err.faultCode}] — {err.faultString}'
-        return 0, result
+        if self.version_hight >= 7 and self.version_midle >= 1:
+            return 0, result['items'] if int(self.version_other[:4]) > 1703 else result
+        else:
+            return 0, result
 
     def add_vpn_client_rule(self, rule):
         """Добавить новое клиентское правило VPN"""

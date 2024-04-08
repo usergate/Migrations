@@ -29,7 +29,7 @@ import stdiomask
 import ipaddress
 from services import character_map, character_map_for_users, network_proto, service_ports
 from utm import UTM
-
+import colorama
 
 def convert_file(file_name):
     """Преобразуем файл конфигурации Cisco ASA в json."""
@@ -884,4 +884,5 @@ def main():
         sys.exit()
 
 if __name__ == '__main__':
+    colorama.init()
     main()

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.4
+# Версия 1.5
 #
 
 import os, sys, json
@@ -115,7 +115,8 @@ def convert_config_file(parent, path):
     error = 0
     data = {}
     config_file = 'fortigate.cfg'
-    bad_cert_block = {'config firewall ssh local-key',
+    bad_cert_block = {'config certificate ca',
+                      'config firewall ssh local-key',
                       'config firewall ssh local-ca',
                       'config vpn certificate ca',
                       'config vpn certificate local',
@@ -123,8 +124,12 @@ def convert_config_file(parent, path):
     fg_config_file = os.path.join(path, config_file)
     try:
         with open(fg_config_file, "r") as fh:
-            line = fh.readline().translate(trans_table).strip().replace('"', '')
+            line = fh.readline()
             while line:
+                line = line.translate(trans_table).strip().replace('"', '')
+                if line.startswith('config global'):
+                    line = fh.readline()
+                    continue
                 if line.startswith('config'):
                     key = line
                     config_block = []
@@ -135,7 +140,7 @@ def convert_config_file(parent, path):
                     if key not in bad_cert_block:
                         block = make_conf_block(parent, config_block)
                         data[key] = block
-                line = fh.readline().translate(trans_table).strip().replace('"', '')
+                line = fh.readline()
     except FileNotFoundError:
         parent.stepChanged.emit(f'RED|    Не найден файл "{config_file}" в каталоге "{path}" с конфигурацией Fortigate.')
         parent.error = 1

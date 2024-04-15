@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.1
+# Версия 1.3
 #
 
 import os, sys, json
@@ -36,6 +36,7 @@ from services import zone_services, character_map, character_map_for_name, chara
 trans_table = str.maketrans(character_map)
 trans_filename = str.maketrans(character_map_file_name)
 trans_name = str.maketrans(character_map_for_name)
+trans_userlogin = str.maketrans(character_map_userlogin)
 
 class ConvertFortigateConfig(QThread):
     """Преобразуем файл конфигурации Fortigate в формат UserGate NGFW."""
@@ -50,7 +51,7 @@ class ConvertFortigateConfig(QThread):
         self.service_groups = set()
         self.ip_lists = set()
         self.url_lists = set()
-        self.local_users = set()
+        self.local_users = {}
         self.local_groups = set()
         self.time_restrictions = set()
         self.vrf = {
@@ -66,37 +67,40 @@ class ConvertFortigateConfig(QThread):
 
     def run(self):
         convert_config_file(self, self.current_fg_path)
-
-        json_file = os.path.join(self.current_fg_path, 'config.json')
-        err, data = func.read_json_file(self, json_file)
-        if err:
-            self.error = 1
-        else:
-            convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
-            convert_dns_servers(self, self.current_ug_path, data)
-            convert_notification_profile(self, self.current_ug_path, data['config system email-server'])
-            convert_services(self, self.current_ug_path, data)
-            convert_service_groups(self, self.current_ug_path, data['config firewall service group'])
-            convert_ntp_settings(self, self.current_ug_path, data['config system ntp'])
-            convert_ip_lists(self, self.current_ug_path, data)
-            convert_url_lists(self, self.current_ug_path, data)
-            convert_auth_servers(self, self.current_ug_path, data)
-            convert_user_groups(self, self.current_ug_path, data)
-            convert_local_users(self, self.current_ug_path, data)
-            convert_web_portal_resources(self, self.current_ug_path, data['config vpn ssl web user-bookmark'])
-            convert_time_sets(self, self.current_ug_path, data)
-            convert_dnat_rule(self, self.current_ug_path, data['config firewall vip'])
-            convert_loadbalancing_rule(self, self.current_ug_path, data['config firewall vip'])
-            convert_groups_iplists(self, self.current_ug_path, data)
-            convert_firewall_policy(self, self.current_ug_path, data['config firewall policy'])
-            convert_gateways_list(self, self.current_ug_path, data['config router static'])
-            convert_static_routes(self, self.current_ug_path, data['config router static'])
-            convert_bgp_routes(self, self.current_ug_path, data)
-
         if self.error:
-            self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.')
+            self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
         else:
-            self.stepChanged.emit('iGREEN|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла успешно.')
+            json_file = os.path.join(self.current_fg_path, 'config.json')
+            err, data = func.read_json_file(self, json_file)
+            if err:
+                self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
+            else:
+                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
+                convert_dns_servers(self, self.current_ug_path, data)
+                convert_notification_profile(self, self.current_ug_path, data)
+                convert_services(self, self.current_ug_path, data)
+                convert_service_groups(self, self.current_ug_path, data)
+                convert_ntp_settings(self, self.current_ug_path, data)
+                convert_dhcp_settings(self, self.current_ug_path, data)
+                convert_ip_lists(self, self.current_ug_path, data)
+                convert_url_lists(self, self.current_ug_path, data)
+                convert_auth_servers(self, self.current_ug_path, data)
+                convert_local_users(self, self.current_ug_path, data)
+                convert_user_groups(self, self.current_ug_path, data)
+                convert_web_portal_resources(self, self.current_ug_path, data)
+                convert_time_sets(self, self.current_ug_path, data)
+                convert_dnat_rule(self, self.current_ug_path, data)
+                convert_loadbalancing_rule(self, self.current_ug_path, data)
+                convert_groups_iplists(self, self.current_ug_path, data)
+                convert_firewall_policy(self, self.current_ug_path, data['config firewall policy'])
+                convert_gateways_list(self, self.current_ug_path, data)
+                convert_static_routes(self, self.current_ug_path, data)
+                convert_bgp_routes(self, self.current_ug_path, data)
+
+                if self.error:
+                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.')
+                else:
+                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла успешно.')
 
 
 def convert_config_file(parent, path):
@@ -117,26 +121,19 @@ def convert_config_file(parent, path):
     fg_config_file = os.path.join(path, config_file)
     try:
         with open(fg_config_file, "r") as fh:
-            line = fh.readline()
+            line = fh.readline().translate(trans_table).strip().replace('"', '')
             while line:
-                x = line.translate(trans_table).split(' ')
-                if x[0].startswith('config'):
-                    key = ' '.join(x).replace('"', '')
+                if line.startswith('config'):
+                    key = line
                     config_block = []
-                    line = fh.readline()
-                    x = line.translate(trans_table).split(' ')
-                    while x[0] != 'end':
-                        for i, y in enumerate(x):
-                            x[i] = y.replace('"', '')
-                        config_block.append(x)
-                        line = fh.readline()
-                        x = line.translate(trans_table).split(' ')
-                        if len(x) == 2 and x[1] == 'end':
-                            break
+                    line = fh.readline().translate(trans_table)
+                    while line not in ('end', ' end', '  end'):
+                        config_block.append(line[4:])
+                        line = fh.readline().translate(trans_table)
                     if key not in bad_cert_block:
                         block = make_conf_block(parent, config_block)
                         data[key] = block
-                line = fh.readline()
+                line = fh.readline().translate(trans_table).strip().replace('"', '')
     except FileNotFoundError:
         parent.stepChanged.emit(f'RED|    Не найден файл "{config_file}" в каталоге "{path}" с конфигурацией Fortigate.')
         parent.error = 1
@@ -153,73 +150,68 @@ def convert_config_file(parent, path):
 
 def make_edit_block(parent, data):
     """Конвертируем блок edit"""
-#    print('\n--- make_edit_block ---')
-#    for x in data:
-#        print(x)
+#    print('BLOCK:\n', data, '\n')
     edit_block = {}
     while data:
-        item = data.pop(0)[4:]
+        line = data.pop(0)
+        if not line:
+            continue
+        a1 = line.replace('" "', ',').replace('"', '')
+        item = a1.strip().split()
         match item[0]:
             case 'set':
                 edit_block[item[1]] = ' '.join(item[2:])
             case 'config':
+                conf_key = line.replace('"', '')
                 conf_block = []
-                conf_key = ' '.join(item[1:])
-                item = data.pop(0)[4:]
-#                    while item[0] != 'end':
-                while len(item) > 4:
-                    conf_block.append(item)
-                    item = data.pop(0)[4:]
+                line = data.pop(0)
+                while line != 'end':
+                    conf_block.append(line[4:])
+                    line = data.pop(0)
                 result = make_conf_block(parent, conf_block)
-#                    print('result - ', result)
                 edit_block[conf_key] = result
     return edit_block
 
 def make_conf_block(parent, data):
     """Конвертируем блок config"""
-#    print('\n--- make_config_block ---')
-#    for x in data:
-#        print(x)
+#    print('\n--- make_config_block ---', '\n', data, '\n')
     block = {}
     name = {}
     while data:
-        item = data.pop(0)[4:]
-#        print('\nitem conf_block -', item)
+        line = data.pop(0)
+        if not line:
+            continue
+        item = line.strip().split()
         match item[0]:
             case 'set':
-                block[item[1]] = ' '.join(item[2:])
+                block[item[1]] = ' '.join(item[2:]).replace('"', '')
             case 'edit':
+                edit_key = ' '.join(item[1:]).replace('"', '')
                 edit_block = []
-                edit_key = ' '.join(item[1:])
                 if edit_key in name:
                     name[edit_key] += 1
                     edit_key += str(name[edit_key])
                 else:
                     name[edit_key] = 0
-                item = data.pop(0)[4:]
+                line = data.pop(0)
                 try:
-                    while item[0] != 'next':
-                        edit_block.append(item)
-                        item = data.pop(0)[4:]
+                    while line not in ('next', ' next', '  next', '   next'):
+                        edit_block.append(line[4:])
+                        line = data.pop(0)
                 except IndexError:
                     parent.stepChanged.emit(f'RED|    Не корректная структура блока "{edit_key}". Исправьте формат блока и повторите попытку.')
                     parent.error = 1
                     break
                 result = make_edit_block(parent, edit_block)
-#                print('result edit - ', result)
                 block[edit_key] = result
             case 'config':
-#                print('Зашли в config:')
+                conf_key = line.replace('"', '')
                 conf_block = []
-                conf_key = ' '.join(item[1:])
-                item = data.pop(0)[4:]
-#                while item[0] != 'end':
-                while len(item) > 4:
-                    conf_block.append(item)
-                    item = data.pop(0)[4:]
-#                print('conf_block -', conf_block)
+                line = data.pop(0)
+                while line not in ('end', ' end', '  end'):
+                    conf_block.append(line[4:])
+                    line = data.pop(0)
                 result = make_conf_block(parent, conf_block)
-#                print('result config - ', result)
                 block[conf_key] = result
     return block
 
@@ -227,13 +219,6 @@ def make_conf_block(parent, data):
 def convert_vpn_interfaces(parent, path, interfaces):
     """Конвертируем интерфейсы VLAN."""
     parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
-    section_path = os.path.join(path, 'Network')
-    current_path = os.path.join(section_path, 'Interfaces')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
 
     ifaces = []
     for ifname, ifblock in interfaces.items():
@@ -248,7 +233,7 @@ def convert_vpn_interfaces(parent, path, interfaces):
                 "master": False,
                 "netflow_profile": "undefined",
                 "lldp_profile": "undefined",
-                "ipv4": [pack_ip_address(ip, mask)],
+                "ipv4": [func.pack_ip_address(ip, mask)],
                 "ifalias": ifblock.get('alias', ''),
                 "flow_control": False,
                 "mode": "static",
@@ -264,12 +249,22 @@ def convert_vpn_interfaces(parent, path, interfaces):
             }
             ifaces.append(iface)
 
-    json_file = os.path.join(current_path, 'config_interfaces.json')
-    with open(json_file, 'w') as fh:
-        json.dump(ifaces, fh, indent=4, ensure_ascii=False)
+    if ifaces:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'Interfaces')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
 
-    out_message = f'BLACK|    Интерфейсы VLAN выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.' if not ifaces else out_message)
+        json_file = os.path.join(current_path, 'config_interfaces.json')
+        with open(json_file, 'w') as fh:
+            json.dump(ifaces, fh, indent=4, ensure_ascii=False)
+
+        parent.stepChanged.emit(f'BLACK|    Интерфейсы VLAN выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.')
 
 
 def convert_dns_servers(parent, path, data):
@@ -315,62 +310,64 @@ def convert_dns_servers(parent, path, data):
         parent.stepChanged.emit('GRAY|    Нет правил DNS для экспорта.')
 
 
-def convert_notification_profile(parent, path, email_info):
+def convert_notification_profile(parent, path, data):
     """Конвертируем почтовый адрес и профиль оповещения"""
-    parent.stepChanged.emit('BLUE|Конвертация почтового адреса и профиля оповещения.')
-    section_path = os.path.join(path, 'Libraries')
+    if 'config system email-server' in data:
+        parent.stepChanged.emit('BLUE|Конвертация почтового адреса и профиля оповещения.')
+        section_path = os.path.join(path, 'Libraries')
 
-    if 'server' in email_info:
-        current_path = os.path.join(section_path, 'NotificationProfiles')
-        err, msg = func.create_dir(current_path)
-        if err:
-            parent.stepChanged.emit(f'RED|    {msg}.')
-            parent.error = 1
-            return
+        email_info = data['config system email-server']
+        if 'server' in email_info:
+            current_path = os.path.join(section_path, 'NotificationProfiles')
+            err, msg = func.create_dir(current_path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}.')
+                parent.error = 1
+                return
 
-        notification = [{
-            'type': 'smtp',
-            'name': 'System email-server',
-            'description': 'Перенесено с Fortigate',
-            'host': email_info['server'],
-            'port': 25,
-            'security': 'none',
-            'authentication': False,
-            'login': 'mailserveruser'
-        }]
+            notification = [{
+                'type': 'smtp',
+                'name': 'System email-server',
+                'description': 'Перенесено с Fortigate',
+                'host': email_info['server'],
+                'port': email_info.get('port', 25),
+                'security': 'ssl' if ('security' in email_info and email_info['security'] == 'smtps') else 'none',
+                'authentication': False,
+                'login': 'example'
+            }]
 
-        json_file = os.path.join(current_path, 'config_notification_profiles.json')
-        with open(json_file, 'w') as fh:
-            json.dump(notification, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Профиль оповещения SMTP выгружен в файл "{json_file}".')
-    else:
-        parent.stepChanged.emit('GRAY|    Нет профиля оповещения для экспорта.')
+            json_file = os.path.join(current_path, 'config_notification_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(notification, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Профиль оповещения SMTP выгружен в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет профиля оповещения для экспорта.')
 
-    if 'reply-to' in email_info:
-        current_path = os.path.join(section_path, 'Emails')
-        err, msg = func.create_dir(current_path)
-        if err:
-            parent.stepChanged.emit(f'RED|    {msg}.')
-            parent.error = 1
-            return
+        if 'reply-to' in email_info:
+            current_path = os.path.join(section_path, 'Emails')
+            err, msg = func.create_dir(current_path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}.')
+                parent.error = 1
+                return
 
-        emails = [{
-            'name': 'System email-server',
-            'description': 'Перенесено с Fortigate',
-            'type': 'emailgroup',
-            'url': '',
-            'list_type_update': 'static',
-            'schedule': 'disabled',
-            'attributes': {},
-            'content': [{'value': email_info['reply-to']}]
-        }]
+            emails = [{
+                'name': 'System email-server',
+                'description': 'Перенесено с Fortigate',
+                'type': 'emailgroup',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {},
+                'content': [{'value': email_info['reply-to']}]
+            }]
 
-        json_file = os.path.join(current_path, 'config_email_groups.json')
-        with open(json_file, 'w') as fh:
-            json.dump(emails, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Почтовый адрес выгружен в группу почтовых адресов "System email-server" в файле "{json_file}".')
-    else:
-        parent.stepChanged.emit('GRAY|    Нет почтового адреса для экспорта.')
+            json_file = os.path.join(current_path, 'config_email_groups.json')
+            with open(json_file, 'w') as fh:
+                json.dump(emails, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Почтовый адрес выгружен в группу почтовых адресов "System email-server" в файле "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет почтового адреса для экспорта.')
 
 
 def convert_any_service(proto, name):
@@ -404,29 +401,35 @@ def convert_services(parent, path, data):
 
     services = {}
 
-    for key, value in data['config system session-helper'].items():
-        protocol = {
-            'proto': ip_proto[value['protocol']],
-            'port': value['port'],
-            'app_proto': '',
-            'source_port': '',
-            'alg': ''
-        }
-        if value['name'] in services:
-            services[value['name']]['protocols'].append(protocol)
-        else:
-            services[value['name']] = {
-                'name': ug_services.get(value['name'], value['name']),
-                'description': '',
-                'protocols': [protocol]
+    if 'config system session-helper' in data:
+        for key, value in data['config system session-helper'].items():
+            protocol = {
+                'proto': ip_proto[value['protocol']],
+                'port': value['port'],
+                'app_proto': '',
+                'source_port': '',
+                'alg': ''
             }
+            if value['name'] in services:
+                services[value['name']]['protocols'].append(protocol)
+            else:
+                services[value['name']] = {
+                    'name': ug_services.get(value['name'], value['name']),
+                    'description': '',
+                    'protocols': [protocol]
+                }
 
     services_proto = {'110': 'pop3', '995': 'pop3s', '25': 'smtp', '465': 'smtps'}
 
-    for key, value in data['config firewall service custom'].items():
+    for key, value in data.get('config firewall service custom', {}).items():
         protocols = []
         if 'tcp-portrange' in value:
             for port in value['tcp-portrange'].replace(':', ' ').strip().split():
+                try:
+                    aa = [int(x) for x in port.split('-')]
+                except ValueError as err:
+                    parent.stepChanged.emit(f'bRED|    Сервис {key} содержит не допустмое значение прорта: "{port}".')
+                    continue
                 if port[:2] == '0-':
                     port = f'1-{port[2:]}'
                 protocols.append(
@@ -440,6 +443,11 @@ def convert_services(parent, path, data):
                 )
         if 'udp-portrange' in value:
             for port in value['udp-portrange'].strip().split():
+                try:
+                    aa = [int(x) for x in port.split('-')]
+                except ValueError as err:
+                    parent.stepChanged.emit(f'bRED|    Сервис {key} содержит не допустмое значение прорта: "{port}".')
+                    continue
                 if port[:2] == '0-':
                     port = f'1-{port[2:]}'
                 protocols.append(
@@ -477,7 +485,7 @@ def convert_services(parent, path, data):
                 else:
                     services[service_name] = {
                         'name': ug_services.get(service_name, service_name),
-                        'description': value.get('category', ''),
+                        'description': value['comment'] if 'comment' in value else value.get('category', ''),
                         'protocols': protocols
                     }
 
@@ -490,8 +498,10 @@ def convert_services(parent, path, data):
     parent.stepChanged.emit('GRAY|    Нет сетевых сервисов для экспорта.' if not services else out_message)
 
 
-def convert_service_groups(parent, path, services):
+def convert_service_groups(parent, path, data):
     """Конвертируем группы сервисов"""
+    if 'config firewall service group' not in data:
+        return
     parent.stepChanged.emit('BLUE|Конвертация групп сервисов.')
     section_path = os.path.join(path, 'Libraries')
     current_path = os.path.join(section_path, 'ServicesGroups')
@@ -502,7 +512,7 @@ def convert_service_groups(parent, path, services):
         return
 
     services_groups = []
-    for key, value in services.items():
+    for key, value in data['config firewall service group'].items():
         srv_group = {
             'name': key.strip().translate(trans_name),
             'description': '',
@@ -513,7 +523,7 @@ def convert_service_groups(parent, path, services):
             'attributes': {},
             'content': []
         }
-        for item in value['member'].strip().split():
+        for item in value['member'].split(','):
             service = copy.deepcopy(parent.services[item])
             for x in service['protocols']:
                 x.pop('source_port', None)
@@ -532,18 +542,19 @@ def convert_service_groups(parent, path, services):
     parent.stepChanged.emit('GRAY|    Нет групп сервисов для экспорта.' if not services_groups else out_message)
 
 
-def convert_ntp_settings(parent, path, ntp_info):
+def convert_ntp_settings(parent, path, data):
     """Конвертируем настройки NTP"""
     parent.stepChanged.emit('BLUE|Конвертация настроек NTP.')
-    section_path = os.path.join(path, 'UserGate')
-    current_path = os.path.join(section_path, 'GeneralSettings')
-    err, msg = func.create_dir(current_path, delete='no')
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
 
-    if ntp_info and ntp_info.get('ntpserver', None):
+    if 'config system ntp' in data and data['config system ntp'].get('ntpserver', None):
+        section_path = os.path.join(path, 'UserGate')
+        current_path = os.path.join(section_path, 'GeneralSettings')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
+
         ntp_server = {
             'ntp_servers': [],
             'ntp_enabled': True,
@@ -562,6 +573,54 @@ def convert_ntp_settings(parent, path, ntp_info):
             parent.stepChanged.emit('GRAY|    Нет серверов NTP для экспорта.')
     else:
         parent.stepChanged.emit('GRAY|    Нет серверов NTP для экспорта.')
+
+
+def convert_dhcp_settings(parent, path, data):
+    """Конвертируем настройки DHCP"""
+    if 'config system dhcp server' in data:
+        parent.stepChanged.emit('BLUE|Конвертация настроек DHCP.')
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DHCP')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
+
+        dhcp_subnets = []
+        for key, item in data['config system dhcp server'].items():
+            dhcp = {
+                'name': f'{item["interface"]}-{key}',
+                'enabled': False,
+                'description': 'Перенесено с Fortigate',
+                'start_ip': '',
+                'end_ip': '',
+                'lease_time': 3600,
+                'domain': 'example.com',
+                'gateway': item.get('default-gateway', '10.10.10.10'),
+                'boot_filename':  '',
+                'boot_server_ip': '',
+                'iface_id': 'port0',
+                'netmask': item.get('netmask', '255.255.255.0'),
+                'nameservers': [],
+                'ignored_macs': [],
+                'hosts': [],
+                'options': []
+            }
+            for value in item['config ip-range'].values():
+                dhcp['start_ip'] = value['start-ip']
+                dhcp['end_ip'] = value['end-ip']
+                break
+            dhcp_subnets.append(dhcp)
+
+        if dhcp_subnets:
+            json_file = os.path.join(current_path, 'config_dhcp_subnets.json')
+            with open(json_file, 'w') as fh:
+                json.dump(dhcp_subnets, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Настройки DHCP выгружены в файл "{json_file}".')
+            parent.stepChanged.emit('LBLUE|    После импорта DHCP в каждом правиле укажите домен, сервера DNS и необходимые DHCP опции.')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет настроек DHCP для экспорта.')
 
 
 def convert_ip_lists(parent, path, data):
@@ -586,12 +645,15 @@ def convert_ip_lists(parent, path, data):
         'content': []
     }
 
-    for list_name, value in data['config firewall address'].items():
+    for list_name, value in data.get('config firewall address', {}).items():
         if 'subnet' in value:
             ip_list['name'] = list_name.strip().translate(trans_name)
             ip_list['description'] = value.get('comment', '')
             ip, mask = value['subnet'].split()
-            subnet = ipaddress.ip_network(f'{ip}/{mask}')
+            try:
+                subnet = ipaddress.ip_network(f'{ip}/{mask}')
+            except ValueError:
+                subnet = ipaddress.ip_network(f'{ip}/32')
             ip_list['content'] = [{'value': f'{ip}/{subnet.prefixlen}'}]
         elif 'type' in value and value['type'] == 'iprange':
             ip_list['name'] = list_name.strip().translate(trans_name)
@@ -607,7 +669,7 @@ def convert_ip_lists(parent, path, data):
             json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
 
-    for list_name, value in data['config firewall multicast-address'].items():
+    for list_name, value in data.get('config firewall multicast-address', {}).items():
         ip_list['name'] = 'Multicast - ' + list_name.strip().translate(trans_name)
         if value["start-ip"] == value["end-ip"]:
             ip_list['content'] = [{'value': value["start-ip"]}]
@@ -621,9 +683,9 @@ def convert_ip_lists(parent, path, data):
             json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
 
-    for list_name, value in data['config firewall addrgrp'].items():
+    for list_name, value in data.get('config firewall addrgrp', {}).items():
         ip_list['content'] = []
-        members = value['member'].split()
+        members = value['member'].split(',')
         for item in members:
             if item in parent.ip_lists:
                 ip_list['content'].append({'list': item})
@@ -672,7 +734,8 @@ def convert_url_lists(parent, path, data):
     }
     data['ngfw_urls_lists'] = {}
 
-    for key, value in data['config wanopt content-delivery-network-rule'].items():
+
+    for key, value in data.get('config wanopt content-delivery-network-rule', {}).items():
         _, pattern = key.split(':')
         if pattern == '//':
             list_name = 'All URLs (default)'
@@ -702,7 +765,7 @@ def convert_url_lists(parent, path, data):
             json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
 
-    for list_name, value in data['config firewall address'].items():
+    for list_name, value in data.get('config firewall address', {}).items():
         if 'type' in value and value['type'] == 'fqdn':
             url_list['name'] = list_name.strip().translate(trans_name)
             url_list['description'] = value.get('comment', '')
@@ -719,9 +782,9 @@ def convert_url_lists(parent, path, data):
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
 
-    for list_name, value in data['config firewall addrgrp'].items():
+    for list_name, value in data.get('config firewall addrgrp', {}).items():
         url_list['content'] = []
-        members = value['member'].split()
+        members = value['member'].split(',')
         for item in members:
             if item in data['ngfw_urls_lists']:
                 url_list['content'].extend(data['ngfw_urls_lists'][item]['fqdn'])
@@ -740,7 +803,7 @@ def convert_url_lists(parent, path, data):
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
 
-    for list_name, value in data['config firewall wildcard-fqdn custom'].items():
+    for list_name, value in data.get('config firewall wildcard-fqdn custom', {}).items():
         if list_name in data['ngfw_urls_lists']:
             list_name = f'{list_name} - wildcard-fqdn'
         url_list['name'] = list_name.strip().translate(trans_name)
@@ -776,7 +839,7 @@ def work_with_rules(rules):
 
 
 def convert_auth_servers(parent, path, data):
-    """Конвертируем серверов авторизации"""
+    """Конвертируем сервера авторизации"""
     parent.stepChanged.emit('BLUE|Конвертация серверов аутентификации.')
     section_path = os.path.join(path, 'UsersAndDevices')
     current_path = os.path.join(section_path, 'AuthServers')
@@ -823,6 +886,20 @@ def convert_auth_servers(parent, path, data):
                     {'host': value['server'], 'port': 1812}
                 ]
             })
+            parent.local_users[key] = {
+                "name": key,
+                "enabled": True,
+                "auth_login": key.strip().translate(trans_userlogin),
+                "is_ldap": False,
+                "static_ip_addresses": [],
+                "ldap_dn": "",
+                "emails": [],
+                "phones": [],
+                "first_name": "",
+                "last_name": "",
+                "groups": [],
+            }
+
         json_file = os.path.join(current_path, 'config_radius_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(radius_servers, fh, indent=4, ensure_ascii=False)
@@ -831,6 +908,47 @@ def convert_auth_servers(parent, path, data):
 
     out_message = f'GREEN|    Настройки серверов аутентификации конвертированы.'
     parent.stepChanged.emit('GRAY|    Нет серверов аутентификации для экспорта.' if not success else out_message)
+
+
+def convert_local_users(parent, path, data):
+    """Конвертируем локальных пользователей"""
+    if 'config user local' in data:
+        parent.stepChanged.emit('BLUE|Конвертация локальных пользователей.')
+        section_path = os.path.join(path, 'UsersAndDevices')
+        current_path = os.path.join(section_path, 'Users')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
+
+        for key, value in data['config user local'].items():
+            if value['type'] == 'password':
+                parent.local_users[key] = {
+                    "name": key,
+                    "enabled": False if value.get('status', None) == 'disable' else True,
+                    "auth_login": key.strip().translate(trans_userlogin),
+                    "is_ldap": False,
+                    "static_ip_addresses": [],
+                    "ldap_dn": "",
+                    "emails": [value['email-to']] if value.get('email-to', None) else [],
+                    "phones": [],
+                    "first_name": "",
+                    "last_name": "",
+                    "groups": [],
+                }
+
+        for key, value in data['config user group'].items():
+            users_in_group = [x for x in value['member'].split(',') if x in parent.local_users] if 'member' in value else []
+            for user in users_in_group:
+                parent.local_users[user]['groups'].append(key)
+
+        json_file = os.path.join(current_path, 'config_users.json')
+        with open(json_file, 'w') as fh:
+            json.dump([x for x in parent.local_users.values()], fh, indent=4, ensure_ascii=False)
+
+        out_message = f'GREEN|    Список локальных пользователей выгружен в файл "{json_file}".'
+        parent.stepChanged.emit('GRAY|    Нет локальных пользователей для экспорта.' if not parent.local_users else out_message)
 
 
 def convert_user_groups(parent, path, data):
@@ -844,8 +962,6 @@ def convert_user_groups(parent, path, data):
         parent.error = 1
         return
 
-    parent.local_users = {x for x in data['config user local']}
-
     groups = []
     for key, value in data['config user group'].items():
         groups.append({
@@ -853,7 +969,7 @@ def convert_user_groups(parent, path, data):
             "description": "",
             "is_ldap": False,
             "is_transient": False,
-            "users": [x for x in value['member'].split() if x in parent.local_users] if 'member' in value else []
+            "users": [x for x in value['member'].split(',') if x in parent.local_users] if 'member' in value else []
         })
         parent.local_groups.add(key)
 
@@ -865,111 +981,62 @@ def convert_user_groups(parent, path, data):
     parent.stepChanged.emit('GRAY|    Нет локальных групп пользователей для экспорта.' if not groups else out_message)
 
 
-def convert_local_users(parent, path, data):
-    """Конвертируем локальных пользователей"""
-    parent.stepChanged.emit('BLUE|Конвертация локальных пользователей.')
-    section_path = os.path.join(path, 'UsersAndDevices')
-    current_path = os.path.join(section_path, 'Users')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
-
-    users = {}
-    trans_userlogin = str.maketrans(character_map_userlogin)
-    for key, value in data['config user local'].items():
-        if value['type'] == 'password':
-            users[key] = {
-                "name": key,
-                "enabled": False if value.get('status', None) == 'disable' else True,
-                "auth_login": key.strip().translate(trans_userlogin),
-                "is_ldap": False,
-                "static_ip_addresses": [],
-                "ldap_dn": "",
-                "emails": [value['email-to']] if value.get('email-to', None) else [],
-                "phones": [],
-                "first_name": "",
-                "last_name": "",
-                "groups": [],
-            }
-
-    for key, value in data['config user group'].items():
-        users_in_group = [x for x in value['member'].split() if x in users] if 'member' in value else []
-        for user in users_in_group:
-            users[user]['groups'].append(key)
-
-    json_file = os.path.join(current_path, 'config_users.json')
-    with open(json_file, 'w') as fh:
-        json.dump([x for x in users.values()], fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список локальных пользователей выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет локальных пользователей для экспорта.' if not users else out_message)
-
-
 def convert_web_portal_resources(parent, path, data):
     """Конвертируем ресурсы веб-портала"""
-    parent.stepChanged.emit('BLUE|Конвертация ресурсов веб-портала.')
-    section_path = os.path.join(path, 'GlobalPortal')
-    current_path = os.path.join(section_path, 'WebPortal')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
+    if 'config vpn ssl web user-bookmark' in data:
+        parent.stepChanged.emit('BLUE|Конвертация ресурсов веб-портала.')
+        section_path = os.path.join(path, 'GlobalPortal')
+        current_path = os.path.join(section_path, 'WebPortal')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
 
-    resources = []
-    for key, value in data.items():
-        user_group = key.split('#')[1]
-        for key1, value1 in value.items():
-            for key2, value2 in value1.items():
-                url = None
-                icon = 'default.svg'
-                if 'apptype' in value2 and value2['apptype'] in {'rdp', 'ftp'}:
-                    if value2['apptype'] == 'rdp':
-                        url = f'rdp://{value2["host"]}'
-                        icon = 'rdp.svg'
-                    elif value2['apptype'] == 'ftp':
-                        url = f'ftp://{value2["folder"]}'
-                elif 'url' in value2:
-                    url = value2['url']
-                    value2['apptype'] = 'http'
-                if url:
-                    resources.append({
-                        'name': f'Resource {value2["apptype"]}-{key2}',
-                        'description': 'Перенесено с Fortigate',
-                        'enabled': True,
-                        'url': url,
-                        'additional_urls': [],
-                        'users': [['group', user_group]] if user_group else [],
-                        'icon': icon,
-                        'mapping_url': '',
-                        'mapping_url_ssl_profile_id': 0,
-                        'mapping_url_certificate_id': 0,
-                        'position_layer': 'local',
-                        'rdp_check_session_alive': True if value2['apptype'] == 'rdp' else False,
-                        'transparent_auth': True if value2['apptype'] == 'rdp' else False
-                    })
+        resources = []
+        for key, value in data['config vpn ssl web user-bookmark'].items():
+            user_group = key.split('#')[1]
+            for key1, value1 in value.items():
+                for key2, value2 in value1.items():
+                    url = None
+                    icon = 'default.svg'
+                    if 'apptype' in value2 and value2['apptype'] in {'rdp', 'ftp'}:
+                        if value2['apptype'] == 'rdp':
+                            url = f'rdp://{value2["host"]}'
+                            icon = 'rdp.svg'
+                        elif value2['apptype'] == 'ftp':
+                            url = f'ftp://{value2["folder"]}'
+                    elif 'url' in value2:
+                        url = value2['url']
+                        value2['apptype'] = 'http'
+                    if url:
+                        resources.append({
+                            'name': f'Resource {value2["apptype"]}-{key2}',
+                            'description': 'Перенесено с Fortigate',
+                            'enabled': True,
+                            'url': url,
+                            'additional_urls': [],
+                            'users': [['group', user_group]] if user_group else [],
+                            'icon': icon,
+                            'mapping_url': '',
+                            'mapping_url_ssl_profile_id': 0,
+                            'mapping_url_certificate_id': 0,
+                            'position_layer': 'local',
+                            'rdp_check_session_alive': True if value2['apptype'] == 'rdp' else False,
+                            'transparent_auth': True if value2['apptype'] == 'rdp' else False
+                        })
 
-    json_file = os.path.join(current_path, 'config_web_portal.json')
-    with open(json_file, 'w') as fh:
-        json.dump(resources, fh, indent=4, ensure_ascii=False)
+        json_file = os.path.join(current_path, 'config_web_portal.json')
+        with open(json_file, 'w') as fh:
+            json.dump(resources, fh, indent=4, ensure_ascii=False)
 
-    out_message = f'GREEN|    Список ресурсов веб-портала выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет ресурсов веб-портала для экспорта.' if not resources else out_message)
+        out_message = f'GREEN|    Список ресурсов веб-портала выгружен в файл "{json_file}".'
+        parent.stepChanged.emit('GRAY|    Нет ресурсов веб-портала для экспорта.' if not resources else out_message)
 
 
 def convert_time_sets(parent, path, data):
     """Конвертируем time set (календари)"""
     parent.stepChanged.emit('BLUE|Конвертация календарей.')
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'TimeSets')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
-
     week = {
         "monday": 1,
         "tuesday": 2,
@@ -980,6 +1047,7 @@ def convert_time_sets(parent, path, data):
         "sunday": 7
     }
     timerestrictiongroup = []
+
     if 'config firewall schedule onetime' in data:
         for key, value in data['config firewall schedule onetime'].items():
             if value:
@@ -1006,40 +1074,52 @@ def convert_time_sets(parent, path, data):
                 })
                 parent.time_restrictions.add(key)
 
-    for key, value in data['config firewall schedule recurring'].items():
-        if value:
-            schedule = {
-                "name": key.strip().translate(trans_name),
-                "description": "Портировано с Fortigate",
-                "type": "timerestrictiongroup",
-                "url": "",
-                "list_type_update": "static",
-                "schedule": "disabled",
-                "attributes": {},
-                "content": [
-                    {
-                        'name': key.strip().translate(trans_name),
-                        'type': 'weekly',
-                        'days': [week[day] for day in value['day'].split()]
-                    }
-                ]
-            }
-            if 'start' in value:
-                schedule['content'][0]['time_from'] = value['start']
-                schedule['content'][0]['time_to'] = value['end']
-            timerestrictiongroup.append(schedule)
-            parent.time_restrictions.add(key)
+    if 'config firewall schedule recurring' in data:
+        for key, value in data['config firewall schedule recurring'].items():
+            if value:
+                schedule = {
+                    "name": key.strip().translate(trans_name),
+                    "description": "Портировано с Fortigate",
+                    "type": "timerestrictiongroup",
+                    "url": "",
+                    "list_type_update": "static",
+                    "schedule": "disabled",
+                    "attributes": {},
+                    "content": [
+                        {
+                            'name': key.strip().translate(trans_name),
+                            'type': 'weekly',
+                            'days': [week[day] for day in value['day'].split()]
+                        }
+                    ]
+                }
+                if 'start' in value:
+                    schedule['content'][0]['time_from'] = value['start']
+                    schedule['content'][0]['time_to'] = value['end']
+                timerestrictiongroup.append(schedule)
+                parent.time_restrictions.add(key)
 
-    json_file = os.path.join(current_path, 'config_calendars.json')
-    with open(json_file, 'w') as fh:
-        json.dump(timerestrictiongroup, fh, indent=4, ensure_ascii=False)
+    if timerestrictiongroup:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'TimeSets')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
 
-    out_message = f'GREEN|    Список календарей выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет календарей для экспорта.' if not timerestrictiongroup else out_message)
+        json_file = os.path.join(current_path, 'config_calendars.json')
+        with open(json_file, 'w') as fh:
+            json.dump(timerestrictiongroup, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список календарей выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет календарей для экспорта.')
 
 
 def convert_dnat_rule(parent, path, data):
     """Конвертируем object 'config firewall vip' в правила DNAT или Port-форвардинга"""
+    if 'config firewall vip' not in data:
+        return
     parent.stepChanged.emit('BLUE|Конвертация правил DNAT/Порт-форвардинга.')
     section_path = os.path.join(path, 'NetworkPolicies')
     current_path = os.path.join(section_path, 'NATandRouting')
@@ -1051,7 +1131,7 @@ def convert_dnat_rule(parent, path, data):
 
     rules = []
     ips_for_rules = set()
-    for key, value in data.items():
+    for key, value in data['config firewall vip'].items():
         if value and 'type' not in value:
             if 'mappedip' in value:
                 services = []
@@ -1111,6 +1191,8 @@ def convert_dnat_rule(parent, path, data):
 
 def convert_loadbalancing_rule(parent, path, data):
     """Конвертируем object 'config firewall vip' в правила балансировки нагрузки"""
+    if 'config firewall vip' not in data:
+        return
     parent.stepChanged.emit('BLUE|Конвертация правил балансировки нагрузки.')
     section_path = os.path.join(path, 'NetworkPolicies')
     current_path = os.path.join(section_path, 'LoadBalancing')
@@ -1122,13 +1204,13 @@ def convert_loadbalancing_rule(parent, path, data):
 
     rules = []
     ssl_certificate = False
-    for key, value in data.items():
+    for key, value in data['config firewall vip'].items():
         if value and value.get('type', None) == 'server-load-balance':
             if 'ssl-certificate' in value:
                 ssl_certificate = True
             hosts = []
             ip_list_ips = []
-            for server in value['realservers'].values():
+            for server in value['config realservers'].values():
                 hosts.append({
                     'ip_address': server['ip'],
                     'port': int(server['port']),
@@ -1202,7 +1284,7 @@ def convert_groups_iplists(parent, path, data):
     if 'config firewall vipgrp' in data:
         for list_name, value in data['config firewall vipgrp'].items():
             ip_list['content'] = []
-            for item in value['member'].split():
+            for item in value['member'].split(','):
                 if item in parent.ip_lists:
                     ip_list['content'].append({'list': item})
                 else:
@@ -1253,7 +1335,7 @@ def convert_firewall_policy(parent, path, data):
             'scenario_rule_id': False,     # При импорте заменяется на UID или "0". 
             'src_zones': [],
             'dst_zones': [],
-            'src_ips': get_ips(parent, path, value['srcaddr'], rule_name),
+            'src_ips': get_ips(parent, path, value.get('srcaddr', ''), rule_name),
             'dst_ips': get_ips(parent, path, value.get('dstaddr', ''), rule_name),
             'services': get_services(parent, value.get('service', ''), rule_name),
             'apps': [],
@@ -1292,38 +1374,43 @@ def convert_firewall_policy(parent, path, data):
 def convert_gateways_list(parent, path, data):
     """Конвертируем список шлюзов"""
     parent.stepChanged.emit('BLUE|Конвертация списка шлюзов.')
-    section_path = os.path.join(path, 'Network')
-    current_path = os.path.join(section_path, 'Gateways')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
 
-    gateways = set()
-    list_gateways = []
-    for value in data.values():
-        if value['gateway'] not in gateways:
-            list_gateways.append({
-                'name': value['gateway'],
-                'enabled': True,
-                'description': '',
-                'ipv4': value['gateway'],
-                'vrf': 'default',
-                'weight': int(value.get('distance', 1)),
-                'multigate': False,
-                'default': False,
-                'iface': 'undefined',
-                'is_automatic': False
-            })
-            gateways.add(value['gateway'])
+    if 'config router static' in data:
+        gateways = set()
+        list_gateways = []
+        for value in data['config router static'].values():
+            if 'dst' not in value and value['gateway'] not in gateways:
+                list_gateways.append({
+                    'name': value['gateway'],
+                    'enabled': True,
+                    'description': '',
+                    'ipv4': value['gateway'],
+                    'vrf': 'default',
+                    'weight': int(value.get('distance', 1)),
+                    'multigate': False,
+                    'default': False,
+                    'iface': 'undefined',
+                    'is_automatic': False
+                })
+                gateways.add(value['gateway'])
 
-    json_file = os.path.join(current_path, 'config_gateways.json')
-    with open(json_file, 'w') as fh:
-        json.dump(list_gateways, fh, indent=4, ensure_ascii=False)
+        if list_gateways:
+            section_path = os.path.join(path, 'Network')
+            current_path = os.path.join(section_path, 'Gateways')
+            err, msg = func.create_dir(current_path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}.')
+                parent.error = 1
+                return
 
-    out_message = f'GREEN|    Список шлюзов выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет списка шлюзов для экспорта.' if not list_gateways else out_message)
+            json_file = os.path.join(current_path, 'config_gateways.json')
+            with open(json_file, 'w') as fh:
+                json.dump(list_gateways, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Список шлюзов выгружен в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет списка шлюзов для экспорта.')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет списка шлюзов для экспорта.')
 
 
 def convert_static_routes(parent, path, data):
@@ -1337,27 +1424,32 @@ def convert_static_routes(parent, path, data):
         parent.error = 1
         return
 
-    for value in data.values():
-        if 'dst' in value:
-            dst_network = pack_ip_address(*value['dst'].split())
-            route = {
-                'name': f'Route for {dst_network}',
-                'description': '',
-                'enabled': False if value.get('status', None) == 'disable' else True,
-                'dest': dst_network,
-                'gateway': value['gateway'],
-                'ifname': 'undefined',
-                'kind': 'unicast',
-                'metric': int(value.get('distance', 1))
-            }
-            parent.vrf['routes'].append(route)
+    if 'config router static' in data:
+        for value in data['config router static'].values():
+            if 'dst' in value and 'gateway' in value:
+                dst_network = func.pack_ip_address(*value['dst'].split())
+                route = {
+                    'name': f'Route for {dst_network}',
+                    'description': '',
+                    'enabled': False if value.get('status', None) == 'disable' else True,
+                    'dest': dst_network,
+                    'gateway': value['gateway'],
+                    'ifname': 'undefined',
+                    'kind': 'unicast',
+                    'metric': int(value.get('distance', 1))
+                }
+                parent.vrf['routes'].append(route)
 
-    json_file = os.path.join(current_path, 'config_vrf.json')
-    with open(json_file, 'w') as fh:
-        json.dump([parent.vrf], fh, indent=4, ensure_ascii=False)
+        json_file = os.path.join(current_path, 'config_vrf.json')
+        with open(json_file, 'w') as fh:
+            json.dump([parent.vrf], fh, indent=4, ensure_ascii=False)
 
-    out_message = f'GREEN|    Статические маршруты выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.' if not parent.vrf['routes'] else out_message)
+        if parent.vrf['routes']:
+            parent.stepChanged.emit(f'GREEN|    Статические маршруты выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.')
 
 
 def convert_bgp_routes(parent, path, data):
@@ -1365,7 +1457,7 @@ def convert_bgp_routes(parent, path, data):
     parent.stepChanged.emit('BLUE|Конвертация настроек BGP в VRF по умолчанию.')
     section_path = os.path.join(path, 'Network')
     current_path = os.path.join(section_path, 'VRF')
-    err, msg = func.create_dir(current_path)
+    err, msg = func.create_dir(current_path, delete='no')
     if err:
         parent.stepChanged.emit(f'RED|    {msg}.')
         parent.error = 1
@@ -1382,8 +1474,8 @@ def convert_bgp_routes(parent, path, data):
             filter_keys[key] = []
             filter_items_permit = []
             filter_items_deny = []
-            for item in value['rule'].values():
-                prefix = pack_ip_address(*item['prefix'].split())
+            for item in value['config rule'].values():
+                prefix = func.pack_ip_address(*item['prefix'].split())
                 if 'le' in item:
                     prefix = f'{prefix}:{item.get("ge", "")}:{item["le"]}'
                 if item.get('action', None) == 'deny':
@@ -1414,7 +1506,7 @@ def convert_bgp_routes(parent, path, data):
         for key, value in data['config router route-map'].items():
             routemaps_keys[key] = []
             action = None
-            for item in value['rule'].values():
+            for item in value['config rule'].values():
                 action = 'permit' if item.get('match-ip-address', None) == 'allow' else 'deny'
             if action:
                 routemaps.append({
@@ -1437,7 +1529,7 @@ def convert_bgp_routes(parent, path, data):
     if 'router-id' in bgp:
         neighbors = []
         try:
-            for key, value in bgp['neighbor'].items():
+            for key, value in bgp['config neighbor'].items():
                 neighbors.append({
                     'enabled': True,
                     'description': '',
@@ -1465,8 +1557,8 @@ def convert_bgp_routes(parent, path, data):
                 'router_id': bgp['router-id'],
                 'as_number': int(bgp['as']),
                 'multiple_path': False,
-                'redistribute': ['connected'] if bgp['redistribute connected']['status'] == 'enable' else [],
-                'networks': [pack_ip_address(*x['prefix'].split()) for x in bgp['network'].values()],
+                'redistribute': ['connected'] if bgp['config redistribute connected']['status'] == 'enable' else [],
+                'networks': [func.pack_ip_address(*x['prefix'].split()) for x in bgp['config network'].values()],
                 'routemaps': routemaps,
                 'filters': filters,
                 'neighbors': neighbors
@@ -1483,46 +1575,40 @@ def convert_bgp_routes(parent, path, data):
 
 
 ############################################# Служебные функции ###################################################
-def pack_ip_address(ip, mask):
-    if ip == '0':
-        ip = '0.0.0.0'
-    if mask == '0':
-        mask = '128.0.0.0'
-    interface = ipaddress.ip_interface(f'{ip}/{mask}')
-    return f'{ip}/{interface.network.prefixlen}'
-
 def get_ips(parent, path, rule_ips, rule_name):
     """
     Получить имена списков IP-адресов и URL-листов.
     Если списки не найдены, то они создаются или пропускаются, если невозможно создать."""
     new_rule_ips = []
-    for item in rule_ips.split():
-        if item == 'all':
-            continue
-        if item in parent.ip_lists:
-            new_rule_ips.append(['list_id', item])
-        elif item in parent.url_lists:
-            new_rule_ips.append(['urllist_id', item])
-        else:
-            try:
-                ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
-                new_rule_ips.append(['list_id', create_ip_list(parent, path, ips=[item], name=item)])
-            except ValueError as err:
-                parent.stepChanged.emit(f'bRED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
+    if rule_ips:
+        for item in rule_ips.split(','):
+            if item == 'all':
+                continue
+            if item in parent.ip_lists:
+                new_rule_ips.append(['list_id', item])
+            elif item in parent.url_lists:
+                new_rule_ips.append(['urllist_id', item])
+            else:
+                try:
+                    ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
+                    new_rule_ips.append(['list_id', create_ip_list(parent, path, ips=[item], name=item)])
+                except ValueError as err:
+                    parent.stepChanged.emit(f'bRED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
     return new_rule_ips
 
 def get_services(parent, rule_services, rule_name):
     """Получить список сервисов"""
     new_service_list = []
-    for service in rule_services.split():
-        if service.upper() == 'ALL':
-            continue
-        if service in parent.services:
-            new_service_list.append(['service', service])
-        elif service in parent.service_groups:
-            new_service_list.append(['list_id', service])
-        else:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{service}" для правила "{rule_name}".')
+    if rule_services:
+        for service in rule_services.split(','):
+            if service.upper() == 'ALL':
+                continue
+            if service in parent.services:
+                new_service_list.append(['service', service])
+            elif service in parent.service_groups:
+                new_service_list.append(['list_id', service])
+            else:
+                parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{service}" для правила "{rule_name}".')
     return new_service_list
 
 def get_users_and_groups(parent, users, rule_name):

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from dataclasses import dataclass
 
+
 @dataclass(frozen = True)
 class ServicePorts:
     tcp = {
@@ -131,6 +132,17 @@ class ServicePorts:
         except KeyError:
             return service_name
 
+
+default_urlcategorygroup = {
+    'URL_CATEGORY_GROUP_PARENTAL_CONTROL': 'Parental Control',
+    'URL_CATEGORY_GROUP_PRODUCTIVITY': 'Productivity',
+    'URL_CATEGORY_GROUP_SAFE': 'Safe categories',
+    'URL_CATEGORY_GROUP_THREATS': 'Threats',
+    'URL_CATEGORY_MORPHO_RECOMMENDED': 'Recommended for morphology checking',
+    'URL_CATEGORY_VIRUSCHECK_RECOMMENDED': 'Recommended for virus check'
+}
+
+
 dict_risk = {
     'Very Low': 1,
     'Low': 2,
@@ -180,6 +192,7 @@ character_map_file_name = {
     '/': '_',
     '\\': None,
 }
+trans_filename = str.maketrans(character_map_file_name)
 
 character_map_for_name = {
     '#': None,
@@ -206,6 +219,7 @@ character_map_for_name = {
     '|': "_",
     '\\': None,
 }
+trans_name = str.maketrans(character_map_for_name)
 
 character_map_userlogin = {
     '-': '_',

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.3
+# Версия 1.4
 #
 
 import os, sys, json
@@ -84,6 +84,8 @@ class ConvertFortigateConfig(QThread):
                 convert_dhcp_settings(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data)
                 convert_url_lists(self, self.current_ug_path, data)
+                convert_shapers_list(self, self.current_ug_path, data)
+                convert_shapers_rules(self, self.current_ug_path, data)
                 convert_auth_servers(self, self.current_ug_path, data)
                 convert_local_users(self, self.current_ug_path, data)
                 convert_user_groups(self, self.current_ug_path, data)
@@ -278,17 +280,18 @@ def convert_dns_servers(parent, path, data):
         parent.error = 1
         return
 
-    dns_servers = []
-    for key, value in data['config system dns'].items():
-        if key in {'primary', 'secondary'}:
-            dns_servers.append({'dns': value, 'is_bad': False})
+    if 'config system dns' in data:
+        dns_servers = []
+        for key, value in data['config system dns'].items():
+            if key in {'primary', 'secondary'}:
+                dns_servers.append({'dns': value, 'is_bad': False})
         
-    json_file = os.path.join(current_path, 'config_dns_servers.json')
-    with open(json_file, 'w') as fh:
-        json.dump(dns_servers, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'BLACK|    Настройки серверов DNS выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет серверов DNS для экспорта.' if not dns_servers else out_message)
+        json_file = os.path.join(current_path, 'config_dns_servers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(dns_servers, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Настройки серверов DNS выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет серверов DNS для экспорта.')
 
     """Создаём правило DNS прокси Сеть->DNS->DNS-прокси->Правила DNS"""
     if 'config user domain-controller' in data:
@@ -838,6 +841,113 @@ def work_with_rules(rules):
     return patterns
 
 
+def convert_shapers_list(parent, path, data):
+    """Конвертируем полосы пропускания"""
+    parent.stepChanged.emit('BLUE|Конвертация полос пропускания.')
+    
+    if 'config firewall shaper traffic-shaper' in data:
+        shapers = []
+        for key, value in data['config firewall shaper traffic-shaper'].items():
+            rate = int(value.get('maximum-bandwidth', 'guaranteed-bandwidth'))
+            if 'bandwidth-unit' in value:
+                if value['bandwidth-unit'] == 'mbps':
+                    rate = rate*1024
+                if value['bandwidth-unit'] == 'gbps':
+                    rate = rate*1024*1024
+            shapers.append({
+                'name': key,
+                'description': '',
+                'rate': rate,
+                'dscp': 0
+            })
+
+        if shapers:
+            section_path = os.path.join(path, 'Libraries')
+            current_path = os.path.join(section_path, 'BandwidthPools')
+            err, msg = func.create_dir(current_path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}.')
+                parent.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_shaper_list.json')
+            with open(json_file, 'w') as fh:
+                json.dump(shapers, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Полосы пропускания выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет полос пропускания для экспорта.')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет полос пропускания для экспорта.')
+
+
+def convert_shapers_rules(parent, path, data):
+    """Конвертируем правила пропускной способности"""
+    parent.stepChanged.emit('BLUE|Конвертация правил пропускной способности.')
+    
+    if 'config firewall shaping-policy' in data:
+        shaping_rules = []
+        rule = {
+            'name': '',
+            'description': '',
+            'scenario_rule_id': False,
+            'src_zones': [],
+            'dst_zones': [],
+            'src_ips': [],
+            'dst_ips': [],
+            'users': [],
+            'services': [],
+            'apps': [],
+            'pool': '',
+            'enabled': False,
+            'time_restriction': [],
+            'limit': True,
+            'limit_value': '3/h',
+            'limit_bust': 5,
+            'log': False,
+            'log_session_start': False,
+            'src_zones_negate': False,
+            'dst_zones_negate': False,
+            'src_ips_negate': False,
+            'dst_ips_negate': False,
+            'services_negate': False,
+            'apps_negate': False,
+        }
+
+        for key, value in data['config firewall shaping-policy'].items():
+            if value.get('traffic-shaper', None):
+                rule['name'] = f'{key}-{value["name"]}'
+                rule['src_ips'] = get_ips(parent, path, value.get('srcaddr', ''), value['name'])
+                rule['dst_ips'] = get_ips(parent, path, value.get('dstaddr', ''), value['name'])
+                rule['services'] = get_services(parent, value.get('service', ''), value['name'])
+                rule['pool'] = value['traffic-shaper']
+                shaping_rules.append(copy.deepcopy(rule))
+            if value.get('traffic-shaper-reverse', None):
+                rule['name'] = f'{key}-{value["name"]}-reverse'
+                rule['src_ips'] = get_ips(parent, path, value.get('dstaddr', ''), value['name'])
+                rule['dst_ips'] = get_ips(parent, path, value.get('srcaddr', ''), value['name'])
+                rule['services'] = get_services(parent, value.get('service', ''), value['name'])
+                rule['pool'] = value['traffic-shaper-reverse']
+                shaping_rules.append(copy.deepcopy(rule))
+
+        if shaping_rules:
+            section_path = os.path.join(path, 'NetworkPolicies')
+            current_path = os.path.join(section_path, 'TrafficShaping')
+            err, msg = func.create_dir(current_path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}.')
+                parent.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_shaper_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(shaping_rules, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Правила пропускной способности выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет правил пропускной способности для экспорта.')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил пропускной способности для экспорта.')
+
+
 def convert_auth_servers(parent, path, data):
     """Конвертируем сервера авторизации"""
     parent.stepChanged.emit('BLUE|Конвертация серверов аутентификации.')
@@ -1379,20 +1489,21 @@ def convert_gateways_list(parent, path, data):
         gateways = set()
         list_gateways = []
         for value in data['config router static'].values():
-            if 'dst' not in value and value['gateway'] not in gateways:
-                list_gateways.append({
-                    'name': value['gateway'],
-                    'enabled': True,
-                    'description': '',
-                    'ipv4': value['gateway'],
-                    'vrf': 'default',
-                    'weight': int(value.get('distance', 1)),
-                    'multigate': False,
-                    'default': False,
-                    'iface': 'undefined',
-                    'is_automatic': False
-                })
-                gateways.add(value['gateway'])
+            if 'dst' not in value and 'gateway' in value:
+                if value['gateway'] not in gateways:
+                    list_gateways.append({
+                        'name': value['gateway'],
+                        'enabled': True,
+                        'description': '',
+                        'ipv4': value['gateway'],
+                        'vrf': 'default',
+                        'weight': int(value.get('distance', 1)),
+                        'multigate': False,
+                        'default': False,
+                        'iface': 'undefined',
+                        'is_automatic': False
+                    })
+                    gateways.add(value['gateway'])
 
         if list_gateways:
             section_path = os.path.join(path, 'Network')

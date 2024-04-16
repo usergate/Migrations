@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.6
+# Версия 1.7
 #
 
 import os, sys, json
@@ -51,7 +51,7 @@ class ConvertFortigateConfig(QThread):
         self.services = {}
         self.service_groups = set()
         self.ip_lists = set()
-        self.url_lists = set()
+        self.url_lists = {}
         self.local_users = {}
         self.local_groups = set()
         self.time_restrictions = set()
@@ -859,7 +859,7 @@ def convert_dhcp_settings(parent, path, data):
                 'description': 'Перенесено с Fortigate',
                 'start_ip': '',
                 'end_ip': '',
-                'lease_time': 3600,
+                'lease_time': item.get('lease-time', 3600),
                 'domain': 'example.com',
                 'gateway': item.get('default-gateway', '10.10.10.10'),
                 'boot_filename':  '',
@@ -951,6 +951,7 @@ def convert_ip_lists(parent, path, data):
         ip_list['content'] = []
         members = value['member'].split(',')
         for item in members:
+            item = item.strip().translate(trans_name)
             if item in parent.ip_lists:
                 ip_list['content'].append({'list': item})
             else:
@@ -996,8 +997,6 @@ def convert_url_lists(parent, path, data):
         'attributes': {'list_compile_type': 'case_insensitive'},
         'content': []
     }
-    data['ngfw_urls_lists'] = {}
-
 
     for key, value in data.get('config wanopt content-delivery-network-rule', {}).items():
         _, pattern = key.split(':')
@@ -1022,7 +1021,7 @@ def convert_url_lists(parent, path, data):
             url_list['name'] = list_name.strip().translate(trans_name)
             url_list['description'] = value.get('comment', '')
 
-        parent.url_lists.add(url_list['name'])
+        parent.url_lists[url_list['name']] = url_list['content']
 
         json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
@@ -1035,11 +1034,7 @@ def convert_url_lists(parent, path, data):
             url_list['description'] = value.get('comment', '')
             url_list['content'] = [{'value': value['fqdn']}]
 
-            data['ngfw_urls_lists'][url_list['name']] = {
-                'uuid': value['uuid'],
-                'fqdn': url_list['content']
-            }
-            parent.url_lists.add(url_list['name'])
+            parent.url_lists[url_list['name']] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
@@ -1049,18 +1044,15 @@ def convert_url_lists(parent, path, data):
     for list_name, value in data.get('config firewall addrgrp', {}).items():
         url_list['content'] = []
         members = value['member'].split(',')
-        for item in members:
-            if item in data['ngfw_urls_lists']:
-                url_list['content'].extend(data['ngfw_urls_lists'][item]['fqdn'])
+        for url in members:
+            url = url.strip().translate(trans_name)
+            if url in parent.url_lists:
+                url_list['content'].extend(parent.url_lists[url])
         if url_list['content']:
             url_list['name'] = list_name.strip().translate(trans_name)
             url_list['description'] = value.get('comment', '')
 
-            data['ngfw_urls_lists'][url_list['name']] = {
-                'uuid': value['uuid'],
-                'fqdn': url_list['content']
-            }
-            parent.url_lists.add(url_list['name'])
+            parent.url_lists[url_list['name']] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
@@ -1068,22 +1060,37 @@ def convert_url_lists(parent, path, data):
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
 
     for list_name, value in data.get('config firewall wildcard-fqdn custom', {}).items():
-        if list_name in data['ngfw_urls_lists']:
+        list_name = list_name.strip().translate(trans_name)
+        if list_name in parent.url_lists:
             list_name = f'{list_name} - wildcard-fqdn'
-        url_list['name'] = list_name.strip().translate(trans_name)
+        url_list['name'] = list_name
         url_list['description'] = value.get('comment', '')
         url_list['content'] = [{'value': value['wildcard-fqdn']}]
 
-        data['ngfw_urls_lists'][url_list['name']] = {
-            'uuid': value['uuid'],
-            'fqdn': url_list['content']
-        }
-        parent.url_lists.add(url_list['name'])
+        parent.url_lists[url_list['name']] = url_list['content']
 
         json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
             json.dump(url_list, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+
+    for list_name, value in data.get('config firewall wildcard-fqdn group', {}).items():
+        url_list['content'] = []
+        members = value['member'].split(',')
+        for url in members:
+            url = url.strip().translate(trans_name)
+            if url in parent.url_lists:
+                url_list['content'].extend(parent.url_lists[url])
+        if url_list['content']:
+            url_list['name'] = list_name.strip().translate(trans_name)
+            url_list['description'] = value.get('comment', '')
+
+            parent.url_lists[url_list['name']] = url_list['content']
+
+            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(url_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
 
     out_message = f'GREEN|    Списки URL выгружены в каталог "{current_path}".'
     parent.stepChanged.emit('GRAY|    Нет списков URL для экспорта.' if not url_list['name'] else out_message)
@@ -1565,13 +1572,6 @@ def convert_loadbalancing_rule(parent, path, data):
     if 'config firewall vip' not in data:
         return
     parent.stepChanged.emit('BLUE|Конвертация правил балансировки нагрузки.')
-    section_path = os.path.join(path, 'NetworkPolicies')
-    current_path = os.path.join(section_path, 'LoadBalancing')
-    err, msg = func.create_dir(current_path, delete='no')
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-        return
 
     rules = []
     ssl_certificate = False
@@ -1619,15 +1619,25 @@ def convert_loadbalancing_rule(parent, path, data):
             rules.append(rule)
             parent.stepChanged.emit(f'BLACK|    Создано правило балансировки нагрузки "{rule["name"]}".')
 
-    json_file = os.path.join(current_path, 'config_loadbalancing_tcpudp.json')
-    with open(json_file, 'w') as fh:
-        json.dump(rules, fh, indent=4, ensure_ascii=False)
+    if rules:
+        section_path = os.path.join(path, 'NetworkPolicies')
+        current_path = os.path.join(section_path, 'LoadBalancing')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            parent.error = 1
+            return
 
-    if ssl_certificate:
-        parent.stepChanged.emit(f'LBLUE|    В правилах Fortigate использовались сертификаты, после импорта конфигурации удалите соответсвующие правила балансировки нагрузки и')
-        parent.stepChanged.emit(f'LBLUE|    создайте правила reverse-прокси, предварительно загрузив необходимые сертификаты.')
-    out_message = f'GREEN|    Павила балансировки нагрузки выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет правил балансировки нагрузки для экспорта.' if not rules else out_message)
+        json_file = os.path.join(current_path, 'config_loadbalancing_tcpudp.json')
+        with open(json_file, 'w') as fh:
+            json.dump(rules, fh, indent=4, ensure_ascii=False)
+
+        if ssl_certificate:
+            parent.stepChanged.emit(f'LBLUE|    В правилах Fortigate использовались сертификаты, после импорта конфигурации удалите соответсвующие правила балансировки нагрузки и')
+            parent.stepChanged.emit(f'LBLUE|    создайте правила reverse-прокси, предварительно загрузив необходимые сертификаты.')
+        parent.stepChanged.emit(f'GREEN|    Павила балансировки нагрузки выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил балансировки нагрузки для экспорта.')
 
 
 def convert_groups_iplists(parent, path, data):
@@ -1656,6 +1666,7 @@ def convert_groups_iplists(parent, path, data):
         for list_name, value in data['config firewall vipgrp'].items():
             ip_list['content'] = []
             for item in value['member'].split(','):
+                item = item.strip().translate(trans_name)
                 if item in parent.ip_lists:
                     ip_list['content'].append({'list': item})
                 else:
@@ -1692,7 +1703,7 @@ def convert_firewall_policy(parent, path, data):
 
     rules = {}
     for key, value in data.items():
-        rule_name = f'Rule - {value["name"] if value.get("name", None) else key}'
+        rule_name = f'Rule - {value.get("name", key)}'
         users = []
         if 'groups' in value:
             users = get_users_and_groups(parent, value['groups'], rule_name)
@@ -1700,7 +1711,7 @@ def convert_firewall_policy(parent, path, data):
             users = get_users_and_groups(parent, value['users'], rule_name)
         rule = {
             'name': rule_name.strip().translate(trans_name),
-            'description': value['comments'] if 'comments' in value else 'Портировано с Fortigate',
+            'description': value.get('comments', 'Портировано с Fortigate'),
             'action': value['action'] if value.get('action', None) else 'drop',
             'position': 'last',
             'scenario_rule_id': False,     # При импорте заменяется на UID или "0". 

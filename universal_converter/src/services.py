@@ -157,11 +157,7 @@ character_map = {
     ord('\t'): None,
     ord('\r'): None,
 }
-#    ' ': '_',
-#    '/': '_',
-#    '\\': '_',
-#    '.': '_',
-
+trans_table = str.maketrans(character_map)
 
 character_map_file_name = {
     ord('\n'): None,
@@ -184,8 +180,7 @@ character_map_file_name = {
     ']': None,
     '{': None,
     '}': None,
-    '*': '_',
-    '+': '_',
+    '*': '+',
     '<': None,
     '>': None,
     '|': None,
@@ -212,8 +207,7 @@ character_map_for_name = {
     ']': None,
     '{': None,
     '}': None,
-    '*': None,
-    '+': " ",
+    '*': '+',
     '<': None,
     '>': None,
     '|': "_",
@@ -247,6 +241,7 @@ character_map_userlogin = {
     '/': None,
     '\\': None,
 }
+trans_userlogin = str.maketrans(character_map_userlogin)
 
 ip_proto = {
     '0': 'ip',          # ASA

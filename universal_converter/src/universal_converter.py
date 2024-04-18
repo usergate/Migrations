@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 1.7
+# Version 1.8
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 1.7)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 1.8)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
@@ -98,11 +98,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """
         При закрытии программы:
-        1. Удаляем временный файл: temporary_data.json
+        1. Удаляем временный файл: temporary_data.bin
         2. Делаем logout с NGFW если ранее был login
         """
-        if os.path.isfile('temporary_data.json'):
-            os.remove('temporary_data.json')
+        if os.path.isfile('temporary_data.bin'):
+            os.remove('temporary_data.bin')
         if self.stacklayout.widget(2).utm:
             self.stacklayout.widget(2).utm.logout()
 

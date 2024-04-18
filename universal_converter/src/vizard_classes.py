@@ -11,10 +11,11 @@ from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter)
 import common_func as func
 import config_style as cs
-import export_fortigate_config as fg
 import export_cisco_fpr_config as fpr
+import export_fortigate_config as fg
 import export_huawei_config as huawei
 import import_functions as tf
+import import_temporary_data as itd
 from utm import UtmXmlRpc
 
 
@@ -221,9 +222,7 @@ class SelectMode(QWidget):
         self.parent.stacklayout.setCurrentIndex(0)
 
     def add_item_log(self, message, color='BLACK'):
-        """
-        Добавляем запись лога в log_list.
-        """
+        """Добавляем запись лога в log_list."""
         i = QListWidgetItem(message)
         i.setForeground(QColor(cs.color[color]))
         self.log_list.addItem(i)
@@ -466,6 +465,19 @@ class SelectImportMode(SelectMode):
         else:
             return False
 
+    def init_temporary_data(self):
+        """
+        Запускаем в потоке itd.GetTemporaryData() для получения часто используемых данных с NGFW.
+        """
+        if self.thread is None:
+            self.disable_buttons()
+            self.thread = itd.GetTemporaryData(self.utm)
+            self.thread.stepChanged.connect(self.on_step_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
+        else:
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+
     def init_import_widget(self, e):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
@@ -480,6 +492,7 @@ class SelectImportMode(SelectMode):
                     self.enable_buttons()
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
                     self.tree.change_items_status(self.parent.get_ug_config_path())
+                    self.init_temporary_data()
                 else:
                     self.run_page_0()
             else:
@@ -657,10 +670,10 @@ class SelectImportMode(SelectMode):
         try:
             with open(json_file_path, 'r') as fh:
                 data = json.load(fh)
-        except FileNotFoundError as err:
-            return 2, f'dGRAY|    Нет данных для импорта. Не найден файл {json_file_path} с конфигурацией.'
         except Exception as err:
             return 1, f'iRED|    {err}'
+        except FileNotFoundError as err:
+            return 2, f'dGRAY|    Нет данных для импорта. Не найден файл {json_file_path} с конфигурацией.'
         if not data:
             return 3, f'dGRAY|    Нет данных для импорта. Файл {json_file_path} пуст.'
         return 0, data
@@ -1286,4 +1299,10 @@ class MainTree(QTreeWidget):
                 self.setCurrentItem(item)
                 break
 
-#-------------------------------------- Служебные функции --------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------
+def main(args):
+    return 0
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main(sys.argv))

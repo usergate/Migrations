@@ -20,7 +20,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Программа предназначена для переноса конфигурации с устройств Cisco FPR на NGFW UserGate.
+# Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
 # Версия 1.2
 #
 
@@ -29,6 +29,7 @@ import ipaddress, copy
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import character_map, network_proto, service_ports, character_map_for_name, character_map_file_name
+
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
 pattern = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')

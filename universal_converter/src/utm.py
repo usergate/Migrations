@@ -27,6 +27,8 @@ class UtmXmlRpc:
         self.version_low = None
         self.version_other = None
 
+        rpc.MAXINT = 2**64 - 1
+
     def connect(self):
         """Подключиться к UTM"""
         try:
@@ -1741,6 +1743,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 1:
                 return 2, f'Не возможно получить имя доменного пользователя. Проверьте что версия NGFW 5.0.6.4973 (6.1.7) или выше.'
+            elif err.faultCode == 404:
+                return 2, f'Не возможно получить имя доменного пользователя. Возможно не доступен контроллер домена.'
             else:
                 return 1, f'Error utm.get_ldap_user_name: [{err.faultCode}] — {err.faultString}'
         name = result['name']
@@ -1757,6 +1761,8 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             if err.faultCode == 1:
                 return 2, f'Не возможно получить имя доменной группы. Проверьте что версия UTM 5.0.6.4973 (6.1.7) или выше.'
+            elif err.faultCode == 404:
+                return 2, f'Не возможно получить имя доменной группы. Возможно не доступен контроллер домена.'
             else:
                 return 1, f'Error utm.get_ldap_group_name: [{err.faultCode}] — {err.faultString}'
         data = [x.split('=') for x in result['name'].split(',')]

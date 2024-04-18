@@ -30,13 +30,8 @@ import copy
 import common_func as func
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import zone_services, character_map, character_map_for_name, character_map_file_name, character_map_userlogin, ug_services, ip_proto
+from services import zone_services, trans_table, trans_name, trans_filename, trans_userlogin, ug_services, ip_proto
 
-
-trans_table = str.maketrans(character_map)
-trans_filename = str.maketrans(character_map_file_name)
-trans_name = str.maketrans(character_map_for_name)
-trans_userlogin = str.maketrans(character_map_userlogin)
 
 class ConvertFortigateConfig(QThread):
     """Преобразуем файл конфигурации Fortigate в формат UserGate NGFW."""

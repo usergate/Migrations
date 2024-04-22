@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.1
+# Версия 1.2
 #
 
 import os, sys, json
@@ -555,9 +555,9 @@ def make_block(parent, data):
                     case ['service', 'protocol', proto, 'source-port', port1, 'to', port2, 'destination-port', port3]:
                         fw_rule['services'].append(['new', {'proto': proto, 'src': f'{port1}-{port2}', 'dst': port3}])
                     case ['service', 'protocol', proto, 'source-port', port1, 'to', port2, 'destination-port', port3, 'to', port4]:
-                        fw_rule['service'].append(['new', {'proto': proto, 'src': f'{port1}-{port2}', 'dst': f'{port3}-{port4}'}])
+                        fw_rule['services'].append(['new', {'proto': proto, 'src': f'{port1}-{port2}', 'dst': f'{port3}-{port4}'}])
                     case ['service', 'protocol', proto, 'destination-port', port]:
-                        fw_rule['service'].append(['new', {'proto': proto, 'src': '', 'dst': port}])
+                        fw_rule['services'].append(['new', {'proto': proto, 'src': '', 'dst': port}])
                     case ['application', 'app', app]:
                         fw_rule['apps'].append(['app', app])
                     case ['application', 'category', *categories]:

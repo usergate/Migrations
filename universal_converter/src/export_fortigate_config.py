@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.7
+# Версия 1.8
 #
 
 import os, sys, json
@@ -62,6 +62,7 @@ class ConvertFortigateConfig(QThread):
         }
 
     def run(self):
+        self.stepChanged.emit('GREEN|Конвертация файла конфигурации Fortigate в формат UserGate NGFW.')
         convert_config_file(self, self.current_fg_path)
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
@@ -2055,9 +2056,9 @@ def create_ip_list(parent, path, ips=[], name=None):
     return ip_list['name']
 
 
-def main():
-    convert_file()
+def main(args):
+    return 0
 
 if __name__ == '__main__':
-    main()
-4
+    import sys
+    sys.exit(main(sys.argv))

@@ -113,7 +113,8 @@ def convert_config_file(parent, path):
     error = 0
     data = {}
     config_file = 'fortigate.cfg'
-    bad_cert_block = {'config certificate ca',
+    bad_cert_block = {'config global',
+                      'config certificate ca',
                       'config firewall ssh local-key',
                       'config firewall ssh local-ca',
                       'config vpn certificate ca',
@@ -169,7 +170,6 @@ def convert_config_file(parent, path):
         number_empty_line = 0
         with open(fg_config_file, "rb") as fh:
             enc = chardet.detect(fh.read())
-            print(enc)
         with open(fg_config_file, "r", encoding=enc['encoding']) as fh:
             line = fh.readline()
             while line:
@@ -178,9 +178,6 @@ def convert_config_file(parent, path):
                     if line.startswith(item):
                         line = fh.readline()
                         continue
-                if line.startswith('config global'):
-                    line = fh.readline()
-                    continue
                 if line.startswith('config'):
                     key = line
                     config_block = []

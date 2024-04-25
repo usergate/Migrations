@@ -21,11 +21,11 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.8
+# Версия 1.9
 #
 
 import os, sys, json
-import ipaddress
+import ipaddress, chardet
 import copy
 import common_func as func
 from datetime import datetime as dt
@@ -70,7 +70,7 @@ class ConvertFortigateConfig(QThread):
             json_file = os.path.join(self.current_fg_path, 'config.json')
             err, data = func.read_json_file(self, json_file)
             if err:
-                self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
+                self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.\n')
             else:
                 convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
                 convert_dns_servers(self, self.current_ug_path, data)
@@ -98,9 +98,9 @@ class ConvertFortigateConfig(QThread):
                 convert_bgp_routes(self, self.current_ug_path, data)
 
                 if self.error:
-                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.')
+                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.\n')
                 else:
-                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла успешно.')
+                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла успешно.\n')
 
 
 def convert_config_file(parent, path):
@@ -118,6 +118,7 @@ def convert_config_file(parent, path):
                       'config firewall ssh local-ca',
                       'config vpn certificate ca',
                       'config vpn certificate local',
+                      'config certificate local',
                       'config web-proxy explicit',
                       'config system replacemsg-group',
                       'config system replacemsg-image',
@@ -164,10 +165,19 @@ def convert_config_file(parent, path):
                       }
     fg_config_file = os.path.join(path, config_file)
     try:
-        with open(fg_config_file, "r") as fh:
+        enc = ''
+        number_empty_line = 0
+        with open(fg_config_file, "rb") as fh:
+            enc = chardet.detect(fh.read())
+            print(enc)
+        with open(fg_config_file, "r", encoding=enc['encoding']) as fh:
             line = fh.readline()
             while line:
                 line = line.translate(trans_table).strip().replace('"', '')
+                for item in bad_cert_block:
+                    if line.startswith(item):
+                        line = fh.readline()
+                        continue
                 if line.startswith('config global'):
                     line = fh.readline()
                     continue
@@ -177,7 +187,18 @@ def convert_config_file(parent, path):
                     line = fh.readline().translate(trans_table)
                     while line not in ('end', ' end', '  end'):
                         config_block.append(line[4:])
-                        line = fh.readline().translate(trans_table)
+                        try:
+                            line = fh.readline().translate(trans_table)
+                            if not line:
+                                number_empty_line += 1
+                                if number_empty_line >= 20:
+                                    parent.stepChanged.emit('RED|    Error: Парсинг файла конфигурации Fortigate - нарушена структура конца файла.')
+                                    parent.error = 1
+                                    return
+                        except UnicodeDecodeError as err:
+                            parent.stepChanged.emit(f'RED|    Error: Парсинг файла конфигурации Fortigate - {err}.')
+                            parent.error = 1
+                            return
                     if key not in bad_cert_block:
                         block = make_conf_block(parent, config_block)
                         data[key] = block

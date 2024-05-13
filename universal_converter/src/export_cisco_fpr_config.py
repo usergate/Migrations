@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# asa_convert_config (convert Cisco FPR NGFW configuration to NGFW UserGate).
+# export_cisco_fpr_config.py (convert configuration from Cisco FPR to NGFW UserGate).
 #
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -28,14 +28,11 @@ import os, sys, json, re
 import ipaddress, copy
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import character_map, network_proto, service_ports, character_map_for_name, character_map_file_name
+from services import network_proto, service_ports, trans_table, trans_name, trans_filename
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
 pattern = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
-trans_table = str.maketrans(character_map)
-trans_name = str.maketrans(character_map_for_name)
-trans_filename = str.maketrans(character_map_file_name)
 
 
 class ConvertCiscoFPRConfig(QThread):

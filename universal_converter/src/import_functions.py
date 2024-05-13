@@ -19,14 +19,14 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 1.4
+# Версия 1.5
 #
 
 import os, sys, time, copy, json
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import zone_services, trans_filename, trans_name
-from common_func import read_bin_file, write_bin_file
+from common_func import read_bin_file, write_bin_file, read_json_file
 
 
 class ImportAll(QThread):
@@ -114,22 +114,25 @@ def import_general_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки'"""
     import_ui(parent, path)
     import_ntp_settings(parent, path)
+    import_proxy_port(parent, path)
     import_modules(parent, path)
     if 5 < parent.version < 7.1:
         parent.stepChanged.emit('BLUE|Импорт SNMP Engine ID в раздел "UserGate/Настройки/Модули/SNMP Engine ID".')
         engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
         import_snmp_engine(parent, engine_path)
     import_cache_settings(parent, path)
+    import_proxy_exceptions(parent, path)
     import_web_portal_settings(parent, path)
     import_upstream_proxy_settings(parent, path)
 
 def import_ui(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
-    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки интерфейса".')
     json_file = os.path.join(path, 'config_settings_ui.json')
-    err, data = read_conf_file(parent, json_file)
+    err, data = read_json_file(parent, json_file, mode=1)
     if err:
         return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки интерфейса".')
 
     params = {
         'ui_timezone': 'Часовой пояс',
@@ -181,11 +184,12 @@ def import_ui(parent, path):
 
 def import_ntp_settings(parent, path):
     """Импортируем настройки NTP"""
-    parent.stepChanged.emit('BLUE|Импорт настроек NTP раздела "UserGate/Настройки/Настройка времени сервера".')
     json_file = os.path.join(path, 'config_ntp.json')
-    err, data = read_conf_file(parent, json_file)
+    err, data = read_json_file(parent, json_file, mode=1)
     if err:
         return
+
+    parent.stepChanged.emit('BLUE|Импорт настроек NTP раздела "UserGate/Настройки/Настройка времени сервера".')
     error = 0
 
     data.pop('utc_time', None)
@@ -199,29 +203,34 @@ def import_ntp_settings(parent, path):
     out_message = 'GREEN|    Импортированы настройки NTP в раздел "UserGate/Настройки/Настройка времени сервера".'
     parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек NTP.' if error else out_message)
 
-def import_modules(parent, path):
-    """Импортируем раздел 'UserGate/Настройки/Модули'"""
-    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули".')
-    error = 0
-
+def import_proxy_port(parent, path):
+    """Импортируем раздел UserGate/Настройки/Модули/HTTP(S)-прокси порт"""
     json_file = os.path.join(path, 'config_proxy_port.json')
-    err, data = read_conf_file(parent, json_file)
-    if err:
-        parent.stepChanged.emit(f'{data}|        HTTP(S)-прокси порт не установлен.')
-        if err == 1: error = 1
-    else:
-        err, result = parent.utm.set_proxy_port(data)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-            parent.error = 1
-        else:
-            parent.stepChanged.emit(f'BLACK|    HTTP(S)-прокси порт установлен в значение "{data}"')
-
-    json_file = os.path.join(path, 'config_settings_modules.json')
-    err, data = read_conf_file(parent, json_file)
+    err, data = read_json_file(parent, json_file, mode=1)
     if err:
         return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули/HTTP(S)-прокси порт".')
+    error = 0
+
+    err, result = parent.utm.set_proxy_port(data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Ошибка импорта HTTP(S)-прокси порта.')
+    else:
+        parent.stepChanged.emit(f'BLACK|    HTTP(S)-прокси порт установлен в значение "{data}"')
+
+def import_modules(parent, path):
+    """Импортируем раздел 'UserGate/Настройки/Модули'"""
+    json_file = os.path.join(path, 'config_settings_modules.json')
+    err, data = read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули".')
+    error = 0
 
     params = {
         'auth_captive': 'Домен Auth captive-портала',
@@ -236,8 +245,9 @@ def import_modules(parent, path):
         data.pop('tunnel_inspection_zone_config', None)
         data.pop('lldp_config', None)
     else:
-        zone_name = data['tunnel_inspection_zone_config']['target_zone']
-        data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_data['zones'].get(zone_name, 8)
+        if 'tunnel_inspection_zone_config' in data:
+            zone_name = data['tunnel_inspection_zone_config']['target_zone']
+            data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_data['zones'].get(zone_name, 8)
 
     for key, value in data.items():
         err, result = parent.utm.set_settings_param(key, value)
@@ -253,45 +263,52 @@ def import_modules(parent, path):
 
 def import_cache_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
+    json_file = os.path.join(path, 'config_proxy_settings.json')
+    err, data = read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
     parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP".')
     error = 0
 
-    json_file = os.path.join(path, 'config_proxy_settings.json')
-    err, data = read_conf_file(parent, json_file)
-    if err:
-        if err == 1: error = 1
-    else:
-        if parent.version < 7:
-            data.pop('add_via_enabled', None)
-            data.pop('add_forwarded_enabled', None)
-            data.pop('smode_enabled', None)
-            data.pop('module_l7_enabled', None)
-            data.pop('module_idps_enabled', None)
-            data.pop('module_sip_enabled', None)
-            data.pop('module_h323_enabled', None)
-            data.pop('module_sunrpc_enabled', None)
-            data.pop('module_ftp_alg_enabled', None)
-            data.pop('module_tftp_enabled', None)
-            data.pop('legacy_ssl_enabled', None)
-            data.pop('http_connection_timeout', None)
-            data.pop('http_loading_timeout', None)
-            data.pop('icap_wait_timeout', None)
-        if parent.version == 7.0:
-            data.pop('module_tftp_enabled', None)
-        for key, value in data.items():
-            err, result = parent.utm.set_settings_param(key, value)
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                parent.error = 1
-            else:
-                parent.stepChanged.emit(f'BLACK|    Параметр "{key}" установлен в значение "{value}".')
+    if parent.version < 7:
+        data.pop('add_via_enabled', None)
+        data.pop('add_forwarded_enabled', None)
+        data.pop('smode_enabled', None)
+        data.pop('module_l7_enabled', None)
+        data.pop('module_idps_enabled', None)
+        data.pop('module_sip_enabled', None)
+        data.pop('module_h323_enabled', None)
+        data.pop('module_sunrpc_enabled', None)
+        data.pop('module_ftp_alg_enabled', None)
+        data.pop('module_tftp_enabled', None)
+        data.pop('legacy_ssl_enabled', None)
+        data.pop('http_connection_timeout', None)
+        data.pop('http_loading_timeout', None)
+        data.pop('icap_wait_timeout', None)
+    if parent.version == 7.0:
+        data.pop('module_tftp_enabled', None)
+    for key, value in data.items():
+        err, result = parent.utm.set_settings_param(key, value)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+            parent.error = 1
+        else:
+            parent.stepChanged.emit(f'BLACK|    Параметр "{key}" установлен в значение "{value}".')
 
+    out_message = 'GREEN|    Импортирован раздел "UserGate/Настройки/Настройки кэширования HTTP".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек кэширования HTTP.' if error else out_message)
+
+def import_proxy_exceptions(parent, path):
+    """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
     json_file = os.path.join(path, 'config_proxy_exceptions.json')
-    err, exceptions = read_conf_file(parent, json_file)
+    err, exceptions = read_json_file(parent, json_file, mode=1)
     if err:
-        parent.stepChanged.emit(f'{exceptions}|        Исключения кеширования не импортированы.')
         return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования".')
+    error = 0
 
     err, nlist = parent.utm.get_nlist_list('httpcwl')
     for item in exceptions:
@@ -305,20 +322,20 @@ def import_cache_settings(parent, path):
         else:
             parent.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
 
-    out_message = 'GREEN|    Импортирован раздел "UserGate/Настройки/Настройки кэширования HTTP".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек кэширования HTTP.' if error else out_message)
+    out_message = 'GREEN|    Исключения кэширования HTTP импортированы".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта исключений кэширования HTTP.' if error else out_message)
 
 def import_web_portal_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Веб-портал'"""
+    json_file = os.path.join(path, 'config_web_portal.json')
+    err, data = read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
     parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Веб-портал".')
     error = 0
     error_message = 'ORANGE|    Ошибка импорта настроек Веб-портала!'
     out_message = 'GREEN|    Импортирован раздел "UserGate/Настройки/Веб-портал".'
-
-    json_file = os.path.join(path, 'config_web_portal.json')
-    err, data = read_conf_file(parent, json_file)
-    if err:
-        return
 
     err, result = parent.utm.get_templates_list()
     if err:
@@ -382,11 +399,12 @@ def import_web_portal_settings(parent, path):
 def import_upstream_proxy_settings(parent, path):
     """Импортируем настройки вышестоящего прокси. Только для версии 7.1 и выше."""
     if parent.version >= 7.1:
-        parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
         json_file = os.path.join(path, 'upstream_proxy_settings.json')
-        err, data = read_conf_file(parent, json_file)
+        err, data = read_json_file(parent, json_file, mode=1)
         if err:
             return
+
+        parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
         error = 0
 
         err, result = parent.utm.set_upstream_proxy_settings(data)
@@ -5713,7 +5731,7 @@ def import_snmp_settings(parent, path):
 
 def import_snmp_engine(parent, path):
     json_file = os.path.join(path, 'config_snmp_engine.json')
-    err, data = read_conf_file(parent, json_file)
+    err, data = read_json_file(parent, json_file)
     if err:
         return
 

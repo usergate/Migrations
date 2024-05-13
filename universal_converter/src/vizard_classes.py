@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.0
+# Версия 1.2
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter)
 import common_func as func
 import config_style as cs
+import export_cisco_asa_config as asa
 import export_cisco_fpr_config as fpr
 import export_fortigate_config as fg
 import export_huawei_config as huawei
@@ -25,10 +26,10 @@ class SelectAction(QWidget):
         super().__init__()
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Перенос конфигурации сторонних вендоров<br>на NGFW UserGate</font></b>"
-        text2 = "Экспорт конфигурации из конфигурационных файлов Cisco ASA, Cisco FPR, Check Point, Fortigate  и сохранение её \
-в формате UserGate в каталоге 'data_ug' текущей директории. После экспорта вы можете просмотреть результат и изменить \
-содержимое файлов в соответствии с вашими потребностями."
-        text3 = "Импорт файлов конфигурации из каталога 'data_ug' на NGFW версий 5, 6 и 7."
+        text2 = "Экспорт конфигурации из конфигурационных файлов <b>Cisco ASA</b>, <b>Cisco FPR</b>, <b>Check Point</b>, \
+<b>Fortigate</b>, <b>Huawei</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
+После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
+        text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на NGFW версий <b>5, 6 и 7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -80,7 +81,7 @@ class SelectAction(QWidget):
 
     def resize_window(self, e):
         if e == 0:
-            self.parent.resize(610, 310)
+            self.parent.resize(610, 320)
 
     def set_export_page(self):
         """Переходим на страницу экспорта конфигурации. Номер в стеке 1."""
@@ -228,7 +229,7 @@ class SelectMode(QWidget):
         self.log_list.addItem(i)
 
     def on_step_changed(self, msg):
-        color, message = msg.split('|')
+        color, _, message = msg.partition('|')
         self.add_item_log(message, color=color)
         self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):
@@ -375,9 +376,7 @@ class SelectExportMode(QWidget):
             if self.thread is None:
                 match self.selected_point:
                     case 'Cisco ASA':
-                        self.add_item_log('Конвертация с Cisco ASA пока не доступна.', color='RED')
-                        self.enable_buttons()
-                        return
+                        self.thread = asa.ConvertCiscoASAConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Cisco FPR':
                         self.thread = fpr.ConvertCiscoFPRConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Check Point':
@@ -425,7 +424,7 @@ class SelectExportMode(QWidget):
         self.log_list.addItem(i)
 
     def on_step_changed(self, msg):
-        color, message = msg.split('|')
+        color, _, message = msg.partition('|')
         self.add_item_log(message, color=color)
         self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):

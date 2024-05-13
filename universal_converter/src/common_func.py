@@ -75,7 +75,7 @@ def write_bin_file(parent, data, bin_file_path='temporary_data.bin'):
     return 0
 
 
-def read_json_file(parent, json_file_path):
+def read_json_file(parent, json_file_path, mode=0):
     """Читаем json-файл с конфигурацией."""
     try:
         with open(json_file_path, "r") as fh:
@@ -85,11 +85,13 @@ def read_json_file(parent, json_file_path):
         parent.error = 1
         return 1, 'RED'
     except FileNotFoundError as err:
-        parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
-        parent.error = 1
+        if not mode:
+            parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
+            parent.error = 1
         return 2, 'RED'
     if not data:
-        parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
+        if not mode:
+            parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
         return 3, 'GRAY'
     return 0, data
 

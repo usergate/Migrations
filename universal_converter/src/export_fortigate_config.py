@@ -21,12 +21,12 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 1.9
+# Версия 2.0
 #
 
 import os, sys, json
 import ipaddress, chardet
-import copy
+import copy, time
 import common_func as func
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -72,30 +72,30 @@ class ConvertFortigateConfig(QThread):
             if err:
                 self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.\n')
             else:
-                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
-                convert_dns_servers(self, self.current_ug_path, data)
-                convert_notification_profile(self, self.current_ug_path, data)
-                convert_services(self, self.current_ug_path, data)
-                convert_service_groups(self, self.current_ug_path, data)
-                convert_ntp_settings(self, self.current_ug_path, data)
-                convert_zone_settings(self, self.current_ug_path, data)
-                convert_dhcp_settings(self, self.current_ug_path, data)
-                convert_ip_lists(self, self.current_ug_path, data)
-                convert_url_lists(self, self.current_ug_path, data)
-                convert_shapers_list(self, self.current_ug_path, data)
-                convert_shapers_rules(self, self.current_ug_path, data)
-                convert_auth_servers(self, self.current_ug_path, data)
-                convert_local_users(self, self.current_ug_path, data)
-                convert_user_groups(self, self.current_ug_path, data)
-                convert_web_portal_resources(self, self.current_ug_path, data)
-                convert_time_sets(self, self.current_ug_path, data)
-                convert_dnat_rule(self, self.current_ug_path, data)
-                convert_loadbalancing_rule(self, self.current_ug_path, data)
-                convert_groups_iplists(self, self.current_ug_path, data)
+#                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
+#                convert_dns_servers(self, self.current_ug_path, data)
+#                convert_notification_profile(self, self.current_ug_path, data)
+#                convert_services(self, self.current_ug_path, data)
+#                convert_service_groups(self, self.current_ug_path, data)
+#                convert_ntp_settings(self, self.current_ug_path, data)
+#                convert_zone_settings(self, self.current_ug_path, data)
+#                convert_dhcp_settings(self, self.current_ug_path, data)
+#                convert_ip_lists(self, self.current_ug_path, data)
+#                convert_url_lists(self, self.current_ug_path, data)
+#                convert_shapers_list(self, self.current_ug_path, data)
+#                convert_shapers_rules(self, self.current_ug_path, data)
+#                convert_auth_servers(self, self.current_ug_path, data)
+#                convert_local_users(self, self.current_ug_path, data)
+#                convert_user_groups(self, self.current_ug_path, data)
+#                convert_web_portal_resources(self, self.current_ug_path, data)
+#                convert_time_sets(self, self.current_ug_path, data)
+#                convert_dnat_rule(self, self.current_ug_path, data)
+#                convert_loadbalancing_rule(self, self.current_ug_path, data)
+#                convert_groups_iplists(self, self.current_ug_path, data)
                 convert_firewall_policy(self, self.current_ug_path, data['config firewall policy'])
-                convert_gateways_list(self, self.current_ug_path, data)
-                convert_static_routes(self, self.current_ug_path, data)
-                convert_bgp_routes(self, self.current_ug_path, data)
+#                convert_gateways_list(self, self.current_ug_path, data)
+#                convert_static_routes(self, self.current_ug_path, data)
+#                convert_bgp_routes(self, self.current_ug_path, data)
 
                 if self.error:
                     self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.\n')
@@ -165,12 +165,9 @@ def convert_config_file(parent, path):
                       'config system replacemsg icap icap-req-resp',
                       }
     fg_config_file = os.path.join(path, config_file)
+
     try:
-        enc = ''
-        number_empty_line = 0
-        with open(fg_config_file, "rb") as fh:
-            enc = chardet.detect(fh.read())
-        with open(fg_config_file, "r", encoding=enc['encoding']) as fh:
+        with open(fg_config_file, "r") as fh:
             line = fh.readline()
             while line:
                 line = line.translate(trans_table).strip().replace('"', '')
@@ -181,14 +178,15 @@ def convert_config_file(parent, path):
                 if line.startswith('config'):
                     key = line
                     config_block = []
-                    line = fh.readline().translate(trans_table)
+                    line = fh.readline().translate(trans_table).rstrip(' ')
+                    number_empty_line = 0
                     while line not in ('end', ' end', '  end'):
                         config_block.append(line[4:])
                         try:
-                            line = fh.readline().translate(trans_table)
+                            line = fh.readline().translate(trans_table).rstrip(' ')
                             if not line:
                                 number_empty_line += 1
-                                if number_empty_line >= 20:
+                                if number_empty_line >= 100:
                                     parent.stepChanged.emit('RED|    Error: Парсинг файла конфигурации Fortigate - нарушена структура конца файла.')
                                     parent.error = 1
                                     return
@@ -224,6 +222,8 @@ def make_edit_block(parent, data):
             continue
         a1 = line.replace('" "', ',').replace('"', '')
         item = a1.strip().split()
+        if not item:
+            continue
         match item[0]:
             case 'set':
                 edit_block[item[1]] = ' '.join(item[2:])
@@ -591,12 +591,13 @@ def convert_service_groups(parent, path, data):
             'content': []
         }
         for item in value['member'].split(','):
-            service = copy.deepcopy(parent.services[item])
-            for x in service['protocols']:
-                x.pop('source_port', None)
-                x.pop('app_proto', None)
-                x.pop('alg', None)
-            srv_group['content'].append(service)
+            service = copy.deepcopy(parent.services.get(item, None))
+            if service:
+                for x in service['protocols']:
+                    x.pop('source_port', None)
+                    x.pop('app_proto', None)
+                    x.pop('alg', None)
+                srv_group['content'].append(service)
 
         services_groups.append(srv_group)
         parent.service_groups.add(key)
@@ -912,21 +913,19 @@ def convert_ip_lists(parent, path, data):
         parent.error = 1
         return
 
-    ip_list = {
-        'name': '',
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {'threat_level': 3},
-        'content': []
-    }
-
+    n = 0
     for list_name, value in data.get('config firewall address', {}).items():
+        ip_list = {
+            'name': list_name.strip().translate(trans_name),
+            'description': value.get('comment', ''),
+            'type': 'network',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'threat_level': 3},
+            'content': []
+        }
         if 'subnet' in value:
-            ip_list['name'] = list_name.strip().translate(trans_name)
-            ip_list['description'] = value.get('comment', '')
             ip, mask = value['subnet'].split()
             try:
                 subnet = ipaddress.ip_network(f'{ip}/{mask}')
@@ -934,35 +933,56 @@ def convert_ip_lists(parent, path, data):
                 subnet = ipaddress.ip_network(f'{ip}/32')
             ip_list['content'] = [{'value': f'{ip}/{subnet.prefixlen}'}]
         elif 'type' in value and value['type'] == 'iprange':
-            ip_list['name'] = list_name.strip().translate(trans_name)
-            ip_list['description'] = value.get('comment', '')
-            ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
+            ip_list['content'] = [{'value': f'{value.get("start-ip", "0.0.0.1")}-{value.get("end-ip", "255.255.255.255")}'}]
         else:
             continue
 
-        parent.ip_lists.add(ip_list['name'])
+        if ip_list['content']:
+            n += 1
+            parent.ip_lists.add(ip_list['name'])
 
-        json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
-        with open(json_file, 'w') as fh:
-            json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|       {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
 
     for list_name, value in data.get('config firewall multicast-address', {}).items():
-        ip_list['name'] = 'Multicast - ' + list_name.strip().translate(trans_name)
+        ip_list = {
+            'name': 'Multicast - ' + list_name.strip().translate(trans_name),
+            'description': '',
+            'type': 'network',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'threat_level': 3},
+            'content': []
+        }
         if value["start-ip"] == value["end-ip"]:
             ip_list['content'] = [{'value': value["start-ip"]}]
         else:
             ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
 
-        parent.ip_lists.add(list_name)
-
-        json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
-        with open(json_file, 'w') as fh:
-            json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'BLACK|       Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+        if ip_list['content']:
+            parent.ip_lists.add(list_name)
+            n += 1
+            json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
 
     for list_name, value in data.get('config firewall addrgrp', {}).items():
-        ip_list['content'] = []
+        ip_list = {
+            'name': list_name.strip().translate(trans_name),
+            'description': value.get('comment', ''),
+            'type': 'network',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'threat_level': 3},
+            'content': []
+        }
         members = value['member'].split(',')
         for item in members:
             item = item.strip().translate(trans_name)
@@ -976,18 +996,16 @@ def convert_ip_lists(parent, path, data):
                     pass
 
         if ip_list['content']:
-            ip_list['name'] = list_name.strip().translate(trans_name)
-            ip_list['description'] = value.get('comment', '')
-
             parent.ip_lists.add(ip_list['name'])
+            n += 1
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'BLACK|       Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            parent.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
 
-    out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
-    parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.' if not ip_list['name'] else out_message)
+    parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
 
 
 def convert_url_lists(parent, path, data):
@@ -1001,17 +1019,6 @@ def convert_url_lists(parent, path, data):
         parent.error = 1
         return
 
-    url_list = {
-        'name': '',
-        'description': '',
-        'type': 'url',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {'list_compile_type': 'case_insensitive'},
-        'content': []
-    }
-
     for key, value in data.get('config wanopt content-delivery-network-rule', {}).items():
         _, pattern = key.split(':')
         if pattern == '//':
@@ -1019,6 +1026,16 @@ def convert_url_lists(parent, path, data):
         else:
             list_name = pattern.replace('/', '')
 
+        url_list = {
+            'name': list_name.strip().translate(trans_name),
+            'description': value.get('comment', ''),
+            'type': 'url',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'list_compile_type': 'case_insensitive'},
+            'content': []
+        }
         if 'host-domain-name-suffix' not in value and list_name != 'All URLs (default)':
             parent.stepChanged.emit(f'rNOTE|       Запись "{key}" не конвертирована так как не имеет host-domain-name-suffix.')
             continue
@@ -1031,55 +1048,78 @@ def convert_url_lists(parent, path, data):
                 url_list['content'].extend([{'value': f'{domain_name}/{x}' if domain_name else x} for x in suffixes])
             else:
                 url_list['content'].extend([{'value': domain_name}])
+
         if url_list['content']:
-            url_list['name'] = list_name.strip().translate(trans_name)
-            url_list['description'] = value.get('comment', '')
-
-        parent.url_lists[url_list['name']] = url_list['content']
-
-        json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
-        with open(json_file, 'w') as fh:
-            json.dump(url_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
-
-    for list_name, value in data.get('config firewall address', {}).items():
-        if 'type' in value and value['type'] == 'fqdn':
-            url_list['name'] = list_name.strip().translate(trans_name)
-            url_list['description'] = value.get('comment', '')
-            url_list['content'] = [{'value': value['fqdn']}]
-
             parent.url_lists[url_list['name']] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
+
+    for list_name, value in data.get('config firewall address', {}).items():
+        if 'type' in value and value['type'] == 'fqdn':
+            url_list = {
+                'name': list_name.strip().translate(trans_name),
+                'description': value.get('comment', ''),
+                'type': 'url',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {'list_compile_type': 'case_insensitive'},
+                'content': [{'value': value['fqdn']}]
+            }
+            if url_list['content']:
+                parent.url_lists[url_list['name']] = url_list['content']
+
+                json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(url_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+                time.sleep(0.1)
 
     for list_name, value in data.get('config firewall addrgrp', {}).items():
-        url_list['content'] = []
+        url_list = {
+            'name': list_name.strip().translate(trans_name),
+            'description': value.get('comment', ''),
+            'type': 'url',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'list_compile_type': 'case_insensitive'},
+            'content': []
+        }
         members = value['member'].split(',')
         for url in members:
             url = url.strip().translate(trans_name)
             if url in parent.url_lists:
                 url_list['content'].extend(parent.url_lists[url])
-        if url_list['content']:
-            url_list['name'] = list_name.strip().translate(trans_name)
-            url_list['description'] = value.get('comment', '')
 
+        if url_list['content']:
             parent.url_lists[url_list['name']] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
 
     for list_name, value in data.get('config firewall wildcard-fqdn custom', {}).items():
+        url_list = {
+            'name': '',
+            'description': value.get('comment', ''),
+            'type': 'url',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'list_compile_type': 'case_insensitive'},
+            'content': [{'value': value['wildcard-fqdn']}]
+        }
         list_name = list_name.strip().translate(trans_name)
         if list_name in parent.url_lists:
             list_name = f'{list_name} - wildcard-fqdn'
         url_list['name'] = list_name
-        url_list['description'] = value.get('comment', '')
-        url_list['content'] = [{'value': value['wildcard-fqdn']}]
 
         parent.url_lists[url_list['name']] = url_list['content']
 
@@ -1087,27 +1127,35 @@ def convert_url_lists(parent, path, data):
         with open(json_file, 'w') as fh:
             json.dump(url_list, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+        time.sleep(0.1)
 
     for list_name, value in data.get('config firewall wildcard-fqdn group', {}).items():
-        url_list['content'] = []
+        url_list = {
+            'name': list_name.strip().translate(trans_name),
+            'description': value.get('comment', ''),
+            'type': 'url',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'list_compile_type': 'case_insensitive'},
+            'content': []
+        }
         members = value['member'].split(',')
         for url in members:
             url = url.strip().translate(trans_name)
             if url in parent.url_lists:
                 url_list['content'].extend(parent.url_lists[url])
-        if url_list['content']:
-            url_list['name'] = list_name.strip().translate(trans_name)
-            url_list['description'] = value.get('comment', '')
 
+        if url_list['content']:
             parent.url_lists[url_list['name']] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
 
-    out_message = f'GREEN|    Списки URL выгружены в каталог "{current_path}".'
-    parent.stepChanged.emit('GRAY|    Нет списков URL для экспорта.' if not url_list['name'] else out_message)
+    parent.stepChanged.emit(f'GREEN|    Списки URL выгружены в каталог "{current_path}".')
 
 
 def work_with_rules(rules):
@@ -1443,9 +1491,7 @@ def convert_time_sets(parent, path, data):
     if 'config firewall schedule onetime' in data:
         for key, value in data['config firewall schedule onetime'].items():
             if value:
-                time_from, fixed_date_from = value['start'].split()
-                time_to, fixed_date_to = value['end'].split()
-                timerestrictiongroup.append({
+                time_set = {
                     "name": key.strip().translate(trans_name),
                     "description": "Портировано с Fortigate",
                     "type": "timerestrictiongroup",
@@ -1453,17 +1499,30 @@ def convert_time_sets(parent, path, data):
                     "list_type_update": "static",
                     "schedule": "disabled",
                     "attributes": {},
-                    "content": [
-                        {
-                            'name': key.strip().translate(trans_name),
-                            'type': 'range',
-                            'time_to': time_to,
-                            'time_from': time_from,
-                            'fixed_date_to': f'{fixed_date_to.replace("/", "-")}T00:00:00',
-                            'fixed_date_from': f'{fixed_date_from.replace("/", "-")}T00:00:00'
-                        }
-                    ]
-                })
+                    "content": [{
+                        'name': key.strip().translate(trans_name),
+                        'type': 'range',
+                    }]
+                }
+                if 'start' in value and 'end' in value:
+                    time_from, fixed_date_from = value['start'].split()
+                    time_to, fixed_date_to = value['end'].split()
+                    time_set['content'][0]['time_to'] = time_to,
+                    time_set['content'][0]['time_from'] = time_from,
+                    time_set['content'][0]['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00',
+                    time_set['content'][0]['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
+                elif 'start' not in value:
+                    time_to, fixed_date_to = value['end'].split()
+                    time_set['content'][0]['type'] = 'span'
+                    time_set['content'][0]['time_to'] = time_to,
+                    time_set['content'][0]['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00',
+                elif 'end' not in value:
+                    time_from, fixed_date_from = value['start'].split()
+                    time_set['content'][0]['type'] = 'span'
+                    time_set['content'][0]['time_from'] = time_from,
+                    time_set['content'][0]['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
+
+                timerestrictiongroup.append(time_set)
                 parent.time_restrictions.add(key)
 
     if 'config firewall schedule recurring' in data:
@@ -1699,6 +1758,8 @@ def convert_groups_iplists(parent, path, data):
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
+                time.sleep(0.1)
+
         parent.stepChanged.emit(f'GREEN|    Списки групп IP-адресов выгружены в каталог "{current_path}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет списков групп IP-адресов для экспорта.')

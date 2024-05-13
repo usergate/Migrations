@@ -1533,8 +1533,8 @@ def convert_firewall_rules(parent, path, data):
                 names[rule['name']] = 0
             rule['position'] = 'last'
             rule['scenario_rule_id'] = False     # При импорте заменяется на UID или "0". 
-            rule['src_ips'] = get_ips(parent, path, rule['src_ips'], rule['name'])
-            rule['dst_ips'] = get_ips(parent, path, rule['dst_ips'], rule['name'])
+            rule['src_ips'] = get_ips(parent, path, rule['src_ips'], rule['name'], iplist_name=f'{rule["name"]}_src')
+            rule['dst_ips'] = get_ips(parent, path, rule['dst_ips'], rule['name'], iplist_name=f'{rule["name"]}_dst')
             rule['services'] = get_services(parent, rule['services'], 'МЭ', rule['name'])
             rule['apps'] = get_apps(parent, rule['apps'], rule['name'])
             rule['time_restrictions'] = func.get_time_restrictions(parent, rule['time_restrictions'], rule['name'])
@@ -1797,14 +1797,13 @@ def get_ips(parent, path, rule_ips, rule_name, iplist_name=None):
     Получить имена списков IP-адресов и URL-листов.
     Если списки не найдены, то они создаются или пропускаются, если невозможно создать."""
     new_rule_ips = []
+    ip_group = []
     for item in rule_ips:
         if item[0] == 'ip_address':
             if item[1] in parent.ip_lists:
                 new_rule_ips.append(['list_id', item[1]])
             else:
-                ip_list_name = func.create_ip_list(parent, path, ips=[item[1]], name=iplist_name)
-                if ip_list_name:
-                    new_rule_ips.append(['list_id', ip_list_name])
+                ip_group.append(item[1])
         elif item[0] == 'list_id':
             if item[1] in parent.ip_lists or item[1] in parent.ip_lists_groups:
                 new_rule_ips.append(item)
@@ -1813,6 +1812,11 @@ def get_ips(parent, path, rule_ips, rule_name, iplist_name=None):
                 new_rule_ips.append(item)
         else:
             parent.stepChanged.emit(f'bRED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
+    if ip_group:
+        ip_list_name = func.create_ip_list(parent, path, ips=ip_group, name=iplist_name)
+        if ip_list_name:
+            new_rule_ips.append(['list_id', ip_list_name])
+
     return new_rule_ips
 
 def get_services(parent, rule_services, rule_type, rule_name):
@@ -1898,9 +1902,10 @@ def get_users_and_groups(parent, users, rule_name):
     return new_users_list
 
 
-def main():
-    convert_file()
+def main(args):
+    return 0
 
 if __name__ == '__main__':
-    main()
+    import sys
+    sys.exit(main(sys.argv))
 

@@ -210,7 +210,7 @@ character_map_for_name = {
     '*': '+',
     '<': None,
     '>': None,
-    '|': "_",
+    '|': "-",
     '\\': None,
 }
 trans_name = str.maketrans(character_map_for_name)
@@ -362,12 +362,12 @@ zone_services = {
 
 # Для конвертации с Cisco FPR
 network_proto = {
-    'smtp', 'smtps', 'pop3', 'pop3s', 'icmp', 'igmp', 'ggp', 'ipencap', 'st', 'egp', 'igp',
-    'pup', 'hmp', 'xns-idp', 'rdp', 'iso-tp4', 'dccp', 'xtp', 'ddp', 'idpr-cmtp', 'ipv6',
-    'ipv6-route', 'ipv6-frag', 'idrp', 'rsvp', 'gre', 'esp', 'ah', 'skip', 'ipv6-icmp',
-    'ipv6-nonxt', 'ipv6-opts', 'rspf', 'vmtp', 'eigrp', 'ospf', 'ax.25', 'ipip', 'etherip',
-    'encap', 'pim', 'ipcomp', 'vrrp', 'l2tp', 'isis', 'sctp', 'fc', 'mobility-header', 'udplite',
-    'mpls-in-ip', 'manet', 'hip', 'shim6', 'wesp', 'rohc'
+    'ah', 'ax.25', 'dccp', 'ddp', 'egp', 'eigrp', 'encap', 'esp', 'etherip', 'fc', 'ggp',
+    'gre', 'hip', 'hmp', 'icmp', 'idpr-cmtp', 'idrp', 'igmp', 'igp', 'ipcomp', 'ipencap',
+    'ipip', 'ipv6', 'ipv6-frag', 'ipv6-icmp', 'ipv6-nonxt', 'ipv6-opts', 'ipv6-route',
+    'isis', 'iso-tp4', 'l2tp', 'manet', 'mobility-header', 'mpls-in-ip', 'ospf', 'pim',
+    'pop3', 'pop3s', 'pup', 'rdp', 'rohc', 'rspf', 'rsvp', 'sctp', 'shim6', 'skip', 'smtp',
+    'smtps', 'st', 'tcp', 'udp', 'udplite', 'vmtp', 'vrrp', 'wesp', 'xns-idp', 'xtp'
 }
 
 service_ports = {
@@ -691,4 +691,33 @@ service_ports = {
     'dircproxy': '57000',
     'tfido': '60177',
     'fido': '60179',
+}
+
+MONTHS = {
+    'January': '01',
+    'February': '02',
+    'March': '03',
+    'April': '04',
+    'May': '05',
+    'June': '06',
+    'July': '07',
+    'August': '08',
+    'September': '09',
+    'October': '10',
+    'November': '11',
+    'December': '12'
+}
+
+TIME_ZONE = {
+    "2": "Europe/Kaliningrad",
+    "3": "Europe/Moscow",
+    "4": "Europe/Samara",
+    "5": "Asia/Yekaterinburg",
+    "6": "Asia/Omsk",
+    "7": "Asia/Krasnoyarsk",
+    "8": "Asia/Irkutsk",
+    "9": "Asia/Yakutsk",
+    "10": "Asia/Vladivostok",
+    "11": "Asia/Magadan",
+    "12": "Asia/Kamchatka"
 }

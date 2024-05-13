@@ -97,7 +97,10 @@ def read_json_file(parent, json_file_path, mode=0):
 
 
 def create_ip_list(parent, path, ips=[], name=None):
-    """Создаём IP-лист для правила. Возвращаем имя ip-листа."""
+    """
+    Создаём IP-лист для правила. Возвращаем имя ip-листа.
+    В вызываемом модуле должна быть структура: self.ip_lists = set()
+    """
     iplist_name = name if name else ips[0]
     if iplist_name not in parent.ip_lists:
         section_path = os.path.join(path, 'Libraries')
@@ -110,7 +113,7 @@ def create_ip_list(parent, path, ips=[], name=None):
 
         ip_list = {
             'name': iplist_name,
-            'description': 'Портировано с Fortigate',
+            'description': 'Портировано...',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',

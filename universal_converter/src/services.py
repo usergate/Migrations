@@ -192,11 +192,10 @@ trans_filename = str.maketrans(character_map_file_name)
 character_map_for_name = {
     '#': None,
     '=': ' ',
-    ':': '_',
     '"': None,
     "'": None,
     '!': None,
-    '?': '_',
+    '?': ' ',
     '@': None,
     ';': " ",
     '$': None,

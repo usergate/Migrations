@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json
@@ -344,14 +344,14 @@ def make_block(parent, data):
                         parent.dnat_ip[dnat_name] = ip1
             return 0, ''
         case ['nat', 'address-group', name, _]:
-            nat_mode = None
+#            nat_mode = None
             for item in data[1:]:
                 match item:
-                    case ['mode', mode]:
-                        nat_mode = mode
+#                    case ['mode', mode]:
+#                        nat_mode = mode
                     case ['section', '0', ip1, ip2]:
-                        if nat_mode == 'pat':
-                            parent.snat_ip[name] = ip1
+#                        if nat_mode == 'pat':
+                        parent.snat_ip[name] = ip1
             return 0, ''
         case ['firewall', 'zone', name]:
             value = {

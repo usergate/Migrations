@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-# init_temporary_data.py
-# Version 1.5
+# get_temporary_data.py
+# Version 1.6
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys
@@ -171,7 +171,7 @@ class GetExportTemporaryData(QThread):
         self.ngfw_data['l7_categories'] = {x['id']: x['name'] for x in result}
 
         # Получаем список приложений l7
-        self.stepChanged.emit(f'BLACK|    Получаем список приложений l7')
+        self.stepChanged.emit(f'BLACK|    Получаем список приложений l7 (Для версии 7.1 это будет долго...)')
         err, result = self.utm.get_l7_apps()
         if err:
             self.stepChanged.emit(f'iRED|{result}')
@@ -329,7 +329,7 @@ class GetImportTemporaryData(QThread):
         self.ngfw_data['l7_categories'] = {x['name']: x['id'] for x in result}
 
         # Получаем список приложений l7
-        self.stepChanged.emit(f'BLACK|    Получаем список приложений l7')
+        self.stepChanged.emit(f'BLACK|    Получаем список приложений l7 (Для версии 7.1 это будет долго...)')
         err, result = self.utm.get_l7_apps()
         if err:
             self.stepChanged.emit(f'iRED|{result}')

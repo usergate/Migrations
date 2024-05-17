@@ -18,8 +18,9 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
+# import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 1.5
+# Версия 1.7
 #
 
 import os, sys, time, copy, json
@@ -456,10 +457,28 @@ def import_zones(parent, path):
     for zone in zones:
         zone['name'] = zone['name'].translate(trans_name)
         for service in zone['services_access']:
+            if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
+                if parent.version >= 7.1:
+                    allowed_ips = []
+                    for item in service['allowed_ips']:
+                        if item[0] == 'list_id':
+                            try:
+                                item[1] = parent.ngfw_data['ip_lists'][item[1]]
+                            except KeyError as err:
+                                parent.stepChanged.emit(f'ORANGE|    Зона "{zone["name"]}": для сервиса "{service["service_id"]}" не найден список IP-адресов {err}. Список IP-адресов не указан.')
+                                parent.error = 1
+                                error = 1
+                                continue
+                        allowed_ips.append(item)
+                    service['allowed_ips'] = allowed_ips
+                else:
+                    service['allowed_ips'] = []
+                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" в контроле доступа сервиса "{service["service_id"]}" удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.')
             try:
                 service['service_id'] = service_for_zones[service['service_id']]
             except KeyError:
                 service['service_id'] = 3
+
         if parent.version < 7.1:
             zone.pop('sessions_limit_enabled', None)
             zone.pop('sessions_limit_threshold', None)
@@ -2273,6 +2292,8 @@ def import_content_rules(parent, path):
 
     error = 0
     for item in data:
+        if parent.version < 7.1:
+            item.pop('layer', None)
         item['name'] = item['name'].strip().translate(trans_name)
         item['position'] = 'last'
         item.pop('position_layer', None)

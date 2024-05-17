@@ -16,7 +16,7 @@ import export_cisco_fpr_config as fpr
 import export_fortigate_config as fg
 import export_huawei_config as huawei
 import import_functions as tf
-import import_temporary_data as itd
+import init_temporary_data as itd
 from utm import UtmXmlRpc
 
 

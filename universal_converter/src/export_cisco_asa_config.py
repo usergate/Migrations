@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.1
+# Версия 1.2
 #
 
 import os, sys, json
@@ -56,30 +56,31 @@ class ConvertCiscoASAConfig(QThread):
                 self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прервана.\n')
                 self.error = 1
             else:
-#                convert_settings_ui(self, self.current_ug_path, data['timezone'])
-#                convert_ntp_settings(self, self.current_ug_path, data['ntp'])
-#                convert_modules(self, self.current_ug_path, data)
+                convert_settings_ui(self, self.current_ug_path, data['timezone'])
+                convert_ntp_settings(self, self.current_ug_path, data['ntp'])
+                convert_modules(self, self.current_ug_path, data)
                 convert_zones(self, self.current_ug_path, data)
                 convert_zone_access(self, self.current_ug_path, data)
-#                convert_dns_servers(self, self.current_ug_path, data['dns']['system_dns'])
-#                convert_dns_rules(self, self.current_ug_path, data['dns']['dns_rules'])
-#                convert_vlan_interfaces(self, self.current_ug_path, data)
-#                convert_gateways(self, self.current_ug_path, data)
-#                convert_routes(self, self.current_ug_path, data)
-#                convert_dhcp_settings(self, self.current_ug_path, data)
-#                convert_local_groups(self, self.current_ug_path, data)
-#                convert_local_users(self, self.current_ug_path, data['local-users'])
-#                convert_auth_servers(self, self.current_ug_path, data)
+                convert_dns_servers(self, self.current_ug_path, data['dns']['system_dns'])
+                convert_dns_rules(self, self.current_ug_path, data['dns']['dns_rules'])
+                convert_vlan_interfaces(self, self.current_ug_path, data)
+                convert_gateways(self, self.current_ug_path, data)
+                convert_routes(self, self.current_ug_path, data)
+                convert_dhcp_settings(self, self.current_ug_path, data)
+                convert_local_groups(self, self.current_ug_path, data)
+                convert_local_users(self, self.current_ug_path, data['local-users'])
+                convert_auth_servers(self, self.current_ug_path, data)
                 convert_service_object(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data['ip_lists'])
-#                convert_url_lists(self, self.current_ug_path, data['url_lists'])
+                convert_url_lists(self, self.current_ug_path, data['url_lists'])
                 convert_network_object_group(self, self.current_ug_path, data)
                 convert_service_object_group(self, self.current_ug_path, data)
                 convert_protocol_object_group(self, self.current_ug_path, data)
-#                convert_time_sets(self, self.current_ug_path, data)
-#                convert_firewall_rules(self, self.current_ug_path, data)
-#                convert_webtype_ace(self, self.current_ug_path, data)
+                convert_time_sets(self, self.current_ug_path, data)
+                convert_firewall_rules(self, self.current_ug_path, data)
+                convert_webtype_ace(self, self.current_ug_path, data)
                 convert_dnat_rule(self, self.current_ug_path, data)
+                convert_nat_rule(self, self.current_ug_path, data)
             if self.error:
                 self.stepChanged.emit('iORANGE|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прошла с ошибками.\n')
             else:
@@ -137,6 +138,7 @@ def convert_config_file(parent, path):
         'ip_lists': {},
         'url_lists': {},
         'dnat_rules': {},
+        'nat_rules': {},
         'network-group': {},
         'service-group': {},
         'protocol-group': {},
@@ -146,7 +148,7 @@ def convert_config_file(parent, path):
         'fw_rule_number': 0,
         'cf_access-list': {},
         'cf_rule_number': 0,
-        'nat_rules': [],
+        'nat-dnat_rules': [],
         'nat_rule_number': 0,
     }
 
@@ -251,7 +253,7 @@ def convert_config_file(parent, path):
                         num, tmp_block = get_block(config_data, num)
                         data['icmp-group'][x[2]] = tmp_block
                     case _:
-                        parent.stepChanged.emit(f'bRED|    object network {x[2]} не конвертирован.')
+                        parent.stepChanged.emit(f'rNOTE|    object network {x[2]} не конвертирован.')
             case 'access-group':
                 create_access_group(data, x[1:])
         num += 1
@@ -285,12 +287,11 @@ def convert_config_file(parent, path):
                         remark.clear()
                     case _:
                         string = line.rstrip('\n')
-                        parent.stepChanged.emit('bRED|    Access-list "{string}" - не обработан.')
-#            case 'nat':
-#                convert_nat_rule(x)
+                        parent.stepChanged.emit(f'rNOTE|    Access-list "{string}" - не обработан.')
+            case 'nat':
+                data['nat_rule_number'] += 1
+                data['nat_rules'][data['nat_rule_number']] = x
         num += 1
-
-#    print(json.dumps(data, indent=4))
 
     json_file = os.path.join(path, 'cisco_asa.json')
     with open(json_file, 'w') as fh:
@@ -1400,7 +1401,7 @@ def convert_service_object(parent, path, data):
                     if protocol and protocol in network_proto:
                         proto = protocol
                     else:
-                        parent.stepChanged.emit(f'bRED|    Сервис {name} не конвертирован. Протокол {protocol} не поддерживается в UG NGFW.')
+                        parent.stepChanged.emit(f'rNOTE|    Сервис {name} не конвертирован. Протокол {protocol} не поддерживается в UG NGFW.')
                 case ['service', 'icmp', *other]:
                     proto = 'icmp'
                 case ['service', 'sctp', *other]:
@@ -1423,7 +1424,7 @@ def convert_service_object(parent, path, data):
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                             port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
                         case _:
-                            parent.stepChanged.emit(f'bRED|    Сервис {name} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
+                            parent.stepChanged.emit(f'rNOTE|    Сервис {name} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
                 case ['description', *content]:
                     service['description'] = " ".join(content)
 
@@ -1679,7 +1680,7 @@ def convert_service_object_group(parent, path, data):
                     if protocol and protocol in network_proto:
                         proto_array.insert(0, protocol)
                     else:
-                        parent.stepChanged.emit(f'bRED|    Сервис {item} в {descr[0]} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
+                        parent.stepChanged.emit(f'rNOTE|    Сервис {item} в {descr[0]} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
                         continue
                 case ['port-object', 'eq'|'range', *dst_ports]:
                     proto_array = descr[1].split('-')
@@ -1830,7 +1831,7 @@ def convert_firewall_rules(parent, path, data):
             'send_host_icmp': '',
         }
         if value['name'] not in data['direction']:
-            parent.stepChanged.emit(f'LBLUE|    Для правила "{rule["name"]}" создайте зону зону "{value["name"]}" и укажите её как источник или назначение.')
+            parent.stepChanged.emit(f'LBLUE|    Для правила "{rule["name"]}": после импорта на UG NGFW создайте зону зону "{value["name"]}" и укажите её как источник или назначение в этом правиле.')
         else:
             rule['src_zones'].extend(data['direction'][value['name']]['src_zones'])
             rule['dst_zones'].extend(data['direction'][value['name']]['dst_zones'])
@@ -2047,7 +2048,7 @@ def convert_dnat_rule(parent, path, data):
         parent.error = 1
         return
 
-    nat_rules = []
+    data['nat_rule_number'] = 0
     for key, value in data['dnat_rules'].items():
         if ('inactive' in value) or ('interface' in value):
             parent.stepChanged.emit(f'bRED|    Правило NAT "{key}" пропущено так как не активно или содержит интерфейс.')
@@ -2133,13 +2134,13 @@ def convert_dnat_rule(parent, path, data):
                     'src_port': int(service_ports.get(src_port, src_port)),
                     'dst_port': int(service_ports.get(dst_port, dst_port))
                 })
-        data['nat_rules'].append(rule)
+        data['nat-dnat_rules'].append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило DNAT/Port-форвардинг "{rule["name"]}".')
 
     json_file = os.path.join(current_path, 'config_nat_rules.json')
     with open(json_file, 'w') as fh:
-        json.dump(data['nat_rules'], fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit(f'GREEN|    Список правил межсетевого экрана выгружен в файл "{json_file}".')
+        json.dump(data['nat-dnat_rules'], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'GREEN|    Список правил DNAT/Port-форвардинг выгружен в файл "{json_file}".')
 
     section_path = os.path.join(path, 'Libraries')
     current_path = os.path.join(section_path, 'Services')
@@ -2154,73 +2155,92 @@ def convert_dnat_rule(parent, path, data):
         parent.stepChanged.emit(f'GREEN|    Список сервисов, созданных для правил DNAT/Port-форвардинг выгружен в файл "{json_file}".')
 
 
-#-------------------------------------------------------------------------------------------------------------
-def convert_nat_rule(rule_block):
-    """Конвертируем правило NAT"""
-    if ('inactive' in rule_block) or ('interface' in rule_block):
-        print(f'\033[36mПравило NAT "{rule_block}" пропущено так как не активно или содержит интерфейс.\033[0m')
+def convert_nat_rule(parent, path, data):
+    """Конвертируем правила NAT"""
+    parent.stepChanged.emit('BLUE|Конвертация правил NAT.')
+    if not data['nat_rules']:
+        parent.stepChanged.emit(f'GRAY|    Нет правил NAT для экспорта.')
         return
 
-#    nonlocal natrule_number
-    natrule_number = 0
-    natrule_number += 1
-    rule = {
-        "name": f"Rule {natrule_number} NAT",
-        "description": "",
-        "action": "nat",
-        "position": "last",
-        "zone_in": [],
-        "zone_out": [],
-        "source_ip": [],
-        "dest_ip": [],
-        "service": [],
-        "target_ip": "",
-        "gateway": "",
-        "enabled": False,
-        "log": False,
-        "log_session_start": True,
-        "target_snat": False,
-        "snat_target_ip": "",
-        "zone_in_nagate": False,
-        "zone_out_nagate": False,
-        "source_ip_nagate": False,
-        "dest_ip_nagate": False,
-        "port_mappings": [],
-        "direction": "input",
-        "users": [],
-        "scenario_rule_id": False
-    }
-    zone_in, zone_out = rule_block[1][1:-1].split(',')
-    rule['zone_in'] = [zone_in.translate(trans_name)] if zone_in != 'any' else []
-    rule['zone_out'] = [zone_out.translate(trans_name)] if zone_out != 'any' else []
+    section_path = os.path.join(path, 'NetworkPolicies')
+    current_path = os.path.join(section_path, 'NATandRouting')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    for key, value in data['nat_rules'].items():
+        if ('inactive' in value) or ('interface' in value):
+            parent.stepChanged.emit(f'bRED|    Правило NAT "{" ".join(value)}" пропущено так как не активно или содержит интерфейс.')
+            continue
+        if 'dynamic' not in value:
+            continue
+
+        data['nat_rule_number'] += 1
+        zone_in, zone_out = value[1][1:-1].split(',')
+        rule = {
+            'name': f'Rule {data["nat_rule_number"]} NAT',
+            'description': '',
+            'action': 'nat',
+            'position': 'last',
+            'zone_in': [zone_in.translate(trans_name)] if zone_in != 'any' else [],
+            'zone_out': [zone_out.translate(trans_name)] if zone_out != 'any' else [],
+            'source_ip': [],
+            'dest_ip': [],
+            'service': [],
+            'target_ip': '',
+            'gateway': '',
+            'enabled': False,
+            'log': False,
+            'log_session_start': True,
+            'log_limit': False,
+            'log_limit_value': '3/h',
+            'log_limit_burst': 5,
+            'target_snat': False,
+            'snat_target_ip': '',
+            'zone_in_nagate': False,
+            'zone_out_nagate': False,
+            'source_ip_nagate': False,
+            'dest_ip_nagate': False,
+            'port_mappings': [],
+            'direction': 'input',
+            'users': [],
+            'scenario_rule_id': False
+        }
     
-    if 'dynamic' in rule_block:
-        i = rule_block.index('dynamic')
-        if rule_block[i+1] != 'any':
-            if rule_block[i+1] == 'pat-pool':
+        i = value.index('dynamic')
+        if value[i+1] != 'any':
+            if value[i+1] == 'pat-pool':
                 i += 1
-            if rule_block[i+1] in ip_dict:
-                rule['source_ip'].append(["list_id", rule_block[i+1]])
-            elif f"host {rule_block[i+1]}" in ip_dict:
-                rule['source_ip'].append(["list_id", f"host {rule_block[i+1]}"])
+            if value[i+1] in parent.ip_lists:
+                rule['source_ip'].append(["list_id", value[i+1]])
+            elif f"host {value[i+1]}" in parent.ip_lists:
+                rule['source_ip'].append(["list_id", f"host {value[i+1]}"])
             else:
-                rule['source_ip'].append(create_ip_list(rule_block[i+1]))
-        if rule_block[i+2] != 'any':
-            if rule_block[i+2] == 'pat-pool':
+                iplist_name = func.create_ip_list(parent, path, ips=[value[i+1]])
+                rule['source_ip'].append(["list_id", iplist_name])
+        if value[i+2] != 'any':
+            if value[i+2] == 'pat-pool':
                 i += 1
-            if rule_block[i+2] in ip_dict:
-                rule['dest_ip'].append(["list_id", rule_block[i+2]])
-            elif f"host {rule_block[i+2]}" in ip_dict:
-                rule['dest_ip'].append(["list_id", f"host {rule_block[i+2]}"])
+            if value[i+2] in parent.ip_lists:
+                rule['dest_ip'].append(["list_id", value[i+2]])
+            elif f"host {value[i+2]}" in parent.ip_lists:
+                rule['dest_ip'].append(["list_id", f"host {value[i+2]}"])
             else:
-                rule['dest_ip'].append(create_ip_list(rule_block[i+2]))
-        if 'description' in rule_block:
-            i = rule_block.index('description')
-            rule['description'] = " ".join(rule_block[i+1:])
-    else:
-        return
+                iplist_name = func.create_ip_list(parent, path, ips=[value[i+2]])
+                rule['dest_ip'].append(["list_id", iplist_name])
+        if 'description' in value:
+            i = value.index('description')
+            rule['description'] = " ".join(value[i+1:])
 
-    nat_rules.append(rule)
+        data['nat-dnat_rules'].append(rule)
+        parent.stepChanged.emit(f'BLACK|    Создано правило NAT "{rule["name"]}".')
+
+    json_file = os.path.join(current_path, 'config_nat_rules.json')
+    with open(json_file, 'w') as fh:
+        json.dump(data['nat-dnat_rules'], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'GREEN|    Список правил NAT выгружен в файл "{json_file}".')
 
 ############################################# Служебные функции ###################################################
 def create_service(data, name, ips_mode, protocol, port1, port2=None):
@@ -2326,10 +2346,10 @@ def create_url_list(parent, path, url, name):
         return False
     proto, _, urlpath = url.partition("://")
     if proto not in ('http', 'https', 'ftp'):
-        parent.stepChanged.emit(f'bRED|    URL {url} в access-list (webtype) пропущен. Неподдерживаемый тип протокола: "{proto}"')
+        parent.stepChanged.emit(f'rNOTE|    URL "{url}" в access-list (webtype) пропущен. Неподдерживаемый тип протокола: "{proto}"')
         return False
     if ('?' in urlpath) or ('[' in urlpath) or (']' in urlpath):
-        parent.stepChanged.emit(f'bRED|    URL {url} в access-list (webtype) пропущен. Не допустимые сиволы в url.')
+        parent.stepChanged.emit(f'rNOTE|    URL "{url}" в access-list (webtype) пропущен. Не допустимые сиволы в url.')
         return False
 
     section_path = os.path.join(path, 'Libraries')

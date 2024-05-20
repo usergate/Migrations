@@ -429,7 +429,14 @@ def convert_services_groups(parent):
                 if service['type'] == 'error':
                     parent.stepChanged.emit(f'3|Warning: {service["description"]}\nЭтот сервис не будет добавлен в группу сервисов "{value["name"]}".')
 
-            content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
+#            content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
+            content = set()
+            for name, obj_type in members.items():
+                if obj_type != 'error':
+                    if 'icmp' in name:
+                        content.add(services['Any ICMP'])
+                    else:
+                        content.add(services[name])
             for item in content:
                 for x in item['protocols']:
                     x.pop('source_port', None)
@@ -442,7 +449,7 @@ def convert_services_groups(parent):
                 "list_type_update": "static",
                 "schedule": "disabled",
                 "attributes": {},
-                "content": content
+                "content": [x for x in content]
             }
 
             parent.objects[key] = {'type': 'servicegroup', 'name': value['name']}

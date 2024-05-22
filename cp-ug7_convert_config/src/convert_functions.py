@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 2.9
+# Версия 3.0
 #
 
 import os, sys, json, uuid
@@ -399,10 +399,26 @@ def convert_services_groups(parent):
     services = {x['name']: x for x in data}
     len_1 = len(services)
 
+    row_groups = {}
     for key, value in parent.objects.items():
         if value['type'] == 'service-group':
-            members = {}  # Для members использован словарь для удаления одинаковых сервисов.
-#            members = {parent.objects[uid]['name']: parent.objects[uid] for uid in value['members'] if parent.objects.get(uid, None)}
+            row_groups[value['name']] = set()
+            for uid in value['members']:
+                if uid in parent.objects:
+                    service = parent.objects[uid]
+                elif uid in embedded_objects:
+                    if embedded_objects[uid]['type'] == 'service':
+                        service = embedded_objects[uid]
+                    else:
+                        continue
+                else:
+                    continue
+                if service['type'] != 'error':
+                    row_groups[value['name']].add(service['name'])
+
+    for key, value in parent.objects.items():
+        if value['type'] == 'service-group':
+            members = set()  # Для members использован set для удаления одинаковых сервисов.
             for uid in value['members']:
                 if uid in parent.objects:
                     service = parent.objects[uid]
@@ -423,11 +439,22 @@ def convert_services_groups(parent):
                         continue
                 else:
                     continue
-                members[service['name']] = service['type']
                 if service['type'] == 'error':
-                    parent.stepChanged.emit(f'3|Warning: {service["description"]}\nЭтот сервис не будет добавлен в группу сервисов "{value["name"]}".')
+                    parent.stepChanged.emit(f'3|Warning: {service["description"]}\n    Этот сервис не будет добавлен в группу сервисов "{value["name"]}".')
+                else:
+                    members.add(service['name'])
 
-            content = [services[name] for name, obj_type in members.items() if obj_type != 'error']
+            content = []
+            for name in members:
+                try:
+                    content.append(services[name])
+                except KeyError as err:
+                    if name in row_groups:
+                        for item in row_groups[name]:
+                            content.append(services[item])
+                    else:
+                        parent.stepChanged.emit(f'3|Warning: Группа сервисов {name} не будет добавлена в группу сервисов "{value["name"]}".')
+
             for item in content:
                 for x in item['protocols']:
                     x.pop('source_port', None)
@@ -785,6 +812,7 @@ def convert_application_group(parent):
                 parent.objects[key] = apps_group_tmp
         except (TypeError, KeyError) as err:
             parent.stepChanged.emit(f'4|Warning! {err} - {parent.objects[key]}.')
+    parent.stepChanged.emit('5|Конвертация application-site-group завершена.')
 
     if url_groups:
         if make_dirs(parent, 'data_ug/Libraries/URLCategories'):
@@ -821,8 +849,17 @@ def convert_access_role(parent):
                 users = []
                 if isinstance(value['users'], list):
                     for item in value['users']:
-                        tmp = [y.split(' = ') for y in item['tooltiptext'].split('\n')]
-                        name = f'{tmp[0][1][:-4].lower()}\\{tmp[1][1]}'
+                        tooltip = [x for x in item['tooltiptext'].split('\n')]
+                        if '=' in tooltip[1]:
+                            tmp1 = tooltip[0].split(' = ')
+                            tmp2 = tooltip[1].split(' = ')
+                            name = f'{tmp1[1][:-4].lower()}\\{tmp2[1]}'
+                        elif ':' in tooltip[1]:
+                            tmp1 = tooltip[0].split(': ')
+                            tmp2 = tooltip[5].split(': ')
+                            name = f'{tmp1[1][:-4].lower()}\\{tmp2[1].split("@")[0]}'
+                        else:
+                            continue
                         if item['type'] == 'CpmiAdGroup':
                             users.append(['group', name])
                         else:

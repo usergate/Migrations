@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # cp-ug7_convert_config.py
-# Version 2.6
+# Version 3.0
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout,
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Конвертация конфигурации с CheckPoint на UG NGFW")
+        self.setWindowTitle("Конвертация конфигурации с CheckPoint на UG NGFW (v.3.0)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self.base_path = os.getcwd()

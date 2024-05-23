@@ -23,7 +23,7 @@
 import os, json, pickle
 import ipaddress
 from PyQt6.QtWidgets import QMessageBox
-from services import trans_filename
+from services import trans_filename, trans_name
 
 
 def create_dir(path, delete='yes'):
@@ -150,6 +150,18 @@ def pack_ip_address(ip, mask):
     interface = ipaddress.ip_interface(f'{ip}/{mask}')
     return f'{ip}/{interface.network.prefixlen}'
 
+def get_restricted_name(name):
+    """
+    Получить имя объекта без запрещённых спецсимволов.
+    Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
+    """
+    if isinstance(name, str):
+        new_name = name.translate(trans_name)
+        if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+            new_name = new_name[1:]
+        return new_name
+    else:
+        return 'Name not valid'
 
 def message_inform(parent, title, message):
     """Общее информационное окно. Принимает родителя, заголовок и текст сообщения"""

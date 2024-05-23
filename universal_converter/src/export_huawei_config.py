@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.3
+# Версия 1.4
 #
 
 import os, sys, json
@@ -29,7 +29,7 @@ import copy, re
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import app_compliance, l7_categories, l7_categories_compliance
-from services import trans_table, trans_name, trans_filename, zone_services, ug_services
+from services import trans_table, trans_filename, zone_services, ug_services
 
 
 pattern = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
@@ -205,7 +205,8 @@ def make_block(parent, data):
             return 'dns_servers', value
         case ['ip', 'address-set', name, 'type', 'object']:
             value = {
-                'name': name.translate(trans_name),
+#                'name': name.translate(trans_name),
+                'name': func.get_restricted_name(name),
                 'description': '',
                 'content': []
             }
@@ -223,7 +224,7 @@ def make_block(parent, data):
             return 'ip_lists', [value]
         case ['ip', 'address-set', name, 'type', 'group']:
             value = {
-                'name': name.translate(trans_name),
+                'name': func.get_restricted_name(name),
                 'description': '',
                 'content': []
             }
@@ -410,7 +411,8 @@ def make_block(parent, data):
             return 'routes', routes
         case ['profile', 'type', 'dns-filter', 'name', *name]:
             value = {
-                'name': ' '.join(name).translate(trans_name),
+#                'name': ' '.join(name).translate(trans_name),
+                'name': func.get_restricted_name(' '.join(name)),
                 'description': '',
                 'content': []
             }
@@ -430,7 +432,7 @@ def make_block(parent, data):
                     case ['domain-set', 'name', *name]:
                         if url_list: value.append(url_list)
                         url_list = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'description': '',
                             'content': []
                         }
@@ -449,7 +451,7 @@ def make_block(parent, data):
                     case ['geo-location', 'user-defined', *name]:
                         if ip_list: value.append(ip_list)
                         ip_list = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'description': '',
                             'content': []
                         }
@@ -473,7 +475,7 @@ def make_block(parent, data):
                             value.append(ip_list)
                             parent.ip_lists.add(ip_list['name'])
                         ip_list = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'description': '',
                             'content': []
                         }
@@ -494,7 +496,7 @@ def make_block(parent, data):
                     case ['rule', 'name', *name]:
                         if fw_rule: value.append(fw_rule)
                         fw_rule = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'description': '',
                             'action': '',
                             'src_zones': [],
@@ -517,30 +519,30 @@ def make_block(parent, data):
                     case ['policy', 'logging']:
                         fw_rule['log'] = True
                     case ['source-address', 'address-set', ip_list]:
-                        fw_rule['src_ips'].append(['list_id', ip_list.translate(trans_name)])
+                        fw_rule['src_ips'].append(['list_id', func.get_restricted_name(ip_list)])
                     case ['source-address-exclude', 'address-set', ip_list]:
-                        fw_rule['src_ips'].append(['list_id', ip_list.translate(trans_name)])
+                        fw_rule['src_ips'].append(['list_id', func.get_restricted_name(ip_list)])
                         fw_rule['src_ips_negate'] = True
                     case ['source-address-exclude', ip, 'mask', mask]:
                         fw_rule['source_ip'].append(['ip_address', func.pack_ip_address(ip, mask)])
                         fw_rule['src_ips_negate'] = True
                     case ['source-address', 'domain-set', *url_list]:
-                        fw_rule['src_ips'].append(['urllist_id', ' '.join(url_list).translate(trans_name)])
+                        fw_rule['src_ips'].append(['urllist_id', func.get_restricted_name(' '.join(url_list))])
                     case ['source-address', ip, 'mask', mask]:
                         fw_rule['src_ips'].append(['ip_address', func.pack_ip_address(ip, mask)])
                     case ['source-address', 'geo-location-set', geo_ip]:
-                        geo_ip = geo_ip.translate(trans_name)
+                        geo_ip = func.get_restricted_name(geo_ip)
                         if geo_ip in parent.ip_lists:
                             fw_rule['src_ips'].append(['list_id', geo_ip])
                         else:
                             fw_rule['src_ips'].append(['geoip_code', geo_ip])
                     case ['destination-address', 'address-set', ip_list]:
-                        fw_rule['dst_ips'].append(['list_id', ip_list.translate(trans_name)])
+                        fw_rule['dst_ips'].append(['list_id', func.get_restricted_name(ip_list)])
                     case ['destination-address-exclude', 'address-set', ip_list]:
-                        fw_rule['dst_ips'].append(['list_id', ip_list.translate(trans_name)])
+                        fw_rule['dst_ips'].append(['list_id', func.get_restricted_name(ip_list)])
                         fw_rule['dst_ips_negate'] = True
                     case ['destination-address', 'domain-set', *url_list]:
-                        fw_rule['dst_ips'].append(['urllist_id', ' '.join(url_list).translate(trans_name)])
+                        fw_rule['dst_ips'].append(['urllist_id', func.get_restricted_name(' '.join(url_list))])
                     case ['destination-address', ip, 'mask', mask]:
                         fw_rule['dst_ips'].append(['ip_address', func.pack_ip_address(ip, mask)])
                     case ['destination-address', 'geo-location-set', geo_ip]:
@@ -601,7 +603,7 @@ def make_block(parent, data):
                     case ['profile', *name]:
                         if shaper: value['shapers'].append(shaper)
                         shaper = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'rate': 0,
                             'dscp': 0,
                         }
@@ -616,7 +618,7 @@ def make_block(parent, data):
                                     if shpr['name'] == rule['pool']:
                                         shpr['dscp'] = rule.pop('dscp')
                         rule = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'description': '',
                             'src_zones': [],
                             'dst_zones': [],
@@ -630,13 +632,13 @@ def make_block(parent, data):
                     case ['source-zone', zone_name]:
                         rule['src_zones'].append(zone_name)
                     case ['source-address', 'address-set', ip_list]:
-                        rule['src_ips'].append(['list_id', ip_list.translate(trans_name)])
+                        rule['src_ips'].append(['list_id', func.get_restricted_name(ip_list)])
                     case ['source-address', ip, 'mask', mask]:
                         rule['src_ips'].append(['ip_address', func.pack_ip_address(ip, mask)])
                     case ['destination-zone', zone_name]:
                         rule['dst_zones'].append(zone_name)
                     case ['destination-address', 'address-set', ip_list]:
-                        rule['dst_ips'].append(['list_id', ip_list.translate(trans_name)])
+                        rule['dst_ips'].append(['list_id', func.get_restricted_name(ip_list)])
                     case ['destination-address', ip, 'mask', mask]:
                         rule['dst_ips'].append(['ip_address', func.pack_ip_address(ip, mask)])
                     case ['application', 'app', app]:
@@ -644,7 +646,7 @@ def make_block(parent, data):
                     case ['time-range', schedule_name]:
                         rule['time_restrictions'].append(schedule_name)
                     case ['action', _, _, *profile]:
-                        rule['pool'] = ' '.join(profile).translate(trans_name)
+                        rule['pool'] = func.get_restricted_name(' '.join(profile))
                     case ['service', service_name]:
                         if service_name in ug_services:
                             rule['services'].append(['service', ug_services[service_name]])
@@ -672,7 +674,7 @@ def make_block(parent, data):
                     case ['rule', 'name', *name]:
                         if nat_rule: value.append(nat_rule)
                         nat_rule = {
-                            'name': ' '.join(name).translate(trans_name),
+                            'name': func.get_restricted_name(' '.join(name)),
                             'description': '',
                             'action': '',
                             'zone_in': [],
@@ -709,28 +711,28 @@ def make_block(parent, data):
                         nat_rule['target_snat'] = True
                         nat_rule['snat_target_ip'] = parent.snat_ip[group]
                     case ['source-address', 'address-set', ip_list]:
-                        nat_rule['source_ip'].append(['list_id', ip_list.translate(trans_name)])
+                        nat_rule['source_ip'].append(['list_id', func.get_restricted_name(ip_list)])
                     case ['source-address-exclude', 'address-set', ip_list]:
-                        nat_rule['source_ip'].append(['list_id', ip_list.translate(trans_name)])
+                        nat_rule['source_ip'].append(['list_id', func.get_restricted_name(ip_list)])
                         nat_rule['source_ip_negate'] = True
                     case ['source-address-exclude', ip, 'mask', mask]:
                         nat_rule['source_ip'].append(['ip_address', func.pack_ip_address(ip, mask)])
                         nat_rule['source_ip_negate'] = True
                     case ['source-address', 'domain-set', *url_list]:
-                        nat_rule['src_ips'].append(['urllist_id', ' '.join(url_list).translate(trans_name)])
+                        nat_rule['src_ips'].append(['urllist_id', func.get_restricted_name(' '.join(url_list))])
                     case ['source-address', ip, 'mask', mask]:
                         nat_rule['source_ip'].append(['ip_address', func.pack_ip_address(ip, mask)])
                     case ['source-address', 'geo-location-set', geo_ip]:
-                        geo_ip = geo_ip.translate(trans_name)
+                        geo_ip = func.get_restricted_name(geo_ip)
                         if geo_ip in parent.ip_lists:
                             nat_rule['source_ip'].append(['list_id', geo_ip])
                     case ['destination-address', 'address-set', ip_list]:
-                        nat_rule['dest_ip'].append(['list_id', ip_list.translate(trans_name)])
+                        nat_rule['dest_ip'].append(['list_id', func.get_restricted_name(ip_list)])
                     case ['destination-address-exclude', 'address-set', ip_list]:
-                        nat_rule['dest_ip'].append(['list_id', ip_list.translate(trans_name)])
+                        nat_rule['dest_ip'].append(['list_id', func.get_restricted_name(ip_list)])
                         nat_rule['dest_ip_negate'] = True
                     case ['destination-address', 'domain-set', *url_list]:
-                        nat_rule['dest_ip'].append(['urllist_id', ' '.join(url_list).translate(trans_name)])
+                        nat_rule['dest_ip'].append(['urllist_id', func.get_restricted_name(' '.join(url_list))])
                     case ['destination-address', ip, 'mask', mask]:
                         nat_rule['dest_ip'].append(['ip_address', func.pack_ip_address(ip, mask)])
                     case ['service', service_name]:

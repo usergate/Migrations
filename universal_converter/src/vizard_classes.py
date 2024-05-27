@@ -15,6 +15,7 @@ import export_cisco_asa_config as asa
 import export_cisco_fpr_config as fpr
 import export_fortigate_config as fg
 import export_huawei_config as huawei
+import export_checkpoint_config as cp
 import import_functions as tf
 import init_temporary_data as itd
 from utm import UtmXmlRpc
@@ -380,9 +381,17 @@ class SelectExportMode(QWidget):
                     case 'Cisco FPR':
                         self.thread = fpr.ConvertCiscoFPRConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Check Point':
-                        self.add_item_log('Конвертация с Check Point пока не доступна.', color='RED')
-                        self.enable_buttons()
-                        return
+                        err, msg = self._create_checkpoint_datajson()
+                        if err:
+                            self.add_item_log(msg, color='RED')
+                            self.enable_buttons()
+                            self.btn3.setStyleSheet('color: darkred; background: white;')
+                            self.btn3.setEnabled(True)
+                            return
+                        self.thread = cp.ConvertCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path(), msg)
+#                        print('SelectSecureGateway -', msg)
+#                        self.enable_buttons()
+#                        return
                     case 'Fortigate':
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Huawei':
@@ -394,6 +403,38 @@ class SelectExportMode(QWidget):
                 func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
         else:
             func.message_inform(self, "Внимание!", "Вы не выбрали раздел для экспорта.")
+
+    def _create_checkpoint_datajson(self):
+        """
+        Преобразуем файлы конфигурации CheckPoint в читабельный вид и пишем их в каталог data_json
+        и переходим на страницу выбора SecureGateway.
+        """
+        if os.path.exists(os.path.join(self.vendor_current_path, 'index.json')):
+            if os.path.exists(os.path.join(self.vendor_current_path, 'config_cp.txt')):
+                cp_data_json = os.path.join(self.vendor_current_path, 'data_json')
+                err, msg = func.create_dir(cp_data_json)
+                if err:
+                    return err, data
+                files = os.listdir(self.vendor_current_path)
+                for file_name in files:
+                    if file_name.endswith('.json'):
+                        try:
+                            with open(os.path.join(self.vendor_current_path, file_name), 'r') as fh:
+                                data = json.load(fh)
+                            with open(os.path.join(cp_data_json, file_name), 'w') as fh:
+                                json.dump(data, fh, indent=4, ensure_ascii=False)
+                        except json.decoder.JSONDecodeError as err:
+                            return 1, f'Ошибка парсинга файла конфигурации "{file_name}" [{err}].'
+                dialog = SelectSecureGateway(self.parent, cp_data_json)
+                result = dialog.exec()
+                if result == QDialog.DialogCode.Accepted:
+                    return 0, dialog.sg_name
+                else:
+                    return 1, 'Конвертация конфигурации Check Point прервана пользователем.'
+            else:
+                return 1, f'Не найден файл конфигурации Check Point "config_cp.txt" в каталоге "{self.vendor_current_path}".'
+        else:
+            return 1, f'Не найдена конфигурация Check Point в каталоге "{self.vendor_current_path}".'
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
@@ -676,6 +717,55 @@ class SelectImportMode(SelectMode):
         if not data:
             return 3, f'dGRAY|    Нет данных для импорта. Файл {json_file_path} пуст.'
         return 0, data
+
+
+class SelectSecureGateway(QDialog):
+    """Диалоговое окно выбора Secure Gateway для конвертации"""
+    def __init__(self, parent, cp_data_json):
+        super().__init__(parent)
+        self.main_window = parent
+        self.setWindowTitle("Выбор Gateways policy package")
+        self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
+        self.setFixedHeight(200)
+        self.sg_name = None
+
+        title =QLabel("<b><font color='green'>Выберите Secure Gateway для конвертации.<br>")
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.sg_list = QListWidget()
+        with open(os.path.join(cp_data_json, 'index.json'), 'r') as fh:
+            data = json.load(fh)
+        for item in data['policyPackages']:
+            self.sg_list.addItem(item['packageName'])
+
+        btn_enter = QPushButton("Ввод")
+        btn_enter.setStyleSheet('color: forestgreen; background: white;')
+        btn_enter.setFixedWidth(80)
+        btn_enter.clicked.connect(self._send_accept)
+        btn_exit = QPushButton("Отмена")
+        btn_exit.setStyleSheet('color: darkred;')
+        btn_exit.setFixedWidth(80)
+        btn_exit.clicked.connect(self.reject)
+
+        btn_hbox = QHBoxLayout()
+        btn_hbox.addWidget(btn_enter)
+        btn_hbox.addStretch()
+        btn_hbox.addWidget(btn_exit)
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addWidget(self.sg_list)
+        layout.addSpacerItem(QSpacerItem(1, 8))
+        layout.addLayout(btn_hbox)
+        self.setLayout(layout)
+        
+        self.sg_list.currentTextChanged.connect(self.select_secure_gateway)
+
+    def select_secure_gateway(self, item_name):
+        self.sg_name = item_name
+        
+    def _send_accept(self):
+        if self.sg_name:
+            self.accept()
 
 
 class SelectConfigDirectories(QDialog):

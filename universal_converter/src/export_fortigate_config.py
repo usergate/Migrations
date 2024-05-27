@@ -30,7 +30,7 @@ import copy, time
 import common_func as func
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import zone_services, trans_table, trans_name, trans_filename, trans_userlogin, ug_services, ip_proto
+from services import zone_services, trans_table, trans_filename, trans_userlogin, ug_services, ip_proto
 
 
 class ConvertFortigateConfig(QThread):

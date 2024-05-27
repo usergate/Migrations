@@ -242,6 +242,17 @@ character_map_userlogin = {
 }
 trans_userlogin = str.maketrans(character_map_userlogin)
 
+character_map_for_url = {
+    '{': None,
+    '}': None,
+    '(': None,
+    ')': None,
+    '[': None,
+    ']': None,
+    '\\': None,
+}
+trans_url = str.maketrans(character_map_for_url)
+
 ip_proto = {
     '0': 'ip',          # ASA
     '1': 'icmp',        # ASA

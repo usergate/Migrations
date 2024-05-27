@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 1.7
+# Версия 1.8
 #
 
 import os, sys, time, copy, json
@@ -1889,6 +1889,7 @@ def import_firewall_rules(parent, path):
                 item['apps'] = get_apps(parent, item['apps'], item['name'])
             else:
                 item['apps'] = []
+                item['apps_negate'] = False
             item.pop('ips_profile', None)
             item.pop('l7_profile', None)
             item.pop('hip_profiles', None)
@@ -1896,6 +1897,7 @@ def import_firewall_rules(parent, path):
                 item.pop('apps_negate', None)
         else:
             item.pop('apps', None)
+            item.pop('apps_negate', None)
             if 'ips_profile' in item and item['ips_profile']:
                 try:
                     item['ips_profile'] = idps_profiles[item['ips_profile']]

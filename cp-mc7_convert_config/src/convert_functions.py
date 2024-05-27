@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс и его функции для конвертации конфигурации CheckPoint в формат NGFW UserGate версии 7.
-# Версия 1.4
+# Версия 1.6
 #
 
 import os, sys, json, uuid
@@ -909,7 +909,7 @@ def convert_access_policy_files(parent):
     """
     access_rules = []
     checkpoint_hosts = ('CpmiClusterMember', 'simple-cluster', 'checkpoint-host')
-    rule_names = set()
+    rule_names = {}
 
     for access_layer in parent.sg_index[parent.sg_name]['accessLayers']:
         access_policy_file = f"{access_layer['name']}-{access_layer['domain']}.json"
@@ -926,8 +926,10 @@ def convert_access_policy_files(parent):
                 if item['name'] == 'Cleanup rule':
                     continue
                 if item['name'] in rule_names:  # Встречаются одинаковые имена.
-                    item['name'] += '-1'        # В этом случае добавляем "-1" к имени правила.
-                rule_names.add(item['name'])
+                    rule_names[item['name']] += 1        # В этом случае добавляем "1" к имени правила.
+                    item['name'] = f'{item["name"]} - {rule_names[item["name"]]}'
+                else:
+                    rule_names[item['name']] = 0
 
                 item.pop('meta-info', None)
                 item.pop('vpn', None)

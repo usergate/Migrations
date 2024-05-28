@@ -56,7 +56,7 @@ class ConvertCheckPointConfig(QThread):
 
     def run(self):
         """Конвертируем всё в пакетном режиме"""
-#        convert_config_cp(self)
+        convert_config_cp(self)
 
         self.config_path = os.path.join(self.current_vendor_path, 'data_json')
         err, index_file = func.read_json_file(self, os.path.join(self.config_path, 'index.json'))

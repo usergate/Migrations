@@ -193,7 +193,11 @@ def convert_config_file(parent, path):
                                 'ip': func.pack_ip_address(ip, mask)
                             })
                     case ['http', ip, mask, zone_name]:
-                        if ip != 'server':
+                        try:
+                            ipaddress.ip_interface(f'{ip}/{mask}')
+                        except ValueError:
+                            pass
+                        else:
                             data['web-console'].append({
                                 'zone': zone_name,
                                 'ip': func.pack_ip_address(ip, mask)
@@ -1462,7 +1466,7 @@ def convert_ip_lists(parent, path, ip_lists):
 
     section_path = os.path.join(path, 'Libraries')
     current_path = os.path.join(section_path, 'IPAddresses')
-    err, msg = func.create_dir(current_path)
+    err, msg = func.create_dir(current_path, delete='no')
     if err:
         parent.error = 1
         parent.stepChanged.emit(f'RED|    {msg}.')

@@ -21,11 +21,11 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json
-import ipaddress, copy
+import ipaddress, copy, time
 import common_func as func
 from collections import deque
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -193,6 +193,7 @@ def convert_config_file(parent, path):
                                 'ip': func.pack_ip_address(ip, mask)
                             })
                     case ['http', ip, mask, zone_name]:
+                        if ip != 'server':
                             data['web-console'].append({
                                 'zone': zone_name,
                                 'ip': func.pack_ip_address(ip, mask)
@@ -1495,6 +1496,7 @@ def convert_ip_lists(parent, path, ip_lists):
         with open(json_file, 'w') as fh:
             json.dump(ip_list, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список IP-адресов {ip_list["name"]} выгружен в файл "{json_file}".')
+        time.sleep(0.1)
 
     parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
 
@@ -1897,8 +1899,8 @@ def convert_firewall_rules(parent, path, data):
                 case 'range':
                     port1 = deq.popleft()
                     port2 = deq.popleft()
-                    service_name = f'Range {port1}-{port2} (Rule {rule_number})'
-                    create_service(service_name, ips_mode, protocol, port1, port2)
+                    service_name = f'Range {port1}-{port2} ({key})'
+                    create_service(data, service_name, ips_mode, protocol, port1, port2)
                     rule['services'].clear()
                     rule['services'].append(["service", service_name])
                     parent.stepChanged.emit(f'NOTE|    Создан сервис "{service_name}" для правила "{rule["name"]}".')
@@ -1923,6 +1925,7 @@ def convert_firewall_rules(parent, path, data):
 
         fw_rules.append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило межсетевого экрана "{rule["name"]}".')
+        time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_firewall_rules.json')
     with open(json_file, 'w') as fh:
@@ -2136,6 +2139,7 @@ def convert_dnat_rule(parent, path, data):
                 })
         data['nat-dnat_rules'].append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило DNAT/Port-форвардинг "{rule["name"]}".')
+        time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_nat_rules.json')
     with open(json_file, 'w') as fh:
@@ -2236,6 +2240,7 @@ def convert_nat_rule(parent, path, data):
 
         data['nat-dnat_rules'].append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило NAT "{rule["name"]}".')
+        time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_nat_rules.json')
     with open(json_file, 'w') as fh:

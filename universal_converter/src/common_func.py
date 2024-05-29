@@ -147,7 +147,11 @@ def pack_ip_address(ip, mask):
         ip = '0.0.0.0'
     if mask == '0':
         mask = '0.0.0.0'
-    interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    try:
+        interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    except ValueError as err:
+#        print(ip, mask)
+        return '10.10.10.1/32'
     return f'{ip}/{interface.network.prefixlen}'
 
 def get_restricted_name(name):

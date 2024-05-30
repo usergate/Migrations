@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.3
+# Версия 1.4
 #
 
 import os, sys, json
@@ -1406,7 +1406,7 @@ def convert_service_object(parent, path, data):
                     if protocol and protocol in network_proto:
                         proto = protocol
                     else:
-                        parent.stepChanged.emit(f'rNOTE|    Сервис {name} не конвертирован. Протокол {protocol} не поддерживается в UG NGFW.')
+                        parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Протокол {protocol} не поддерживается в UG NGFW.')
                 case ['service', 'icmp', *other]:
                     proto = 'icmp'
                 case ['service', 'sctp', *other]:
@@ -1416,10 +1416,16 @@ def convert_service_object(parent, path, data):
                     match other:
                         case ['source', 'eq', src_port]:
                             source_port = get_service_number(src_port)
+                            if source_port is None:
+                                parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
+                                proto = None
                         case ['source', 'range', port1, port2]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['destination', 'eq', dst_port]:
                             port = get_service_number(dst_port)
+                            if port is None:
+                                parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
+                                proto = None
                         case ['destination', 'range', port1, port2]:
                             port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['source', 'eq', src_port, 'destination', protocol, *dst_ports]:
@@ -1428,20 +1434,25 @@ def convert_service_object(parent, path, data):
                         case ['source', 'range', port1, port2, 'destination', protocol, *dst_ports]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                             port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
+                            if port is None:
+                                parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Порт "{dst_port[0]}" не поддерживается в UG NGFW.')
+                                proto = None
                         case _:
-                            parent.stepChanged.emit(f'rNOTE|    Сервис {name} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
+                            parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
                 case ['description', *content]:
                     service['description'] = " ".join(content)
 
-        if proto:
-            service['protocols'].append({
-                'proto': proto,
-                'port': port,
-                'app_proto': '',
-                'source_port': source_port,
-                'alg': ''
-            })
-            data['services'][key] = service
+            if proto:
+                service['protocols'].append({
+                    'proto': proto,
+                    'port': port,
+                    'app_proto': '',
+                    'source_port': source_port,
+                    'alg': ''
+                })
+                data['services'][key] = service
+            else:
+                data['services'][key] = None
 
     if 'Any SCTP' not in data['services']:
         service = {
@@ -1453,7 +1464,7 @@ def convert_service_object(parent, path, data):
 
     json_file = os.path.join(current_path, 'config_services_list.json')
     with open(json_file, 'w') as fh:
-        json.dump([x for x in data['services'].values()], fh, indent=4, ensure_ascii=False)
+        json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список сервисов выгружен в файл "{json_file}".')
 
 
@@ -1665,20 +1676,32 @@ def convert_service_object_group(parent, path, data):
                     match other:
                         case ['source', 'eq', src_port]:
                             source_port = get_service_number(src_port)
+                            if source_port is None:
+                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{src_ports}" не поддерживается в UG NGFW.')
+                                continue
                         case ['source', 'range', port1, port2]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['destination', 'eq', dst_port]:
                             port = get_service_number(dst_port)
+                            if port is None:
+                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
+                                continue
                         case ['destination', 'range', port1, port2]:
                             port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['source', 'eq', src_port, 'destination', protocol, *dst_ports]:
                             source_port = get_service_number(src_port)
                             port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
+                            if source_port is None or port is None:
+                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Такой порт не поддерживается в UG NGFW.')
+                                continue
                         case ['source', 'range', port1, port2, 'destination', protocol, *dst_ports]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                             port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
+                            if port is None:
+                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт {dst_ports[0]} не поддерживается в UG NGFW.')
+                                continue
                         case ['source'|'destination', 'lt'|'gt'|'neq', *tmp]:
-                            parent.stepChanged.emit(f'bRED|    Сервис {item} в правиле {descr[0]} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
+                            parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
                             continue
                 case ['service-object', protocol]:
                     if protocol.isdigit():

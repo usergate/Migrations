@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.0
+# Версия 3.1
 #
 
 import os, sys, json, uuid, time
@@ -1064,9 +1064,14 @@ def convert_access_role(parent):
                             tmp2 = tooltip[1].split(' = ')
                             name = f'{tmp1[1][:-4].lower()}\\{tmp2[1]}'
                         elif ':' in tooltip[1]:
-                            tmp1 = tooltip[0].split(': ')
-                            tmp2 = tooltip[5].split(': ')
-                            name = f'{tmp1[1][:-4].lower()}\\{tmp2[1].split("@")[0]}'
+                            try:
+                                tmp1 = tooltip[0].split(': ')
+                                tmp2 = tooltip[5].split(': ')
+                                name = f'{tmp1[1][:-4].lower()}\\{tmp2[1].split("@")[0]}'
+                            except IndexError:
+                                parent.stepChanged.emit(f'rNOTE|    Warning! access-role: "{value["name"]}", user: {item["name"]}. Данный пользователь не конвертирован и не будет использоваться в правилах.')
+                                error = 1
+                                continue
                         else:
                             continue
                         if item['type'] == 'CpmiAdGroup':

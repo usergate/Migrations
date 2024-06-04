@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.1
+# Версия 3.2
 #
 
 import os, sys, json, uuid, time
@@ -779,7 +779,7 @@ def convert_ip_group_with_exclusion(parent):
                 if 'include' in value:
                     groups.append({"type": "network", "name": parent.objects[value['include']['uid']]['name'], "action": "accept"})
                 parent.objects[key] = {"type": "group-with-exclusion", "groups": groups}
-                print(parent.objects[key], '\n')
+#                print(parent.objects[key], '\n')
             except KeyError as err:
                 error = 1
                 parent.error = 1
@@ -1046,50 +1046,72 @@ def convert_access_role(parent):
     error = 0
     n = 0
     for key, value in parent.objects.items():
-        try:
-            if value['type'] == 'access-role':
-                n += 1
-                tmp_role = {
-                    'type': value['type'],
-                    'name': value['name'],
-                }
-                if value['networks'] != 'any':
-                    tmp_role['networks'] = [['list_id', x['name']] for x in value['networks']]
-                users = []
+        if value['type'] == 'access-role':
+            n += 1
+            tmp_role = {
+                'type': value['type'],
+                'name': value['name'],
+                'users': []
+            }
+            if 'networks' in value and value['networks'] != 'any':
+                tmp_role['networks'] = [['list_id', x['name']] for x in value['networks']]
+            if 'users' in value:
                 if isinstance(value['users'], list):
                     for item in value['users']:
-                        tooltip = [x for x in item['tooltiptext'].split('\n')]
-                        if '=' in tooltip[1]:
-                            tmp1 = tooltip[0].split(' = ')
-                            tmp2 = tooltip[1].split(' = ')
-                            name = f'{tmp1[1][:-4].lower()}\\{tmp2[1]}'
-                        elif ':' in tooltip[1]:
+                        if item['type'] in {'CpmiAdUser', 'CpmiAdGroup'}:
+                            name = None
                             try:
-                                tmp1 = tooltip[0].split(': ')
-                                tmp2 = tooltip[5].split(': ')
-                                name = f'{tmp1[1][:-4].lower()}\\{tmp2[1].split("@")[0]}'
-                            except IndexError:
-                                parent.stepChanged.emit(f'rNOTE|    Warning! access-role: "{value["name"]}", user: {item["name"]}. Данный пользователь не конвертирован и не будет использоваться в правилах.')
+                                tooltip = [x for x in item['tooltiptext'].split('\n')]
+                            except KeyError as err:
+                                parent.stepChanged.emit(f'bRED|    Warning! {value["name"]} - {err}. Access-role не конвертировано и не будет использоваться в правилах.')
                                 error = 1
+                                parent.error = 1
                                 continue
-                        else:
-                            continue
-                        if item['type'] == 'CpmiAdGroup':
-                            users.append(['group', name])
-                        else:
-                            users.append(['user', name])
+
+                            if '=' in tooltip[1]:
+                                tmp1 = tooltip[0].split(' = ')
+                                tmp2 = tooltip[1].split(' = ')
+                                if tmp2[1].isascii():
+                                    name = f'{tmp1[1][:-4].lower()}\\{tmp2[1]}'
+                                else:
+                                    for x in tooltip:
+                                        y = x.split(': ')
+                                        if y[0] == 'Email':
+                                            tmp2 = y[1].split('@')[0]
+                                            name = f'{tmp1[1][:-4].lower()}\\{tmp2}'
+                                            break
+
+                            elif ':' in tooltip[1]:
+                                tmp1 = tooltip[0].split(': ')
+                                tmp2 = tooltip[1].split(': ')
+                                if tmp2[1].isascii():
+                                    name = f'{tmp1[1][:-4].lower()}\\{tmp2[1]}'
+                                else:
+                                    for x in tooltip:
+                                        y = x.split(': ')
+                                        if y[0] == 'Email':
+                                            tmp2 = y[1].split('@')[0]
+                                            name = f'{tmp1[1][:-4].lower()}\\{tmp2}'
+                                            break
+                            else:
+                                continue
+
+                            if name:
+                                if item['type'] == 'CpmiAdGroup':
+                                    tmp_role['users'].append(['group', name])
+                                else:
+                                    tmp_role['users'].append(['user', name])
+                            else:
+                                parent.stepChanged.emit(f'rNOTE|    Warning! access-role: "{value["name"]}", user: {tmp2[1]}. Данный пользователь не конвертирован и не будет использоваться в правилах.')
+
                 elif value['users'] == "all identified":
-                    users.append(['special', 'known_user'])
+                    tmp_role['users'].append(['special', 'known_user'])
                 elif value['users'] == "any":
                     pass
                 else:
                     parent.stepChanged.emit(f'rNOTE|    Warning! access-role "{value["name"]}": users = {value["users"]}. Данный пользователь не конвертирован и не будет использоваться в правилах.')
-                tmp_role['users'] = users
-                parent.objects[key] = tmp_role
-        except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Warning! {value["name"]} - {err}. Access-role не конвертировано и не будет использоваться в правилах.')
-            error = 1
-            parent.error = 1
+
+            parent.objects[key] = tmp_role
 
     if error:
         parent.stepChanged.emit('BLACK|    Конвертации access-role завершена. Но некоторые объекты access-role не перенесены и не будут использованы в правилах.')
@@ -1253,9 +1275,9 @@ def convert_access_policy_files(parent):
                 item['convert_error'] = 1
                 parent.fw_rules.append(item)
 
-#    json_file = os.path.join(parent.config_path, 'access_rules.json')
-#    with open(json_file, 'w') as fh:
-#        json.dump(access_rules, fh, indent=4, ensure_ascii=False)
+    json_file = os.path.join(parent.config_path, 'access_rules.json')
+    with open(json_file, 'w') as fh:
+        json.dump(access_rules, fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit('BLACK|    Конвертации access-rules завершена.')
 
 

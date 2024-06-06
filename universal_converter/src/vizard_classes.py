@@ -8,7 +8,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
-                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter)
+                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog)
 import common_func as func
 import config_style as cs
 import export_cisco_asa_config as asa
@@ -16,7 +16,9 @@ import export_cisco_fpr_config as fpr
 import export_fortigate_config as fg
 import export_huawei_config as huawei
 import export_checkpoint_config as cp
+import export_mikrotik_config as mikrotik
 import import_functions as tf
+import import_to_mc
 import init_temporary_data as itd
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
@@ -29,7 +31,7 @@ class SelectAction(QWidget):
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Перенос конфигурации сторонних вендоров<br>на UserGate NGFW и Management Center</font></b>"
         text2 = "Экспорт конфигурации из конфигурационных файлов <b>Cisco ASA</b>, <b>Cisco FPR</b>, <b>Check Point</b>, \
-<b>Fortigate</b>, <b>Huawei</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
+<b>Fortigate</b>, <b>Huawei</b>, <b>MikroTik</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
 После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
         text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> версий <b>5, 6 и 7</b>."
         text4 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> в шаблон <b>UserGate Management Center</b> версий <b>7</b>."
@@ -303,7 +305,7 @@ class SelectExportMode(QWidget):
         frame_nodeinfo.setLayout(hbox_nodeinfo)
 
         list_item_font = QFont("Serif", pointSize=14, weight=600)
-        vendors = ['Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate', 'Huawei']
+        vendors = ['Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate', 'Huawei', 'MikroTik']
         self.vendor_list = QListWidget()
         self.vendor_list.setMaximumWidth(150)
         for vendor in vendors:
@@ -409,11 +411,14 @@ class SelectExportMode(QWidget):
                             self.btn3.setStyleSheet('color: darkred; background: white;')
                             self.btn3.setEnabled(True)
                             return
+                        self.label_version.setText(f'{self.selected_point} - {msg}')
                         self.thread = cp.ConvertCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path(), msg)
                     case 'Fortigate':
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Huawei':
                         self.thread = huawei.ConvertHuaweiConfig(self.vendor_current_path, self.parent.get_ug_config_path())
+#                    case 'MikroTik':
+#                        self.thread = mikrotik.ConvertMikrotikConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -561,14 +566,7 @@ class SelectImportMode(SelectMode):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт выбранного раздела конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            func.message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         if self.selected_points:
@@ -598,14 +596,7 @@ class SelectImportMode(SelectMode):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт всей конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            func.message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
@@ -742,6 +733,8 @@ class SelectMcImportMode(SelectMode):
     def __init__(self, parent):
         super().__init__(parent)
         self.template_id = None
+        self.template_name = None
+        self.id_nodes = [f'node_{i}' for i in range(1, 100)]
         self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта в шаблон Management Center</font></b>")
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
@@ -777,9 +770,17 @@ class SelectMcImportMode(SelectMode):
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_ug_config_path()}  ')
                 if self.get_auth():
-                    self.enable_buttons()
-                    self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
-                    self.tree.change_items_status(self.parent.get_ug_config_path())
+                    template_dialog = SelectMcDestinationTemplate(self, self.parent)
+                    template_result = template_dialog.exec()
+                    if template_result == QDialog.DialogCode.Accepted:
+                        self.template_name = template_dialog.current_template_name
+                        self.template_id = template_dialog.templates[self.template_name]
+                        self.label_version.setText(f'MC (версия {self.utm.version}) - шаблон: {self.template_name}')
+                        self.enable_buttons()
+                        self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                        self.tree.change_items_status(self.parent.get_ug_config_path())
+                    else:
+                        self.run_page_0()
                 else:
                     self.run_page_0()
             else:
@@ -790,19 +791,19 @@ class SelectMcImportMode(SelectMode):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт выбранного раздела конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            func.message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         if self.selected_points:
+            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
+                node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
+                if not ok:
+                    func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
+                    return
+            else:
+                node_name = 'node_1'
             if self.thread is None:
-                self.disable_buttons()
+#                self.disable_buttons()
                 arguments = {
                     'ngfw_ports': '',
                     'dhcp_settings': '',
@@ -811,8 +812,20 @@ class SelectMcImportMode(SelectMode):
                     'iface_settings': '',
                 }
                 self.set_arguments(arguments)
+#                print('ngfw_ports:', arguments['ngfw_ports'], '\n')
+#                print('dhcp_settings:', arguments['dhcp_settings'], '\n')
+#                print('ngfw_vlans:', arguments['ngfw_vlans'], '\n')
+#                print('new_vlans:', arguments['new_vlans'], '\n')
+#                print('iface_settings:', arguments['iface_settings'], '\n')
+#                return
 
-                self.thread = tf.ImportSelectedPoints(self.utm, self.parent.get_ug_config_path(), self.current_ug_path, self.selected_points, arguments)
+                self.thread = import_to_mc.ImportSelectedPoints(self.utm,
+                                                      self.parent.get_ug_config_path(),
+                                                      self.current_ug_path,
+                                                      self.selected_points,
+                                                      self.template_id,
+                                                      arguments,
+                                                      node_name)
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -827,14 +840,7 @@ class SelectMcImportMode(SelectMode):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт всей конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            func.message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
@@ -884,7 +890,7 @@ class SelectMcImportMode(SelectMode):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_ug_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = self.read_json_file(json_file)
+        err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
@@ -892,7 +898,7 @@ class SelectMcImportMode(SelectMode):
         if not vlans:
             return 3, 'LBLUE|    Нет VLAN для импорта.'
 
-        err, result = self.utm.get_zones_list()
+        err, result = self.utm.get_template_zones_list(self.template_id)
         if err:
             return err, f'RED|    {result}'
         zones = sorted([x['name'] for x in result])
@@ -900,9 +906,8 @@ class SelectMcImportMode(SelectMode):
 
         # Составляем список легитимных интерфейсов (interfaces_list).
         ngfw_vlans = {}
-        management_port = ''
-        interfaces_list = []
-        err, result = self.utm.get_interfaces_list()
+        interfaces_list = ['Undefined']
+        err, result = self.utm.get_template_interfaces_list(self.template_id)
         if err:
             return err, f'RED|    {result}'
 
@@ -910,17 +915,9 @@ class SelectMcImportMode(SelectMode):
             if item['kind'] == 'vlan':
                 ngfw_vlans[item['vlan_id']] = item['name']
                 continue
-            for ip in item['ipv4']:
-                if ip.startswith(self.utm.server_ip):
-                    management_port = item["name"]
-                    self.on_step_changed(f'NOTE|    Интерфейс {item["name"]} - {self.utm.server_ip} используется для текущей сессии.')
-                    self.on_step_changed('NOTE|    Он не будет использоваться для создания интерфейсов VLAN.')
             if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
                 continue
-            if item["name"] == management_port:
-                continue
             interfaces_list.append(item['name'])
-        interfaces_list.insert(0, "Undefined")
 
         dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones)
         result = dialog.exec()
@@ -935,15 +932,18 @@ class SelectMcImportMode(SelectMode):
     def import_dhcp(self):
         dhcp_path = os.path.join(self.current_ug_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = self.read_json_file(json_file)
+        err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
-        err, result = self.utm.get_interfaces_list()
+        err, result = self.utm.get_template_interfaces_list(self.template_id)
         if err:
             return err, f'RED|    {result}'
-        ngfw_ports = [x['name'] for x in result if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+#        print(result, '\n')
+#        ngfw_ports = [x['name'] for x in result if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+        ngfw_ports = [x['name'] for x in result if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
         ngfw_ports.insert(0, 'Undefined')
+#        print('ports: ', ngfw_ports)
 
         dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
         result = dialog.exec()
@@ -955,15 +955,16 @@ class SelectMcImportMode(SelectMode):
 
 class SelectMcDestinationTemplate(QDialog):
     """Для МС. Диалоговое окно для выбора шаблона MC для импорта."""
-    def __init__(self, parent):
-        super().__init__()
-        self.main_window = parent
+    def __init__(self, parent, main_window):
+        super().__init__(main_window)
+        self.main_window = main_window
+        self.parent = parent
+        self.templates = {}
+        self.current_template_name = None
         self.setWindowTitle("Выбор шаблона для импорта")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
         self.setFixedHeight(200)
 
-#        title = QLabel("<b><font color='green' size='+2'>Выбор шаблона для импорта</font></b>")
-#        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label = QLabel("<b><font color='green'>Выберите шаблон для импорта конфигурации или создайте новый.</font></b><br>")
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.device_templates_list = QListWidget()
@@ -998,6 +999,7 @@ class SelectMcDestinationTemplate(QDialog):
 
         self.device_templates_list.currentTextChanged.connect(self.select_dest_template)
         self.disable_buttons()
+        self.add_device_template_items()
 
     def disable_buttons(self):
         self.btn_enter.setStyleSheet('color: gray; background: gainsboro;')
@@ -1008,11 +1010,9 @@ class SelectMcDestinationTemplate(QDialog):
     def enable_buttons(self):
         self.btn3.setStyleSheet('color: sienna; background: white;')
         self.btn3.setEnabled(True)
-        self.btn_enter.setStyleSheet('color: steelblue; background: white;')
-        self.btn_enter.setEnabled(True)
 
     def _send_accept(self):
-        self.accept
+        self.accept()
 
     def add_device_template_items(self):
         """При открытии этого диалога получаем с МС список шаблонов устройств и заполняем список выбора шаблонов."""
@@ -1023,27 +1023,28 @@ class SelectMcDestinationTemplate(QDialog):
             self.device_templates_list.clear()
             for item in result:
                 self.device_templates_list.addItem(item['name'])
-                self.parent.dest_templates[item['name']] = item['id']
+                self.templates[item['name']] = item['id']
             self.device_templates_list.setCurrentRow(0)
-            self.enable_button3()
+            self.enable_buttons()
 
     def create_new_template(self):
         """Создаём новый шаблон устройства в области."""
         template_name, ok = QInputDialog.getText(self, 'Создание шаблона устройства', 'Введите имя шаблона')
         if ok:
-            if self.parent.check_auth():
+            if func.check_auth(self.parent):
                 err, result = self.parent.utm.add_device_template({'name': template_name, 'description': 'Шаблон для импорта с Check Point'})
                 if err:
-                    message_alert(self, result, 'Не удалось добавить шаблон устройства!')
+                    func.message_alert(self, result, 'Не удалось добавить шаблон устройства!')
                 else:
-                    message_inform(self, 'Создание шаблона', f'Создан шаблон "{template_name}".')
-                    self.add_device_template_items(2)
+                    func.message_inform(self, 'Создание шаблона', f'Создан шаблон "{template_name}".')
+                    self.add_device_template_items()
             else:
                 self.run_page_0()
 
     def select_dest_template(self, item_text):
-        self.parent.current_dest_template = item_text
-#        self.enable_button2()
+        self.current_template_name = item_text
+        self.btn_enter.setStyleSheet('color: steelblue; background: white;')
+        self.btn_enter.setEnabled(True)
 
 
 class SelectSecureGateway(QDialog):
@@ -1441,7 +1442,7 @@ class MainTree(QTreeWidget):
         self.compliances = {
             "UserGate": "UserGate",
             "GeneralSettings": "Настройки",
-            "DeviceManagement": "Управление устройсвом",
+            "DeviceManagement": "Управление устройством",
             "Administrators": "Администраторы",
             "Certificates": "Сертификаты",
             "UserCertificateProfiles": "Профили пользовательских сертификатов",
@@ -1541,7 +1542,7 @@ class MainTree(QTreeWidget):
         self.over_compliances = {v: k for k, v in self.compliances.items()}
 
         data = {
-            "UserGate": ["Настройки", "Управление устройсвом", "Администраторы", "Сертификаты",
+            "UserGate": ["Настройки", "Управление устройством", "Администраторы", "Сертификаты",
                          "Профили пользовательских сертификатов"],
             "Сеть": ["Зоны", "Интерфейсы", "Шлюзы", "DHCP", "DNS", "Виртуальные маршрутизаторы", "WCCP", "Маршруты", "OSPF", "BGP"],
             "Пользователи и устройства": [

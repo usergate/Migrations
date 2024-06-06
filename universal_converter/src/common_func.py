@@ -83,16 +83,16 @@ def read_json_file(parent, json_file_path, mode=0):
     except ValueError as err:
         parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
         parent.error = 1
-        return 1, 'RED'
+        return 1, f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".'
     except FileNotFoundError as err:
         if not mode:
             parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
             parent.error = 1
-        return 2, 'RED'
+        return 2, f'bRED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!'
     if not data:
         if not mode:
             parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
-        return 3, 'GRAY'
+        return 3, f'GRAY|    Файл "{json_file_path}" пуст.'
     return 0, data
 
 
@@ -150,9 +150,17 @@ def pack_ip_address(ip, mask):
     try:
         interface = ipaddress.ip_interface(f'{ip}/{mask}')
     except ValueError as err:
-#        print(ip, mask)
         return '10.10.10.1/32'
     return f'{ip}/{interface.network.prefixlen}'
+
+def unpack_ip_address(iface):
+    """Получаем данные в виде ip/mask (пример: 192.168.10.1/29)"""
+    try:
+        interface = ipaddress.ip_interface(iface)
+        ipv4 = {'ip': f'{interface.ip}', 'mask': f'{interface.netmask}'}
+    except ValueError as err:
+        return 1, err
+    return 0, ipv4
 
 def get_restricted_name(name):
     """
@@ -166,6 +174,20 @@ def get_restricted_name(name):
         return new_name
     else:
         return 'Name not valid'
+
+def check_auth(parent):
+    """Проверяем что авторизация не протухла. Если протухла, логинимся заново."""
+    err = 0; msg = ''
+    match parent.utm.ping_session()[0]:
+        case 1:
+            err, msg = parent.utm.connect()
+        case 2:
+            err, msg = parent.utm.login()
+    if err:
+        message_alert(parent, msg, '')
+        return False
+    else:
+        return True
 
 def message_inform(parent, title, message):
     """Общее информационное окно. Принимает родителя, заголовок и текст сообщения"""

@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 3.6
+# Version 3.7
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 3.6)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 3.7)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
         self._base_cp_path = 'data_checkpoint'
         self._base_fort_path = 'data_fortigate'
         self._base_huawei_path = 'data_huawei'
+        self._base_mikrotik_path = 'data_mikrotik'
         self._current_ug_path = None    # Полный путь к каталогу с конфигурацией узла UG NGFW
 
         self.stacklayout = QStackedLayout()
@@ -64,6 +65,7 @@ class MainWindow(QMainWindow):
             func.create_dir(self._base_cp_path, delete='no')
             func.create_dir(self._base_fort_path, delete='no')
             func.create_dir(self._base_huawei_path, delete='no')
+            func.create_dir(self._base_mikrotik_path, delete='no')
             self.stacklayout.widget(0).enable_buttons()
 
     def get_vendor_base_path(self, vendor):
@@ -79,6 +81,8 @@ class MainWindow(QMainWindow):
                 return self._base_fort_path
             case 'Huawei':
                 return self._base_huawei_path
+            case 'MikroTik':
+                return self._base_mikrotik_path
 
     def get_base_ug_path(self):
         """Получаем имя базового каталога конфигураций UG NGFW"""

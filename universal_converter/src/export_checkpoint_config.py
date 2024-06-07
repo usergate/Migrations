@@ -26,7 +26,7 @@
 import os, sys, json, uuid, time
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import ServicePorts, dict_risk, trans_table, trans_filename, trans_url
+from services import ServicePorts, dict_risk, trans_table, trans_filename, trans_url, GEOIP_CODE
 from checkpoint_embedded_objects import embedded_objects
 from applications import (app_compliance, appgroup_compliance, l7_category_compliance, url_category_compliance,
                           cp_app_category, url_categories, new_applicationgroup)
@@ -56,6 +56,8 @@ class ConvertCheckPointConfig(QThread):
 
     def run(self):
         """Конвертируем всё в пакетном режиме"""
+        self.stepChanged.emit(f'GREEN|                       Преобразование конфигурации CheckPoint (Secure Gateway: {self.sg_name}) в формат UG NGFW')
+        self.stepChanged.emit(f'ORANGE|==============================================================================================================================')
         convert_config_cp(self)
 
         self.config_path = os.path.join(self.current_vendor_path, 'data_json')
@@ -300,6 +302,7 @@ def convert_config_cp(parent):
             if x and x[0] in {'set', 'add'}:
                 config_cp.append(x[1:])
 
+    parent.stepChanged.emit('BLUE|Конвертация раздела "UserGate/Настройки".')
     for x in config_cp:
         match x[0]:
             case 'dns':
@@ -353,6 +356,7 @@ def convert_config_cp(parent):
     else:
         parent.stepChanged.emit(f'GRAY|    Нет домена авторизации для экспорта.')
 
+    parent.stepChanged.emit('BLUE|Конвертация раздела "Сеть".')
     #Выгружаем сервера DNS
     if system_dns:
         section_path = os.path.join(parent.current_ug_path, 'Network')
@@ -466,8 +470,8 @@ def convert_services(parent):
             port = value.get('port', "")
             if (">" or "<") in port:
                 parent.objects[key]['type'] = 'error'
-                parent.objects[key]['description'] = 'Символы "<" и ">" не поддерживаются в определении порта.'
-                parent.stepChanged.emit(f'bRED|    Warning: Сервис "{service_name}" содержит символы "<" или ">". Такое значение порта не поддерживается. Сервис не конвертирован.')
+                parent.objects[key]['description'] = f'Сервис "{service_name}" не конвертирован (символы "<" и ">" не поддерживаются в определении порта).'
+                parent.stepChanged.emit(f'bRED|    Warning: Сервис "{service_name}" не конвертирован (символы "<" и ">" не поддерживаются в определении порта.')
             else:
                 parent.services[service_name] = {
                     'name': service_name,
@@ -779,7 +783,6 @@ def convert_ip_group_with_exclusion(parent):
                 if 'include' in value:
                     groups.append({"type": "network", "name": parent.objects[value['include']['uid']]['name'], "action": "accept"})
                 parent.objects[key] = {"type": "group-with-exclusion", "groups": groups}
-#                print(parent.objects[key], '\n')
             except KeyError as err:
                 error = 1
                 parent.error = 1
@@ -820,12 +823,42 @@ def convert_url_lists(parent):
                 "type": "url",
                 "url": "",
                 "attributes": {
-                    "threat_level": dict_risk.get(value['risk'], 5)
+                    'list_compile_type': 'case_sensitive'
+#                    "threat_level": dict_risk.get(value['risk'], 5) if 'risk' in value else 3
                 },
                 "content": [{'value': url.translate(trans_url)} for url in value['url-list']]
             }
 
             json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
+            try:
+                with open(json_file, 'w') as fh:
+                    json.dump(url_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|    {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+            except OSError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список URL "{value["name"]}" не конвертирован'}
+                parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'RED|    {err}')
+            time.sleep(0.1)
+
+        elif value['type'] == 'dns-domain':
+            n += 1
+            url_list_name = func.get_restricted_name(value['name'])
+            parent.objects[key] = {'type': 'dns-domain', 'value': ['urllist_id', url_list_name]}
+            url_list = {
+                "name": url_list_name,
+                "description": value['comments'],
+                "type": "url",
+                "url": "",
+                "attributes": {
+                    'list_compile_type': 'domain'
+#                    "threat_level": dict_risk.get(value['risk'], 5) if 'risk' in value else 3
+                },
+                "content": [{'value': url_list_name}]
+            }
+
+            json_file = os.path.join(current_path, f'{url_list_name.translate(trans_filename)}.json')
             try:
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
@@ -1124,11 +1157,13 @@ def convert_access_role(parent):
 
 def convert_other(parent):
     """
-    Конвертация RulebaseAction, CpmiAnyObject и service-other в objects.json.
-    В файле объектов objects.json UID с type 'RulebaseAction', 'CpmiAnyObject' и service-other заменяются на:
+    Конвертация RulebaseAction, CpmiAnyObject, CpmiGatewayPlain, CpmiHostCkp, CpmiBusinessMailApplication и service-other в objects.json.
+    В файле объектов objects.json UID с type 'RulebaseAction', 'CpmiAnyObject', CpmiGatewayPlain, 'updatable-object',
+    CpmiHostCkp, CpmiBusinessMailApplication, CpmiConnectraWebApplication и service-other заменяются на:
     uid: {"type": "RulebaseAction", "value": "Accept|Drop|Inform"} если type: 'RulebaseAction',
     uid: {"type": "CpmiAnyObject", "value": "Any"} если type: 'CpmiAnyObject',
     uid: {"type": "error", "name": "ИМЯ_СЕРВИСА", "description": "Сервис ИМЯ_СЕРВИСА не конвертирован."} если type: service-other
+    uid: {"type": "geoip", "value": GEOIP_CODE}
     """
     parent.stepChanged.emit('BLUE|Конвертация сопутствующих объектов.')
 
@@ -1137,15 +1172,42 @@ def convert_other(parent):
         try:
             match value['type']:
                 case 'RulebaseAction':
-                    parent.objects[key] = {"type": "RulebaseAction", "value": "accept" if value['name'] == 'Inform' else value['name'].lower()}
+                    parent.objects[key] = {'type': 'RulebaseAction', 'value': 'accept' if value['name'] == 'Inform' else value['name'].lower()}
                 case 'CpmiAnyObject':
-                    parent.objects[key] = {"type": "CpmiAnyObject", "value": "Any"}
+                    parent.objects[key] = {'type': 'CpmiAnyObject', 'value': 'Any'}
                 case 'service-other':
                     error = 1
-                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Сервис "{value["name"]}" не конвертирован'}
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Сервис "{value["name"]}" не конвертирован.'}
                     parent.stepChanged.emit(f'bRED|    Warning! Сервис "{value["name"]}" (тип service-other) не конвертирован и не будет использован в правилах.')
+                case 'CpmiBusinessMailApplication':
+                    error = 1
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Приложение CpmiBusinessMailApplication "{value["name"]}" не конвертировано.'}
+                    parent.stepChanged.emit(f'bRED|    Warning! Приложение "{value["name"]}" (тип CpmiBusinessMailApplication) не конвертировано и не будет использован в правилах.')
+                case 'CpmiNativeApplication':
+                    error = 1
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Приложение CpmiNativeApplication "{value["name"]}" не конвертировано.'}
+                    parent.stepChanged.emit(f'bRED|    Warning! Приложение "{value["name"]}" (тип CpmiNativeApplication) не конвертировано и не будет использован в правилах.')
+                case 'CpmiConnectraWebApplication':
+                    error = 1
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Приложение CpmiConnectraWebApplication "{value["name"]}" не конвертировано.'}
+                    parent.stepChanged.emit(f'bRED|    Warning! Приложение "{value["name"]}" (тип CpmiConnectraWebApplication) не конвертировано и не будет использован в правилах.')
+                case 'CpmiGatewayPlain':
+                    error = 1
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Объект CpmiGatewayPlain "{value["name"]}" не конвертирован'}
+                    parent.stepChanged.emit(f'bRED|    Warning! Объект "{value["name"]}" (тип CpmiGatewayPlain) не конвертирован и не будет использован в правилах.')
+                case 'CpmiHostCkp':
+                    error = 1
+                    parent.objects[key] = {'type': 'error', 'name': value["name"], 'description': f'Объект CpmiHostCkp "{value["name"]}" не конвертирован'}
+                    parent.stepChanged.emit(f'bRED|    Warning! Объект "{value["name"]}" (тип CpmiHostCkp) не конвертирован и не будет использован в правилах.')
+                case 'updatable-object':
+                    if value['name'] in GEOIP_CODE:
+                        parent.objects[key] = {'type': 'geoip', 'value': GEOIP_CODE[value['name']]}
+                    else:
+                        error = 1
+                        parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'GeoIP "{value["name"]}" не конвертировано'}
+                        parent.stepChanged.emit(f'bRED|    Warning! Объект GeoIP "{value["name"]}" не конвертирован и не будет использован в правилах.')
                 case 'Internet':
-                    parent.objects[key] = {"type": "Zone", "value": "Internet"}
+                    parent.objects[key] = {'type': 'Zone', 'value': 'Internet'}
                     create_zone(parent.zones, 'Internet')
         except KeyError:
             pass
@@ -1209,9 +1271,11 @@ def convert_access_policy_files(parent):
                 item['time'] = [parent.objects[uid] for uid in item['time']]
                 
         access_rules.extend(data)
-#        json_file = os.path.join(parent.config_path, access_policy_file.replace('.json', '_convert.json'))
-#        with open(json_file, 'w') as fh:
-#            json.dump(data, fh, indent=4, ensure_ascii=False)
+
+        json_file = os.path.join(parent.config_path, access_policy_file.replace('.json', '_convert.json'))
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+
         parent.stepChanged.emit(f'BLACK|    Файл {access_policy_file} конвертирован.')
 
     parent.stepChanged.emit(f'BLUE|Конвертация access-rules.')
@@ -1444,6 +1508,10 @@ def get_ips_list(array):
             result.append(['list_id', item['name']['list']])
         elif item['type'] == 'access-role' and 'networks' in item:
             result.extend(item['networks'])
+        elif item['type'] == 'geoip':
+            result.append(['geoip_code', item['value']])
+        elif item['type'] == 'dns-domain':
+            result.append(item['value'])
     return result
 
 def get_users_list(src_array, dst_array):

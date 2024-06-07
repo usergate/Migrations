@@ -129,7 +129,7 @@ def import_general_settings(parent, path):
 def import_ui(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
     json_file = os.path.join(path, 'config_settings_ui.json')
-    err, data = read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -1862,6 +1862,7 @@ def import_firewall_rules(parent, path):
 
     error = 0
     for item in data:
+        print('rule: ', item['name'])
         item['name'] = item['name'].strip().translate(trans_name)
         item.pop('position_layer', None)
         item.pop('time_created', None)
@@ -4024,6 +4025,8 @@ def import_services_list(parent, path):
     error = 0
     
     for item in data:
+        if not item:
+            continue
         item['name'] = item['name'].strip().translate(trans_name)
         for value in item['protocols']:
             if parent.version < 7.1:
@@ -5991,6 +5994,7 @@ def get_guids_users_and_groups(parent, users, rule_name):
     """
     new_users = []
     for item in users:
+        print('    ', item)
         match item[0]:
             case 'special':
                 new_users.append(item)

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.2
+# Версия 2.3
 #
 
 import os, sys, json
@@ -964,7 +964,7 @@ def convert_ip_lists(parent, path, data):
             ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
 
         if ip_list['content']:
-            parent.ip_lists.add(list_name)
+            parent.ip_lists.add(func.get_restricted_name(list_name.strip()))
             n += 1
             json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
@@ -2081,7 +2081,7 @@ def get_services(parent, rule_services, rule_name):
             if service.upper() == 'ALL':
                 continue
             if service in parent.services:
-                new_service_list.append(['service', service])
+                new_service_list.append(['service', ug_services.get(service, service)])
             elif service in parent.service_groups:
                 new_service_list.append(['list_id', service])
             else:

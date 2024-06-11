@@ -32,7 +32,7 @@ from applications import app_compliance, l7_categories, l7_categories_compliance
 from services import trans_table, trans_filename, zone_services, ug_services
 
 
-pattern = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
 class ConvertHuaweiConfig(QThread):
     """Преобразуем файл конфигурации Huawei в формат UserGate NGFW."""

@@ -210,6 +210,7 @@ character_map_for_name = {
     '{': None,
     '}': None,
     '*': '+',
+    '~': None,
     '<': None,
     '>': None,
     '|': "-",

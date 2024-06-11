@@ -171,6 +171,8 @@ def get_restricted_name(name):
         new_name = name.translate(trans_name)
         if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
             new_name = new_name[1:]
+            if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+                new_name = new_name[1:]
         return new_name
     else:
         return 'Name not valid'

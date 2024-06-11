@@ -32,7 +32,7 @@ from services import network_proto, service_ports, trans_table, trans_name, tran
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
-pattern = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
 
 class ConvertCiscoFPRConfig(QThread):

@@ -566,6 +566,10 @@ def import_zones(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.' if error else out_message)
 
 
+def import_interfaces(parent, path):
+    import_vlans(parent, path)
+    import_ipip_interface(parent, path)
+
 def import_vlans(parent, path):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
     parent.stepChanged.emit('BLUE|Импорт VLAN в раздел "Сеть/Интерфейсы".')
@@ -642,6 +646,59 @@ def import_vlans(parent, path):
 
     out_message = 'GREEN|    Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN!' if error else out_message)
+
+
+def import_ipip_interface(parent, path):
+    """Импортируем интерфесы IP-IP."""
+    parent.stepChanged.emit('BLUE|Импорт интерфейсов IP-IP в раздел "Сеть/Интерфейсы".')
+    error = 0
+    json_file = os.path.join(path, 'config_interfaces.json')
+    err, data = read_conf_file(parent, json_file)
+    if err:
+        return
+
+    err, result = parent.utm.get_interfaces_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    ngfw_gre = [x['name'] for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
+    print(ngfw_gre)
+    return
+
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel':
+            if item['zone_id']:
+                try:
+                    item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Для интерфейса IP-IP "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    item['zone_id'] = 0
+            item.pop('id', None)      # удаляем readonly поле
+            item.pop('master', None)      # удаляем readonly поле
+            item.pop('kind', None)    # удаляем readonly поле
+            item.pop('mac', None)
+            item['enabled'] = False   # Отключаем интерфейс. После импорта надо включить руками.
+
+            if parent.version < 7.1:
+                item.pop('ifalias', None)
+                item.pop('flow_control', None)
+            if parent.version < 7.0:
+                item.pop('dhcp_default_gateway', None)
+                item.pop('lldp_profile', None)
+
+            err, result = parent.utm.add_interface_vlan(item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error: Интерфейс IP-IP {item["ipv4"]} не импортирован!')
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+                parent.error = 1
+            else:
+#                parent.ngfw_vlans[item['vlan_id']] = item['name']
+                parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс IP-IP {item["ipv4"]}.')
+
+    out_message = 'GREEN|    Интерфейсы IP-IP импортированы в раздел "Сеть/Интерфейсы".'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса IP-IP!' if error else out_message)
 
 
 def import_gateways(parent, path):
@@ -4066,7 +4123,7 @@ def import_services_groups(parent, path):
     for item in data:
         content = item.pop('content')
         item.pop('last_update', None)
-        item['name'] = item['name'].strip().translate(trans_name)
+        item['name'] = func.get_restricted_name(item['name'].strip())
         
         if item['name'] in parent.ngfw_data['service_groups']:
             parent.stepChanged.emit(f'GRAY|    Группа сервисов "{item["name"]}" уже существует.')
@@ -4083,7 +4140,7 @@ def import_services_groups(parent, path):
             err, result = parent.utm.add_nlist(item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Группа сервисов: "{item["name"]}"]')
+                parent.stepChanged.emit(f'RED|    {result}  [Группа сервисов: "{item["name"]}" не импортирована].')
                 continue
             else:
                 parent.ngfw_data['service_groups'][item['name']] = result
@@ -4136,7 +4193,7 @@ def import_ip_lists(parent, path):
         if err:
             continue
 
-        data['name'] = data['name'].strip().translate(trans_name)
+        data['name'] = func.get_restricted_name(data['name'].strip())
         content = data.pop('content')
         data.pop('last_update', None)
         if parent.version < 6:
@@ -4148,7 +4205,7 @@ def import_ip_lists(parent, path):
             err, result = parent.utm.update_nlist(parent.ngfw_data['ip_lists'][data['name']], data)
             if err == 1:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}"]')
+                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}" не обновлён.]')
                 continue
             elif err == 2:
                 parent.stepChanged.emit(f'GRAY|    {result}')
@@ -4158,7 +4215,7 @@ def import_ip_lists(parent, path):
             err, result = parent.utm.add_nlist(data)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}"]')
+                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}" не импортирован.]')
                 continue
             else:
                 parent.ngfw_data['ip_lists'][data['name']] = result
@@ -4453,21 +4510,21 @@ def import_time_restricted_lists(parent, path):
             err, result = parent.utm.update_nlist(parent.ngfw_data['calendars'][item['name']], item)
             if err == 1:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Список: {item["name"]}]')
+                parent.stepChanged.emit(f'RED|    {result}  [Календарь: {item["name"]}]')
                 continue
             elif err == 2:
                 parent.stepChanged.emit(f'GRAY|    {result}')
             else:
-                parent.stepChanged.emit(f'BLACK|    Список "{item["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|    Календарь "{item["name"]}" updated.')
         else:
             err, result = parent.utm.add_nlist(item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Список: "{item["name"]}"]')
+                parent.stepChanged.emit(f'RED|    {result}  [Календарь: "{item["name"]}"]')
                 continue
             else:
                 parent.ngfw_data['calendars'][item['name']] = result
-                parent.stepChanged.emit(f'BLACK|    Список "{item["name"]}" импортирован.')
+                parent.stepChanged.emit(f'BLACK|    Календарь "{item["name"]}" импортирован.')
 
         if parent.version < 6:
             parent.stepChanged.emit(f'GRAY|       На версию 5 невозможно импортировать сожержимое календарей. Добавьте содержимое вручную.')
@@ -4480,20 +4537,20 @@ def import_time_restricted_lists(parent, path):
                         parent.stepChanged.emit(f'GRAY|       {result2}')
                     elif err2 == 1:
                         error = 1
-                        parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+                        parent.stepChanged.emit(f'RED|       {result2}  [Календарь: "{item["name"]}"]')
                     else:
-                        parent.stepChanged.emit(f'BLACK|       Элемент "{value["name"]}" списка "{item["name"]}" добавлен.')
+                        parent.stepChanged.emit(f'BLACK|       Элемент "{value["name"]}" календаря "{item["name"]}" добавлен.')
             else:
                 err2, result2 = parent.utm.add_nlist_items(parent.ngfw_data['calendars'][item['name']], content)
                 if err2 == 2:
                     parent.stepChanged.emit(f'GRAY|       {result2}')
                 elif err2 == 1:
                     error = 1
-                    parent.stepChanged.emit(f'RED|       {result2}  [Список: "{item["name"]}"]')
+                    parent.stepChanged.emit(f'RED|       {result2}  [Календарь: "{item["name"]}"]')
                 else:
-                    parent.stepChanged.emit(f'BLACK|       Содержимое списка "{item["name"]}" обновлено.')
+                    parent.stepChanged.emit(f'BLACK|       Содержимое календаря "{item["name"]}" обновлено.')
         else:
-            parent.stepChanged.emit(f'GRAY|       Список "{item["name"]}" пуст.')
+            parent.stepChanged.emit(f'GRAY|       Календарь "{item["name"]}" пуст.')
 
     if error:
         parent.error = 1
@@ -5863,7 +5920,7 @@ func = {
     "BfdProfiles": import_bfd_profiles,
     "UserIdAgentSyslogFilters": import_useridagent_syslog_filters,
     'Zones': import_zones,
-    'Interfaces': import_vlans,
+    'Interfaces': import_interfaces,
     'Gateways': import_gateways,
     'AuthServers': import_auth_servers,
     'AuthProfiles': import_auth_profiles,

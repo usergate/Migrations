@@ -81,9 +81,13 @@ def read_json_file(parent, json_file_path, mode=0):
         with open(json_file_path, "r") as fh:
             data = json.load(fh)
     except ValueError as err:
-        parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
         parent.error = 1
-        return 1, f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".'
+        return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
+    except json.JSONDecodeError as err:
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
+        parent.error = 1
+        return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
     except FileNotFoundError as err:
         if not mode:
             parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')

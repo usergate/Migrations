@@ -417,8 +417,8 @@ class SelectExportMode(QWidget):
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Huawei':
                         self.thread = huawei.ConvertHuaweiConfig(self.vendor_current_path, self.parent.get_ug_config_path())
-#                    case 'MikroTik':
-#                        self.thread = mikrotik.ConvertMikrotikConfig(self.vendor_current_path, self.parent.get_ug_config_path())
+                    case 'MikroTik':
+                        self.thread = mikrotik.ConvertMikrotikConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -719,10 +719,12 @@ class SelectImportMode(SelectMode):
         try:
             with open(json_file_path, 'r') as fh:
                 data = json.load(fh)
-        except Exception as err:
-            return 1, f'iRED|    {err}'
         except FileNotFoundError as err:
             return 2, f'dGRAY|    Нет данных для импорта. Не найден файл {json_file_path} с конфигурацией.'
+        except json.JSONDecodeError as err:
+            return 1, f'RED|    JSONDecodeError: {err} [{json_file_path}]'
+        except Exception as err:
+            return 1, f'RED|    {err}'
         if not data:
             return 3, f'dGRAY|    Нет данных для импорта. Файл {json_file_path} пуст.'
         return 0, data

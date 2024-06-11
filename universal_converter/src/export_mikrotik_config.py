@@ -302,7 +302,7 @@ def convert_ipip_interface(parent, path, data):
                     'vni': 0
                 },
                 'mode': 'static',
-                'mtu': item['mtu'] if item['mtu'] else 1500,
+                'mtu': int(item['mtu']) if item['mtu'] else 1500,
                 'tap': False
             }
             iface['ipv4'].append(data['ip address'][item['name']])

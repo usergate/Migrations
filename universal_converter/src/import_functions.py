@@ -129,7 +129,7 @@ def import_general_settings(parent, path):
 def import_ui(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
     json_file = os.path.join(path, 'config_settings_ui.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -653,7 +653,7 @@ def import_ipip_interface(parent, path):
     parent.stepChanged.emit('BLUE|Импорт интерфейсов IP-IP в раздел "Сеть/Интерфейсы".')
     error = 0
     json_file = os.path.join(path, 'config_interfaces.json')
-    err, data = read_conf_file(parent, json_file)
+    err, data = read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -663,22 +663,27 @@ def import_ipip_interface(parent, path):
         parent.error = 1
         return
     ngfw_gre = [x['name'] for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
-    print(ngfw_gre)
-    return
+    gre_num = 1
+    for item in ngfw_gre:
+        if int(item[3:]) > gre_num:
+            gre_num = int(item[3:])
 
     for item in data:
-        if 'kind' in item and item['kind'] == 'tunnel':
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'] == 'gre':
+            gre_num += 1
+            item.pop('id', None)      # удаляем readonly поле
+            item.pop('master', None)      # удаляем readonly поле
+            item.pop('kind', None)    # удаляем readonly поле
+            item.pop('mac', None)
+            item['enabled'] = False   # Отключаем интерфейс. После импорта надо включить руками.
+
+            item['name'] = f"{item['name']}{gre_num}"
             if item['zone_id']:
                 try:
                     item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
                 except KeyError as err:
                     parent.stepChanged.emit(f'bRED|    Для интерфейса IP-IP "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
                     item['zone_id'] = 0
-            item.pop('id', None)      # удаляем readonly поле
-            item.pop('master', None)      # удаляем readonly поле
-            item.pop('kind', None)    # удаляем readonly поле
-            item.pop('mac', None)
-            item['enabled'] = False   # Отключаем интерфейс. После импорта надо включить руками.
 
             if parent.version < 7.1:
                 item.pop('ifalias', None)
@@ -687,14 +692,15 @@ def import_ipip_interface(parent, path):
                 item.pop('dhcp_default_gateway', None)
                 item.pop('lldp_profile', None)
 
-            err, result = parent.utm.add_interface_vlan(item)
+            print(item['name'])
+            print(item)
+            err, result = parent.utm.add_interface_tunnel(item)
             if err:
                 parent.stepChanged.emit(f'RED|    Error: Интерфейс IP-IP {item["ipv4"]} не импортирован!')
                 parent.stepChanged.emit(f'RED|    {result}')
                 error = 1
                 parent.error = 1
             else:
-#                parent.ngfw_vlans[item['vlan_id']] = item['name']
                 parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс IP-IP {item["ipv4"]}.')
 
     out_message = 'GREEN|    Интерфейсы IP-IP импортированы в раздел "Сеть/Интерфейсы".'
@@ -6229,6 +6235,10 @@ def read_conf_file(parent, json_file_path):
             data = json.load(fh)
     except ValueError as err:
         parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
+        parent.error = 1
+        return 1, 'RED'
+    except json.JSONDecodeError as err:
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
         parent.error = 1
         return 1, 'RED'
     except FileNotFoundError as err:

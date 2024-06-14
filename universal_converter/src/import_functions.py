@@ -27,7 +27,7 @@ import os, sys, time, copy, json
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import zone_services, trans_filename, trans_name
-from common_func import read_bin_file, write_bin_file, read_json_file
+from common_func import read_bin_file, write_bin_file, read_json_file, get_restricted_name
 
 
 class ImportAll(QThread):
@@ -645,7 +645,7 @@ def import_vlans(parent, path):
                 parent.stepChanged.emit(f'BLACK|    Добавлен VLAN {item["vlan_id"]}, name: {item["name"]}, zone: {current_zone}, ip: {", ".join(item["ipv4"])}.')
 
     out_message = 'GREEN|    Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN!' if error else out_message)
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов VLAN!' if error else out_message)
 
 
 def import_ipip_interface(parent, path):
@@ -663,7 +663,7 @@ def import_ipip_interface(parent, path):
         parent.error = 1
         return
     ngfw_gre = [x['name'] for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
-    gre_num = 1
+    gre_num = 0
     for item in ngfw_gre:
         if int(item[3:]) > gre_num:
             gre_num = int(item[3:])
@@ -692,8 +692,6 @@ def import_ipip_interface(parent, path):
                 item.pop('dhcp_default_gateway', None)
                 item.pop('lldp_profile', None)
 
-            print(item['name'])
-            print(item)
             err, result = parent.utm.add_interface_tunnel(item)
             if err:
                 parent.stepChanged.emit(f'RED|    Error: Интерфейс IP-IP {item["ipv4"]} не импортирован!')
@@ -4129,7 +4127,7 @@ def import_services_groups(parent, path):
     for item in data:
         content = item.pop('content')
         item.pop('last_update', None)
-        item['name'] = func.get_restricted_name(item['name'].strip())
+        item['name'] = get_restricted_name(item['name'].strip())
         
         if item['name'] in parent.ngfw_data['service_groups']:
             parent.stepChanged.emit(f'GRAY|    Группа сервисов "{item["name"]}" уже существует.')
@@ -4199,7 +4197,7 @@ def import_ip_lists(parent, path):
         if err:
             continue
 
-        data['name'] = func.get_restricted_name(data['name'].strip())
+        data['name'] = get_restricted_name(data['name'].strip())
         content = data.pop('content')
         data.pop('last_update', None)
         if parent.version < 6:

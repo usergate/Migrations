@@ -4,6 +4,7 @@
 Программа предназначена для переноса конфигурации с Cisco ASA, Cisco FPR, Check Point, Fortigate, Huawei, MikroTik на NGFW версий 5, 6 и 7.
 
 <p align="center"><img src="main_image.png"></p>
+<p align="center"><img src="main_image2.png"></p>
 
 Программа работает в Ubuntu версии 24.04 или выше.<br>
 <b>Обращаем ваше внимание:</b> если вы запускаете данную программу в Ubuntu более старой версии или в другой

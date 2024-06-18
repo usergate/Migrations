@@ -21,20 +21,20 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json, re
 import ipaddress, copy
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import network_proto, service_ports, trans_table, trans_name, trans_filename
+from services import network_proto, ug_services, service_ports, trans_table, trans_name, trans_filename
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
-#pattern = re.compile('\d{1, 3}\.\d{1, 3}\.\d{1, 3}\.\d{1, 3}')
 pattern = re.compile(r"[-\w]+='[-:!,/\.\w ]+'|[-\w]+=[-:!,/\.\w]+|rule='.+'")
 pattern_rf = re.compile(r"[\w]+=[-\w]+|\(.+\)|(?:accept|reject)")
+pattern_ip = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
 
 class ConvertMikrotikConfig(QThread):
@@ -47,47 +47,36 @@ class ConvertMikrotikConfig(QThread):
         self.current_ug_path = current_ug_path
         self.error = 0
         self.ifaces = []
-#    data = {
-#        'ip_lists': {},
-#        'services': {
-#            'Any ICMP': {
-#                'name': 'Any ICMP',
-#                'description': 'Any ICMP packet',
-#                'protocols': [
-#                    {
-#                        'proto': 'icmp',
-#                        'port': '',
-#                        'source_port': '',
-#                    }
-#                ],
-#                'group': False
-#            }
-#        },
-#        'zones': [],
-#        'fw_rules': {},
-#        'routes': []
-#    }
+        self.zones = []
+        self.gateways = set()
+        self.ip_lists = set()
+        self.services = {}
 
     def run(self):
         self.stepChanged.emit(f'GREEN|                                                            Конвертация конфигурации MikroTik в формат UserGate NGFW.')
         self.stepChanged.emit(f'ORANGE|====================================================================================================================')
-#        convert_config_file(self, self.current_fpr_path)
+        convert_config_file(self, self.current_fpr_path)
         
         json_file = os.path.join(self.current_fpr_path, 'config.json')
         err, data = func.read_json_file(self, json_file)
         if err:
             self.error = 1
         else:
-#            convert_settings_ui(self, self.current_ug_path, data)
-#            convert_ntp_settings(self, self.current_ug_path, data)
+            convert_settings_ui(self, self.current_ug_path, data)
+            convert_ntp_settings(self, self.current_ug_path, data)
+            convert_zones(self, self.current_ug_path, data)
             convert_ipip_interface(self, self.current_ug_path, data)
-#            convert_zones(self, self.current_ug_path, data['zones'])
-#            convert_static_routes(self, self.current_ug_path, data['routes'])
-#            convert_vlan_interfaces(self, self.current_ug_path, data['ifaces'])
-#            convert_ip_lists(self, self.current_ug_path, data['ip_lists'])
-#            convert_service_groups(self, self.current_ug_path, data['services'])
-#            convert_services_list(self, self.current_ug_path, data['services'])
-#            convert_firewall_rules(self, self.current_ug_path, data['fw_rules'], data['services'])
+            convert_vlan_interfaces(self, self.current_ug_path, data)
+            convert_gateways_list(self, self.current_ug_path, data)
+            convert_static_routes(self, self.current_ug_path, data)
+            convert_ip_lists(self, self.current_ug_path, data)
+            convert_services_list(self, self.current_ug_path, data)
+            convert_firewall_rules(self, self.current_ug_path, data)
+            convert_dnat_rules(self, self.current_ug_path, data)
+
+#            json_file = os.path.join(self.current_fpr_path, 'config_new.json')
+#            with open(json_file, "w") as fh:
+#                json.dump(data, fh, indent=4, ensure_ascii=False)
 
             self.save_interfaces()
 
@@ -205,6 +194,12 @@ def convert_config_file(parent, path):
         ifaces[item['interface']] = item['address']
     data['ip address'] = ifaces
 
+    if 'interface list member' in data:
+        new_members = {}
+        for member in data['interface list member']:
+            new_members[member['interface']] = member['list']
+        data['interface list member'] = new_members
+
     json_file = os.path.join(path, 'config.json')
     with open(json_file, "w") as fh:
         json.dump(data, fh, indent=4, ensure_ascii=False)
@@ -274,489 +269,11 @@ def convert_ntp_settings(parent, path, data):
         parent.stepChanged.emit(f'GRAY|    Нет настроек NTP для экспорта.')
 
 
-def convert_ipip_interface(parent, path, data):
-    """Конвертируем интерфейс IP-IP"""
-    if 'interface ipip' not in data:
+def convert_zones(parent, path, data):
+    """Конвертируем зоны."""
+    if 'interface list' not in data:
         return
 
-    error = 0
-    parent.stepChanged.emit('BLUE|Конвертация интервейсов IP-IP.')
-    for item in data['interface ipip']:
-        try:
-            iface = {
-                'name': 'gre',
-                'kind': 'tunnel',
-                'enabled': False,
-                'description': '',
-                'zone_id': 0,
-                'master': False,
-                'netflow_profile': 'undefined',
-                'lldp_profile': 'undefined',
-                'ipv4': [],
-                'ifalias': '',
-                'flow_control': False,
-                'tunnel': {
-                    'local_ipv4': item['local-address'],
-                    'mode': 'ipip',
-                    'remote_ipv4': item['remote-address'],
-                    'vni': 0
-                },
-                'mode': 'static',
-                'mtu': int(item['mtu']) if item['mtu'] else 1500,
-                'tap': False
-            }
-            iface['ipv4'].append(data['ip address'][item['name']])
-        except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error: Интервейс IP-IP {item["name"]} не конвертирован [{err}].')
-            error = 1
-            parent.error = 1
-        else:
-            parent.ifaces.append(iface)
-            parent.stepChanged.emit(f'BLACK|    Интервейс IP-IP {item["name"]} конвертирован.')
-    if error:
-        parent.stepChanged.emit('ORANGE|    Прошла ошибка при экспорте интервейсов IP-IP.')
-    else:
-        parent.stepChanged.emit('GREEN|    Интервейсы IP-IP конвертированы.')
-
-
-def convert_vlan_interfaces(parent, path, ifaces_list):
-    """Конвертируем интерфейсы VLAN"""
-    parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
-
-    for iface in ifaces_list:
-        iface['enabled'] = False
-        iface['master'] = False
-        iface['netflow_profile'] = 'undefined'
-        iface['lldp_profile'] = 'undefined'
-        iface['ifalias'] = ''
-        iface['flow_control'] = False
-        iface['mode'] = 'static'
-        iface['mtu'] = 1500
-        iface['tap'] = False
-        iface['link'] = ''
-
-    json_file = os.path.join(current_path, 'config_interfaces.json')
-    with open(json_file, "w") as fh:
-        json.dump(ifaces_list, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'BLACK|    Интерфейсы VLAN выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.' if not ifaces_list else out_message)
-
-
-#####################################################################################################
-def add_ip_list(ip, mask='255.255.255.255', obj='host'):
-    ip_list = {
-        'name': '',
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {
-            'threat_level': 3
-        },
-        'content': []
-    }
-    if obj == 'subnet':
-        subnet = ipaddress.ip_network(f'{ip}/{mask}')
-        ip_list['name'] = f'subnet {ip}/{subnet.prefixlen}'
-        ip_list['content'].append({'value': f'{ip}/{subnet.prefixlen}'})
-    elif obj == 'host':
-        ip_list['name'] = f'host {ip}'
-        ip_list['content'].append({'value': f'{ip}'})
-
-    data['ip_lists'][ip_list['name']] = ip_list
-    return ip_list['name']
-
-def convert_local_pool(x):
-    ip_list = {
-        'name': f'{x[3]}',
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {
-            'threat_level': 3
-        },
-        'content': [{'value': x[4]}]
-    }
-    data['ip_lists'][x[3]] = ip_list
-
-def convert_network_object(name, fh):
-    ip_list = {
-        'name': name,
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {
-            'threat_level': 3
-        },
-        'content': []
-    }
-    line = fh.readline()
-    y = line.translate(trans_table).strip().split(' ')
-    if y[0] == 'subnet':
-        subnet = ipaddress.ip_network(f'{y[1]}/{y[2]}')
-        ip_list['content'].append({'value': f'{y[1]}/{subnet.prefixlen}'})
-        data['ip_lists'][name] = ip_list
-    elif y[0] == 'host':
-        ip_list['content'].append({'value': f'{y[1]}'})
-        data['ip_lists'][name] = ip_list
-    elif y[0] == 'range':
-        ip_list['content'].append({'value': f'{y[1]}-{y[2]}'})
-        data['ip_lists'][name] = ip_list
-    return line
-
-def convert_network_object_group(name, fh):
-    ip_list = {
-        'name': name,
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {
-            'threat_level': 3
-        },
-        'content': []
-    }
-    line = fh.readline()
-    y = line.translate(trans_table).rstrip().split(' ')
-    while y[0] == '':
-        if y[1] == 'network-object':
-            if y[2] == 'object':
-#                    ip_list['content'].extend(data['ip_lists'][y[3]]['content'])
-                ip_list['content'].append({'list': y[3]})
-            elif y[2] == 'host':
-                ip_list['content'].append({'value': f'{y[3]}'})
-            else:
-                try:
-                    subnet = ipaddress.ip_network(f'{y[2]}/{y[3]}')
-                    ip_list['content'].append({'value': f'{y[2]}/{subnet.prefixlen}'})
-                except IndexError:
-                    parent.stepChanged.emit(f"RED|    Error: строка '{' '.join(y)}' не может быть обработана.")
-                    error = 1
-        elif y[1] == 'group-object':
-#                ip_list['content'].extend(data['ip_lists'][y[2]]['content'])
-            ip_list['content'].append({'list': y[2]})
-        elif y[1] == 'description':
-            ip_list['description'] = ' '.join(y[2:])
-        line = fh.readline()
-        y = line.translate(trans_table).rstrip().split(' ')
-    data['ip_lists'][name] = ip_list
-    return line        
-
-def convert_service_object(name, fh):
-    service = {
-        'name': name,
-        'description': '',
-        'protocols': [],
-        'group': False
-    }
-    port = ''
-    source_port = ''
-    line = fh.readline()
-    y = line.translate(trans_table).strip().split(' ')
-        
-    try:
-        i = y.index('source')
-        source_port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-    except ValueError:
-        pass
-    try:
-        i = y.index('destination')
-        port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-    except ValueError:
-        pass
-
-    service['protocols'].append(
-        {
-            'proto': y[1],
-            'port': port,
-            'source_port': source_port,
-         }
-    )
-    data['services'][name] = service
-    return line
-
-def convert_service_object_group(line, fh):
-    x = line.translate(trans_table).split(' ')
-    service = {
-        'name': x[2],
-        'description': '',
-        'protocols': [],
-        'group': False
-    }
-    port = ''
-    source_port = ''
-
-    line = fh.readline()
-    y = line.translate(trans_table).rstrip().split(' ')
-
-    try:
-        proto_array = x[3].split('-')
-        while y[0] == '':
-            if y[1] == 'port-object':
-                for indx, port in enumerate(y[3:]):
-                    if not port.isdigit():
-                        try:
-                            y[indx+3] = service_ports[port]
-                        except KeyError as err:
-                            parent.stepChanged.emit(f'RED|    Error: не найден порт {err} в сервисе "{" ".join(x)}"')
-                            error = 1
-                            break
-#                                while True:
-#                                    port_number = input(f'\t\033[36mВведите номер порта для сервиса {err}:\033[0m')
-#                                    if not port_number.isdigit() or (int(port_number) > 65535) or (int(port_number) < 1):
-#                                        print('\t\033[31mНеверно, номер порта должен быть цифрой между 1 и 65535.\033[0m')
-#                                    else:
-#                                        y[indx+3] = port_number
-#                                        break
-                for proto in proto_array:
-                    if y[3] == "0":
-                        port_for_proto = ''
-                    else:
-                        port_for_proto = f'{y[3]}-{y[4]}' if y[2] == 'range' else y[3]
-                    service['protocols'].append(
-                            {
-                                'proto': proto,
-                                'port': port_for_proto,
-                                'source_port': '',
-                             }
-                    )
-            elif y[1] == 'group-object':
-                try:
-#                        service['protocols'].extend(data['services'][y[2]]['protocols'])
-                    service['protocols'].append({'name': y[2]})
-                    service['group'] = True
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error: не найден group-object {err} в сервисе "{" ".join(x)}" - "{y}"')
-                    error = 1
-            elif y[1] == 'description':
-                service['description'] = ' '.join(y[2:])
-            line = fh.readline()
-            y = line.translate(trans_table).rstrip().split(' ')
-    except IndexError:
-        while y[0] == '':
-            if y[1] == 'service-object':
-                port = ''
-                source_port = ''
-                proto_array = y[2].split('-')
-                try:
-                    i = y.index('source')
-                    source_port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-                except ValueError:
-                    pass
-                try:
-                    i = y.index('destination')
-                    port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-                except ValueError:
-                    pass
-                for proto in proto_array:
-                    service['protocols'].append(
-                        {
-                            'proto': proto,
-                            'port': port,
-                            'source_port': source_port,
-                         }
-                    )
-            elif y[1] == 'group-object':
-                try:
-#                        service['protocols'].extend(data['services'][y[2]]['protocols'])
-                    service['protocols'].append({'name': y[2]})
-                    service['group'] = True
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error: не найден group-object {err} в сервисе "{" ".join(x)}" - {y}')
-                    error = 1
-            elif y[1] == 'description':
-                service['description'] = ' '.join(y[2:])
-
-            line = fh.readline()
-            y = line.translate(trans_table).rstrip().split(' ')
-
-
-    data['services'][x[2]] = service
-    return line
-
-def convert_icmp_object_group(name, fh):
-    service = {
-        'name': 'Any ICMP',
-        'description': 'Any ICMP packet',
-        'protocols': [
-            {
-                'proto': 'icmp',
-                'port': '',
-                'source_port': '',
-            }
-        ],
-        'group': False
-    }
-    line = fh.readline()
-    y = line.split(' ')
-    while y[0] == '':
-        line = fh.readline()
-        y = line.split(' ')
-    data['services'][name] = service
-    return line
-
-def convert_access_list(rule_id, rule_name, fh):
-    fw_rule = {
-        'name': rule_name.translate(trans_name).strip("-").strip(),
-        'description': "",
-        'action': '',
-        'src_zones': set(),
-        'dst_zones': set(),
-        'src_ips': set(),
-        'dst_ips': set(),
-        'services': set(),
-        'enabled': False,
-    }
-
-    line = fh.readline()
-    x = line.translate(trans_table).rstrip().split(' ')
-    while x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'advanced':
-        service_name = ''
-        service = {
-            'name': '',
-            'description': '',
-            'protocols': [
-                {
-                    'proto': '',
-                    'port': '',
-                    'source_port': '',
-                }
-            ],
-            'group': False
-        }
-        if not rule_id == int(x[x.index('rule-id') + 1]):
-            parent.stepChanged.emit(f'RED|    Error: "{line}" не обработано!')
-            error = 1
-            break
-        fw_rule['action'] = 'drop' if x[3] == 'deny' else 'accept'
-        if x[4] == 'icmp':
-            fw_rule['services'].add('Any ICMP')
-        elif x[4] == 'ipinip':
-            service_name = f'service-IPinIP'
-            service['name'] = service_name
-            service['protocols'][0]['proto'] = 'ipip'
-        elif x[4] == 'gre':
-            service_name = f'service-gre'
-            service['name'] = service_name
-            service['protocols'][0]['proto'] = 'gre'
-        elif x[4] == '41':
-            line = fh.readline()
-            x = line.translate(trans_table).rstrip().split(' ')
-            continue
-        if x[4] == 'object-group' and x[5] in data['services']:
-            fw_rule['services'].add(x[5])
-            x.pop(5)
-#                print('----------------------------------------------------------------------')
-        if x[5] == 'ifc':
-            fw_rule['src_zones'].add(x[6].replace('_', ' '))
-            y = x[7:]
-        else:
-            y = x[5:]
-
-#            print(f"\n{x[2:]}")
-#            print(f"{x[4]}", y)
-
-        for i in range(len(y)):
-            if y[i] in ('host', 'object', 'object-group', 'any'):
-                if y[i] == 'any':
-                    continue
-                if i == 0:
-                    list_name = add_ip_list(y[1]) if y[0] == 'host' else y[1]
-                    fw_rule['src_ips'].add(('list_id', list_name))
-                elif i == 2:
-                    list_name = add_ip_list(y[3]) if y[2] == 'host' else y[3]
-                    fw_rule['dst_ips'].add(('list_id', list_name))
-                else:
-                    if y[i+1] in data['services']:
-                        fw_rule['services'].add(y[i+1])
-                    else:
-                        list_name = add_ip_list(y[i+1]) if y[i] == 'host' else y[i+1]
-                        fw_rule['dst_ips'].add(('list_id', list_name))
-            elif y[i] == 'ifc':
-                fw_rule['dst_zones'].add(y[i+1].replace('_', ' '))
-            elif y[i] == 'eq':
-                if service_name:
-                    service_name = f'{service_name} extended'
-                    service['name'] = service_name
-                    service['protocols'][0]['source_port'] = service['protocols'][0]['port']
-                    service['protocols'][0]['port'] = service_ports.get(y[i+1], y[i+1])
-                else:
-                    service_name = f'service-{x[4]}-{revers_service_ports.get(y[i+1], y[i+1])}'
-                    service['name'] = service_name
-                    service['protocols'][0]['proto'] = x[4]
-                    service['protocols'][0]['port'] = service_ports.get(y[i+1], y[i+1])
-                    
-            elif y[i] == 'range':
-                if service_name:
-                    service_name = f'{service_name} extended'
-                    service['name'] = service_name
-                    service['protocols'][0]['source_port'] = service['protocols'][0]['port']
-                    service['protocols'][0]['port'] = f'{service_ports.get(y[i+1], y[i+1])}-{service_ports.get(y[i+2], y[i+2])}'
-                else:
-                    service_name = f'service-{x[4]} {service_ports.get(y[i+1], y[i+1])}-{service_ports.get(y[i+2], y[i+2])}'
-                    service['name'] = service_name
-                    service['protocols'][0]['proto'] = x[4]
-                    service['protocols'][0]['port'] = f'{service_ports.get(y[i+1], y[i+1])}-{service_ports.get(y[i+2], y[i+2])}'
-            elif pattern.match(y[i]) and pattern.match(y[i+1]):
-                if i == 0:
-                    fw_rule['src_ips'].add(('list_id', add_ip_list(y[0], mask=y[1], obj='subnet')))
-                elif i == 2:
-                    fw_rule['dst_ips'].add(('list_id', add_ip_list(y[2], mask=y[3], obj='subnet')))
-                elif i == 4:
-                    fw_rule['dst_ips'].add(('list_id', add_ip_list(y[4], mask=y[5], obj='subnet')))
-        if service_name:
-            fw_rule['services'].add(service_name)
-            if service_name not in data['services']:
-                data['services'][service_name] = service
-
-        line = fh.readline()
-        x = line.translate(trans_table).rstrip().split(' ')
-
-    fw_rule['src_zones'] = list(fw_rule['src_zones'])
-    fw_rule['dst_zones'] = list(fw_rule['dst_zones'])
-    fw_rule['src_ips'] = list(fw_rule['src_ips'])
-    fw_rule['dst_ips'] = list(fw_rule['dst_ips'])
-    fw_rule['services'] = list(fw_rule['services'])
-
-    data['fw_rules'][rule_id] = fw_rule
-    return line
-
-def convert_routes_list(route_line):
-    """Выгрузить список маршрутов"""
-    route = {
-        'enabled': True,
-        'name': '',
-        'description': '',
-        'dest': '',
-        'gateway': '',
-        'ifname': 'undefined',
-        'kind': 'unicast',
-        'metric': 0
-    }
-
-    try:
-        ip_address = ipaddress.ip_interface(f'{route_line[2]}/{route_line[3]}')
-        route['dest'] = f'{route_line[2]}/{ip_address.network.prefixlen}'
-        route['name'] = f'{route_line[1]} - {route["dest"]}'
-        route['gateway'] = route_line[4]
-        if len(route_line) == 6:
-            route['metric'] = int(route_line[5])
-    except IndexError as err:
-        parent.stepChanged.emit(f'RED|    Error: {err}. Маршрут "{" ".join(route_line)}" не конвертирован.')
-        error = 1
-    else:
-        data['routes'].append(route)
-
-#------------------------------------------- Конвертация -----------------------------------------------
-def convert_zones(parent, path, zone_names):
-    """Конвертируем зоны."""
     parent.stepChanged.emit('BLUE|Конвертация Зон.')
     section_path = os.path.join(path, 'Network')
     current_path = os.path.join(section_path, 'Zones')
@@ -767,9 +284,9 @@ def convert_zones(parent, path, zone_names):
         return
 
     zones = []
-    for item in zone_names:
+    for item in data['interface list']:
         zone = {
-            'name': item,
+            'name': item['name'],
             'description': '',
             'dos_profiles': [
                 {
@@ -823,53 +340,251 @@ def convert_zones(parent, path, zone_names):
             'sessions_limit_exclusions': []
         }
         zones.append(zone)
+        parent.zones.append(item['name'])
         parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" конвертирована.')
 
-    json_file = os.path.join(current_path, 'config_zones.json')
-    with open(json_file, "w") as fh:
-        json.dump(zones, fh, indent=4, ensure_ascii=False)
-
     if zones:
+        json_file = os.path.join(current_path, 'config_zones.json')
+        with open(json_file, "w") as fh:
+            json.dump(zones, fh, indent=4, ensure_ascii=False)
+
         parent.stepChanged.emit(f'GREEN|    Конфигурация Зон выгружена в файл "{json_file}".')
         parent.stepChanged.emit('LBLUE|    Необходимо настроить каждую зону. Включить нужный сервис в контроле доступа, поменять по необходимости параметры защиты от DoS и настроить защиту от спуфинга.')
     else:
         parent.stepChanged.emit('GRAY|    Нет зон для экспорта.')
 
 
-def convert_static_routes(parent, path, static_routes):
-    """Конвертируем статические маршруты"""
-    parent.stepChanged.emit('BLUE|Конвертация статических маршрутов.')
-    section_path = os.path.join(path, 'Network')
-    current_path = os.path.join(section_path, 'VRF')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
+def convert_ipip_interface(parent, path, data):
+    """Конвертируем интерфейс IP-IP"""
+    if 'interface ipip' not in data:
         return
 
-    if static_routes:
+    error = 0
+    parent.stepChanged.emit('BLUE|Конвертация интервейсов IP-IP.')
+    for item in data['interface ipip']:
+        try:
+            iface = {
+                'name': 'gre',
+                'kind': 'tunnel',
+                'enabled': False,
+                'description': item['name'],
+                'zone_id': 0,
+                'master': False,
+                'netflow_profile': 'undefined',
+                'lldp_profile': 'undefined',
+                'ipv4': [],
+                'ifalias': '',
+                'flow_control': False,
+                'tunnel': {
+                    'local_ipv4': item['local-address'],
+                    'mode': 'ipip',
+                    'remote_ipv4': item['remote-address'],
+                    'vni': 0
+                },
+                'mode': 'static',
+                'mtu': int(item['mtu']) if item['mtu'] else 1500,
+                'tap': False
+            }
+            iface['ipv4'].append(data['ip address'][item['name']])
+            if 'interface list member' in data:
+                iface['zone_id'] = data['interface list member'].get(item['name'], 0)
+
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Интервейс IP-IP {item["name"]} не конвертирован [{err}].')
+            error = 1
+            parent.error = 1
+        else:
+            parent.ifaces.append(iface)
+            parent.stepChanged.emit(f'BLACK|    Интервейс IP-IP {item["name"]} конвертирован.')
+    if error:
+        parent.stepChanged.emit('ORANGE|    Прошла ошибка при экспорте интервейсов IP-IP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интервейсы IP-IP конвертированы.')
+
+
+def convert_vlan_interfaces(parent, path, data):
+    """Конвертируем интерфейсы VLAN"""
+    if 'interface vlan' not in data:
+        return
+
+    error = 0
+    parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
+
+    for item in data['interface vlan']:
+        try:
+            iface = {
+                'name': item['name'],
+                'kind': 'vlan',
+                'enabled': False,
+                'description': f"{item['comment']} {item['name']}" if 'comment' in item else item['name'],
+                'zone_id': 0,
+                'master': False,
+                'netflow_profile': 'undefined',
+                'lldp_profile': 'undefined',
+                'ipv4': [],
+                'ifalias': '',
+                'flow_control': False,
+                'mode': 'static',
+                'mtu': 1500,
+                'tap': False,
+                'dhcp_relay': {
+                    'enabled': False,
+                    'host_ipv4': '',
+                    'servers': []
+                },
+                'vlan_id': int(item['vlan-id']),
+                'link': ''
+            }
+            
+            if item['name'] in data['ip address']:
+                iface['ipv4'].append(data['ip address'][item['name']])
+            else:
+                iface['mode'] = 'dhcp'
+                iface['dhcp_default_gateway'] = True
+            if 'interface list member' in data:
+                iface['zone_id'] = data['interface list member'].get(item['name'], 0)
+
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Интервейс VLAN {item["name"]} не конвертирован [ErrorKey: {err}].')
+            error = 1
+            parent.error = 1
+        else:
+            parent.ifaces.append(iface)
+            parent.stepChanged.emit(f'BLACK|    Интервейс VLAN {item["name"]} конвертирован.')
+    if error:
+        parent.stepChanged.emit('ORANGE|    Прошла ошибка при экспорте интервейсов VLAN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интервейсы VLAN конвертированы.')
+
+
+def convert_gateways_list(parent, path, data):
+    """Конвертируем список шлюзов"""
+    if 'ip route' not in data:
+        return
+
+    parent.stepChanged.emit('BLUE|Конвертация списка шлюзов.')
+    error = 0
+    list_gateways = []
+    for item in data['ip route']:
+        gateway = item['gateway']
+        if gateway in data['ip address']:
+            err, gateway = func.get_netroute(data['ip address'][gateway])
+            if err:
+                continue
+        err, msg = func.ip_isglobal(gateway)
+        if err or not msg:
+            continue
+#        if item['dst-address'] == '0.0.0.0/0':
+        else:
+            if gateway not in parent.gateways:
+                name = f"{gateway} {item.get('comment', '')}"
+                if len(name) > 30:
+                    name = name[:31]
+                try:
+                    list_gateways.append({
+                        'name': name.strip(),
+                        'enabled': False,
+                        'description': item.get('comment', ''),
+                        'ipv4': gateway,
+                        'vrf': 'default',
+                        'weight': int(item.get('distance', 1)),
+                        'multigate': False,
+                        'default': False,
+                        'iface': 'undefined',
+                        'is_automatic': False
+                    })
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error: Шлюз {gateway} не конвертирован [{err}].')
+                    error = 1
+                    parent.error = 1
+                else:
+                    parent.gateways.add(gateway)
+                    parent.stepChanged.emit(f'BLACK|    Шлюз {gateway} конвертирован.')
+    if list_gateways:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'Gateways')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_gateways.json')
+        with open(json_file, "w") as fh:
+            json.dump(list_gateways, fh, indent=4, ensure_ascii=False)
+        if error:
+            parent.stepChanged.emit(f'ORANGE|    Прошла ошибка при экспорте шлюзов. Список шлюзов выгружен в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit(f'GREEN|    Список шлюзов выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет шлюзов для экспорта.')
+
+
+def convert_static_routes(parent, path, data):
+    """Конвертируем статические маршруты"""
+    if 'ip route' not in data:
+        return
+
+    parent.stepChanged.emit('BLUE|Конвертация статических маршрутов.')
+    error = 0
+    routes_list = []
+    for item in data['ip route']:
+        gateway =  item['gateway']
+        if item['dst-address'] != '0.0.0.0/0':
+            if gateway in data['ip address']:
+                err, gateway = func.get_netroute(data['ip address'][gateway])
+                if err:
+                    continue
+            try:
+                route = {
+                    'name': f"For {item['dst-address']}",
+                    'description': item.get('comment', ''),
+                    'enabled': True if item['disabled'] == 'no' else False,
+                    'dest': item['dst-address'],
+                    'gateway': gateway,
+                    'ifname': 'undefined',
+                    'kind': 'unicast',
+                    'metric': int(item.get('distance', 1))
+                }
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error: {err}. Маршрут для "{item["dst-address"]}" не конвертирован.')
+                error = 1
+            else:
+                routes_list.append(route)
+                parent.stepChanged.emit(f'BLACK|    Маршрут для {item["dst-address"]} конвертирован.')
+
+    if routes_list:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'VRF')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
         vrf_info = [{
             'name': 'default',
-            'description': 'default',
+            'description': '',
             'interfaces': [],
-            'routes': static_routes,
+            'routes': routes_list,
             'ospf': {},
             'bgp': {},
             'rip': {},
             'pimsm': {},
         }]
+
+        json_file = os.path.join(current_path, 'config_vrf.json')
+        with open(json_file, "w") as fh:
+            json.dump(vrf_info, fh, indent=4, ensure_ascii=False)
+        if error:
+            parent.stepChanged.emit(f'ORANGE|    Прошла ошибка при экспорте статических маршрутов. Статические маршруты выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit(f'GREEN|    Статические маршруты выгружены в файл "{json_file}".')
     else:
-        vrf_info = []
-
-    json_file = os.path.join(current_path, 'config_vrf.json')
-    with open(json_file, "w") as fh:
-        json.dump(vrf_info, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'BLACK|    Статические маршруты добавлены в виртуальный маршрутизатор по умолчанию в файле "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.' if not vrf_info else out_message)
+        parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.')
 
 
-def convert_ip_lists(parent, path, list_ips):
+def convert_ip_lists(parent, path, data):
     """Конвертируем списки IP-адресов"""
     parent.stepChanged.emit('BLUE|Конвертация списков IP-адресов.')
     section_path = os.path.join(path, 'Libraries')
@@ -879,103 +594,294 @@ def convert_ip_lists(parent, path, list_ips):
         parent.stepChanged.emit('RED|    {msg}.')
         parent.error = 1
         return
+    error = 0
 
-    for key, value in list_ips.items():
-        json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
-        with open(json_file, "w") as fh:
-            json.dump(value, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
+    if 'ip firewall address-list' in data and data['ip firewall address-list']:
+        error = convert_ip_lists_from_address_list(parent, current_path, data['ip firewall address-list'])
+    if 'ip firewall filter' in data and data['ip firewall filter']:
+        error = convert_ip_lists_firewall_filter(parent, current_path, data['ip firewall filter'])
+    if 'ip firewall nat' in data and data['ip firewall nat']:
+        error = convert_ip_lists_firewall_filter(parent, current_path, data['ip firewall nat'])
 
-    out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
-    parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.' if not list_ips else out_message)
-
-
-def convert_service_groups(parent, path, services):
-    """Конвертируем группы сервисов"""
-    parent.stepChanged.emit('BLUE|Конвертация групп сервисов.')
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'ServicesGroups')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
-
-    services_groups = []
-    for key, value in services.items():
-        if value['group']:
-            srv_group = {
-                'name': value['name'],
-                'description': value['description'],
-                'type': 'servicegroup',
-                'url': '',
-                'list_type_update': 'static',
-                'schedule': 'disabled',
-                'attributes': {},
-                'content': []
-            }
-            for item in value['protocols']:
-                service = copy.deepcopy(services[item['name']])
-                service.pop('group')
-                for x in service['protocols']:
-                    x.pop('source_port', None)
-                srv_group['content'].append(service)
-
-            services_groups.append(srv_group)
-
-    json_file = os.path.join(current_path, 'config_services_groups_list.json')
-    with open(json_file, "w") as fh:
-        json.dump(services_groups, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'BLACK|    Группы сервисов выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет групп сервисов для экспорта.' if not services_groups else out_message)
+    if parent.ip_lists:
+        out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
+        parent.stepChanged.emit('ORANGE|    Некоторые списки IP-адресов не выгружены из-за ошибок.' if error else out_message)
+    else:
+        parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.')
 
 
-def convert_services_list(parent, path, services):
+def convert_ip_lists_from_address_list(parent, current_path, address_list):
+    """Конвертируем списки IP-адресов из ip firewall address-list"""
+    error = 0
+    ip_list = {}
+    for item in address_list:
+        try:
+            if item['list'] in ip_list:
+                ip_list[item['list']]['content'].append({'value': item['address']})
+                if 'comment' in item:
+                    ip_list[item['list']]['description'] = item['comment']
+            else:
+                ip_list[item['list']] = {
+                    'name': func.get_restricted_name(item['list']),
+                    'description': item.get('comment', ''),
+                    'type': 'network',
+                    'url': '',
+                    'list_type_update': 'static',
+                    'schedule': 'disabled',
+                    'attributes': {
+                        'threat_level': 3
+                    },
+                    'content': [{'value': item['address']}]
+                }
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: {err}. IP-лист "{item.get("list", item.get("address", ''))}" не конвертирован.')
+            error = 1
+    if ip_list:
+        for key, value in ip_list.items():
+            parent.ip_lists.add(value['name'])
+            json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+            with open(json_file, "w") as fh:
+                json.dump(value, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
+
+    return error
+
+
+def convert_ip_lists_firewall_filter(parent, current_path, firewall_filter):
+    """Конвертируем списки IP-адресов из ip firewall filter"""
+    error = 0
+    for item in firewall_filter:
+        if 'dst-address' in item and item['dst-address']:
+            item['dst_ips'] = ['list_id', item['dst-address']]
+            if item['dst-address'] not in parent.ip_lists:
+                ip_list = {
+                    'name': item['dst-address'],
+                    'description': '',
+                    'type': 'network',
+                    'url': '',
+                    'list_type_update': 'static',
+                    'schedule': 'disabled',
+                    'attributes': {
+                        'threat_level': 3
+                    },
+                    'content': [{'value': item['dst-address']}]
+                }
+                parent.ip_lists.add(ip_list['name'])
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                with open(json_file, "w") as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+
+        if 'src-address' in item and item['src-address']:
+            item['src_ips'] = ['list_id', item['src-address']]
+            if item['src-address'] not in parent.ip_lists:
+                ip_list = {
+                    'name': item['src-address'],
+                    'description': '',
+                    'type': 'network',
+                    'url': '',
+                    'list_type_update': 'static',
+                    'schedule': 'disabled',
+                    'attributes': {
+                        'threat_level': 3
+                    },
+                    'content': [{'value': item['src-address']}]
+                }
+                parent.ip_lists.add(ip_list['name'])
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                with open(json_file, "w") as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+
+    return error
+
+
+def convert_services_list(parent, path, data):
     """Конвертируем список сервисов"""
     parent.stepChanged.emit('BLUE|Конвертация списка сервисов.')
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
-
     services_list = []
-    for key, value in services.items():
-        if value['group']:
-            continue
-        service = copy.deepcopy(value)
-        service.pop('group', None)
-        for item in service['protocols']:
-            match item['port']:
-                case '110':
-                    item['proto'] = 'pop3'
-                    item['app_proto'] = 'pop3'
-                case '995':
-                    item['proto'] = 'pop3s'
-                    item['app_proto'] = 'pop3s'
-                case '25':
-                    item['proto'] = 'smtp'
-                    item['app_proto'] = 'smtp'
-                case '465':
-                    item['proto'] = 'smtps'
-                    item['app_proto'] = 'smtps'
-                case _:
-                    item['app_proto'] = ''
-            item['alg'] =  ''
-        services_list.append(service)
 
-    json_file = os.path.join(current_path, 'config_services_list.json')
-    with open(json_file, "w") as fh:
-        json.dump(services_list, fh, indent=4, ensure_ascii=False)
+    if 'ip firewall filter' in data and data['ip firewall filter']:
+        services_list.extend(convert_services_from_filter(parent, data['ip firewall filter']))
+    if 'ip firewall nat' in data and data['ip firewall nat']:
+        services_list.extend(convert_services_from_nat(parent, data['ip firewall nat']))
 
-    out_message = f'BLACK|    Список сервисов выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет сервисов для экспорта.' if not services_list else out_message)
+    if services_list:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'Services')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_services_list.json')
+        with open(json_file, "w") as fh:
+            json.dump(services_list, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список сервисов выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет сервисов для экспорта.')
+
+#    print(json.dumps(data['ip firewall filter'], indent=4, ensure_ascii=False))
 
 
-def convert_firewall_rules(parent, path, fw_rules, services_list):
+def convert_services_from_filter(parent, ip_firewall_filter):
+    """Конвертируем список сервисов из правил firewall"""
+    services_list = []
+
+    for item in ip_firewall_filter:
+        item['services'] = []
+        if 'protocol' in item:
+            if item['protocol'] not in network_proto:
+                item['services'] = 'err'
+                continue
+            service_name = item['protocol']
+            description = ''
+            if 'dst-port' not in item and 'src-port' not in item:
+                if item['protocol'] not in parent.services:
+                    if item['protocol'] in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+                        service_name = f"Any {item['protocol'].upper()}"
+                        description = f"Any {item['protocol'].upper()} packet"
+                    services_list.append({
+                        'name': service_name,
+                        'description': description,
+                        'protocols': [
+                            {
+                                'proto': item['protocol'],
+                                'port': '',
+                                'app_proto': '',
+                                'source_port': '',
+                                'alg': ''
+                            }
+                        ]
+                    })
+                    parent.services[item['protocol']] = service_name
+                    parent.stepChanged.emit(f'BLACK|    Создан сервис {service_name}".')
+                item['services'].append(['service', parent.services[item['protocol']]])
+            else:
+                port = ''
+                source_port = ''
+                proto = item['protocol']
+                app_proto = ''
+                if 'dst-port' in item:
+                    port = item['dst-port']
+                    service_name += f" (dst {item['dst-port']})"
+                if 'src-port' in item:
+                    source_port = item['src-port']
+                    service_name += f" (src {item['src-port']})"
+                match port:
+                    case '110':
+                        proto = 'pop3'
+                        app_proto = 'pop3'
+                    case '995':
+                        proto = 'pop3s'
+                        app_proto = 'pop3s'
+                    case '25':
+                        proto = 'smtp'
+                        app_proto = 'smtp'
+                    case '465':
+                        proto = 'smtps'
+                        app_proto = 'smtps'
+                if port in ug_services:
+                    service_name = ug_services[port]
+                if service_name not in parent.services:
+                    services_list.append({
+                        'name': service_name,
+                        'description': description,
+                        'protocols': [
+                            {
+                                'proto': proto,
+                                'port': port,
+                                'app_proto': app_proto,
+                                'source_port': source_port,
+                                'alg': ''
+                            }
+                        ]
+                    })
+                    parent.services[service_name] = service_name
+                item['services'].append(['service', service_name])
+                parent.stepChanged.emit(f'BLACK|    Создан сервис {service_name}".')
+
+    return services_list
+                
+
+def convert_services_from_nat(parent, ip_firewall_nat):
+    """Конвертируем список сервисов из правил dnat"""
+    services_list = []
+
+    for item in ip_firewall_nat:
+        item['services'] = []
+        if 'protocol' in item:
+            if item['protocol'] not in network_proto:
+                item['services'] = 'err'
+                continue
+            if item['action'] == 'netmap':
+                if 'dst-port' in item and 'to-ports' in item and (item['dst-port'] != item['to-ports']):
+                    continue
+            service_name = item['protocol']
+            description = ''
+            if 'to-ports' not in item:
+                if item['protocol'] not in parent.services:
+                    if item['protocol'] in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+                        service_name = f"Any {item['protocol'].upper()}"
+                        description = f"Any {item['protocol'].upper()} packet"
+                    services_list.append({
+                        'name': service_name,
+                        'description': description,
+                        'protocols': [
+                            {
+                                'proto': item['protocol'],
+                                'port': '',
+                                'app_proto': '',
+                                'source_port': '',
+                                'alg': ''
+                            }
+                        ]
+                    })
+                    parent.services[item['protocol']] = service_name
+                item['services'].append(['service', parent.services[item['protocol']]])
+            else:
+                port = item['to-ports']
+                proto = item['protocol']
+                app_proto = ''
+                service_name += f" (dst {port})"
+                match port:
+                    case '110':
+                        proto = 'pop3'
+                        app_proto = 'pop3'
+                    case '995':
+                        proto = 'pop3s'
+                        app_proto = 'pop3s'
+                    case '25':
+                        proto = 'smtp'
+                        app_proto = 'smtp'
+                    case '465':
+                        proto = 'smtps'
+                        app_proto = 'smtps'
+                if port in ug_services:
+                    service_name = ug_services[port]
+                if service_name not in parent.services:
+                    services_list.append({
+                        'name': service_name,
+                        'description': description,
+                        'protocols': [
+                            {
+                                'proto': proto,
+                                'port': port,
+                                'app_proto': app_proto,
+                                'source_port': '',
+                                'alg': ''
+                            }
+                        ]
+                    })
+                    parent.services[service_name] = service_name
+                item['services'].append(['service', service_name])
+                parent.stepChanged.emit(f'BLACK|    Создан сервис {service_name}".')
+
+    return services_list
+                
+
+def convert_firewall_rules(parent, path, data):
     """Конвертируем правила межсетевого экрана"""
     parent.stepChanged.emit('BLUE|Конвертация правил межсетевого экрана.')
     section_path = os.path.join(path, 'NetworkPolicies')
@@ -987,40 +893,194 @@ def convert_firewall_rules(parent, path, fw_rules, services_list):
         return
 
     firewall_rules = []
-    for key, value in fw_rules.items():
-        value['services'] = [['list_id', x] if services_list[x]['group'] else ['service', x] for x in value['services']]
-        value['scenario_rule_id'] = False
-        value['users'] = []
-        value['limit'] = False
-        value['limit_value'] = '3/h'
-        value['limit_burst'] = '5'
-        value['log'] = False
-        value['log_session_start'] = False
-        value['src_zones_nagate'] = False
-        value['dst_zones_nagate'] = False
-        value['src_ips_nagate'] = False
-        value['dst_ips_nagate'] = False
-        value['services_nagate'] = False
-        value['fragmented'] = 'ignore'
-        value['time_restrictions'] = []
-        value['send_host_icmp'] = ''
-        value['position_layer'] = 'local'
-        value['ips_profile'] = False
-        value['l7_profile'] = False
-        value['hip_profile'] = []
+    n = 0
+    for item in data['ip firewall filter']:
+        if item.get('disabled', False) == 'yes':
+            parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как имеет статус "disabled".')
+            continue
+        if item.get('connection-state', False):
+            parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит "connection-state".')
+            continue
+        if isinstance(item['services'], str):
+            parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит не поддерживаемый сервис.')
+            continue
+        send_host_icmp = ''
+        if 'action' in item:
+            if item['action'] in {'drop', 'reject'}:
+                action = 'drop'
+                if item['action'] == 'reject':
+                    send_host_icmp = 'tcp-rst'
+            elif item['action'] == 'accept':
+                action = 'accept'
+            else:
+                parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит действие "{item["action"]}".')
+                continue
+        else:
+            action = 'accept'
+        n += 1
+        fw_rule = {
+            'name': f'Rule - {n}',
+            'description': item.get('comment', ''),
+            'action': action,
+            'scenario_rule_id': False,
+            'src_zones': [item['in-interface-list']] if item.get('in-interface-list', False) else [],
+            'dst_zones': [item['out-interface-list']] if item.get('out-interface-list', False) else [],
+            'src_ips': [item['src_ips']] if item.get('src_ips', False) else [],
+            'dst_ips': [item['dst_ips']] if item.get('dst_ips', False) else [],
+            'services': item['services'],
+            'users': [],
+            'enabled': False,
+            'limit': False,
+            'limit_value': '3/h',
+            'limit_burst': 5,
+            'log': True if item.get('log', False) == 'yes' else False,
+            'log_session_start': False,
+            'src_zones_nagate': False,
+            'dst_zones_nagate': False,
+            'src_ips_nagate': False,
+            'dst_ips_nagate': False,
+            'services_nagate': False,
+            'fragmented': 'ignore',
+            'time_restrictions': [],
+            'send_host_icmp': send_host_icmp,
+            'position_layer': 'local',
+            'ips_profile': False,
+            'l7_profile': False,
+            'hip_profile': []
+        }
+        if 'in-interface' in item:
+            if item['in-interface'].startswith('!'):
+                ifname = item['in-interface'][1:]
+                fw_rule['src_zones_nagate'] = True
+            else:
+                ifname = item['in-interface']
+            if ifname in data['interface list member']:
+                fw_rule['src_zones'].append(data['interface list member'][ifname])
+        if 'out-interface' in item:
+            if item['out-interface'].startswith('!'):
+                ifname = item['out-interface'][1:]
+                fw_rule['dst_zones_nagate'] = True
+            else:
+                ifname = item['out-interface']
+            if ifname in data['interface list member']:
+                fw_rule['dst_zones'].append(data['interface list member'][ifname])
+        if 'dst-address-list' in item and item['dst-address-list'] in parent.ip_lists:
+            fw_rule['dst_ips'].append(['list_id', item['dst-address-list']])
+        if 'src-address-list' in item and item['src-address-list'] in parent.ip_lists:
+            fw_rule['src_ips'].append(['list_id', item['src-address-list']])
 
-        firewall_rules.append(value)
+        if not fw_rule['services'] and not fw_rule['dst_ips'] and not fw_rule['src_ips'] and not fw_rule['src_zones'] and not fw_rule['dst_zones']:
+            n -= 1
+            continue
+        firewall_rules.append(fw_rule)
 
-    json_file = os.path.join(current_path, 'config_firewall_rules.json')
-    with open(json_file, "w") as fh:
-        json.dump(firewall_rules, fh, indent=4, ensure_ascii=False)
+    if firewall_rules:
+        json_file = os.path.join(current_path, 'config_firewall_rules.json')
+        with open(json_file, "w") as fh:
+            json.dump(firewall_rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список правил межсетевого экрана выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
 
-    out_message = f'BLACK|    Список правил межсетевого экрана выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.' if not firewall_rules else out_message)
 
+def convert_dnat_rules(parent, path, data):
+    """Конвертируем правила межсетевого экрана"""
+    parent.stepChanged.emit('BLUE|Конвертация правил межсетевого экрана.')
+    section_path = os.path.join(path, 'NetworkPolicies')
+    current_path = os.path.join(section_path, 'NATandRouting')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit('RED|    {msg}.')
+        parent.error = 1
+        return
 
-def main():
-    pass
+    dnat_rules = []
+    n = 0
+    for item in data['ip firewall nat']:
+        if item.get('disabled', False) == 'yes':
+            parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как имеет статус "disabled".')
+            continue
+        if isinstance(item['services'], str):
+            parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как содержит не поддерживаемый сервис.')
+            continue
+        if not item['services'] and 'dst_ips' not in item and 'src_ips' not in item:
+            continue
+        send_host_icmp = ''
+        if 'action' in item:
+            port_mappings = []
+            if item['action'] == 'netmap' and item['chain'] == 'dstnat':
+                if item['services']:
+                    action = 'dnat'
+                elif 'dst-port' in item and 'to-ports' in item:
+                    action = 'port_mapping'
+                    port_mappings = [{'proto': item['protocol'], 'src_port': item['dst-port'], 'dst_port': item['to-ports']}]
+                else:
+                    parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как содержит действие "{item["action"]}".')
+                    continue
+            else:
+                parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как содержит действие "{item["action"]}".')
+                continue
+        else:
+            continue
+        n += 1
+        dnat_rule = {
+            'name': f'Rule - {n}',
+            'description': item.get('comment', ''),
+            'action': action,
+            'zone_in': [item['in-interface-list']] if item.get('in-interface-list', False) else [],
+            'zone_out': [item['out-interface-list']] if item.get('out-interface-list', False) else [],
+            'source_ip': [item['src_ips']] if item.get('src_ips', False) else [],
+            'dest_ip': [item['dst_ips']] if item.get('dst_ips', False) else [],
+            'service': item['services'],
+            'target_ip': item.get('to-addresses', ''),
+            'gateway': '',
+            'enabled': False,
+            'log': True if item.get('log', False) == 'yes' else False,
+            'log_session_start': False,
+            'log_limit': False,
+            'log_limit_value': '3/h',
+            'log_limit_burst': 5,
+            'target_snat': False,
+            'snat_target_ip': '',
+            'zone_in_nagate': False,
+            'zone_out_nagate': False,
+            'source_ip_nagate': False,
+            'dest_ip_nagate': False,
+            'port_mappings': port_mappings,
+            'direction': 'input',
+            'users': [],
+            'position_layer': 'local',
+            'scenario_rule_id': False,
+        }
+        if 'in-interface' in item:
+            if item['in-interface'].startswith('!'):
+                ifname = item['in-interface'][1:]
+                dnat_rule['zone_in_nagate'] = True
+            else:
+                ifname = item['in-interface']
+            if ifname in data['interface list member']:
+                dnat_rule['src_zones'].append(data['interface list member'][ifname])
+
+        if 'dst-address-list' in item and item['dst-address-list'] in parent.ip_lists:
+            dant_rule['dst_ips'].append(['list_id', item['dst-address-list']])
+        if 'src-address-list' in item and item['src-address-list'] in parent.ip_lists:
+            dnat_rule['src_ips'].append(['list_id', item['src-address-list']])
+
+        dnat_rules.append(dnat_rule)
+
+    if dnat_rules:
+        json_file = os.path.join(current_path, 'config_nat_rules.json')
+        with open(json_file, "w") as fh:
+            json.dump(dnat_rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список правил DNAT выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил DNAT для экспорта.')
+
+#####################################################################################################
+
+def main(args):
+    return 0
 
 if __name__ == '__main__':
-    main()
+    import sys
+    sys.exit(main(sys.argv))

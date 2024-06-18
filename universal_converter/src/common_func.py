@@ -166,6 +166,25 @@ def unpack_ip_address(iface):
         return 1, err
     return 0, ipv4
 
+def ip_isglobal(ip):
+    """
+    Получаем данные в виде ip и проверяем что он в глобальном адресном пространстве
+    Если нет ошибки, возвращаем True или False. Если получили не валидный IP, возвращаем ошибку.
+    """
+    try:
+        ip_addr = ipaddress.ip_address(ip)
+        return 0, ip_addr.is_global
+    except ValueError as err:
+        return 1, err
+
+def get_netroute(net):
+    """Получаем шлюз для подсети. Подразумевается что это первый ip-адрес."""
+    try:
+        net_route = ipaddress.ip_interface(net).network[1]
+        return 0, str(net_route)
+    except (IndexError, ValueError) as err:
+        return 1, err
+
 def get_restricted_name(name):
     """
     Получить имя объекта без запрещённых спецсимволов.

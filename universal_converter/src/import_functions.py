@@ -708,7 +708,7 @@ def import_ipip_interface(parent, path):
 def import_gateways(parent, path):
     """Импортируем список шлюзов"""
     parent.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
-    parent.stepChanged.emit('bRED|    После импорта шлюзы будут в не активном состоянии. Необходимо проверить и включить нужные.')
+    parent.stepChanged.emit('LBLUE|    После импорта шлюзы будут в не активном состоянии. Необходимо проверить и включить нужные.')
     error = 0
     json_file = os.path.join(path, 'config_gateways.json')
     err, data = read_conf_file(parent, json_file)
@@ -947,8 +947,8 @@ def import_dns_config(parent, path):
 def import_vrf(parent, path):
     """Импортируем список виртуальных маршрутизаторов"""
     parent.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
-    parent.stepChanged.emit('bRED|    Добавляемые маршруты будут в не активном состоянии. Необходимо будет проверить маршрутизацию и включить их.')
-    parent.stepChanged.emit('bRED|    Если вы используете BGP, по окончании импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
+    parent.stepChanged.emit('LBLUE|    Добавляемые маршруты будут в не активном состоянии. Необходимо будет проверить маршрутизацию и включить их.')
+    parent.stepChanged.emit('LBLUE|    Если вы используете BGP, по окончании импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
     json_file = os.path.join(path, 'config_vrf.json')
     err, data = read_conf_file(parent, json_file)
     if err:
@@ -1923,7 +1923,6 @@ def import_firewall_rules(parent, path):
 
     error = 0
     for item in data:
-        print('rule: ', item['name'])
         item['name'] = item['name'].strip().translate(trans_name)
         item.pop('position_layer', None)
         item.pop('time_created', None)

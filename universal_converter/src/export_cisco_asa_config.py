@@ -1399,6 +1399,7 @@ def convert_service_object(parent, path, data):
         proto = None
 
         for item in value:
+            proto = None
             match item:
                 case ['service', protocol]:
                     if protocol.isdigit():
@@ -1407,10 +1408,6 @@ def convert_service_object(parent, path, data):
                         proto = protocol
                     else:
                         parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Протокол {protocol} не поддерживается в UG NGFW.')
-                case ['service', 'icmp', *other]:
-                    proto = 'icmp'
-                case ['service', 'sctp', *other]:
-                    proto = 'sctp'
                 case ['service', 'tcp' | 'udp', *other]:
                     proto = item[1]
                     match other:
@@ -1450,17 +1447,19 @@ def convert_service_object(parent, path, data):
                     'source_port': source_port,
                     'alg': ''
                 })
-                data['services'][key] = service
-            else:
-                data['services'][key] = None
+    
+        if service['protocols']:
+            data['services'][key] = service
+        else:
+            data['services'][key] = {}
 
-    if 'Any SCTP' not in data['services']:
+    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
         service = {
-            'name': 'Any SCTP',
-            'description': '',
-            'protocols': [{'proto': 'sctp', 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
+            'name': f'Any {item.upper()}',
+            'description': f'Any {item.upper()} packet',
+            'protocols': [{'proto': item, 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
             }
-        data['services']['Any SCTP'] = service
+        data['services'][item] = service
 
     json_file = os.path.join(current_path, 'config_services_list.json')
     with open(json_file, 'w') as fh:
@@ -1732,7 +1731,7 @@ def convert_service_object_group(parent, path, data):
 
     json_file = os.path.join(current_path, 'config_services_list.json')
     with open(json_file, 'w') as fh:
-        json.dump([x for x in data['services'].values()], fh, indent=4, ensure_ascii=False)
+        json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список групп сервисов выгружен в файл "{json_file}".')
 
 
@@ -1797,7 +1796,7 @@ def convert_protocol_object_group(parent, path, data):
 
     json_file = os.path.join(current_path, 'config_services_list.json')
     with open(json_file, 'w') as fh:
-        json.dump([x for x in data['services'].values()], fh, indent=4, ensure_ascii=False)
+        json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список групп протоколов выгружен в файл "{json_file}".')
 
 
@@ -1872,14 +1871,8 @@ def convert_firewall_rules(parent, path, data):
                 rule['services'].append(["service", protocol])
             case 'ip':
                 pass
-            case 'icmp':
-                rule['services'].append(["service", "Any ICMP"])
-            case 'tcp':
-                rule['services'].append(["service", "Any TCP"])
-            case 'udp':
-                rule['services'].append(["service", "Any UDP"])
-            case 'sctp':
-                rule['services'].append(["service", "Any SCTP"])
+            case 'icmp'|'tcp'|'udp'|'sctp'|'ipv6-icmp':
+                rule['services'].append(["service", data['services'][protocol]['name']])
 
         argument = deq.popleft()
         match argument:
@@ -2139,7 +2132,10 @@ def convert_dnat_rule(parent, path, data):
             dst_port = value[i+2]
             if src_port == dst_port:
                 if dst_port in ug_services:
-                    rule['service'].append(['service', ug_services[dst_port]])
+                    service_name = ug_services[dst_port]
+                    rule['service'].append(['service', service_name])
+                    if service_name not in data['services']:
+                        create_service(data, service_name, 'dst_ips', proto, dst_port)
                 elif dst_port in data['services']:
                     rule['service'].append(['service', dst_port])
                 else :
@@ -2182,7 +2178,7 @@ def convert_dnat_rule(parent, path, data):
     else:
         json_file = os.path.join(current_path, 'config_services_list.json')
         with open(json_file, 'w') as fh:
-            json.dump([x for x in data['services'].values()], fh, indent=4, ensure_ascii=False)
+            json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'GREEN|    Список сервисов, созданных для правил DNAT/Port-форвардинг выгружен в файл "{json_file}".')
 
 

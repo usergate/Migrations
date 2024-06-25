@@ -1887,10 +1887,7 @@ def import_firewall_rules(parent, path):
         return
 
     if not parent.scenarios_rules:
-        err = set_scenarios_rules(parent)
-        if err:
-            parent.error = 1
-            return
+        set_scenarios_rules(parent)
 
     if parent.version >= 7.1:
         err, result = parent.utm.get_idps_profiles_list()
@@ -1986,6 +1983,7 @@ def import_firewall_rules(parent, path):
 
         if item['name'] in firewall_rules:
             parent.stepChanged.emit(f'GRAY|    Правило МЭ "{item["name"]}" уже существует.')
+            item.pop('position', None)
             err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
             if err:
                 error = 1
@@ -2018,10 +2016,7 @@ def import_nat_rules(parent, path):
     error = 0
 
     if not parent.scenarios_rules:
-        err = set_scenarios_rules(parent)
-        if err:
-            parent.error = 1
-            return
+        set_scenarios_rules(parent)
 
     err, result = parent.utm.get_gateways_list()
     if err:
@@ -2239,10 +2234,7 @@ def import_shaper_rules(parent, path):
     error = 0
 
     if not parent.scenarios_rules:
-        err = set_scenarios_rules(parent)
-        if err:
-            parent.error = 1
-            return
+        set_scenarios_rules(parent)
 
     err, result = parent.utm.get_shaper_list()
     if err:
@@ -2341,10 +2333,7 @@ def import_content_rules(parent, path):
     templates_list = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
     if not parent.scenarios_rules:
-        err = set_scenarios_rules(parent)
-        if err:
-            parent.error = 1
-            return
+        set_scenarios_rules(parent)
 
     err, result = parent.utm.get_content_rules()
     if err:
@@ -2408,6 +2397,7 @@ def import_content_rules(parent, path):
 
         if item['name'] in content_rules:
             parent.stepChanged.emit(f'GRAY|    Правило контентной фильтрации "{item["name"]}" уже существует.')
+            item.pop('position', None)
             err, result = parent.utm.update_content_rule(content_rules[item['name']], item)
             if err:
                 error = 1
@@ -3179,10 +3169,7 @@ def import_dos_rules(parent, path):
     error = 0
 
     if not parent.scenarios_rules:
-        err = set_scenarios_rules(parent)
-        if err:
-            parent.error = 1
-            return
+        set_scenarios_rules(parent)
 
     err, result = parent.utm.get_dos_profiles()
     if err:
@@ -4126,7 +4113,7 @@ def import_services_groups(parent, path):
     for item in data:
         content = item.pop('content')
         item.pop('last_update', None)
-        item['name'] = get_restricted_name(item['name'].strip())
+        item['name'] = get_restricted_name(item['name'])
         
         if item['name'] in parent.ngfw_data['service_groups']:
             parent.stepChanged.emit(f'GRAY|    Группа сервисов "{item["name"]}" уже существует.')
@@ -4196,7 +4183,7 @@ def import_ip_lists(parent, path):
         if err:
             continue
 
-        data['name'] = get_restricted_name(data['name'].strip())
+        data['name'] = get_restricted_name(data['name'])
         content = data.pop('content')
         data.pop('last_update', None)
         if parent.version < 6:
@@ -4255,13 +4242,13 @@ def import_ip_lists(parent, path):
                         parent.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен "{item["list"]}". Данная версия не поддерживает содержимое в виде списков IP-адресов.')
                 else:
                     new_content.append(item)
-            data['content'] = new_content
-            err2, result2 = parent.utm.add_nlist_items(list_id, data['content'])
-            if err2 == 1:
-                parent.stepChanged.emit(f'RED|    {result2}  [Список IP-адресов: "{data["name"]}"]')
+
+            err, result = parent.utm.add_nlist_items(list_id, new_content)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов: "{data["name"]}"]')
                 error = 1
-            elif err2 == 2:
-                parent.stepChanged.emit(f'GRAY|    {result2}')
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}')
             else:
                 parent.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" обновлено.')
         else:
@@ -4422,7 +4409,7 @@ def import_url_lists(parent, path):
         if err:
             continue
 
-        data['name'] = data['name'].strip().translate(trans_name)
+        data['name'] = get_restricted_name(data['name'])
         content = data.pop('content')
         data.pop('last_update', None)
         if parent.version < 6:
@@ -4464,11 +4451,11 @@ def import_url_lists(parent, path):
         if err:
             continue
 
-        data['name'] = data['name'].strip().translate(trans_name)
+        data['name'] = get_restricted_name(data['name'])
         try:
             list_id = parent.ngfw_data['url_lists'][data['name']]
         except KeyError:
-            parent.stepChanged.emit(f'RED|    Ошибка! Нет листа URL "{data["name"]}" в списках URL листов NGFW.')
+            parent.stepChanged.emit(f'RED|    Ошибка! Нет листа URL "{data["name"]}" в списках URL NGFW.')
             parent.stepChanged.emit(f'RED|    Ошибка! Содержимое не добавлено в список URL "{data["name"]}".')
             error = 1
             continue
@@ -4718,7 +4705,7 @@ def import_url_categories(parent, path):
             content = item.pop('content')
             item.pop('last_update', None)
             item.pop('guid', None)
-            item['name'] = item['name'].strip().translate(trans_name)
+            item['name'] = get_restricted_name(item['name'])
             if parent.version < 6:
                 item['attributes'] = []
                 item.pop('list_type_update', None)
@@ -4913,7 +4900,7 @@ def import_app_profiles(parent, path):
 
 def import_application_groups(parent, path):
     """Импортируем группы приложений."""
-    parent.stepChanged.emit('BLUE|Импорт групп приложений раздела "Библиотеки/Группы приложений".')
+    parent.stepChanged.emit('BLUE|Импорт групп приложений в раздел "Библиотеки/Группы приложений".')
     json_file = os.path.join(path, 'config_application_groups.json')
     err, data = read_conf_file(parent, json_file)
     if err:
@@ -6054,7 +6041,6 @@ def get_guids_users_and_groups(parent, users, rule_name):
     """
     new_users = []
     for item in users:
-        print('    ', item)
         match item[0]:
             case 'special':
                 new_users.append(item)
@@ -6151,10 +6137,10 @@ def set_scenarios_rules(parent):
     """Устанавливаем в parent значение атрибута: scenarios_rules"""
     err, result = parent.utm.get_scenarios_rules()
     if err:
-        parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-    parent.scenarios_rules = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+    parent.scenarios_rules = {get_restricted_name(x['name']): x['id'] for x in result}
 
 def execute_add_update_nlist(parent, ngfw_named_list, item, item_note):
     """Обновляем существующий именованный список или создаём новый именованный список"""

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.2
+# Версия 1.3
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -249,7 +249,7 @@ class SelectMode(QWidget):
     def add_item_log(self, message, color='BLACK'):
         """Добавляем запись лога в log_list."""
         i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color[color]))
+        i.setForeground(QColor(cs.color.get(color, 'RED')))
         self.log_list.addItem(i)
 
     def on_step_changed(self, msg):
@@ -555,6 +555,9 @@ class SelectImportMode(SelectMode):
                     self.enable_buttons()
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
                     self.tree.change_items_status(self.parent.get_ug_config_path())
+                    title = f'Импорт конфигурации из "{self.parent.get_ug_config_path()}" на NGFW {self.utm.version}.'
+                    self.add_item_log(f'{title:>100}', color='GREEN')
+                    self.add_item_log(f'{"="*100}', color='ORANGE')
                     self.init_temporary_data()
                 else:
                     self.run_page_0()
@@ -772,6 +775,13 @@ class SelectMcImportMode(SelectMode):
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_ug_config_path()}  ')
                 if self.get_auth():
+                    if float(f'{self.utm.version_hight}.{self.utm.version_midle}') < 7.1:
+                        message = 'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
+                        self.add_item_log(message, color='RED')
+                        func.message_inform(self, 'Внимание!', message)
+                        self.run_page_0()
+                        return
+
                     template_dialog = SelectMcDestinationTemplate(self, self.parent)
                     template_result = template_dialog.exec()
                     if template_result == QDialog.DialogCode.Accepted:
@@ -781,6 +791,9 @@ class SelectMcImportMode(SelectMode):
                         self.enable_buttons()
                         self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
                         self.tree.change_items_status(self.parent.get_ug_config_path())
+                        title = f'Импорт конфигурации в шаблон "{self.template_name}" на МС.'
+                        self.add_item_log(f'{title:>100}', color='GREEN')
+                        self.add_item_log(f'{"="*100}', color='ORANGE')
                     else:
                         self.run_page_0()
                 else:
@@ -805,7 +818,7 @@ class SelectMcImportMode(SelectMode):
             else:
                 node_name = 'node_1'
             if self.thread is None:
-#                self.disable_buttons()
+                self.disable_buttons()
                 arguments = {
                     'ngfw_ports': '',
                     'dhcp_settings': '',
@@ -814,13 +827,6 @@ class SelectMcImportMode(SelectMode):
                     'iface_settings': '',
                 }
                 self.set_arguments(arguments)
-#                print('ngfw_ports:', arguments['ngfw_ports'], '\n')
-#                print('dhcp_settings:', arguments['dhcp_settings'], '\n')
-#                print('ngfw_vlans:', arguments['ngfw_vlans'], '\n')
-#                print('new_vlans:', arguments['new_vlans'], '\n')
-#                print('iface_settings:', arguments['iface_settings'], '\n')
-#                return
-
                 self.thread = import_to_mc.ImportSelectedPoints(self.utm,
                                                       self.parent.get_ug_config_path(),
                                                       self.current_ug_path,
@@ -870,8 +876,12 @@ class SelectMcImportMode(SelectMode):
 
     def set_arguments(self, arguments):
         """Заполняем структуру параметров для импорта."""
+        err, result = self.utm.get_template_interfaces_list(self.template_id)
+        if err:
+            return err, f'RED|    {result}'
+ 
         if 'DHCP' in self.selected_points:
-            err, result = self.import_dhcp()
+            err, result = self.import_dhcp(result)
             arguments['ngfw_ports'] = err
             arguments['dhcp_settings'] = result
         if 'Interfaces' in self.selected_points:
@@ -879,7 +889,7 @@ class SelectMcImportMode(SelectMode):
                 arguments['ngfw_vlans'] = 2
                 arguments['new_vlans'] = f'bRED|    VLAN нельзя импортировать на NGFW версии {self.utm.version}.'
             else:
-                err, result = self.create_vlans()
+                err, result = self.create_vlans(result)
                 if err:
                     arguments['ngfw_vlans'] = err
                     arguments['new_vlans'] = result
@@ -888,7 +898,7 @@ class SelectMcImportMode(SelectMode):
                     arguments['ngfw_vlans'] = result[1]
                     arguments['new_vlans'] = result[2]
 
-    def create_vlans(self):
+    def create_vlans(self, mc_interfaces):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_ug_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
@@ -909,11 +919,8 @@ class SelectMcImportMode(SelectMode):
         # Составляем список легитимных интерфейсов (interfaces_list).
         ngfw_vlans = {}
         interfaces_list = ['Undefined']
-        err, result = self.utm.get_template_interfaces_list(self.template_id)
-        if err:
-            return err, f'RED|    {result}'
 
-        for item in result:
+        for item in mc_interfaces:
             if item['kind'] == 'vlan':
                 ngfw_vlans[item['vlan_id']] = item['name']
                 continue
@@ -931,19 +938,16 @@ class SelectMcImportMode(SelectMode):
         else:
             return 3, 'LBLUE|    Импорт настроек VLAN отменён пользователем.'
 
-    def import_dhcp(self):
+    def import_dhcp(self, mc_interfaces):
         dhcp_path = os.path.join(self.current_ug_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
         err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
-        err, result = self.utm.get_template_interfaces_list(self.template_id)
-        if err:
-            return err, f'RED|    {result}'
 #        print(result, '\n')
 #        ngfw_ports = [x['name'] for x in result if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
-        ngfw_ports = [x['name'] for x in result if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+        ngfw_ports = [x['name'] for x in mc_interfaces if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
         ngfw_ports.insert(0, 'Undefined')
 #        print('ports: ', ngfw_ports)
 

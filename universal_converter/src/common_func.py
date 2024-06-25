@@ -106,6 +106,7 @@ def create_ip_list(parent, path, ips=[], name=None):
     В вызываемом модуле должна быть структура: self.ip_lists = set()
     """
     iplist_name = name if name else ips[0]
+    iplist_name = get_restricted_name(iplist_name)
     if iplist_name not in parent.ip_lists:
         section_path = os.path.join(path, 'Libraries')
         current_path = os.path.join(section_path, 'IPAddresses')
@@ -144,6 +145,17 @@ def get_time_restrictions(parent, time_restrictions, rule_name):
         else:
             parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден календарь "{item}".')
     return new_schedule
+
+
+def get_time_restrictions_id(parent, time_restrictions, utm_schedules, rule_name):
+    """Получаем ID календарей по их именам. Если календарь не найден на UTM, то он пропускается."""
+    new_schedules = []
+    for name in time_restrictions:
+        try:
+            new_schedules.append(utm_schedules[name])
+        except KeyError:
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Не найден календарь "{name}".')
+    return new_schedules
 
 
 def pack_ip_address(ip, mask):
@@ -191,7 +203,7 @@ def get_restricted_name(name):
     Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
     """
     if isinstance(name, str):
-        new_name = name.translate(trans_name)
+        new_name = name.translate(trans_name).strip()
         if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
             new_name = new_name[1:]
             if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.3
+# Версия 2.4
 #
 
 import os, sys, json
@@ -72,30 +72,30 @@ class ConvertFortigateConfig(QThread):
             if err:
                 self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.\n')
             else:
-                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
-                convert_dns_servers(self, self.current_ug_path, data)
-                convert_notification_profile(self, self.current_ug_path, data)
-                convert_services(self, self.current_ug_path, data)
-                convert_service_groups(self, self.current_ug_path, data)
-                convert_ntp_settings(self, self.current_ug_path, data)
-                convert_zone_settings(self, self.current_ug_path, data)
-                convert_dhcp_settings(self, self.current_ug_path, data)
+#                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
+#                convert_dns_servers(self, self.current_ug_path, data)
+#                convert_notification_profile(self, self.current_ug_path, data)
+#                convert_services(self, self.current_ug_path, data)
+#                convert_service_groups(self, self.current_ug_path, data)
+#                convert_ntp_settings(self, self.current_ug_path, data)
+#                convert_zone_settings(self, self.current_ug_path, data)
+#                convert_dhcp_settings(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data)
-                convert_url_lists(self, self.current_ug_path, data)
-                convert_shapers_list(self, self.current_ug_path, data)
-                convert_shapers_rules(self, self.current_ug_path, data)
-                convert_auth_servers(self, self.current_ug_path, data)
-                convert_local_users(self, self.current_ug_path, data)
-                convert_user_groups(self, self.current_ug_path, data)
-                convert_web_portal_resources(self, self.current_ug_path, data)
-                convert_time_sets(self, self.current_ug_path, data)
-                convert_dnat_rule(self, self.current_ug_path, data)
-                convert_loadbalancing_rule(self, self.current_ug_path, data)
-                convert_groups_iplists(self, self.current_ug_path, data)
-                convert_firewall_policy(self, self.current_ug_path, data)
-                convert_gateways_list(self, self.current_ug_path, data)
-                convert_static_routes(self, self.current_ug_path, data)
-                convert_bgp_routes(self, self.current_ug_path, data)
+#                convert_url_lists(self, self.current_ug_path, data)
+#                convert_shapers_list(self, self.current_ug_path, data)
+#                convert_shapers_rules(self, self.current_ug_path, data)
+#                convert_auth_servers(self, self.current_ug_path, data)
+#                convert_local_users(self, self.current_ug_path, data)
+#                convert_user_groups(self, self.current_ug_path, data)
+#                convert_web_portal_resources(self, self.current_ug_path, data)
+#                convert_time_sets(self, self.current_ug_path, data)
+#                convert_dnat_rule(self, self.current_ug_path, data)
+#                convert_loadbalancing_rule(self, self.current_ug_path, data)
+#                convert_groups_iplists(self, self.current_ug_path, data)
+#                convert_firewall_policy(self, self.current_ug_path, data)
+#                convert_gateways_list(self, self.current_ug_path, data)
+#                convert_static_routes(self, self.current_ug_path, data)
+#                convert_bgp_routes(self, self.current_ug_path, data)
 
                 if self.error:
                     self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.\n')
@@ -914,9 +914,10 @@ def convert_ip_lists(parent, path, data):
         return
 
     n = 0
+    file_names = set()
     for list_name, value in data.get('config firewall address', {}).items():
         ip_list = {
-            'name': func.get_restricted_name(list_name.strip()),
+            'name': func.get_restricted_name(list_name),
             'description': value.get('comment', ''),
             'type': 'network',
             'url': '',
@@ -939,9 +940,15 @@ def convert_ip_lists(parent, path, data):
 
         if ip_list['content']:
             n += 1
-            parent.ip_lists.add(ip_list['name'])
+            parent.ip_lists.add(list_name)
 
-            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            file_name = list_name.strip().translate(trans_filename)
+            if file_name in file_names:
+                file_name = f'{file_name}-2'
+            else:
+                file_names.add(file_name)
+
+            json_file = os.path.join(current_path, f'{file_name}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|       {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -949,7 +956,7 @@ def convert_ip_lists(parent, path, data):
 
     for list_name, value in data.get('config firewall multicast-address', {}).items():
         ip_list = {
-            'name': 'Multicast - ' + func.get_restricted_name(list_name.strip()),
+            'name': 'Multicast - ' + func.get_restricted_name(list_name),
             'description': '',
             'type': 'network',
             'url': '',
@@ -964,9 +971,9 @@ def convert_ip_lists(parent, path, data):
             ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
 
         if ip_list['content']:
-            parent.ip_lists.add(func.get_restricted_name(list_name.strip()))
+            parent.ip_lists.add(list_name)
             n += 1
-            json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -974,7 +981,7 @@ def convert_ip_lists(parent, path, data):
 
     for list_name, value in data.get('config firewall addrgrp', {}).items():
         ip_list = {
-            'name': func.get_restricted_name(list_name.strip()),
+            'name': func.get_restricted_name(list_name),
             'description': value.get('comment', ''),
             'type': 'network',
             'url': '',
@@ -985,21 +992,20 @@ def convert_ip_lists(parent, path, data):
         }
         members = value['member'].split(',')
         for item in members:
-            item = func.get_restricted_name(item.strip())
             if item in parent.ip_lists:
-                ip_list['content'].append({'list': item})
+                ip_list['content'].append({'list': func.get_restricted_name(item)})
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
                     ip_list['content'].append({'value': item})
                 except ValueError:
-                    pass
+                    parent.stepChanged.emit(f'bRED|    В списке "{list_name}" не найден список ip-адресов "{item}". Такого списка нет в списках IP-адресов.')
 
         if ip_list['content']:
-            parent.ip_lists.add(ip_list['name'])
+            parent.ip_lists.add(list_name)
             n += 1
 
-            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{list_name.translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1499,35 +1505,37 @@ def convert_time_sets(parent, path, data):
         for key, value in data['config firewall schedule onetime'].items():
             if value:
                 time_set = {
-                    'name': func.get_restricted_name(key.strip()),
+                    'name': func.get_restricted_name(key),
                     'description': 'Портировано с Fortigate',
                     'type': 'timerestrictiongroup',
                     'url': '',
                     'list_type_update': 'static',
                     'schedule': 'disabled',
                     'attributes': {},
-                    'content': [{
-                        'name': func.get_restricted_name(key.strip()),
-                        'type': 'range',
-                    }]
+                    'content': []
+                }
+                content = {
+                    'name': func.get_restricted_name(key),
+                    'type': 'range',
                 }
                 if 'start' in value and 'end' in value:
-                    time_from, fixed_date_from = value['start'].split()
-                    time_to, fixed_date_to = value['end'].split()
-                    time_set['content'][0]['time_to'] = time_to,
-                    time_set['content'][0]['time_from'] = time_from,
-                    time_set['content'][0]['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00',
-                    time_set['content'][0]['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
+                    start = value['start'].split()
+                    end = value['end'].split()
+                    content['time_to'] = end[0]
+                    content['time_from'] = start[0]
+                    content['fixed_date_to'] = f'{end[1].replace("/", "-")}T00:00:00'
+                    content['fixed_date_from'] = f'{start[1].replace("/", "-")}T00:00:00'
                 elif 'start' not in value:
                     time_to, fixed_date_to = value['end'].split()
-                    time_set['content'][0]['type'] = 'span'
-                    time_set['content'][0]['time_to'] = time_to,
-                    time_set['content'][0]['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00',
+                    content['type'] = 'span'
+                    content['time_to'] = time_to
+                    content['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00',
                 elif 'end' not in value:
                     time_from, fixed_date_from = value['start'].split()
-                    time_set['content'][0]['type'] = 'span'
-                    time_set['content'][0]['time_from'] = time_from,
-                    time_set['content'][0]['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
+                    content['type'] = 'span'
+                    content['time_from'] = time_from
+                    content['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
+                time_set['content'].append(content)
 
                 timerestrictiongroup.append(time_set)
                 parent.time_restrictions.add(key)
@@ -1597,10 +1605,11 @@ def convert_dnat_rule(parent, path, data):
                 if value['extip'] in ips_for_rules:
                     list_id = value['extip']
                 else:
-                    ips_for_rules.add(value['extip'])
                     list_id = func.create_ip_list(parent, path, ips=[value['extip']], name=value['extip'])
+                    ips_for_rules.add(list_id)
                 if value['mappedip'] not in ips_for_rules:
-                    ips_for_rules.add(func.create_ip_list(parent, path, ips=[value['mappedip']], name=key))
+#                    ips_for_rules.add(func.create_ip_list(parent, path, ips=[value['mappedip']], name=key))
+                    ips_for_rules.add(func.create_ip_list(parent, path, ips=[value['mappedip']]))
                 if 'service' in value:
                     services = [['service' if x in parent.services else 'list_id', x] for x in value['service'].split()]
                 elif 'mappedport' in value:
@@ -1610,7 +1619,7 @@ def convert_dnat_rule(parent, path, data):
                         'dst_port': int(value['mappedport'])
                     }]
                 rule = {
-                    'name': f'Rule {func.get_restricted_name(key.strip())}',
+                    'name': f'Rule {func.get_restricted_name(key)}',
                     'description': value.get('comment', 'Портировано с Fortigate'),
                     'action': 'port-mapping' if port_mappings else 'dnat',
                     'position': 'last',
@@ -1747,9 +1756,8 @@ def convert_groups_iplists(parent, path, data):
         for list_name, value in data['config firewall vipgrp'].items():
             ip_list['content'] = []
             for item in value['member'].split(','):
-                item = func.get_restricted_name(item.strip())
                 if item in parent.ip_lists:
-                    ip_list['content'].append({'list': item})
+                    ip_list['content'].append({'list': func.get_restricted_name(item)})
                 else:
                     try:
                         ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
@@ -1757,12 +1765,12 @@ def convert_groups_iplists(parent, path, data):
                     except ValueError:
                         pass
             if ip_list['content']:
-                ip_list['name'] = func.get_restricted_name(list_name.strip())
+                ip_list['name'] = func.get_restricted_name(list_name)
                 ip_list['description'] = value.get('comment', 'Портировано с Fortigate')
 
-                parent.ip_lists.add(ip_list['name'])
+                parent.ip_lists.add(list_name)
  
-                json_file = os.path.join(current_path, f'{ip_list["name"]}.json')
+                json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
@@ -1778,6 +1786,8 @@ def convert_firewall_policy(parent, path, data):
     if 'config firewall policy' not in data:
         return
     parent.stepChanged.emit('BLUE|Конвертация правил межсетевого экрана.')
+    parent.stepChanged.emit(f'LBLUE|    После импорта правил МЭ, необходимо в каждом правиле указать зону источника и зону назначения.')
+    parent.stepChanged.emit(f'LBLUE|    Создайте необходимое количество зон и присвойте зону каждому интерфейсу.')
     section_path = os.path.join(path, 'NetworkPolicies')
     current_path = os.path.join(section_path, 'Firewall')
     err, msg = func.create_dir(current_path)
@@ -1796,7 +1806,7 @@ def convert_firewall_policy(parent, path, data):
         elif 'users' in value:
             users = get_users_and_groups(parent, value['users'], rule_name)
         rule = {
-            'name': func.get_restricted_name(rule_name.strip()),
+            'name': func.get_restricted_name(rule_name),
             'description': value.get('comments', 'Портировано с Fortigate'),
             'action': value['action'] if value.get('action', None) else 'drop',
             'position': 'last',
@@ -1834,9 +1844,6 @@ def convert_firewall_policy(parent, path, data):
         with open(json_file, 'w') as fh:
             json.dump([v for _, v in sorted(rules.items())], fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'GREEN|    Павила межсетевого экрана выгружены в файл "{json_file}".')
-
-        parent.stepChanged.emit(f'LBLUE|    После импорта правил МЭ, необходимо в каждом правиле указать зону источника и зону назначения.')
-        parent.stepChanged.emit(f'LBLUE|    Создайте необходимое количество зон и присвойте зону каждому интерфейсу.')
     else:
         parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
 
@@ -2060,11 +2067,10 @@ def get_ips(parent, path, rule_ips, rule_name):
         for item in rule_ips.split(','):
             if item == 'all':
                 continue
-            item = func.get_restricted_name(item.strip())
             if item in parent.ip_lists:
-                new_rule_ips.append(['list_id', item])
+                new_rule_ips.append(['list_id', func.get_restricted_name(item)])
             elif item in parent.url_lists:
-                new_rule_ips.append(['urllist_id', item])
+                new_rule_ips.append(['urllist_id', func.get_restricted_name(item)])
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError

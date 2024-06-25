@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.0
+# Версия 1.5
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -91,7 +91,7 @@ class McXmlRpc:
             if err.faultCode == 4:
                 return 2, f'Сессия завершилась по таймауту.'
             else:
-                return 1, f'Ошибка utm.ping_session: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Ошибка mclib.ping_session: [{err.faultCode}] — {err.faultString}'
         return 0, result # Возвращает True
 
     def get_product_info(self):
@@ -112,7 +112,7 @@ class McXmlRpc:
             result = self._server.v1.core.realms.list(self._auth_token)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получения списка областей [Error utm.get_realms_list: {err.faultString}].'
+                return 2, f'Нет прав на получения списка областей [Error mclib.get_realms_list: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_realms_list: [{err.faultCode}] — {err.faultString}'
         return 0, result
@@ -124,10 +124,21 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.templates.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получения списка шаблонов [Error utm.get_device_templates: {err.faultString}].'
+                return 2, f'Нет прав на получения списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_device_templates: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей.
+
+    def fetch_device_template(self, template_id):
+        """Получить шаблон области по id"""
+        try:
+            result = self._server.v1.ccdevices.template.fetch(self._auth_token, template_id)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получения списка шаблонов [Error mclib.fetch_device_template: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.fetch_device_template: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает словарь.
 
     def add_device_template(self, template):
         """Создать новый шаблон устройства в области. Принимает структуру: {'name': ИМЯ_ШАБЛОНА, 'description': ОПИСАНИЕ}"""
@@ -135,9 +146,9 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.template.add(self._auth_token, template)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на добавление шаблона устройства [Error utm.add_device_template: {err.faultString}].'
+                return 2, f'Нет прав на добавление шаблона устройства [Error mclib.add_device_template: {err.faultString}].'
             elif err.faultCode == 9:
-                return 2, f'Шаблон с таким именем уже существует [Error utm.add_device_template: {err.faultString}].'
+                return 2, f'Шаблон с таким именем уже существует [Error mclib.add_device_template: {err.faultString}].'
             else:
                 return 1, f'Error mclib.add_device_template: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного шаблона.
@@ -158,7 +169,7 @@ class McXmlRpc:
             result = self._server.v1.ccnetmanager.gateways.list(self._auth_token, template_id, 0, 100,  {}, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 1, f'Нет прав на получение списка шлюзов шаблона [Error utm.get_template_gateways_list: {err.faultString}].'
+                return 1, f'Нет прав на получение списка шлюзов шаблона [Error mclib.get_template_gateways_list: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_template_gateways_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список шлюзов
@@ -341,6 +352,29 @@ class McXmlRpc:
             return 1, f'Error mclib.add_template_interface: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID созданного интерфейса.
 
+##################################### DHCP ######################################
+    def get_dhcp_list(self, template_id):
+        """Получить список подсетей dhcp для шаблона"""
+        try:
+            result = self._server.v1.ccnetmanager.dhcp.subnets.list(self._auth_token, template_id, 0, 100, {}, [])
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_dhcp_list: [{err.faultCode}] — {err.faultString}"
+        return 0, result['items']    # Возвращает list of all DHCP subnets on that node
+
+    def add_dhcp_subnet(self, template_id, subnet):
+        """Добавить DHCP subnet в шаблон"""
+        try:
+            result = self._server.v1.ccnetmanager.dhcp.subnet.add(self._auth_token, template_id,  subnet)
+        except TypeError as err:
+            return 1, err
+        except rpc.Fault as err:
+            if err.faultCode == 9:  # 1017:
+                return 3, f'DHCP subnet "{subnet["name"]}" уже существует.'
+            else:
+                return 1, f"Error mclib.add_dhcp_subnet: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result    # Возвращает ID созданной subnet
+
 ########################## Library ##########################################################################
     def get_template_services_list(self, template_id):
         """Получить список сервисов раздела Библиотеки шаблона"""
@@ -438,7 +472,7 @@ class McXmlRpc:
                 return 3, f'Содержимое {items} не добавлено, так как уже существует.'
             else:
                 return 1, f'Error mclib.add_template_nlist_items: [{err.faultCode}] — {err.faultString}'
-        return 0, result    # Возвращает список ID добавленных записей.
+        return 0, result    # Возвращает int (кол-во добавленных объектов).
 
 ########################## Политики сети ####################################################################
     def get_template_firewall_rules(self, template_id):
@@ -465,6 +499,32 @@ class McXmlRpc:
             return 1, f"Error mclib.update_template_firewall_rule: [{err.faultCode}] — {err.faultString}"
         return 0, result     # Возвращает True
 
+    def get_template_traffic_rules(self, template_id):
+        """Получить список правил NAT шаблона"""
+        try:
+            result = self._server.v1.cctraffic.rules.list(self._auth_token, template_id, 0, 1000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_traffic_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_traffic_rule(self, template_id, rule):
+        """Добавить новое правило NAT в шаблон"""
+        try:
+            result = self._server.v1.cctraffic.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_traffic_rule: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_traffic_rule(self, template_id, rule_id, rule):
+        """Обновить правило NAT в шаблоне"""
+        try:
+            result = self._server.v1.cctraffic.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_traffic_rule: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
 ########################## Политики безопасности ############################################################
     def get_template_content_rules(self, template_id):
         """Получить список правил фильтрации контента шаблона"""
@@ -490,12 +550,37 @@ class McXmlRpc:
             return 1, f"Error mclib.update_template_content_rule: [{err.faultCode}] — {err.faultString}"
         return 0, result     # Возвращает True
 
+    def get_template_scenarios_rules(self, template_id):
+        """Получить список сценариев шаблона"""
+        try:
+            result = self._server.v1.ccscenarios.rules.list(self._auth_token, template_id, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_scenarios_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_scenarios_rule(self, template_id, rule):
+        """Добавить новый сценарий в шаблон"""
+        try:
+            result = self._server.v1.ccscenarios.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_scenarios_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_scenarios_rule(self, template_id, rule_id, rule):
+        """Обновить сценарий в шаблоне"""
+        try:
+            result = self._server.v1.ccscenarios.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_scenarios_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
 ########################## Пользователи #####################################################################
     def get_usercatalog_ldap_servers(self):
-        """Получить список всех активных LDAP серверов области"""
+        """Получить список активных LDAP серверов области находящихся в каталогах пользователей."""
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
                 result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {'enabled': True}, [])
+#                result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {}, [])
                 return 0, result['items']
             else:
                 result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
@@ -524,6 +609,92 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f"Error mclib.get_usercatalog_ldap_group_guid: [{err.faultCode}] — {err.faultString}"
         return 0, groups[0]['guid'] if groups else 0  # Возвращает или guid или 0
+
+    def get_template_groups_list(self, template_id):
+        """Получить список локальных групп в шаблоне"""
+        try:
+            result = self._server.v1.ccaccounts.groups.list(self._auth_token, template_id, 0, 100, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_groups_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_group(self, group):
+        """Добавить локальную группу"""
+        try:
+            result = self._server.v3.accounts.group.add(self._auth_token, group)
+        except rpc.Fault as err:
+            if err.faultCode == 409:
+                return 2, f'Группа "{group["name"]}" уже существует.'
+            elif err.faultCode == 111:
+                return 1, f'Недопустимые символы в названии группы: "{group["name"]}"! {err.faultString}'
+            else:
+                return 1, f'Error utm.add_group: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает GUID добавленной группы
+
+    def update_group(self, guid, group):
+        """Обновить локальную группу"""
+        try:
+            result = self._server.v3.accounts.group.update(self._auth_token, guid, group)
+        except TypeError as err:
+            return 1, err
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_group: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
+    def get_group_users(self, group_guid):
+        """Получить список пользователей в группе"""
+        try:
+            result = self._server.v3.accounts.group.users.list(self._auth_token, group_guid, 0, 1000, {})
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_group_users: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_users_list(self):
+        """Получить список локальных пользователей"""
+        try:
+            result = self._server.v3.accounts.users.list(self._auth_token, 0, 1000, {})
+        except rpc.Fault as err:
+            return 1, f'Error get_users_list: [{err.faultCode}] — {err.faultString}'
+        if not (self.version_hight >= 7 and self.version_midle >= 1):
+            try:
+                for user in result['items']:
+                    user['id'] = user.pop('guid')
+            except KeyError as err:
+                return 1, f'Error utm.get_users_list: нет GUID у пользователя {user["name"]} [{err}]'
+        return 0, result['items']
+
+    def add_user(self, user):
+        """Добавить локального пользователя"""
+        try:
+            result = self._server.v3.accounts.user.add(self._auth_token, user)
+        except rpc.Fault as err:
+            if err.faultCode == 5002:
+                return 2, f'Пользователь "{user["name"]}" уже существует.'
+            else:
+                return 1, f'Error add_user: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает ID добавленного пользователя
+
+    def update_user(self, user):
+        """Обновить локального пользователя"""
+        guid = user['id'] if (self.version_hight >= 7 and self.version_midle >= 1) else user['guid']
+        try:
+            result = self._server.v3.accounts.user.update(self._auth_token, guid, user)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_user: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
+    def add_user_in_group(self, group_guid, user_guid):
+        """Добавить локального пользователя в локальную группу"""
+        try:
+            result = self._server.v3.accounts.group.user.add(self._auth_token, group_guid, user_guid)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_user_in_group: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает true
 
 ####################################### Служебные методы ###########################################
     def get_ip_protocol_list(self):

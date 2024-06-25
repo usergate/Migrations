@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.3
+# Версия 1.4
 #
 
 import os, sys, json, time
@@ -87,12 +87,24 @@ class ImportSelectedPoints(QThread):
         self.scenarios_rules = {}           # Устанавливается через функцию set_scenarios_rules()
         self.error = 0
 
+
     def run(self):
         """Импортируем определённый раздел конфигурации"""
-#        err, self.ngfw_data = read_bin_file(self)
-#        if err:
-#            parent.stepChanged.emit('iRED|Импорт конфигурации на UserGate NGFW прерван!')
-#            return
+        err, result = self.utm.fetch_device_template(self.template_id)
+        if err:
+            self.stepChanged.emit('iRED|Не удалось получить имя шаблона. {result}')
+            self.template_name = 'None'
+        else:
+            self.template_name = result['name']
+
+        err, self.ldap_servers = get_ldap_servers(self)
+        if err:
+            if err == 1:
+                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
+                error = 1
+            else:
+                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
+            self.ldap_servers = 0
 
         for point in self.selected_points:
             current_path = os.path.join(self.selected_path, point)
@@ -102,10 +114,6 @@ class ImportSelectedPoints(QThread):
             else:
                 self.error = 1
                 self.stepChanged.emit(f'RED|Не найдена функция для импорта {point}!')
-
-#        if write_bin_file(self, self.ngfw_data):
-#            self.stepChanged.emit('iRED|Импорт конфигурации на UserGate NGFW прерван! Не удалось записать служебные данные.')
-#            return
 
         self.stepChanged.emit('iORANGE|Импорт конфигурации прошёл с ошибками!\n' if self.error else 'iGREEN|Импорт конфигурации завершён.\n')
 
@@ -442,19 +450,17 @@ def import_vlans(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов VLAN.' if error else out_message)
 
 
-def import_gateways(parent):
+def import_gateways(parent, path):
     """Импортируем список шлюзов"""
-    parent.stepChanged.emit('0|Импорт шлюзов в раздел "Сеть/Шлюзы".')
-    json_file = "data_ug/Network/Gateways/config_gateways.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта шлюзов!', '2|Нет шлюзов для импорта.')
+    json_file = os.path.join(path, 'config_gateways.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
         return
 
+    parent.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
     err, result = parent.utm.get_template_gateways_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
 
@@ -467,377 +473,608 @@ def import_gateways(parent):
             if item['name'] in gateways_list:
                 err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
                 if err:
-                    parent.stepChanged.emit(f'{err}|{result} Шлюз "{item["name"]}"')
+                    parent.stepChanged.emit(f'RED|    Error: Шлюз "{item["name"]}" не обновлён. {result}')
                     error = 1
                 else:
-                    parent.stepChanged.emit(f'2|Шлюз "{item["name"]}" уже существует - Updated!')
+                    parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" уже существует - Updated!')
             else:
                 err, result = parent.utm.add_template_gateway(parent.template_id, item)
                 if err:
-                    parent.stepChanged.emit(f'1|{result}')
+                    parent.stepChanged.emit(f'RED|    Error:  Шлюз "{item["name"]}" не импортирован. {result}')
                     error = 1
                 else:
                     gateways_list[item['name']] = result
-                    parent.stepChanged.emit(f'2|Шлюз "{item["name"]}" добавлен.')
+                    parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" импортирован.')
     if error:
         parent.error = 1
-    parent.stepChanged.emit('4|Ошибка импорта шлюзов!' if error else '5|Шлюзы импортированы в раздел "Сеть/Шлюзы".')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шлюзов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Шлюзы импортированы в раздел "Сеть/Шлюзы".')
 
-def import_static_routes(parent):
-    """Импортируем статические маршруты в Виртуальный маршрутизатор по умолчанию"""
-    parent.stepChanged.emit('0|Импорт статических маршрутов в Виртуальный маршрутизатор по умолчанию.')
 
-    json_file = "data_ug/Network/VRF/config_routers.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта статических маршрутов!', '2|Нет статических маршрутов для импорта.')
+def import_dhcp_subnets(parent, path):
+    """Импортируем настойки DHCP"""
+    parent.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
+    if isinstance(parent.ngfw_ports, int):
+        parent.stepChanged.emit(parent.dhcp_settings)
+        if parent.ngfw_ports == 1:
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_dhcp_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(data)
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
+    mc_dhcp_subnets = [x['name'] for x in result]
 
+    for item in parent.dhcp_settings:
+        if item['iface_id'] == 'Undefined':
+            parent.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как для него не указан порт.')
+            continue
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in mc_dhcp_subnets:
+            parent.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как уже существует.')
+            continue
+        if item['iface_id'] not in parent.ngfw_ports:
+            parent.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не добавлен так как порт: {item["iface_id"]} не существует на МС.')
+            continue
+        item['node_name'] = parent.node_name
+
+        err, result = parent.utm.add_dhcp_subnet(parent.template_id, item)
+        if err == 1:
+            error = 1
+            parent.stepChanged.emit(f'RED|    {result}  [subnet "{item["name"]}"]')
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}.')
+        else:
+            parent.stepChanged.emit(f'BLACK|    DHCP subnet "{item["name"]}" импортирован.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки DHCP импортированы в раздел "Сеть/DHCP".')
+
+
+def import_vrf(parent, path):
+    """Импортируем виртуальный маршрутизатор по умолчанию"""
+    json_file = os.path.join(path, 'config_vrf.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт виртуального маршрутизатора по умолчанию в раздел "Сеть/Виртуальные маршрутизаторы".')
+    parent.stepChanged.emit('LBLUE|    Добавляемые маршруты будут в не активном состоянии. Необходимо проверить маршрутизацию и включить их.')
+    parent.stepChanged.emit('LBLUE|    Если вы используете BGP, после импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
+    parent.stepChanged.emit('LBLUE|    Если вы используете OSPF, после импорта установите нужный профиль BFD для каждого интерфейса в настройках OSPF.')
+    
     err, result = parent.utm.get_template_vrf_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
+
     virt_routers = {x['name']: x['id'] for x in result}
     error = 0    
-    out_message = '5|Статические маршруты импортированы в Виртуальный маршрутизатор по умолчанию.'
     
     for item in data:
         item['node_name'] = parent.node_name
-        if item['name'] in virt_routers:
-            err, result = parent.utm.update_template_vrf(parent.template_id, virt_routers[item['name']], item)
-            if err:
-                parent.stepChanged.emit(f'1|{result}')
-                error = 1
-        else:
-            err, result = parent.utm.add_template_vrf(parent.template_id, item)
-            if err:
-                parent.stepChanged.emit(f'1|{result}')
-                error = 1
+        for x in item['routes']:
+            x['enabled'] = False
+            x['name'] = func.get_restricted_name(x['name'])
+        if item['ospf']:
+            item['ospf']['enabled'] = False
+            for x in item['ospf']['interfaces']:
+                x['bfd_profile'] = -1
+        if item['rip']:
+            item['rip']['enabled'] = False
+        if item['pimsm']:
+            item['pimsm']['enabled'] = False
+        if item['bgp']:
+            item['bgp']['enabled'] = False
+            for x in item['bgp']['neighbors']:
+                x['filter_in'] = []
+                x['filter_out'] = []
+                x['routemap_in'] = []
+                x['routemap_out'] = []
+
+        try:
+            if item['name'] in virt_routers:
+                err, result = parent.utm.update_template_vrf(parent.template_id, virt_routers[item['name']], item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result} [vrf: "{item["name"]}"]')
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'BLACK|    VRF "{item["name"]}" уже существует - Updated!')
             else:
-                parent.stepChanged.emit(f'2|Создан виртуальный маршрутизатор "{item["name"]}".')
-    if not error:
-        parent.stepChanged.emit('6|Добавленные маршруты не активны. Необходимо проверить маршрутизацию и включить их.')
+                err, result = parent.utm.add_template_vrf(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result} [vrf: "{item["name"]}"]')
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'BLACK|    Создан виртуальный маршрутизатор "{item["name"]}".')
+        except OverflowError as err:
+            parent.stepChanged.emit(f'RED|    Произошла ошибка при импорте виртуального маршрутизатора "{item["name"]}" [{err}].')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте виртуального маршрутизатора.')
     else:
-        parent.error = 1
-    parent.stepChanged.emit('4|Ошибка импорта статических маршрутов!' if error else out_message)
+        parent.stepChanged.emit('GREEN|    Виртуальный маршрутизатор импортирован в раздел "Сеть/Виртуальные маршрутизаторы".')
 
-def import_services_list(parent):
-    """Импортируем список сервисов раздела библиотеки"""
-    parent.stepChanged.emit('0|Импорт списка сервисов в раздел "Библиотеки/Сервисы"')
 
-    json_file = "data_ug/Libraries/Services/config_services.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта списка сервисов!', '2|Нет сервисов для импорта.')
+def import_local_groups(parent, path):
+    """Импортируем список локальных групп пользователей"""
+    json_file = os.path.join(path, 'config_groups.json')
+    err, groups = func.read_json_file(parent, json_file)
     if err:
-        parent.stepChanged.emit(data)
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
+    err, result = parent.utm.get_template_groups_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
+        return
+
+    local_groups = {x['name']: x['id'] for x in result}
+    error = 0
+    return
+
+    for item in groups:
+        users = item.pop('users')
+        # В версии 5 API добавления группы не проверяет что группа уже существует.
+        if item['name'] in local_groups:
+            parent.stepChanged.emit(f'GRAY|    Группа "{item["name"]}" уже существует.')
+        else:
+            err, result = parent.utm.add_group(item)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                error = 1
+                continue
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}.') # В версиях 6 и выше проверяется что группа уже существует.
+            else:
+                parent.ngfw_data['local_groups'][item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Локальная группа "{item["name"]}" добавлена.')
+
+        # Добавляем доменных пользователей в группу.
+        for user_name in users:
+            user_array = user_name.split(' ')
+            if len(user_array) > 1 and ('\\' in user_array[1]):
+                domain, name = user_array[1][1:len(user_array[1])-1].split('\\')
+                err1, result1 = parent.utm.get_ldap_user_guid(domain, name)
+                if err1:
+                    parent.stepChanged.emit(f'RED|    {result1}')
+                    parent.error = 1
+                    error = 1
+                    break
+                elif not result1:
+                    parent.stepChanged.emit(f'bRED|    Нет LDAP-коннектора для домена "{domain}"! Доменные пользователи не импортированы в группу "{item["name"]}".')
+                    parent.stepChanged.emit(f'bRED|    Импортируйте и настройте LDAP-коннектор. Затем повторите импорт групп.')
+                    break
+                err2, result2 = parent.utm.add_user_in_group(parent.ngfw_data['local_groups'][item['name']], result1)
+                if err2:
+                    parent.stepChanged.emit(f'RED|    {result2}  [{user_name}]')
+                    parent.error = 1
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
+
+    out_message = 'GREEN|    Локальные группы пользователей импортирован в раздел "Пользователи и устройства/Группы".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных групп пользователей!' if error else out_message)
+
+
+def import_local_users(parent, path):
+    """Импортируем список локальных пользователей"""
+    parent.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
+    json_file = os.path.join(path, 'config_users.json')
+    err, users = read_conf_file(parent, json_file)
+    if err:
+        return
+    error = 0
+
+    for item in users:
+        user_groups = item.pop('groups', None)
+        # В версии 5 API добавления пользователя не проверяет что он уже существует.
+        if item['name'] in parent.ngfw_data['local_users']:
+            parent.stepChanged.emit(f'GRAY|    Пользователь "{item["name"]}" уже существует.')
+        else:
+            err, result = parent.utm.add_user(item)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                error = 1
+                break
+            elif err == 2:
+                parent.stepChanged.emit(f'GRAY|    {result}.') # В версиях 6 и выше проверяется что пользователь уже существует.
+            else:
+                parent.ngfw_data['local_users'][item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Добавлен локальный пользователь "{item["name"]}".')
+
+        # Добавляем пользователя в группу.
+        for group in user_groups:
+            try:
+                group_guid = parent.ngfw_data['local_groups'][group]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|       Не найдена группа {err} для пользователя {item["name"]}. Импортируйте список групп и повторите импорт пользователей.')
+            else:
+                err2, result2 = parent.utm.add_user_in_group(group_guid, parent.ngfw_data['local_users'][item['name']])
+                if err2:
+                    parent.stepChanged.emit(f'RED|       {result2}  [User: {item["name"]}, Group: {group}]')
+                    parent.error = 1
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'BLACK|       Пользователь "{item["name"]}" добавлен в группу "{group}".')
+
+    out_message = 'GREEN|    Локальные пользователи импортированы в раздел "Пользователи и устройства/Пользователи".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных пользователей!' if error else out_message)
+
+
+def import_services_list(parent, path):
+    """Импортируем список сервисов раздела библиотеки"""
+    parent.stepChanged.emit('BLUE|Импорт списка сервисов в раздел "Библиотеки/Сервисы"')
+    json_file = os.path.join(path, 'config_services_list.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
         return
 
     err, result = parent.utm.get_template_services_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     services_list = {x['name']: x['id'] for x in result}
     error = 0
     
     for item in data:
-        if item['name'] in services_list:
-            parent.stepChanged.emit(f'3|Сервис "{item["name"]}" уже существует.')
-        else:
-            err, result = parent.utm.add_template_service(parent.template_id, item)
-            if err:
-                parent.stepChanged.emit(f'{err}|{result}')
-                if err == 1:
+        if item:
+            if item['name'] in services_list:
+                parent.stepChanged.emit(f'GRAY|    Сервис "{item["name"]}" уже существует.')
+            else:
+                err, result = parent.utm.add_template_service(parent.template_id, item)
+                if err == 3:
+                    parent.stepChanged.emit(f'GRAY|    {result}')
+                elif err == 1:
                     error = 1
                     parent.error = 1
-            else:
-                services_list[item['name']] = result
-                parent.stepChanged.emit(f'2|Сервис "{item["name"]}" добавлен.')
+                    parent.stepChanged.emit(f'RED|    {result}')
+                else:
+                    services_list[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Сервис "{item["name"]}" добавлен.')
 
-    out_message = '5|Список сервисов импортирован в раздел "Библиотеки/Сервисы"'
-    parent.stepChanged.emit('4|Произошла ошибка при добавлении сервисов!' if error else out_message)
+    out_message = 'GREEN|    Список сервисов импортирован в раздел "Библиотеки/Сервисы"'
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при добавлении сервисов.' if error else out_message)
 
-def import_services_groups(parent):
+
+def import_services_groups(parent, path):
     """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
-    parent.stepChanged.emit('0|Импорт групп сервисов раздела "Библиотеки/Группы сервисов".')
+    json_file = os.path.join(path, 'config_services_groups_list.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт групп сервисов раздела "Библиотеки/Группы сервисов".')
 
     err, result = parent.utm.get_template_services_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     services_list = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'servicegroup')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     srv_groups = {x['name']: x['id'] for x in result}
 
-    out_message = '5|Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
+    out_message = 'GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
     error = 0
     
-    if os.path.isdir('data_ug/Libraries/ServicesGroups'):
-        files_list = os.listdir('data_ug/Libraries/ServicesGroups')
-        if files_list:
-            for file_name in files_list:
-                json_file = f"data_ug/Libraries/ServicesGroups/{file_name}"
-                err, services_group = read_json_file(json_file, '2|Ошибка импорта группы сервисов!', '2|Нет группы сервисов для импорта.')
-                if err:
-                    parent.stepChanged.emit(services_group)
-                    parent.error = 1
-                    return
+    for item in data:
+        content = item.pop('content')
+        item.pop('last_update', None)
+        item['name'] = func.get_restricted_name(item['name'])
 
-                content = services_group.pop('content')
-                err, result = parent.utm.add_template_nlist(parent.template_id, services_group)
-                if err:
-                    parent.stepChanged.emit(f'{err}|{result}')
-                    if err == 1:
-                        parent.stepChanged.emit(f'1|Ошибка! Группа сервисов "{services_group["name"]}" не импортирована.')
-                        error = 1
-                        continue
-                else:
-                    parent.stepChanged.emit(f'2|Добавлена группа сервисов: "{services_group["name"]}".')
-                    srv_groups[services_group['name']] = result
-                if content:
-                    for item in content:
-                        try:
-                            item['value'] = services_list[item['name']]
-                        except KeyError:
-                            parent.stepChanged.emit(f'4|   Ошибка! Нет сервиса "{item["name"]}" в списке сервисов NGFW.')
-                            parent.stepChanged.emit(f'4|   Ошибка! Сервис "{item["name"]}" не добавлен в группу сервисов "{services_group["name"]}".')
-                    err2, result2 = parent.utm.add_template_nlist_items(parent.template_id, srv_groups[services_group['name']], content)
-                    if err2:
-                        parent.stepChanged.emit(f'{err2}|   {result2}')
-                        if err2 == 1:
-                            error = 1
-                    else:
-                        parent.stepChanged.emit(f'2|   Содержимое группы сервисов "{services_group["name"]}" обновлено.')
-                else:
-                    parent.stepChanged.emit(f'2|   Список "{services_group["name"]}" пуст.')
+        if item['name'] in srv_groups:
+            parent.stepChanged.emit(f'GRAY|    Группа сервисов "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_nlist(parent.template_id, srv_groups[item['name']], item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result} [Группа сервисов: "{item["name"]}"]')
+                continue
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}.')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Группа сервисов "{item["name"]}" updated.')
         else:
-            out_message = "2|Нет групп сервисов для импорта."
-    else:
-        out_message = "2|Нет групп сервисов для импорта."
+            err, result = parent.utm.add_template_nlist(parent.template_id, item)
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Группа сервисов: "{item["name"]}" не импортирована]')
+                continue
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}.')
+            else:
+                srv_groups[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Группа сервисов "{item["name"]}" добавлена.')
+
+        if content:
+            new_content = []
+            for service in content:
+                try:
+                    service['value'] = services_list[service['name']]
+                    new_content.append(service)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|      Error: Не найден сервис "{err}". Загрузите сервисы в шаблон и повторите попытку.')
+
+            err2, result2 = parent.utm.add_template_nlist_items(parent.template_id, srv_groups[item['name']], new_content)
+            if err2 == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result2} [Группа сервисов: "{item["name"]}"]')
+            elif err2 == 3:
+                parent.stepChanged.emit(f'GRAY|       {result2}')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Содержимое группы сервисов "{item["name"]}" обновлено.')
+        else:
+            parent.stepChanged.emit(f'GRAY|       Нет содержимого в группе сервисов "{item["name"]}".')
+
     if error:
         parent.error = 1
-    parent.stepChanged.emit('4|Произошла ошибка при добавлении групп сервисов!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп сервисов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".')
 
-def import_ip_lists(parent):
+
+
+def import_ip_lists(parent, path):
     """Импортируем списки IP адресов"""
-    parent.stepChanged.emit('0|Импорт списков IP-адресов раздела "Библиотеки/IP-адреса".')
+    parent.stepChanged.emit('BLUE|Импорт списков IP-адресов раздела "Библиотеки/IP-адреса".')
 
-    if not os.path.isdir('data_ug/Libraries/IPAddresses'):
-        parent.stepChanged.emit("2|Нет списков IP-адресов для импорта.")
+    if not os.path.isdir(path):
+        parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для импорта.')
         return
-
-    files_list = os.listdir('data_ug/Libraries/IPAddresses')
+    files_list = os.listdir(path)
     if not files_list:
-        parent.stepChanged.emit("2|Нет списков IP-адресов для импорта.")
+        parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для импорта.')
         return
 
     error = 0
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'network')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     ngfw_ip_lists = {x['name']: x['id'] for x in result}
 
-    # Добаляем списки IP-адресов без содержимого (пустые).
+    # Импортируем все списки IP-адресов без содержимого (пустые).
+    parent.stepChanged.emit('LBLUE|    Импортируем списки IP-адресов без содержимого.')
     for file_name in files_list:
-        json_file = f"data_ug/Libraries/IPAddresses/{file_name}"
-        err, ip_list = read_json_file(json_file, '2|Ошибка импорта списка IP-адресов!', '2|Нет списка IP-адресов для импорта.')
+        json_file = os.path.join(path, file_name)
+        err, data = func.read_json_file(parent, json_file)
         if err:
-            parent.stepChanged.emit(ip_list)
-            parent.error = 1
-            return
+            continue
 
-        content = ip_list.pop('content')
-        err, result = parent.utm.add_template_nlist(parent.template_id, ip_list)
-        if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                parent.stepChanged.emit(f'1|Ошибка! Список IP-адресов "{ip_list["name"]}" не импортирован.')
-                error = 1
-                continue
+        data['name'] = func.get_restricted_name(data['name'])
+        content = data.pop('content')
+        data.pop('last_update', None)
+        err, result = parent.utm.add_template_nlist(parent.template_id, data)
+        if err == 1:
+            error = 1
+            parent.stepChanged.emit(f'RED|    {result}  [Список IP-адресов "{data["name"]}" не импортирована]')
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}.')
         else:
-            ngfw_ip_lists[ip_list['name']] = result
-            parent.stepChanged.emit(f'2|Добавлен список IP-адресов: "{ip_list["name"]}".')
+            ngfw_ip_lists[data['name']] = result
+            parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{data["name"]}" импортирован.')
 
     # Добавляем содержимое в уже добавленные списки IP-адресов.
+    parent.stepChanged.emit('LBLUE|    Импортируем содержимое списков IP-адресов.')
     for file_name in files_list:
-        with open(f"data_ug/Libraries/IPAddresses/{file_name}", "r") as fh:
-            ip_list = json.load(fh)
-        content = ip_list.pop('content')
-        if content:
-            for item in content:
+        json_file = os.path.join(path, file_name)
+        err, data = func.read_json_file(parent, json_file)
+        if err:
+            continue
+
+        data['name'] = func.get_restricted_name(data['name'])
+        try:
+            list_id = ngfw_ip_lists[data['name']]
+        except KeyError:
+            parent.stepChanged.emit(f'RED|   Error: Нет IP-листа "{data["name"]}" в списках IP-адресов шаблона МС.')
+            parent.stepChanged.emit(f'RED|   Error: Содержимое не добавлено в список IP-адресов "{data["name"]}".')
+            error = 1
+            continue
+        if data['content']:
+            new_content = []
+            for item in data['content']:
                 if 'list' in item:
                     try:
-                        item['list'] = ngfw_ip_lists[item['list'][1]]
+                        item['list'] = ngfw_ip_lists[item['list']]
+                        new_content.append(item)
                     except KeyError:
-                        parent.stepChanged.emit(f'4|   Ошибка! Нет IP-листа "{item["list"][1]}" в списках IP-адресов NGFW.')
-                        parent.stepChanged.emit(f'4|   Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".')
+                        parent.stepChanged.emit(f'RED|   Error: Нет IP-листа "{item["list"]}" в списках IP-адресов шаблона МС.')
+                        parent.stepChanged.emit(f'RED|   Error: Содержимое "{item["list"]}" не добавлено в список IP-адресов "{data["name"]}".')
                         error = 1
-                        break
-            try:
-                named_list_id = ngfw_ip_lists[ip_list['name']]
-            except KeyError:
-                parent.stepChanged.emit(f'4|   Ошибка! Нет IP-листа "{ip_list["name"]}" в списках IP-адресов NGFW.')
-                parent.stepChanged.emit(f'4|   Ошибка! Содержимое не добавлено в список IP-адресов "{ip_list["name"]}".')
+                else:
+                    new_content.append(item)
+
+            err, result = parent.utm.add_template_nlist_items(parent.template_id, list_id, new_content)
+            if err == 1:
                 error = 1
-                continue
-            err2, result2 = parent.utm.add_template_nlist_items(parent.template_id, named_list_id, content)
-            if err2:
-                parent.stepChanged.emit(f'{err2}|Список "{ip_list["name"]}" - {result2}')
-                if err2 == 1:
-                    error = 1
+                parent.stepChanged.emit(f'RED|    {result} [Список IP-адресов: "{data["name"]}"]')
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}')
             else:
-                parent.stepChanged.emit(f'2|Содержимое списка "{ip_list["name"]}" обновлено.')
+                parent.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" обновлено.')
         else:
-            parent.stepChanged.emit(f'2|Список "{ip_list["name"]}" пуст.')
+            parent.stepChanged.emit(f'GRAY|    Список "{data["name"]}" пуст.')
 
     if error:
         parent.error = 1
-    out_message = '5|Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".'
-    parent.stepChanged.emit('4|Произошла ошибка при импорте списков IP-адресов!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков IP-адресов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".')
 
-def import_url_lists(parent):
+
+def import_url_lists(parent, path):
     """Импортировать списки URL на UTM"""
-    parent.stepChanged.emit('0|Импорт списков URL раздела "Библиотеки/Списки URL".')
+    parent.stepChanged.emit('BLUE|Импорт списков URL раздела "Библиотеки/Списки URL".')
         
-    if not os.path.isdir('data_ug/Libraries/URLLists'):
-        parent.stepChanged.emit('2|Нет списков URL для импорта.')
+    if not os.path.isdir(path):
+        parent.stepChanged.emit('GRAY|    Нет списков URL для импорта.')
         return
-
-    files_list = os.listdir('data_ug/Libraries/URLLists')
+    files_list = os.listdir(path)
     if not files_list:
-        parent.stepChanged.emit('2|Нет списков URL для импорта.')
+        parent.stepChanged.emit('GRAY|    Нет списков URL для импорта.')
         return
 
     error = 0
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'url')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     url_list = {x['name']: x['id'] for x in result}
 
+    # Импортируем все списки URL без содержимого (пустые).
+    parent.stepChanged.emit('LBLUE|    Импортируем списки URL без содержимого.')
     for file_name in files_list:
-        json_file = f"data_ug/Libraries/URLLists/{file_name}"
-        err, data = read_json_file(json_file, '2|Ошибка импорта списка URL!', '2|Нет списка URL для импорта.')
+        json_file = os.path.join(path, file_name)
+        err, data = func.read_json_file(parent, json_file)
         if err:
-            parent.stepChanged.emit(data)
-            parent.error = 1
-            return
+            continue
 
+        data['name'] = func.get_restricted_name(data['name'])
         content = data.pop('content')
+        data.pop('last_update', None)
+        if not data['attributes'] or 'threat_level' in data['attributes']:
+            data['attributes'] = {'list_compile_type': 'case_sensitive'}
+
         err, result = parent.utm.add_template_nlist(parent.template_id, data)
-        if err:
-            parent.stepChanged.emit(f'{err}|{result}')
-            if err == 1:
-                parent.stepChanged.emit(f'1|Ошибка! Список URL "{data["name"]}" не импортирован.')
-                error = 1
-                continue
+        if err == 1:
+            error = 1
+            parent.stepChanged.emit(f'RED|    {result}  [Список URL "{data["name"]}" не импортирована]')
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
         else:
             url_list[data['name']] = result
-            parent.stepChanged.emit(f'2|Добавлен список URL: "{data["name"]}".')
+            parent.stepChanged.emit(f'BLACK|    Список URL "{data["name"]}" импортирован.')
 
-        if content:
-            for item in content:
-                err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, url_list[data['name']], item)
-                if err2:
-                    parent.stepChanged.emit(f'{err2}|   {result2}')
-                    if err2 == 1:
-                        error = 1
-                else:
-                    parent.stepChanged.emit(f'2|   URL "{item["value"]}" добавлен.')
+    # Импортируем содержимое в уже добавленные списки URL.
+    parent.stepChanged.emit('LBLUE|    Импортируем содержимое списков URL.')
+    for file_name in files_list:
+        json_file = os.path.join(path, file_name)
+        err, data = func.read_json_file(parent, json_file)
+        if err:
+            continue
+
+        data['name'] = func.get_restricted_name(data['name'])
+        try:
+            list_id = url_list[data['name']]
+        except KeyError:
+            parent.stepChanged.emit(f'RED|   Error: Нет листа URL "{data["name"]}" в списках URL шаблона МС.')
+            parent.stepChanged.emit(f'RED|   Error: Содержимое не добавлено в список IP-адресов "{data["name"]}".')
+            error = 1
+            continue
+        if data['content']:
+            err, result = parent.utm.add_template_nlist_items(parent.template_id, list_id, data['content'])
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result} [Список URL: "{data["name"]}"]')
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Содержимое списка URL "{data["name"]}" обновлено. Added {result} record')
         else:
-            parent.stepChanged.emit(f'2|   Список "{data["name"]}" пуст.')
+            parent.stepChanged.emit(f'GRAY|   Список URL "{data["name"]}" пуст.')
 
     if error:
         parent.error = 1
-    out_message = '5|Списки URL импортированы в раздел "Библиотеки/Списки URL".'
-    parent.stepChanged.emit('4|Произошла ошибка при импорте списков URL!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков URL.')
+    else:
+        parent.stepChanged.emit('GREEN|    Списки URL импортированы в раздел "Библиотеки/Списки URL".')
 
-def import_url_categories(parent):
+
+def import_url_categories(parent, path):
     """Импортировать группы URL категорий с содержимым на UTM"""
-    parent.stepChanged.emit('0|Импорт групп URL категорий раздела "Библиотеки/Категории URL".')
-
-    json_file = "data_ug/Libraries/URLCategories/config_categories_url.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта групп URL категорий!', '2|Нет групп URL категорий для импорта.')
+    json_file = os.path.join(path, 'config_url_categories.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
         return
 
+    parent.stepChanged.emit('BLUE|Импорт групп URL категорий раздела "Библиотеки/Категории URL".')
     error = 0
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'urlcategorygroup')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     url_category_groups = {x['name']: x['id'] for x in result}
 
-    err, result = parent.utm.get_url_categories()
-    if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.error = 1
-        return
-    url_categories = {x['name']: x['id'] for x in result}
+#    err, result = parent.utm.get_url_categories()
+#    if err:
+#        parent.stepChanged.emit(f'1|{result}')
+#        parent.error = 1
+#        return
+#    url_categories = {x['name']: x['id'] for x in result}
 
     for item in data:
-        content = item.pop('content')
         if item['name'] not in ['Parental Control', 'Productivity', 'Safe categories', 'Threats',
                                 'Recommended for morphology checking', 'Recommended for virus check']:
+            content = item.pop('content')
+            item.pop('last_update', None)
+            item.pop('guid', None)
+            item['name'] = func.get_restricted_name(item['name'])
             err, result = parent.utm.add_template_nlist(parent.template_id, item)
-            if err:
-                parent.stepChanged.emit(f'{err}|{result}')
-                if err == 1:
-                    parent.stepChanged.emit(f'1|Ошибка! Группа URL категорий "{item["name"]}" не импортирована.')
-                    error = 1
-                    continue
+            if err == 1:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Группа URL категорий "{item["name"]}" не импортирована]')
+                continue
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}')
             else:
                 url_category_groups[item['name']] = result
-                parent.stepChanged.emit(f'2|Группа URL категорий "{item["name"]}" добавлена.')
-                
+                parent.stepChanged.emit(f'BLACK|    Группа URL категорий "{item["name"]}" импортирована.')
+
             for category in content:
-                try:
-                    category_url = {'category_id': url_categories[category['name']]}
-                except KeyError as err:
-                    parent.stepChanged.emit(f'4|   Ошибка! URL категория "{category["name"]}" не импортирована. Нет такой категории на UG NGFW.')
-                    error = 1
-                    continue
-                err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, url_category_groups[item['name']], category_url)
+#                try:
+#                    category_url = {'category_id': url_categories[category['name']]}
+#                except KeyError as err:
+#                    parent.stepChanged.emit(f'4|   Ошибка! URL категория "{category["name"]}" не импортирована. Нет такой категории на UG NGFW.')
+#                    error = 1
+#                    continue
+                err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, url_category_groups[item['name']], category)
                 if err2 == 3:
-                    parent.stepChanged.emit(f'3|   Категория "{category["name"]}" уже существует.')
+                    parent.stepChanged.emit(f'GRAY|       Категория "{category["name"]}" уже существует.')
                 elif err2 == 1:
-                    parent.stepChanged.emit(f'1|   {result2}')
+                    parent.stepChanged.emit(f'RED|       {result2}  [Группа категорий "{item["name"]}"]')
                     error = 1
                 else:
-                    parent.stepChanged.emit(f'2|   Добавлена категория "{category["name"]}".')
+                    parent.stepChanged.emit(f'BLACK|       Добавлена категория "{category["name"]}".')
     if error:
         parent.error = 1
-    out_message = '5|Группы URL категорий импортированы в раздел "Библиотеки/Категории URL".'
-    parent.stepChanged.emit('4|Произошла ошибка при импорте групп URL категорий!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп URL категорий.')
+    else:
+        parent.stepChanged.emit('GREEN|    Группы URL категорий импортированы в раздел "Библиотеки/Категории URL".')
 
-def import_application_groups(parent):
+
+def import_application_groups(parent, path):
     """Импортировать список "Приложения" на UTM"""
-    parent.stepChanged.emit('0|Импорт групп приложений в раздел "Библиотеки/Приложения".')
-
-    json_file = "data_ug/Libraries/Applications/config_applications.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта групп приложений!', '2|Нет групп приложений для импорта.')
+    json_file = os.path.join(path, 'config_application_groups.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
         return
+
+    parent.stepChanged.emit('BLUE|Импорт групп приложений в раздел "Библиотеки/Приложения".')
 
     err, result = parent.utm.get_l7_apps(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     l7_app_id = {x['name']: x['id'] for x in result}
@@ -851,284 +1088,406 @@ def import_application_groups(parent):
 
     error = 0
     for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
         content = item.pop('content')
+        item.pop('last_update', None)
         err, result = parent.utm.add_template_nlist(parent.template_id, item)
         if err == 1:
-            parent.stepChanged.emit(f'1|{result}')
-            parent.stepChanged.emit(f'1|Ошибка! Группа приложений "{item["name"]}" не импортирована.')
             error = 1
+            parent.stepChanged.emit(f'RED|    {result}  [Группа приложений "{item["name"]}" не импортирована]')
             continue
         elif err == 3:
-            parent.stepChanged.emit(f'3|Группа приложений "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'GRAY|    {result}')
         else:
             list_applicationgroups[item['name']] = result
-            parent.stepChanged.emit(f'2|Группа приложений "{item["name"]}" добавлена.')
+            parent.stepChanged.emit(f'BLACK|    Группа приложений "{item["name"]}" импортирована.')
 
         for app in content:
-            app_name = app['value']
-            if parent.utm.version_hight >= 7 and parent.utm.version_midle >= 1:
-                try:
-                    app['value'] = l7_app_id[app_name]
-                except KeyError as err:
-                    parent.stepChanged.emit(f'4|   Ошибка! Приложение "{app_name}" не импортировано. Такого приложения нет на UG NGFW.')
-                    error = 1
-                    continue
-                err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, list_applicationgroups[item['name']], app)
-            else:
-                new_content = []
-                try:
-                    new_content.append({'value': l7_app_id[app_name]})
-                except KeyError as err:
-                    parent.stepChanged.emit(f'4|   Ошибка! Приложение "{app_name}" не импортировано. Такого приложения нет на UG NGFW.')
-                    error = 1
-                    continue
-                err2, result2 = parent.utm.add_template_nlist_items(parent.template_id, list_applicationgroups[item['name']], new_content)
- 
+            if 'name' not in app:   # Так бывает при некорректном добавлении приложения через API
+                parent.stepChanged.emit(f'bRED|       Приложение "{app}" не добавлено, так как не содержит имя. [Группа приложений "{item["name"]}"]')
+                continue
+            try:
+                app['value'] = l7_app_id[app['name']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|       Error: Приложение "{app["name"]}" не импортировано. Такого приложения нет на UG NGFW. [Группа приложений "{item["name"]}"]')
+                error = 1
+                continue
+
+            err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, list_applicationgroups[item['name']], app) 
             if err2 == 1:
                 error = 1
-                parent.stepChanged.emit(f'1|   {result2}')
+                parent.stepChanged.emit(f'RED|       {result2}  [Группа приложений "{item["name"]}"]')
             elif err2 == 3:
-                parent.stepChanged.emit(f'3|   Приложение "{app_name}" уже существует.')
+                parent.stepChanged.emit(f'GRAY|       Приложение "{app["name"]}" уже существует в группе приложений "{item["name"]}".')
             else:
-                parent.stepChanged.emit(f'2|   Добавлено приложение "{app_name}".')
+                parent.stepChanged.emit(f'BLACK|       Добавлено приложение "{app["name"]}".')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп приложений.')
+    else:
+        parent.stepChanged.emit('GREEN|    Группы приложений импортированы в раздел "Библиотеки/Приложения".')
+
+
+def import_time_restricted_lists(parent, path):
+    """Импортируем содержимое календарей"""
+    json_file = os.path.join(path, 'config_calendars.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт списка "Календари" в раздел "Библиотеки/Календари".')
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'timerestrictiongroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_time_restrictions = {x['name']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        content = item.pop('content')
+        item.pop('last_update', None)
+        item['name'] = func.get_restricted_name(item['name'])
+        err, result = parent.utm.add_template_nlist(parent.template_id, item)
+        if err == 1:
+            error = 1
+            parent.stepChanged.emit(f'RED|    {result}  [Календарь "{item["name"]}" не импортирован]')
+            continue
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        else:
+            mc_time_restrictions[item['name']] = result
+            parent.stepChanged.emit(f'BLACK|    Календарь "{item["name"]}" импортирован.')
+
+        if content:
+            for value in content:
+                err2, result2 = parent.utm.add_template_nlist_item(parent.template_id, mc_time_restrictions[item['name']], value)
+                if err2 == 1:
+                    error = 1
+                    parent.stepChanged.emit(f'RED|       {result2}  [Календарь: "{item["name"]}"]')
+                elif err2 == 3:
+                    parent.stepChanged.emit(f'GRAY|       Элемент "{value["name"]}" уже существует в календаре "{item["name"]}".')
+                else:
+                    parent.stepChanged.emit(f'BLACK|       Элемент "{value["name"]}" календаря "{item["name"]}" добавлен.')
+        else:
+            parent.stepChanged.emit(f'GRAY|       Календарь "{item["name"]}" пуст.')
 
     if error:
         parent.error = 1
-    out_message = '5|Группы приложений импортированы в раздел "Библиотеки/Приложения".'
-    parent.stepChanged.emit('4|Произошла ошибка при импорте групп приложений!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Календари".')
+    else:
+        parent.stepChanged.emit('GREEN|    Список "Календари" импортирован в раздел "Библиотеки/Календари".')
 
-def import_firewall_rules(parent):
+
+def import_firewall_rules(parent, path):
     """Импортировать список правил межсетевого экрана"""
-    parent.stepChanged.emit('0|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
-
-    json_file = "data_ug/NetworkPolicies/Firewall/config_firewall_rules.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта правил межсетевого экрана!', '2|Нет правил межсетевого экрана для импорта.')
+    parent.stepChanged.emit('BLUE|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
+    json_file = os.path.join(path, 'config_firewall_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
-        parent.stepChanged.emit(data)
-        parent.error = 1
         return
 
     err, result = parent.utm.get_template_firewall_rules(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     firewall_rules = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_zones_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     zones_list = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_services_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-    services_list = {x['name']: x['id'] for x in result}
+    mc_services = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'servicegroup')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-    servicegroups_list = {x['name']: x['id'] for x in result}
+    mc_servicegroups = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'network')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     ips_list = {x['name']: x['id'] for x in result}
 
-    err, result = parent.utm.get_l7_categories()
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'url')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-    l7categories = {x['name']: x['id'] for x in result}
+    urls_list = {x['name']: x['id'] for x in result}
 
-    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'applicationgroup')
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'timerestrictiongroup')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-    applicationgroup = {x['name']: x['id'] for x in result}
+    mc_time_restrictions = {x['name']: x['id'] for x in result}
 
     error = 0
-    err, ldap_servers = get_ldap_servers(parent)
-    if err:
-        parent.stepChanged.emit(f'{err}|{ldap_servers}')
-        error = 1
-        ldap_servers = 0
-
     for item in data:
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+        item.pop('apps', None)
+        item.pop('apps_negate', None)
+        item['name'] = func.get_restricted_name(item['name'])
         item['position'] = 'last'
         item['position_layer'] = 'pre'
+        item['ips_profile'] = False
+        item['l7_profile'] = False
+        item['hip_profile'] = []
         item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
-        item['users'] = get_guids_users_and_groups(parent, item['users'], ldap_servers, item['name']) if ldap_servers else []
-        for service in item['services']:
-            try:
-                service[1] = services_list[service[1]] if service[0] == 'service' else servicegroups_list[service[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найден сервис {service} для правила {item["name"]}.')
-        for app in item['apps']:
-            try:
-                app[1] = l7categories[app[1]] if app[0] == 'ro_group' else applicationgroup[app[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найдена группа приложений {err} для правила "{item["name"]}". Загрузите группы приложений и повторите попытку.')
+        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, urls_list, item["name"])
+        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, urls_list, item["name"])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], parent.ldap_servers, item['name']) if parent.ldap_servers else []
+        item['services'] = get_services(parent, item['services'], mc_services, mc_servicegroups, item['name'])
+        item['time_restrictions'] = func.get_time_restrictions_id(parent, item['time_restrictions'], mc_time_restrictions, item['name'])
         
-#        parent.set_time_restrictions(item)
         if item['name'] in firewall_rules:
-            parent.stepChanged.emit(f'2|Правило МЭ "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'GRAY|    Правило МЭ "{item["name"]}" уже существует.')
             item.pop('position', None)
             err, result = parent.utm.update_template_firewall_rule(parent.template_id, firewall_rules[item['name']], item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'1|Правило "{item["name"]}" не обновлено!\n    {result}')
+                parent.stepChanged.emit(f'RED|       {result}  [Правило МЭ: "{item["name"]}"]')
             else:
-                parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" обновлено.')
+                parent.stepChanged.emit(f'BLACK|       Правило МЭ "{item["name"]}" обновлено.')
         else:
+            item['enabled'] = False
             err, result = parent.utm.add_template_firewall_rule(parent.template_id, item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'1|Правило "{item["name"]}" не импортировано!\n    {result}')
+                parent.stepChanged.emit(f'RED|    {result}  [Правило МЭ: "{item["name"]}"]')
             else:
                 firewall_rules[item['name']] = result
-                parent.stepChanged.emit(f'2|   Правило МЭ "{item["name"]}" добавлено.')
+                parent.stepChanged.emit(f'BLACK|   Правило МЭ "{item["name"]}" импортировано.')
     if error:
         parent.error = 1
-    out_message = '5|Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".'
-    parent.stepChanged.emit('4|Произошла ошибка при импорте правил межсетевого экрана!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".')
 
-def import_content_rules(parent):
-    """Импортировать список правил фильтрации контента"""
-    parent.stepChanged.emit('0|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
 
-    json_file = "data_ug/SecurityPolicies/ContentFiltering/config_content_rules.json"
-    err, data = read_json_file(json_file, '2|Ошибка импорта правил фильтрации контента!', '2|Нет правил фильтрации контента для импорта.')
+def import_nat_rules(parent, path):
+    """Импортируем список правил NAT"""
+    json_file = os.path.join(path, 'config_nat_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
-        parent.stepChanged.emit(data)
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил NAT в раздел "Политики сети/NAT и маршрутизация".')
+    parent.stepChanged.emit('LBLUE|    После импорта правила NAT будут в не активном состоянии. Необходимо проверить и включить нужные.')
+    error = 0
+
+    if not parent.scenarios_rules:
+        set_scenarios_rules(parent)
+
+    err, result = parent.utm.get_template_gateways_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
+        return
+    mc_gateways = {x['name']: f'{x["id"]}:{x["node_name"]}' for x in result if 'name' in x}
+
+    err, result = parent.utm.get_template_zones_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    zones_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_services_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_services = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'servicegroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_servicegroups = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'network')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    ips_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'url')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    urls_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_traffic_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    nat_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position'] = 'last'
+        item['position_layer'] = 'pre'
+        item['zone_in'] = get_zones(parent, item['zone_in'], zones_list, item['name'])
+        item['zone_out'] = get_zones(parent, item['zone_out'], zones_list, item['name'])
+        item['source_ip'] = get_ips(parent, item['source_ip'], ips_list, urls_list, item['name'])
+        item['dest_ip'] = get_ips(parent, item['dest_ip'], ips_list, urls_list, item['name'])
+        item['service'] = get_services(parent, item['service'], mc_services, mc_servicegroups, item['name'])
+        item['gateway'] = mc_gateways.get(item['gateway'], item['gateway'])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], parent.ldap_servers, item['name']) if parent.ldap_servers else []
+        if item['scenario_rule_id']:
+            try:
+                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'bRED|    Правило "{item["name"]}": не найден сценарий "{err}". Загрузите сценарии и повторите попытку.')
+                item['scenario_rule_id'] = False
+            
+        if item['action'] == 'route':
+            parent.stepChanged.emit(f'LBLUE|    Проверьте шлюз для правила ПБР "{item["name"]}". В случае отсутствия, установите вручную.')
+
+        if item['name'] in nat_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило "{item["name"]}" уже существует.')
+            item.pop('position', None)
+            err, result = parent.utm.update_template_traffic_rule(parent.template_id, nat_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило "{item["name"]}" updated.')
+        else:
+            item['enabled'] = False
+            err, result = parent.utm.add_template_traffic_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило: {item["name"]}]')
+            else:
+                nat_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила NAT импортированы в раздел "Политики сети/NAT и маршрутизация".')
+
+
+def import_content_rules(parent, path):
+    """Импортировать список правил фильтрации контента"""
+    parent.stepChanged.emit('BLUE|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
+    json_file = os.path.join(path, 'config_content_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
         return
 
     err, result = parent.utm.get_template_content_rules(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     content_rules = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_zones_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     zones_list = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'network')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     ips_list = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'urlcategorygroup')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     url_category_groups = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_url_categories()
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
     url_categories = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'url')
     if err:
-        parent.stepChanged.emit(f'1|{result}')
-        parent.stepChanged.emit('1|Импорт правил фильтрации контента прерван!')
+        parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-    url_list = {x['name']: x['id'] for x in result}
+    urls_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'timerestrictiongroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_time_restrictions = {x['name']: x['id'] for x in result}
 
     error = 0
-    err, ldap_servers = get_ldap_servers(parent)
-    if err:
-        parent.stepChanged.emit(f'{err}|{ldap_servers}')
-        error = 1
-        ldap_servers = 0
-
     for item in data:
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+        item['name'] = func.get_restricted_name(item['name'])
         item['position'] = 'last'
         item['position_layer'] = 'pre'
         item['src_zones'] = get_zones(parent, item['src_zones'], zones_list, item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], zones_list, item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, item["name"])
-        item['users'] = get_guids_users_and_groups(parent, item['users'], ldap_servers, item["name"]) if ldap_servers else []
-
-        for x in item['url_categories']:
-            try:
-                x[1] = url_category_groups[x[1]] if x[0] == 'list_id' else url_categories[x[1]]
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найдена группа URL-категорий {err} для правила "{item["name"]}". Загрузите ктегории URL и повторите попытку.')
-
-        url_oids = []
-        for url_name in item['urls']:
-            try:
-                url_oids.append(url_list[url_name])
-            except KeyError as err:
-                error = 1
-                parent.stepChanged.emit(f'1|Error! Не найден URL {err} для правила "{item["name"]}".')
-        item['urls'] = url_oids
-#        parent.set_time_restrictions(item)
+        item['src_ips'] = get_ips(parent, item['src_ips'], ips_list, urls_list, item["name"])
+        item['dst_ips'] = get_ips(parent, item['dst_ips'], ips_list, urls_list, item["name"])
+        item['users'] = get_guids_users_and_groups(parent, item['users'], parent.ldap_servers, item['name']) if parent.ldap_servers else []
+        item['url_categories'] = get_url_categories_id(parent, item['url_categories'], url_category_groups, url_categories, item["name"])
+        item['urls'] = get_urls_id(parent, item['urls'], urls_list, item["name"])
+        item['time_restrictions'] = func.get_time_restrictions_id(parent, item['time_restrictions'], mc_time_restrictions, item['name'])
 
         if item['name'] in content_rules:
-            parent.stepChanged.emit(f'2|Правило КФ "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'GRAY|    Правило контентной фильтрации "{item["name"]}" уже существует.')
             item.pop('position', None)
             err, result = parent.utm.update_template_content_rule(parent.template_id, content_rules[item['name']], item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'1|Правило "{item["name"]}" не обновлено!\n    {result}')
+                parent.stepChanged.emit(f'RED|       {result}  [Правило "{item["name"]}"]')
             else:
-                parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" обновлено.')
+                parent.stepChanged.emit(f'BLACK|       Правило контентной фильтрации "{item["name"]}" обновлено.')
         else:
             err, result = parent.utm.add_template_content_rule(parent.template_id, item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'1|Правило "{item["name"]}" не импортировано!\n    {result}')
+                parent.stepChanged.emit(f'RED|    {result}  [Правило "{item["name"]}"]')
             else:
                 content_rules[item['name']] = result
-                parent.stepChanged.emit(f'2|   Правило КФ "{item["name"]}" добавлено.')
+                parent.stepChanged.emit(f'BLACK|    Правило контентной фильтрации "{item["name"]}" добавлено.')
 
     if error:
         parent.error = 1
-    out_message = '5|Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".'
-    parent.stepChanged.emit('4|Произошла ошибка при импорте правил контентной фильтрации!' if error else out_message)
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".')
 
 
 #------------------------------------------------------------------------------------------------------------------------
@@ -1144,7 +1503,7 @@ import_funcs = {
     "Useragents": pass_function, # import_useragent_lists
     "ContentTypes": pass_function, # import_mime_lists
     "URLLists": import_url_lists,
-    "TimeSets": pass_function, # import_time_restricted_lists
+    "TimeSets": import_time_restricted_lists,
     "BandwidthPools": pass_function, # import_shaper_list
     "SCADAProfiles": pass_function, # import_scada_profiles
     "ResponcePages": pass_function, # import_templates_list
@@ -1173,7 +1532,7 @@ import_funcs = {
     'AuthProfiles': pass_function, # import_auth_profiles,
     'CaptiveProfiles': pass_function, # import_captive_profiles,
     'CaptivePortal': pass_function, # import_captive_portal_rules,
-    'Groups': pass_function, # import_local_groups,
+    'Groups': import_local_groups,
     'Users': pass_function, # import_local_users,
     'TerminalServers': pass_function, # import_terminal_servers,
     'MFAProfiles': pass_function, # import_2fa_profiles,
@@ -1186,14 +1545,11 @@ import_funcs = {
 #    'DeviceManagement': pass_function,
 #    'Administrators': pass_function,
     'DNS': import_dns_config,
-    'DHCP': pass_function, # import_dhcp_subnets,
-    'VRF': pass_function, # import_vrf,
+    'DHCP': import_dhcp_subnets,
+    'VRF': import_vrf,
     'WCCP': pass_function, # import_wccp_rules,
-    'Routes': pass_function,
-    'OSPF': pass_function,
-    'BGP': pass_function,
     'Firewall': import_firewall_rules,
-    'NATandRouting': pass_function, # import_nat_rules,
+    'NATandRouting': import_nat_rules,
     "ICAPServers": pass_function, # import_icap_servers,
     "ReverseProxyServers": pass_function, # import_reverseproxy_servers,
     'LoadBalancing': pass_function, # import_loadbalancing_rules,
@@ -1227,29 +1583,34 @@ import_funcs = {
     "SNMPParameters": pass_function, # import_snmp_settings,
 }
 
-############################# Служебные функции #####################################
-
-def get_ips(parent, rule_ips, utm_ips, rule_name):
-    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на NGFW, то он пропускается."""
+######################################### Служебные функции ################################################
+def get_ips(parent, rule_ips, mc_ips, mc_urls, rule_name):
+    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается."""
     new_rule_ips = []
     for ips in rule_ips:
+        if ips[0] == 'geoip_code':
+            new_rule_ips.append(ips)
         try:
-            new_rule_ips.append(['list_id', utm_ips[ips[1]]])
+            if ips[0] == 'list_id':
+                new_rule_ips.append(['list_id', mc_ips[ips[1]]])
+            elif ips[0] == 'urllist_id':
+                new_rule_ips.append(['urllist_id', mc_urls[ips[1]]])
         except KeyError as err:
-            error = 1
-            parent.stepChanged.emit(f'1|Error! Не найден список IP-адресов {ips} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error! Правило {rule_name}: Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
     return new_rule_ips
 
+
 def get_zones(parent, zones, zones_list, rule_name):
-    """Получить UID-ы зон. Если зона не существует на NGFW, то она пропускается."""
+    """Получить UID-ы зон. Если зона не существует на MC, то она пропускается."""
     new_zones = []
     for i, zone in enumerate(zones):
         try:
             new_zones.append(zones_list[zone])
         except KeyError as err:
             error = 1
-            parent.stepChanged.emit(f'1|Error! Не найдена зона {zone} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error! Не найдена зона {zone} для правила {rule_name}.')
     return new_zones
+
 
 def get_guids_users_and_groups(parent, users, ldap_servers, rule_name):
     """
@@ -1260,43 +1621,89 @@ def get_guids_users_and_groups(parent, users, ldap_servers, rule_name):
         return []
 
     new_users = []
-    for x in users:
-        if x[0] == 'user' and x[1]:
-            ldap_domain, _, user_name = x[1].partition("\\")
-            if user_name:
+    for item in users:
+        match item[0]:
+            case 'special':
+                new_users.append(item)
+            case 'user':
+                user_name = None
                 try:
-                    ldap_id = ldap_servers[ldap_domain.lower()]
-                except KeyError:
-                    parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет LDAP-коннектора для домена "{ldap_domain}"')
-                else:
-                    err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
-                    if err:
-                        parent.stepChanged.emit(f'1|{result}')
-                    elif not result:
-                        parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
+                    ldap_domain, _, user_name = item[1].partition("\\")
+                except IndexError:
+                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Не указано имя пользователя в {item}')
+                if user_name:
+                    try:
+                        ldap_id = ldap_servers[ldap_domain.lower()]
+                    except KeyError:
+                        parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
                     else:
-                        x[1] = result
-                        new_users.append(x)
-
-        elif x[0] == 'group' and x[1]:
-            ldap_domain, _, group_name = x[1].partition("\\")
-            if group_name:
+                        err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
+                        if err:
+                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule_name}"]')
+                        elif not result:
+                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
+                        else:
+                            new_users.append(['user', result])
+            case 'group':
+                group_name = None
                 try:
-                    ldap_id = ldap_servers[ldap_domain.lower()]
-                except KeyError:
-                    parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет LDAP-коннектора для домена "{ldap_domain}"')
-                else:
-                    err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
-                    if err:
-                        parent.stepChanged.emit(f'1|{result}')
-                    elif not result:
-                        parent.stepChanged.emit(f'4|   Ошибка! Правило "{rule_name}". Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                    ldap_domain, _, group_name = item[1].partition("\\")
+                except IndexError:
+                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Не указано имя группы в {item}')
+                if group_name:
+                    try:
+                        ldap_id = ldap_servers[ldap_domain.lower()]
+                    except KeyError:
+                        parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
                     else:
-                        x[1] = result
-                        new_users.append(x)
-        elif x[0] == 'special' and x[1]:
-            new_users.append(x)
+                        err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
+                        if err:
+                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule_name}"]')
+                        elif not result:
+                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                        else:
+                            new_users.append(['group', result])
     return new_users
+
+
+def get_services(parent, service_list, mc_services, mc_servicegroups, rule_name):
+    """Получаем ID сервисов по из именам. Если сервис не найден, то он пропускается."""
+    new_service_list = []
+    for item in service_list:
+        try:
+            if item[0] == 'service':
+                new_service_list.append(['service', mc_services[item[1]]])
+            elif item[0] == 'list_id':
+                new_service_list.append(['list_id', mc_servicegroups[item[1]]])
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найден сервис "{item[1]}".')
+    return new_service_list
+
+
+def get_url_categories_id(parent, url_categories, mc_urlcategory_groups, mc_urlcategories, rule_name):
+    """Получаем ID категорий URL и групп категорий URL. Если список не существует на MC, то он пропускается."""
+    new_categories = []
+    for item in url_categories:
+        try:
+            if item[0] == 'list_id':
+                new_categories.append(['list_id', mc_urlcategory_groups[item[1]]])
+            if item[0] == 'category_id':
+                new_categories.append(['category_id', mc_urlcategories[item[1]]])
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+    return new_categories
+
+
+def get_urls_id(parent, urls, mc_urls, rule_name):
+    """Получаем ID списков URL. Если список не существует на MC, то он пропускается."""
+    new_urls = []
+    for item in urls:
+        try:
+            new_urls.append(mc_urls[item])
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+    return new_urls
+
 
 def get_ldap_servers(parent):
     """
@@ -1315,25 +1722,33 @@ def get_ldap_servers(parent):
             ldap_servers[domain.lower()] = srv['id']
     return 0, ldap_servers
 
-def read_json_file(json_file, err_file_not_found, err_data):
-    try:
-        with open(json_file, "r") as fh:
-            data = json.load(fh)
-    except FileNotFoundError as err:
-        return 1, f'{err_file_not_found} Не найден файл "{json_file}" с сохранённой конфигурацией!'
-    except ValueError as err:
-        return 1, f'1|Error: JSONDecodeError - {err} "{json_file}".'
+def set_scenarios_rules(parent):
+    """Устанавливаем в parent значение атрибута: scenarios_rules"""
+    err, result = parent.utm.get_template_scenarios_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    parent.scenarios_rules = {func.get_restricted_name(x['name']): x['id'] for x in result}
 
-    if not data:
-        return 1, f'{err_data} Файл "{json_file}" пуст.'
-    return 0, data
+#    err, result = parent.utm.get_l7_categories()
+#    if err:
+#        parent.stepChanged.emit(f'RED|    {result}')
+#        parent.error = 1
+#        return
+#    l7categories = {x['name']: x['id'] for x in result}
 
-def input_dialog_nodename():
-    """Окно выбора node_name кластера"""
-    nodes = ['node_1', 'node_2', 'node_3', 'node_4']
-    node_name, ok = QInputDialog.getItem(None, 'Выбор идентификатора узла кластера', 'Выберите идентификатор узла', nodes)
-    if ok:
-        return node_name
-    else:
-        return False
+#    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'applicationgroup')
+#    if err:
+#        parent.stepChanged.emit(f'1|{result}')
+#        parent.stepChanged.emit('1|Импорт правил межсетевого экрана прерван!')
+#        parent.error = 1
+#        return
+#    applicationgroup = {x['name']: x['id'] for x in result}
 
+#    for app in item['apps']:
+#        try:
+#            app[1] = l7categories[app[1]] if app[0] == 'ro_group' else applicationgroup[app[1]]
+#        except KeyError as err:
+#            error = 1
+#            parent.stepChanged.emit(f'1|Error! Не найдена группа приложений {err} для правила "{item["name"]}". Загрузите группы приложений и повторите попытку.')

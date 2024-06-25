@@ -14,12 +14,12 @@ from xml.parsers.expat import ExpatError
 
 class UtmXmlRpc:
     def __init__(self, server_ip, login, password):
+        self.server_ip = server_ip
         self._login = login
         self._password = password
         self._url = f'http://{server_ip}:4040/rpc'
         self._auth_token = None
         self._server = None
-        self.server_ip = server_ip
         self.node_name = None
         self.version = None
         self.version_hight = None

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.4
+# Версия 1.5
 #
 
 import os, sys, json
@@ -1676,7 +1676,7 @@ def convert_service_object_group(parent, path, data):
                         case ['source', 'eq', src_port]:
                             source_port = get_service_number(src_port)
                             if source_port is None:
-                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{src_ports}" не поддерживается в UG NGFW.')
+                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
                                 continue
                         case ['source', 'range', port1, port2]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'

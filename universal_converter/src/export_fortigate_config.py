@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.4
+# Версия 2.5
 #
 
 import os, sys, json
@@ -72,30 +72,30 @@ class ConvertFortigateConfig(QThread):
             if err:
                 self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.\n')
             else:
-#                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
-#                convert_dns_servers(self, self.current_ug_path, data)
-#                convert_notification_profile(self, self.current_ug_path, data)
-#                convert_services(self, self.current_ug_path, data)
-#                convert_service_groups(self, self.current_ug_path, data)
-#                convert_ntp_settings(self, self.current_ug_path, data)
-#                convert_zone_settings(self, self.current_ug_path, data)
-#                convert_dhcp_settings(self, self.current_ug_path, data)
+                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
+                convert_dns_servers(self, self.current_ug_path, data)
+                convert_notification_profile(self, self.current_ug_path, data)
+                convert_services(self, self.current_ug_path, data)
+                convert_service_groups(self, self.current_ug_path, data)
+                convert_ntp_settings(self, self.current_ug_path, data)
+                convert_zone_settings(self, self.current_ug_path, data)
+                convert_dhcp_settings(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data)
-#                convert_url_lists(self, self.current_ug_path, data)
-#                convert_shapers_list(self, self.current_ug_path, data)
-#                convert_shapers_rules(self, self.current_ug_path, data)
-#                convert_auth_servers(self, self.current_ug_path, data)
-#                convert_local_users(self, self.current_ug_path, data)
-#                convert_user_groups(self, self.current_ug_path, data)
-#                convert_web_portal_resources(self, self.current_ug_path, data)
-#                convert_time_sets(self, self.current_ug_path, data)
-#                convert_dnat_rule(self, self.current_ug_path, data)
-#                convert_loadbalancing_rule(self, self.current_ug_path, data)
-#                convert_groups_iplists(self, self.current_ug_path, data)
-#                convert_firewall_policy(self, self.current_ug_path, data)
-#                convert_gateways_list(self, self.current_ug_path, data)
-#                convert_static_routes(self, self.current_ug_path, data)
-#                convert_bgp_routes(self, self.current_ug_path, data)
+                convert_url_lists(self, self.current_ug_path, data)
+                convert_shapers_list(self, self.current_ug_path, data)
+                convert_shapers_rules(self, self.current_ug_path, data)
+                convert_auth_servers(self, self.current_ug_path, data)
+                convert_local_users(self, self.current_ug_path, data)
+                convert_user_groups(self, self.current_ug_path, data)
+                convert_web_portal_resources(self, self.current_ug_path, data)
+                convert_time_sets(self, self.current_ug_path, data)
+                convert_dnat_rule(self, self.current_ug_path, data)
+                convert_loadbalancing_rule(self, self.current_ug_path, data)
+                convert_groups_iplists(self, self.current_ug_path, data)
+                convert_firewall_policy(self, self.current_ug_path, data)
+                convert_gateways_list(self, self.current_ug_path, data)
+                convert_static_routes(self, self.current_ug_path, data)
+                convert_bgp_routes(self, self.current_ug_path, data)
 
                 if self.error:
                     self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.\n')
@@ -1034,7 +1034,7 @@ def convert_url_lists(parent, path, data):
             list_name = pattern.replace('/', '')
 
         url_list = {
-            'name': func.get_restricted_name(list_name.strip()),
+            'name': func.get_restricted_name(list_name),
             'description': value.get('comment', ''),
             'type': 'url',
             'url': '',
@@ -1047,7 +1047,7 @@ def convert_url_lists(parent, path, data):
             parent.stepChanged.emit(f'rNOTE|       Запись "{key}" не конвертирована так как не имеет host-domain-name-suffix.')
             continue
 
-        suffixes = work_with_rules(value['rules']) if 'rules' in value else []
+        suffixes = work_with_rules(value['config rules']) if 'config rules' in value else []
 
         url_list['content'] = []
         for domain_name in value.get('host-domain-name-suffix', '').split(','):
@@ -1069,7 +1069,7 @@ def convert_url_lists(parent, path, data):
     for list_name, value in data.get('config firewall address', {}).items():
         if 'type' in value and value['type'] == 'fqdn':
             url_list = {
-                'name': func.get_restricted_name(list_name.strip()),
+                'name': func.get_restricted_name(list_name),
                 'description': value.get('comment', ''),
                 'type': 'url',
                 'url': '',
@@ -1080,7 +1080,7 @@ def convert_url_lists(parent, path, data):
             }
             if url_list['content']:
                 n += 1
-                parent.url_lists[url_list['name']] = url_list['content']
+                parent.url_lists[list_name] = url_list['content']
 
                 json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
                 with open(json_file, 'w') as fh:
@@ -1090,7 +1090,7 @@ def convert_url_lists(parent, path, data):
 
     for list_name, value in data.get('config firewall addrgrp', {}).items():
         url_list = {
-            'name': func.get_restricted_name(list_name.strip()),
+            'name': func.get_restricted_name(list_name),
             'description': value.get('comment', ''),
             'type': 'url',
             'url': '',
@@ -1101,13 +1101,12 @@ def convert_url_lists(parent, path, data):
         }
         members = value['member'].split(',')
         for url in members:
-            url = func.get_restricted_name(url.strip())
             if url in parent.url_lists:
                 url_list['content'].extend(parent.url_lists[url])
 
         if url_list['content']:
             n += 1
-            parent.url_lists[url_list['name']] = url_list['content']
+            parent.url_lists[list_name] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
@@ -1117,7 +1116,7 @@ def convert_url_lists(parent, path, data):
 
     for list_name, value in data.get('config firewall wildcard-fqdn custom', {}).items():
         url_list = {
-            'name': '',
+            'name': func.get_restricted_name(list_name),
             'description': value.get('comment', ''),
             'type': 'url',
             'url': '',
@@ -1126,12 +1125,11 @@ def convert_url_lists(parent, path, data):
             'attributes': {'list_compile_type': 'case_insensitive'},
             'content': [{'value': value['wildcard-fqdn']}]
         }
-        list_name = func.get_restricted_name(list_name.strip())
         if list_name in parent.url_lists:
-            list_name = f'{list_name} - wildcard-fqdn'
+            list_name = f'{func.get_restricted_name(list_name)} - wildcard-fqdn'
         url_list['name'] = list_name
 
-        parent.url_lists[url_list['name']] = url_list['content']
+        parent.url_lists[list_name] = url_list['content']
         n += 1
 
         json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
@@ -1142,7 +1140,7 @@ def convert_url_lists(parent, path, data):
 
     for list_name, value in data.get('config firewall wildcard-fqdn group', {}).items():
         url_list = {
-            'name': func.get_restricted_name(list_name.strip()),
+            'name': func.get_restricted_name(list_name),
             'description': value.get('comment', ''),
             'type': 'url',
             'url': '',
@@ -1153,13 +1151,12 @@ def convert_url_lists(parent, path, data):
         }
         members = value['member'].split(',')
         for url in members:
-            url = func.get_restricted_name(url.strip())
             if url in parent.url_lists:
                 url_list['content'].extend(parent.url_lists[url])
 
         if url_list['content']:
             n += 1
-            parent.url_lists[url_list['name']] = url_list['content']
+            parent.url_lists[list_name] = url_list['content']
 
             json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
@@ -1177,7 +1174,7 @@ def work_with_rules(rules):
     """
     patterns = set()
     for _, rule in rules.items():
-        for _, entries in rule['match-entries'].items():
+        for _, entries in rule['config match-entries'].items():
             value = entries['pattern']
             patterns.add(value[1:] if value.startswith('/') else value)
     return patterns

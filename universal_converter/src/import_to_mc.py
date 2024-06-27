@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.4
+# Версия 1.5
 #
 
 import os, sys, json, time
@@ -76,6 +76,7 @@ class ImportSelectedPoints(QThread):
         self.selected_points = selected_points
 
         self.template_id = template_id
+        self.template_name = None
         self.node_name = node_name
         self.ngfw_ports = arguments['ngfw_ports']
         self.dhcp_settings = arguments['dhcp_settings']
@@ -85,6 +86,7 @@ class ImportSelectedPoints(QThread):
 
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.scenarios_rules = {}           # Устанавливается через функцию set_scenarios_rules()
+        self.ldap_servers = {}
         self.error = 0
 
 
@@ -611,107 +613,335 @@ def import_local_groups(parent, path):
     err, groups = func.read_json_file(parent, json_file)
     if err:
         return
-
-    parent.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
     err, result = parent.utm.get_template_groups_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-
     local_groups = {x['name']: x['id'] for x in result}
+
+    parent.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
+    parent.stepChanged.emit(f'LBLUE|    Если используются доменные пользователи, необходимы настроенные LDAP-коннекторы в "Управление областью/Каталоги пользователей"')
     error = 0
-    return
 
     for item in groups:
         users = item.pop('users')
-        # В версии 5 API добавления группы не проверяет что группа уже существует.
-        if item['name'] in local_groups:
-            parent.stepChanged.emit(f'GRAY|    Группа "{item["name"]}" уже существует.')
+        item['name'] = func.get_restricted_name(item['name'])
+        err, result = parent.utm.add_template_group(parent.template_id, item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+            continue
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}') # В версиях 6 и выше проверяется что группа уже существует.
         else:
-            err, result = parent.utm.add_group(item)
-            if err == 1:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                error = 1
-                continue
-            elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}.') # В версиях 6 и выше проверяется что группа уже существует.
-            else:
-                parent.ngfw_data['local_groups'][item['name']] = result
-                parent.stepChanged.emit(f'BLACK|    Локальная группа "{item["name"]}" добавлена.')
+            local_groups[item['name']] = result
+            parent.stepChanged.emit(f'BLACK|    Локальная группа "{item["name"]}" импортирована.')
 
         # Добавляем доменных пользователей в группу.
+        parent.stepChanged.emit(f'LBLUE|       Добавляем доменных пользователей в группу "{item["name"]}".')
         for user_name in users:
             user_array = user_name.split(' ')
             if len(user_array) > 1 and ('\\' in user_array[1]):
                 domain, name = user_array[1][1:len(user_array[1])-1].split('\\')
-                err1, result1 = parent.utm.get_ldap_user_guid(domain, name)
-                if err1:
-                    parent.stepChanged.emit(f'RED|    {result1}')
-                    parent.error = 1
-                    error = 1
-                    break
-                elif not result1:
-                    parent.stepChanged.emit(f'bRED|    Нет LDAP-коннектора для домена "{domain}"! Доменные пользователи не импортированы в группу "{item["name"]}".')
-                    parent.stepChanged.emit(f'bRED|    Импортируйте и настройте LDAP-коннектор. Затем повторите импорт групп.')
-                    break
-                err2, result2 = parent.utm.add_user_in_group(parent.ngfw_data['local_groups'][item['name']], result1)
-                if err2:
-                    parent.stepChanged.emit(f'RED|    {result2}  [{user_name}]')
-                    parent.error = 1
-                    error = 1
+                try:
+                    ldap_id = parent.ldap_servers[domain.lower()]
+                except KeyError:
+                    parent.stepChanged.emit(f'bRED|       Доменный пользователь "{user_name}" не импортирован в группу "{item["name"]}". Нет LDAP-коннектора для домена "{domain}".')
                 else:
-                    parent.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
-
-    out_message = 'GREEN|    Локальные группы пользователей импортирован в раздел "Пользователи и устройства/Группы".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных групп пользователей!' if error else out_message)
+                    err1, result1 = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, name)
+                    if err1:
+                        parent.stepChanged.emit(f'RED|       {result1}')
+                        error = 1
+                        continue
+                    elif not result1:
+                        parent.stepChanged.emit(f'NOTE|       Нет пользователя "{user_name}" в домене "{domain}". Доменный пользователь не импортирован в группу "{item["name"]}".')
+                        continue
+                    err2, result2 = parent.utm.add_user_in_template_group(parent.template_id, local_groups[item['name']], result1)
+                    if err2:
+                        parent.stepChanged.emit(f'RED|       {result2}  [{user_name}]')
+                        error = 1
+                    else:
+                        parent.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте локальных групп пользователей.')
+    else:
+        parent.stepChanged.emit('GREEN|    Локальные группы пользователей импортирован в раздел "Пользователи и устройства/Группы".')
 
 
 def import_local_users(parent, path):
     """Импортируем список локальных пользователей"""
-    parent.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
     json_file = os.path.join(path, 'config_users.json')
-    err, users = read_conf_file(parent, json_file)
+    err, users = func.read_json_file(parent, json_file)
     if err:
         return
-    error = 0
 
+    err, result = parent.utm.get_template_users_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    local_users = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_groups_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    local_groups = {x['name']: x['id'] for x in result}
+
+    parent.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
+    error = 0
     for item in users:
         user_groups = item.pop('groups', None)
-        # В версии 5 API добавления пользователя не проверяет что он уже существует.
-        if item['name'] in parent.ngfw_data['local_users']:
-            parent.stepChanged.emit(f'GRAY|    Пользователь "{item["name"]}" уже существует.')
+        item['name'] = func.get_restricted_name(item['name'])
+        item['auth_login'] = func.get_restricted_userlogin(item['auth_login'])
+        err, result = parent.utm.add_template_user(parent.template_id, item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+            continue
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}.') # В версиях 6 и выше проверяется что пользователь уже существует.
         else:
-            err, result = parent.utm.add_user(item)
-            if err == 1:
-                parent.stepChanged.emit(f'RED|    {result}')
-                parent.error = 1
-                error = 1
-                break
-            elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}.') # В версиях 6 и выше проверяется что пользователь уже существует.
-            else:
-                parent.ngfw_data['local_users'][item['name']] = result
-                parent.stepChanged.emit(f'BLACK|    Добавлен локальный пользователь "{item["name"]}".')
+            local_users[item['name']] = result
+            parent.stepChanged.emit(f'BLACK|    Добавлен локальный пользователь "{item["name"]}".')
 
         # Добавляем пользователя в группу.
         for group in user_groups:
             try:
-                group_guid = parent.ngfw_data['local_groups'][group]
+                group_guid = local_groups[group]
             except KeyError as err:
                 parent.stepChanged.emit(f'bRED|       Не найдена группа {err} для пользователя {item["name"]}. Импортируйте список групп и повторите импорт пользователей.')
             else:
-                err2, result2 = parent.utm.add_user_in_group(group_guid, parent.ngfw_data['local_users'][item['name']])
+                err2, result2 = parent.utm.add_user_in_template_group(parent.template_id, group_guid, local_users[item['name']])
                 if err2:
                     parent.stepChanged.emit(f'RED|       {result2}  [User: {item["name"]}, Group: {group}]')
-                    parent.error = 1
                     error = 1
                 else:
                     parent.stepChanged.emit(f'BLACK|       Пользователь "{item["name"]}" добавлен в группу "{group}".')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте локальных пользователей.')
+    else:
+        parent.stepChanged.emit('GREEN|    Локальные пользователи импортированы в раздел "Пользователи и устройства/Пользователи".')
 
-    out_message = 'GREEN|    Локальные пользователи импортированы в раздел "Пользователи и устройства/Пользователи".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных пользователей!' if error else out_message)
+
+def import_auth_servers(parent, path):
+    """Импортируем список серверов аутентификации"""
+    import_ldap_servers(parent, path)
+    import_ntlm_server(parent, path)
+    import_radius_server(parent, path)
+    import_tacacs_server(parent, path)
+#    import_saml_server(parent, path)
+    
+
+def import_ldap_servers(parent, path):
+    """Импортируем список серверов LDAP"""
+    json_file = os.path.join(path, 'config_ldap_servers.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    error = 0
+    parent.stepChanged.emit('BLUE|Импорт серверов LDAP в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit(f'LBLUE|    После импорта необходимо включить LDAP-коннекторы, ввести пароль и импортировать keytab файл.')
+ 
+    err, result = parent.utm.get_template_auth_servers(parent.template_id, servers_type='ldap')
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+    else:
+        ldap_servers = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            item['name'] = func.get_restricted_name(item['name'])
+            if item['name'] in ldap_servers:
+                parent.stepChanged.emit(f'GRAY|    LDAP-сервер "{item["name"]}" уже существует.')
+            else:
+                item['enabled'] = False
+                item['keytab_exists'] = False
+                item['type'] = 'ldap'
+                item.pop("cc", None)
+                err, result = parent.utm.add_template_auth_server(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result}')
+                    error = 1
+                else:
+                    ldap_servers[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Сервер аутентификации LDAP "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов LDAP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Сервера LDAP импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+
+
+def import_ntlm_server(parent, path):
+    """Импортируем список серверов NTLM"""
+    json_file = os.path.join(path, 'config_ntlm_servers.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    error = 0
+    parent.stepChanged.emit('BLUE|Импорт серверов NTLM в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit(f'LBLUE|    После импорта необходимо включить импортированные сервера аутентификации.')
+
+    err, result = parent.utm.get_template_auth_servers(parent.template_id, servers_type='ntlm')
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+    else:
+        ntlm_servers = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            item['name'] = func.get_restricted_name(item['name'])
+            if item['name'] in ntlm_servers:
+                parent.stepChanged.emit(f'GRAY|    NTLM-сервер "{item["name"]}" уже существует.')
+            else:
+                item['enabled'] = False
+                item['type'] = 'ntlm'
+                item.pop("cc", None)
+                err, result = parent.utm.add_template_auth_server(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result}')
+                    error = 1
+                else:
+                    ntlm_servers[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Сервер аутентификации NTLM "{item["name"]}" импортироан.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов NTLM.')
+    else:
+        parent.stepChanged.emit('GREEN|    Сервера NTLM импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+
+
+def import_radius_server(parent, path):
+    """Импортируем список серверов RADIUS"""
+    json_file = os.path.join(path, 'config_radius_servers.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт серверов RADIUS в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit(f'LBLUE|    После импорта необходимо включить сервера RADIUS и ввести пароль.')
+    error = 0
+
+    err, result = parent.utm.get_template_auth_servers(parent.template_id, servers_type='radius')
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+    else:
+        radius_servers = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            item['name'] = func.get_restricted_name(item['name'])
+            if item['name'] in radius_servers:
+                parent.stepChanged.emit(f'GRAY|    RADIUS-сервер "{item["name"]}" уже существует.')
+            else:
+                item['enabled'] = False
+                item['type'] = 'radius'
+                item.pop("cc", None)
+                err, result = parent.utm.add_template_auth_server(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result}')
+                    error = 1
+                else:
+                    radius_servers[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Сервер аутентификации RADIUS "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов RADIUS.')
+    else:
+        parent.stepChanged.emit('GREEN|    Сервера RADIUS импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+
+
+def import_tacacs_server(parent, path):
+    """Импортируем список серверов TACACS+"""
+    json_file = os.path.join(path, 'config_tacacs_servers.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт серверов TACACS+ в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit(f'LBLUE|    После импорта необходимо включить сервера TACACS+ и ввести секретный ключ.')
+    error = 0
+
+    err, result = parent.utm.get_template_auth_servers(parent.template_id, servers_type='tacacs_plus')
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+    else:
+        tacacs_servers = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            item['name'] = func.get_restricted_name(item['name'])
+            if item['name'] in tacacs_servers:
+                parent.stepChanged.emit(f'GRAY|    TACACS-сервер "{item["name"]}" уже существует.')
+            else:
+                item['enabled'] = False
+                item['type'] = 'tacacs_plus'
+                item.pop("cc", None)
+                err, result = parent.utm.add_template_auth_server(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result}')
+                    error = 1
+                else:
+                    tacacs_servers[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Сервер аутентификации TACACS+ "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов TACACS+.')
+    else:
+        parent.stepChanged.emit('GREEN|    Сервера TACACS+ импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+
+
+def import_saml_server(parent, path):
+    """Импортируем список серверов SAML"""
+    json_file = os.path.join(path, 'config_saml_servers.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт серверов SAML в раздел "Пользователи и устройства/Серверы аутентификации".')
+    parent.stepChanged.emit(f'NOTE|    После импорта необходимо включить сервера SAML и загрузить SAML metadata.')
+    error = 0
+
+    err, result = parent.utm.get_template_auth_servers(parent.template_id, servers_type='saml_idp')
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+    else:
+        saml_servers = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            item['name'] = func.get_restricted_name(item['name'])
+            if item['name'] in saml_servers:
+                parent.stepChanged.emit(f'GRAY|    SAML-сервер "{item["name"]}" уже существует.')
+            else:
+                item['enabled'] = False
+                item['type'] = 'saml_idp'
+                item.pop("cc", None)
+                if item['certificate_id']:
+                    try:
+                        item['certificate_id'] = parent.ngfw_data['certs'][item['certificate_id']]
+                    except KeyError:
+                        parent.stepChanged.emit(f'bRED|    Для "{item["name"]}" не найден сертификат "{item["certificate_id"]}".')
+                        item['certificate_id'] = 0
+
+                err, result = parent.utm.add_auth_server('saml', item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result}')
+                    parent.error = 1
+                    error = 1
+                else:
+                    saml_servers[item['name']] = result
+                    parent.stepChanged.emit(f'BLACK|    Сервер аутентификации SAML "{item["name"]}" добавлен.')
+
+    out_message = 'GREEN|    Сервера SAML импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
+    parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов SAML!' if error else out_message)
 
 
 def import_services_list(parent, path):
@@ -1528,12 +1758,12 @@ import_funcs = {
     'Zones': import_zones,
     'Interfaces': import_vlans,
     'Gateways': import_gateways,
-    'AuthServers': pass_function, # import_auth_servers,
+    'AuthServers': import_auth_servers,
     'AuthProfiles': pass_function, # import_auth_profiles,
     'CaptiveProfiles': pass_function, # import_captive_profiles,
     'CaptivePortal': pass_function, # import_captive_portal_rules,
     'Groups': import_local_groups,
-    'Users': pass_function, # import_local_users,
+    'Users': import_local_users,
     'TerminalServers': pass_function, # import_terminal_servers,
     'MFAProfiles': pass_function, # import_2fa_profiles,
     'UserIDagent': pass_function, # import_userid_agent,

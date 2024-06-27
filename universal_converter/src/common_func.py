@@ -23,7 +23,7 @@
 import os, json, pickle
 import ipaddress
 from PyQt6.QtWidgets import QMessageBox
-from services import trans_filename, trans_name
+from services import trans_filename, trans_name, trans_userlogin
 
 
 def create_dir(path, delete='yes'):
@@ -159,6 +159,7 @@ def get_time_restrictions_id(parent, time_restrictions, utm_schedules, rule_name
 
 
 def pack_ip_address(ip, mask):
+    """depricated"""
     if ip == '0':
         ip = '0.0.0.0'
     if mask == '0':
@@ -168,6 +169,18 @@ def pack_ip_address(ip, mask):
     except ValueError as err:
         return '10.10.10.1/32'
     return f'{ip}/{interface.network.prefixlen}'
+
+def pack_ip_addr(ip, mask):
+    """На замену pack_ip_address"""
+    if ip == '0':
+        ip = '0.0.0.0'
+    if mask == '0':
+        mask = '0.0.0.0'
+    try:
+        interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    except ValueError as err:
+        return 1, err
+    return 0, f'{ip}/{interface.network.prefixlen}'
 
 def unpack_ip_address(iface):
     """Получаем данные в виде ip/mask (пример: 192.168.10.1/29)"""
@@ -197,6 +210,7 @@ def get_netroute(net):
     except (IndexError, ValueError) as err:
         return 1, err
 
+
 def get_restricted_name(name):
     """
     Получить имя объекта без запрещённых спецсимволов.
@@ -211,6 +225,21 @@ def get_restricted_name(name):
         return new_name
     else:
         return 'Name not valid'
+
+def get_restricted_userlogin(user_login):
+    """
+    Получить валидный логин пользователя без запрещённых спецсимволов.
+    Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
+    """
+    if isinstance(user_login, str):
+        new_name = user_login.translate(trans_userlogin).strip()
+        if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+            new_name = new_name[1:]
+            if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+                new_name = new_name[1:]
+        return new_name
+    else:
+        return 'Login_not_valid'
 
 def check_auth(parent):
     """Проверяем что авторизация не протухла. Если протухла, логинимся заново."""

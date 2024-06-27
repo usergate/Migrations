@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.5
+# Версия 1.6
 #
 
 import os, sys, json
@@ -1602,8 +1602,11 @@ def convert_network_object_group(parent, path, data):
                     except KeyError:
                         url_list['content'].extend(match_item(data['url_lists'][object_name]))
                 case ['network-object', ip, mask]:
-                    subnet = ipaddress.ip_network(f'{ip}/{mask}')
-                    ip_list['content'].append({'value': f'{ip}/{subnet.prefixlen}'})
+                    err, result = func.pack_ip_addr(ip, mask)
+                    if err:
+                        parent.stepChanged.emit(f'bRED|    Error object-group "{key}": {result}. Данный объект не добавлен в список "{key}".')
+                    else:
+                        ip_list['content'].append({'value': result})
                 case ['group-object', group_name]:
                     if group_name in ip_groups:
                         ip_list['content'].append({'list': group_name})
@@ -2347,8 +2350,11 @@ def match_item(value):
     for item in value:
         match item:
             case ['subnet', ip, mask]:
-                subnet = ipaddress.ip_network(f'{ip}/{mask}')
-                content.append({'value': f'{ip}/{subnet.prefixlen}'})
+                err, result = func.pack_ip_addr(ip, mask)
+                if err:
+                    parent.stepChanged.emit(f'bRED|    Error {result}. Данный объект не добавлен в список.')
+                else:
+                    content.append({'value': result})
             case ['host', ip]:
                 content.append({'value': ip})
             case ['range', start_ip, end_ip]:

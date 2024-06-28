@@ -262,6 +262,7 @@ class SelectMode(QWidget):
     def on_finished(self):
         self.thread = None
         self.enable_buttons()
+#        self._save_logs('import.log')
 
 
 class SelectExportMode(QWidget):
@@ -810,23 +811,22 @@ class SelectMcImportMode(SelectMode):
             self.run_page_0()
 
         if self.selected_points:
+            arguments = {
+                'ngfw_ports': '',
+                'dhcp_settings': '',
+                'ngfw_vlans': '',
+                'new_vlans': '',
+                'iface_settings': '',
+            }
+            node_name = 'node_1'
             if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
                 node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
                 if not ok:
                     func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
                     return
-            else:
-                node_name = 'node_1'
+                self.set_arguments(node_name, arguments)
             if self.thread is None:
                 self.disable_buttons()
-                arguments = {
-                    'ngfw_ports': '',
-                    'dhcp_settings': '',
-                    'ngfw_vlans': '',
-                    'new_vlans': '',
-                    'iface_settings': '',
-                }
-                self.set_arguments(arguments)
                 self.thread = import_to_mc.ImportSelectedPoints(self.utm,
                                                       self.parent.get_ug_config_path(),
                                                       self.current_ug_path,
@@ -851,6 +851,16 @@ class SelectMcImportMode(SelectMode):
         if not func.check_auth(self):
             self.run_page_0()
 
+        message = 'Перед тем как импортировать всё, убедитесь, что на Management Center существуют интерфейсы и зоны. Это необходимо для создания '
+        message1 = 'интерфейсов VLAN, подсетей DHCP, Gateways и VRF. Если нет интерфейсов, VLAN, подсети DHCP, Gateways и VRF не будут созданы.'
+        func.message_inform(self, 'Внимание!', f'{message}{message1}')
+
+        node_name = 'node_1'
+        node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
+        if not ok:
+            func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
+            return
+
         all_points = self.tree.select_all_items()
         arguments = {
             'ngfw_ports': '',
@@ -862,41 +872,52 @@ class SelectMcImportMode(SelectMode):
         for item in all_points:
             self.current_ug_path = os.path.join(self.parent.get_ug_config_path(), item['path'])
             self.selected_points = item['points']
-            self.set_arguments(arguments)
+            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
+                self.set_arguments(node_name, arguments)
         self.tree.set_current_item()
 
         if self.thread is None:
             self.disable_buttons()
-            self.thread = tf.ImportAll(self.utm, self.parent.get_ug_config_path(), all_points, arguments)
+            self.thread = import_to_mc.ImportAll(self.utm,
+                                                 self.parent.get_ug_config_path(),
+                                                 all_points,
+                                                 self.template_id,
+                                                 arguments,
+                                                 node_name)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
             func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
-    def set_arguments(self, arguments):
+    def set_arguments(self, node, arguments):
         """Заполняем структуру параметров для импорта."""
-        err, result = self.utm.get_template_interfaces_list(self.template_id)
+        err, mc_interfaces = self.utm.get_template_interfaces_list(self.template_id, node_name=node)
         if err:
-            return err, f'RED|    {result}'
+            return err, f'RED|    {mc_interfaces}'
+        mc_interfaces = [item for item in mc_interfaces if item['node_name'] == node]
+        if not mc_interfaces:
+            msg = f'Для "{node}" отсутствуют интерфейсы.\nVLAN, Gateways, subnet DHCP и VRF не будут импортированы.'
+            func.message_inform(self, 'Внимание!', msg)
+            arguments['ngfw_ports'] = 3
+            arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле {node} шаблона.'
+            arguments['ngfw_vlans'] = 3
+            arguments['new_vlans'] = f'ORANGE|    Импорт настроек VLAN отменён из-за отсутствия портов на узле {node} шаблона.'
+            return
  
         if 'DHCP' in self.selected_points:
-            err, result = self.import_dhcp(result)
+            err, result = self.import_dhcp(mc_interfaces)
             arguments['ngfw_ports'] = err
             arguments['dhcp_settings'] = result
         if 'Interfaces' in self.selected_points:
-            if self.utm.version_hight == 5:
-                arguments['ngfw_vlans'] = 2
-                arguments['new_vlans'] = f'bRED|    VLAN нельзя импортировать на NGFW версии {self.utm.version}.'
+            err, result = self.create_vlans(mc_interfaces)
+            if err:
+                arguments['ngfw_vlans'] = err
+                arguments['new_vlans'] = result
             else:
-                err, result = self.create_vlans(result)
-                if err:
-                    arguments['ngfw_vlans'] = err
-                    arguments['new_vlans'] = result
-                else:
-                    arguments['iface_settings'] = result[0]
-                    arguments['ngfw_vlans'] = result[1]
-                    arguments['new_vlans'] = result[2]
+                arguments['iface_settings'] = result[0]
+                arguments['ngfw_vlans'] = result[1]
+                arguments['new_vlans'] = result[2]
 
     def create_vlans(self, mc_interfaces):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
@@ -945,11 +966,8 @@ class SelectMcImportMode(SelectMode):
         if err:
             return err, data
 
-#        print(result, '\n')
-#        ngfw_ports = [x['name'] for x in result if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
         ngfw_ports = [x['name'] for x in mc_interfaces if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
         ngfw_ports.insert(0, 'Undefined')
-#        print('ports: ', ngfw_ports)
 
         dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
         result = dialog.exec()

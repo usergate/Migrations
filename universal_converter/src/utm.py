@@ -1085,7 +1085,7 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.notification.profile.add(self._auth_token, profile)
         except rpc.Fault as err:
-            return 1, f'Error utm.add_notification_profiles: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error utm.add_notification_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID добавленного профиля
         
     def update_notification_profile(self, profile_id, profile):

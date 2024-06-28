@@ -21,11 +21,11 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
-# Версия 1.2
+# Версия 1.3
 #
 
 import os, sys, json, re
-import ipaddress, copy
+import ipaddress, copy, time
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import network_proto, service_ports, trans_table, trans_name, trans_filename
@@ -773,6 +773,7 @@ def convert_ip_lists(parent, path, list_ips):
         with open(json_file, "w") as fh:
             json.dump(value, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
+        time.sleep(0.1)
 
     out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
     parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.' if not list_ips else out_message)
@@ -810,12 +811,14 @@ def convert_service_groups(parent, path, services):
                 srv_group['content'].append(service)
 
             services_groups.append(srv_group)
+            parent.stepChanged.emit(f'BLACK|    Создана группа сервисов "{srv_group["name"]}".')
+            time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_services_groups_list.json')
     with open(json_file, "w") as fh:
         json.dump(services_groups, fh, indent=4, ensure_ascii=False)
 
-    out_message = f'BLACK|    Группы сервисов выгружены в файл "{json_file}".'
+    out_message = f'GREEN|    Группы сервисов выгружены в файл "{json_file}".'
     parent.stepChanged.emit('GRAY|    Нет групп сервисов для экспорта.' if not services_groups else out_message)
 
 
@@ -881,7 +884,7 @@ def convert_firewall_rules(parent, path, fw_rules, services_list):
         value['users'] = []
         value['limit'] = False
         value['limit_value'] = '3/h'
-        value['limit_burst'] = '5'
+        value['limit_burst'] = 5
         value['log'] = False
         value['log_session_start'] = False
         value['src_zones_nagate'] = False
@@ -898,12 +901,14 @@ def convert_firewall_rules(parent, path, fw_rules, services_list):
         value['hip_profile'] = []
 
         firewall_rules.append(value)
+        parent.stepChanged.emit(f'BLACK|    Создано правило межсетевого экрана "{value["name"]}".')
+        time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_firewall_rules.json')
     with open(json_file, "w") as fh:
         json.dump(firewall_rules, fh, indent=4, ensure_ascii=False)
 
-    out_message = f'BLACK|    Список правил межсетевого экрана выгружен в файл "{json_file}".'
+    out_message = f'GREEN|    Список правил межсетевого экрана выгружен в файл "{json_file}".'
     parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.' if not firewall_rules else out_message)
 
 

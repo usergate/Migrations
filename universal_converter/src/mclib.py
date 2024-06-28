@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.5
+# Версия 1.6
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -161,6 +161,14 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error mclib.set_template_settings: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает True
+
+    def get_template_certificates_list(self, template_id):
+        """Получить список сертификатов шаблона"""
+        try:
+            result = self._server.v1.cccertificates.certificates.list(self._auth_token, template_id, 0, 100, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_certificates_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']  # Возвращает список
 
 ######## Настройки шлюзов шаблона #############################################################################
     def get_template_gateways_list(self, template_id):
@@ -332,15 +340,11 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Interfaces #######################################################################
-    def get_template_interfaces_list(self, template_id):
+    def get_template_interfaces_list(self, template_id, node_name=''):
         """Получить список сетевых интерфейсов шаблона"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {})
-                return 0, result['items']    # Возвращает список интерфейсов.
-            else:
-                result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, {})
-                return 0, result    # Возвращает список интерфейсов.
+            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {'node_name': node_name})
+            return 0, result['items']    # Возвращает список интерфейсов.
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_interfaces_list: [{err.faultCode}] — {err.faultString}'
 
@@ -380,9 +384,9 @@ class McXmlRpc:
         """Получить список сервисов раздела Библиотеки шаблона"""
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.ccnetwork.services.list(self._auth_token, template_id, 0, 5000, {}, [])
+                result = self._server.v1.ccnetwork.services.list(self._auth_token, template_id, 0, 50000, {}, [])
             else:
-                result = self._server.v1.ccnetwork.services.list(self._auth_token, template_id, 0, 5000, {}, [{}])
+                result = self._server.v1.ccnetwork.services.list(self._auth_token, template_id, 0, 50000, {}, [{}])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_services_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист сервисов (список словарей).
@@ -415,7 +419,7 @@ class McXmlRpc:
         """Получить список именованных списков по их типу из Библиотеки в шаблоне"""
         array = []
         try:
-            result = self._server.v1.ccnlists.lists.list(self._auth_token, template_id, list_type, 0, 5000, {}, [])
+            result = self._server.v1.ccnlists.lists.list(self._auth_token, template_id, list_type, 0, 100000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_nlists_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
@@ -474,11 +478,68 @@ class McXmlRpc:
                 return 1, f'Error mclib.add_template_nlist_items: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает int (кол-во добавленных объектов).
 
+    def get_template_shapers_list(self, template_id):
+        """Получить список полос пропускания шаблона"""
+        try:
+            result = self._server.v1.ccshaper.pool.list(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_template_shapers_list: [{err.faultCode}] — {err.faultString}"
+        return 0, result
+
+    def add_template_shaper(self, template_id, shaper):
+        """Получить список полос пропускания шаблона"""
+        try:
+            result = self._server.v1.ccshaper.pool.add(self._auth_token, template_id, shaper)
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Полоса пропускания "{shaper["name"]}" уже существует.'
+            else:
+                return 1, f'Error mclib.add_template_shaper: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID созданного объекта
+
+    def update_template_shaper(self, template_id, shaper_id, shaper):
+        """Получить список полос пропускания шаблона"""
+        try:
+            result = self._server.v1.ccshaper.pool.update(self._auth_token, template_id, shaper_id, shaper)
+        except rpc.Fault as err:
+            return 1, f"Error mclib.update_template_shaper: [{err.faultCode}] — {err.faultString}"
+        return 0, result
+
+    def get_template_notification_profiles_list(self, template_id):
+        """Получить список профилей оповещения шаблона"""
+        try:
+            result = self._server.v1.ccnotification.notification.profiles.list(self._auth_token, template_id, 0, 100, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_template_notification_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']    # Возвращает список словарей
+
+    def add_template_notification_profile(self, template_id, profile):
+        """Добавить профиль оповещения в шаблон"""
+        try:
+            result = self._server.v1.ccnotification.notification.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Профиль оповещения "{profile["name"]}" уже существует.'
+            else:
+                return 1, f'Error utm.add_template_notification_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+        
+    def update_template_notification_profile(self, template_id, profile_id, profile):
+        """Обновить профиль оповещения в шаблоне"""
+        try:
+            result = self._server.v1.ccnotification.notification.profile.update(self._auth_token, template_id, profile_id, profile)
+        except TypeError as err:
+            return 1, err
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_template_notification_profile: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
 ########################## Политики сети ####################################################################
     def get_template_firewall_rules(self, template_id):
         """Получить список правил межсетевого экрана шаблона"""
         try:
-            result = self._server.v1.ccfirewall.rules.list(self._auth_token, template_id, 0, 5000, {})
+            result = self._server.v1.ccfirewall.rules.list(self._auth_token, template_id, 0, 20000, {})
         except rpc.Fault as err:
             return 1, f"Error mclib.get_template_firewall_rules: [{err.faultCode}] — {err.faultString}"
         return 0, result['items']
@@ -580,7 +641,6 @@ class McXmlRpc:
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
                 result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {'enabled': True}, [])
-#                result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {}, [])
                 return 0, result['items']
             else:
                 result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
@@ -618,85 +678,95 @@ class McXmlRpc:
             return 1, f'Error mclib.get_template_groups_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def add_group(self, group):
-        """Добавить локальную группу"""
+    def add_template_group(self, template_id, group):
+        """Добавить локальную группу в шаблон"""
         try:
-            result = self._server.v3.accounts.group.add(self._auth_token, group)
+            result = self._server.v1.ccaccounts.group.add(self._auth_token, template_id, group)
         except rpc.Fault as err:
-            if err.faultCode == 409:
-                return 2, f'Группа "{group["name"]}" уже существует.'
-            elif err.faultCode == 111:
-                return 1, f'Недопустимые символы в названии группы: "{group["name"]}"! {err.faultString}'
+            if err.faultCode == 9:
+                return 3, f'Группа "{group["name"]}" уже существует.'
             else:
-                return 1, f'Error utm.add_group: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.add_template_group: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает GUID добавленной группы
 
-    def update_group(self, guid, group):
-        """Обновить локальную группу"""
+    def update_template_group(self, template_id, guid, group):
+        """Обновить локальную группу в шаблоне"""
         try:
-            result = self._server.v3.accounts.group.update(self._auth_token, guid, group)
+            result = self._server.v1.ccaccounts.group.update(self._auth_token, template_id, guid, group)
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            return 1, f'Error utm.update_group: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.update_template_group: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
-    def get_group_users(self, group_guid):
-        """Получить список пользователей в группе"""
+    def get_template_group_users(self, template_id, group_guid):
+        """Получить список пользователей в группе шаблона"""
         try:
-            result = self._server.v3.accounts.group.users.list(self._auth_token, group_guid, 0, 1000, {})
+            result = self._server.v1.ccaccounts.group.users.list(self._auth_token, template_id, group_guid, 0, 1000, {})
         except rpc.Fault as err:
-            return 1, f'Error utm.get_group_users: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.get_template_group_users: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_users_list(self):
-        """Получить список локальных пользователей"""
+    def get_template_users_list(self, template_id):
+        """Получить список локальных пользователей в шаблоне"""
         try:
-            result = self._server.v3.accounts.users.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.ccaccounts.users.list(self._auth_token, template_id, 0, 1000, {}, [])
         except rpc.Fault as err:
-            return 1, f'Error get_users_list: [{err.faultCode}] — {err.faultString}'
-        if not (self.version_hight >= 7 and self.version_midle >= 1):
-            try:
-                for user in result['items']:
-                    user['id'] = user.pop('guid')
-            except KeyError as err:
-                return 1, f'Error utm.get_users_list: нет GUID у пользователя {user["name"]} [{err}]'
+            return 1, f'Error get_template_users_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def add_user(self, user):
+    def add_template_user(self, template_id, user):
         """Добавить локального пользователя"""
         try:
-            result = self._server.v3.accounts.user.add(self._auth_token, user)
+            result = self._server.v1.ccaccounts.user.add(self._auth_token, template_id, user)
         except rpc.Fault as err:
-            if err.faultCode == 5002:
-                return 2, f'Пользователь "{user["name"]}" уже существует.'
+            if err.faultCode == 9:
+                return 3, f'Пользователь "{user["name"]}" уже существует.'
             else:
-                return 1, f'Error add_user: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.add_template_user: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного пользователя
 
-    def update_user(self, user):
-        """Обновить локального пользователя"""
-        guid = user['id'] if (self.version_hight >= 7 and self.version_midle >= 1) else user['guid']
+    def update_template_user(self, template_id, user_UID, user):
+        """Обновить локального пользователя шаблона"""
         try:
-            result = self._server.v3.accounts.user.update(self._auth_token, guid, user)
+            result = self._server.v1.ccaccounts.user.update(self._auth_token, template_id, user_UID, user)
         except rpc.Fault as err:
-            return 1, f'Error utm.update_user: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.update_template_user: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает True
 
-    def add_user_in_group(self, group_guid, user_guid):
-        """Добавить локального пользователя в локальную группу"""
+    def add_user_in_template_group(self, template_id, group_guid, user_guid):
+        """Добавить локального пользователя в локальную группу шаблона"""
         try:
-            result = self._server.v3.accounts.group.user.add(self._auth_token, group_guid, user_guid)
+            result = self._server.v1.ccaccounts.group.user.add(self._auth_token, template_id, group_guid, user_guid)
         except rpc.Fault as err:
-            return 1, f'Error utm.add_user_in_group: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.add_user_in_template_group: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает true
 
-####################################### Служебные методы ###########################################
+    def get_template_auth_servers(self, template_id, servers_type=''):
+        """
+        Получить список активных серверов авторизации шаблона.
+        Если servers_type не указан, выводятся все сервера аутентификации.
+        """
+        try:
+            result = self._server.v1.ccauth.auth.servers.list(self._auth_token, template_id, 0, 500, {'type': servers_type}, [])
+            return 0, result['items']
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_template_auth_servers: [{err.faultCode}] — {err.faultString}"
+
+    def add_template_auth_server(self, template_id, server):
+        """Добавить сервер авторизации в шаблон."""
+        try:
+            result = self._server.v1.ccauth.auth.server.add(self._auth_token, template_id, server)
+            return 0, result
+        except rpc.Fault as err:
+            return 1, f"Error mclib.add_template_auth_server: [{err.faultCode}] — {err.faultString}"
+
+####################################### Служебные методы ######################################################################
     def get_ip_protocol_list(self):
         """Получить список поддерживаемых IP протоколов"""
         try:

@@ -32,35 +32,55 @@ class ImportAll(QThread):
     """Импортируем всю конфигурацию в шаблон MC"""
     stepChanged = pyqtSignal(str)
     
-    def __init__(self, utm, template_id, utm_vlans, utm_zones, new_vlans, ifaces):
+    def __init__(self, utm, config_path, all_points, template_id, arguments, node_name):
         super().__init__()
         self.utm = utm
+
+        self.config_path = config_path
+        self.all_points = all_points
+
         self.template_id = template_id
-        self.utm_vlans = utm_vlans
-        self.utm_zones = utm_zones
-        self.new_vlans = new_vlans
-        self.ifaces = ifaces
+        self.template_name = None
+        self.node_name = node_name
+        self.ngfw_ports = arguments['ngfw_ports']
+        self.dhcp_settings = arguments['dhcp_settings']
+        self.ngfw_vlans = arguments['ngfw_vlans']
+        self.new_vlans = arguments['new_vlans']
+        self.iface_settings = arguments['iface_settings']
+
+        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
+        self.scenarios_rules = {}           # Устанавливается через функцию set_scenarios_rules()
+        self.ldap_servers = {}
         self.error = 0
 
     def run(self):
         """Импортируем всё в пакетном режиме"""
-#        import_zones(self)
-#        import_vlans(self)
-#        import_gateways(self)
-#        import_ui(self)
-#        import_modules(self)
-#        import_dns_servers(self)
-#        import_ntp_settings(self)
-#        import_static_routes(self)
-#        import_services(self)
-#        import_services_groups(self)
-#        import_ip_lists(self)
-#        import_url_lists(self)
-#        import_url_categories(self)
-#        import_application_groups(self)
-#        import_firewall_rules(self)
-#        import_content_rules(self)
-        self.stepChanged.emit('6|Импорт конфигурации прошёл с ошибками!' if self.error else '5|Импорт всей конфигурации прошёл успешно.')
+        err, result = self.utm.fetch_device_template(self.template_id)
+        if err:
+            self.stepChanged.emit('iRED|Не удалось получить имя шаблона. {result}')
+            self.template_name = 'None'
+        else:
+            self.template_name = result['name']
+
+        err, self.ldap_servers = get_ldap_servers(self)
+        if err:
+            if err == 1:
+                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
+                error = 1
+            else:
+                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
+            self.ldap_servers = 0
+
+        path_dict = {}
+        for item in self.all_points:
+            top_level_path = os.path.join(self.config_path, item['path'])
+            for point in item['points']:
+                path_dict[point] = os.path.join(top_level_path, point)
+        for key, value in import_funcs.items():
+            if key in path_dict:
+                value(self, path_dict[key])
+
+        self.stepChanged.emit('iORANGE|Импорт конфигурации прошёл с ошибками!\n' if self.error else 'iGREEN|Импорт конфигурации завершён.\n')
 
 
 class ImportSelectedPoints(QThread):
@@ -331,6 +351,14 @@ def import_zones(parent, path):
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'network')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_iplists = {x['name']: x['id'] for x in result}
+
     parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
 
     service_ids = {
@@ -366,14 +394,25 @@ def import_zones(parent, path):
     }
 
     error = 0
-    for item in data:
+    for zone in data:
         new_services_access = []
-        for service in item['services_access']:
+        for service in zone['services_access']:
             if service['enabled']:
+                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
+                    allowed_ips = []
+                    for item in service['allowed_ips']:
+                        if item[0] == 'list_id':
+                            try:
+                                item[1] = mc_iplists[item[1]]
+                            except KeyError as err:
+                                parent.stepChanged.emit(f'bRED|    Зона "{zone["name"]}": в контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
+                                error = 1
+                        allowed_ips.append(item)
+                    service['allowed_ips'] = allowed_ips
                 service['service_id'] = service_ids.get(service['service_id'], 'ffffff03-ffff-ffff-ffff-ffffff000001')
                 new_services_access.append(service)
-        item['services_access'] = new_services_access
-        err, result = parent.utm.add_template_zone(parent.template_id, item)
+        zone['services_access'] = new_services_access
+        err, result = parent.utm.add_template_zone(parent.template_id, zone)
         if err == 3:
             parent.stepChanged.emit(f'GRAY|    {result}')
         elif err == 1:
@@ -381,7 +420,7 @@ def import_zones(parent, path):
             error = 1
             parent.error = 1
         else:
-            parent.stepChanged.emit(f'BLACK|    Зона "{item["name"]}" импортирована.')
+            parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')
 
     out_message = 'GREEN|    Зоны импортированы в раздел "Сеть/Зоны".'
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.' if error else out_message)
@@ -460,12 +499,17 @@ def import_gateways(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
+    if isinstance(parent.ngfw_ports, int) and parent.ngfw_ports == 3:
+        parent.stepChanged.emit(f'ORANGE|    Импорт шлюзов отменён из-за отсутствия портов на узле {parent.node_name} шаблона.')
+        if parent.ngfw_ports == 1:
+            parent.error = 1
+        return
+
     err, result = parent.utm.get_template_gateways_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
-
     gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
     error = 0
 
@@ -548,6 +592,12 @@ def import_vrf(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт виртуального маршрутизатора по умолчанию в раздел "Сеть/Виртуальные маршрутизаторы".')
+    if isinstance(parent.ngfw_ports, int) and parent.ngfw_ports == 3:
+        parent.stepChanged.emit(f'ORANGE|    Импорт виртуального маршрутизатора отменён из-за отсутствия портов на узле {parent.node_name} шаблона.')
+        if parent.ngfw_ports == 1:
+            parent.error = 1
+        return
+
     parent.stepChanged.emit('LBLUE|    Добавляемые маршруты будут в не активном состоянии. Необходимо проверить маршрутизацию и включить их.')
     parent.stepChanged.emit('LBLUE|    Если вы используете BGP, после импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
     parent.stepChanged.emit('LBLUE|    Если вы используете OSPF, после импорта установите нужный профиль BFD для каждого интерфейса в настройках OSPF.')
@@ -734,13 +784,13 @@ def import_auth_servers(parent, path):
     import_ntlm_server(parent, path)
     import_radius_server(parent, path)
     import_tacacs_server(parent, path)
-#    import_saml_server(parent, path)
+    import_saml_server(parent, path)
     
 
 def import_ldap_servers(parent, path):
     """Импортируем список серверов LDAP"""
     json_file = os.path.join(path, 'config_ldap_servers.json')
-    err, data = func.read_json_file(parent, json_file)
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -781,7 +831,7 @@ def import_ldap_servers(parent, path):
 def import_ntlm_server(parent, path):
     """Импортируем список серверов NTLM"""
     json_file = os.path.join(path, 'config_ntlm_servers.json')
-    err, data = func.read_json_file(parent, json_file)
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -821,7 +871,7 @@ def import_ntlm_server(parent, path):
 def import_radius_server(parent, path):
     """Импортируем список серверов RADIUS"""
     json_file = os.path.join(path, 'config_radius_servers.json')
-    err, data = func.read_json_file(parent, json_file)
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -861,7 +911,7 @@ def import_radius_server(parent, path):
 def import_tacacs_server(parent, path):
     """Импортируем список серверов TACACS+"""
     json_file = os.path.join(path, 'config_tacacs_servers.json')
-    err, data = func.read_json_file(parent, json_file)
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
@@ -901,12 +951,19 @@ def import_tacacs_server(parent, path):
 def import_saml_server(parent, path):
     """Импортируем список серверов SAML"""
     json_file = os.path.join(path, 'config_saml_servers.json')
-    err, data = func.read_json_file(parent, json_file)
+    err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
+    err, result = parent.utm.get_template_certificates_list(parent.template_id)
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    template_certs = {x['name']: x['id'] for x in result}
+
     parent.stepChanged.emit('BLUE|Импорт серверов SAML в раздел "Пользователи и устройства/Серверы аутентификации".')
-    parent.stepChanged.emit(f'NOTE|    После импорта необходимо включить сервера SAML и загрузить SAML metadata.')
+    parent.stepChanged.emit(f'LBLUE|    После импорта необходимо включить сервера SAML и загрузить SAML metadata.')
     error = 0
 
     err, result = parent.utm.get_template_auth_servers(parent.template_id, servers_type='saml_idp')
@@ -926,22 +983,22 @@ def import_saml_server(parent, path):
                 item.pop("cc", None)
                 if item['certificate_id']:
                     try:
-                        item['certificate_id'] = parent.ngfw_data['certs'][item['certificate_id']]
+                        item['certificate_id'] = template_certs[item['certificate_id']]
                     except KeyError:
                         parent.stepChanged.emit(f'bRED|    Для "{item["name"]}" не найден сертификат "{item["certificate_id"]}".')
                         item['certificate_id'] = 0
-
-                err, result = parent.utm.add_auth_server('saml', item)
+                err, result = parent.utm.add_template_auth_server(parent.template_id, item)
                 if err:
                     parent.stepChanged.emit(f'RED|    {result}')
-                    parent.error = 1
                     error = 1
                 else:
                     saml_servers[item['name']] = result
                     parent.stepChanged.emit(f'BLACK|    Сервер аутентификации SAML "{item["name"]}" добавлен.')
-
-    out_message = 'GREEN|    Сервера SAML импортированы в раздел "Пользователи и устройства/Серверы аутентификации".'
-    parent.stepChanged.emit('ORANGE|    Ошибка импорта серверов SAML!' if error else out_message)
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов SAML.')
+    else:
+        parent.stepChanged.emit('GREEN|    Сервера SAML импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
 
 
 def import_services_list(parent, path):
@@ -1059,7 +1116,6 @@ def import_services_groups(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп сервисов.')
     else:
         parent.stepChanged.emit('GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".')
-
 
 
 def import_ip_lists(parent, path):
@@ -1228,6 +1284,50 @@ def import_url_lists(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков URL.')
     else:
         parent.stepChanged.emit('GREEN|    Списки URL импортированы в раздел "Библиотеки/Списки URL".')
+
+
+def import_shaper_list(parent, path):
+    """Импортируем список Полос пропускания раздела библиотеки"""
+    json_file = os.path.join(path, 'config_shaper_list.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    err, result = parent.utm.get_template_shapers_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    shaper_list = {x['name']: x['id'] for x in result}
+
+    parent.stepChanged.emit('BLUE|Импорт списка "Полосы пропускания" в раздел "Библиотеки/Полосы пропускания".')
+    error = 0
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in shaper_list:
+            parent.stepChanged.emit(f'GRAY|    Полоса пропускания "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_shaper(parent.template_id, shaper_list[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Полоса пропускания: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Полоса пропускания "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_shaper(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Полоса пропускания: "{item["name"]}"]')
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                shaper_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Полоса пропускания "{item["name"]}" импортирована.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Полосы пропускания".')
+    else:
+        parent.stepChanged.emit('GREEN|    Список "Полосы пропускания" импортирован в раздел "Библиотеки/Полосы пропускания".')
 
 
 def import_url_categories(parent, path):
@@ -1407,6 +1507,49 @@ def import_time_restricted_lists(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Календари".')
     else:
         parent.stepChanged.emit('GREEN|    Список "Календари" импортирован в раздел "Библиотеки/Календари".')
+
+
+def import_notification_profiles(parent, path):
+    """Импортируем список профилей оповещения"""
+    json_file = os.path.join(path, 'config_notification_profiles.json')
+    err, data = func.read_json_file(parent, json_file)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт профилей оповещений в раздел "Библиотеки/Профили оповещений".')
+    err, result = parent.utm.get_template_notification_profiles_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles = {x['name']: x['id'] for x in result}
+
+    error = 0
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль оповещения "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_notification_profile(parent.template_id, profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль оповещения: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|    Профиль оповещения "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_notification_profile(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль оповещения: "{item["name"]}"]')
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|    {result}')
+            else:
+                profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль оповещения "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей оповещений.')
+    else:
+        parent.stepChanged.emit('GREEN|    Профили оповещений импортированы в раздел "Библиотеки/Профили оповещений".')
 
 
 def import_firewall_rules(parent, path):
@@ -1734,7 +1877,7 @@ import_funcs = {
     "ContentTypes": pass_function, # import_mime_lists
     "URLLists": import_url_lists,
     "TimeSets": import_time_restricted_lists,
-    "BandwidthPools": pass_function, # import_shaper_list
+    "BandwidthPools": import_shaper_list,
     "SCADAProfiles": pass_function, # import_scada_profiles
     "ResponcePages": pass_function, # import_templates_list
     "URLCategories": import_url_categories,
@@ -1746,7 +1889,7 @@ import_funcs = {
     "Phones": pass_function, # import_phone_groups,
     "IPDSSignatures": pass_function, # import_custom_idps_signature,
     "IDPSProfiles": pass_function, # import_idps_profiles,
-    "NotificationProfiles": pass_function, # import_notification_profiles,
+    "NotificationProfiles": import_notification_profiles,
     "NetflowProfiles": pass_function, # import_netflow_profiles,
     "LLDPProfiles": pass_function, # import_lldp_profiles,
     "SSLProfiles": pass_function, # import_ssl_profiles,
@@ -1755,9 +1898,18 @@ import_funcs = {
     "HIDProfiles": pass_function, # import_hip_profiles,
     "BfdProfiles": pass_function, # import_bfd_profiles,
     "UserIdAgentSyslogFilters": pass_function, # import_useridagent_syslog_filters,
+    'Certificates': pass_function,
+    'UserCertificateProfiles': pass_function, # import_users_certificate_profiles,
+    'GeneralSettings': import_general_settings,
+#    'DeviceManagement': pass_function,
+#    'Administrators': pass_function,
     'Zones': import_zones,
     'Interfaces': import_vlans,
     'Gateways': import_gateways,
+    'DNS': import_dns_config,
+    'DHCP': import_dhcp_subnets,
+    'VRF': import_vrf,
+    'WCCP': pass_function, # import_wccp_rules,
     'AuthServers': import_auth_servers,
     'AuthProfiles': pass_function, # import_auth_profiles,
     'CaptiveProfiles': pass_function, # import_captive_profiles,
@@ -1769,15 +1921,6 @@ import_funcs = {
     'UserIDagent': pass_function, # import_userid_agent,
     'BYODPolicies': pass_function, # import_byod_policy,
     'BYODDevices': pass_function,
-    'Certificates': pass_function,
-    'UserCertificateProfiles': pass_function, # import_users_certificate_profiles,
-    'GeneralSettings': import_general_settings,
-#    'DeviceManagement': pass_function,
-#    'Administrators': pass_function,
-    'DNS': import_dns_config,
-    'DHCP': import_dhcp_subnets,
-    'VRF': import_vrf,
-    'WCCP': pass_function, # import_wccp_rules,
     'Firewall': import_firewall_rules,
     'NATandRouting': import_nat_rules,
     "ICAPServers": pass_function, # import_icap_servers,

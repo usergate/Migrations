@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.5
+# Версия 2.6
 #
 
 import os, sys, json
@@ -397,7 +397,7 @@ def convert_notification_profile(parent, path, data):
                 'name': 'System email-server',
                 'description': 'Перенесено с Fortigate',
                 'host': email_info['server'],
-                'port': email_info.get('port', 25),
+                'port': int(email_info.get('port', 25)),
                 'security': 'ssl' if ('security' in email_info and email_info['security'] == 'smtps') else 'none',
                 'authentication': False,
                 'login': 'example'

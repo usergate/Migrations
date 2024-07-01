@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.6
+# Версия 1.7
 #
 
 import os, sys, json
@@ -1378,6 +1378,13 @@ def convert_service_object(parent, path, data):
     parent.stepChanged.emit('BLUE|Конвертация сервисов.')
     if not data['services']:
         parent.stepChanged.emit(f'GRAY|    Нет сервисов для экспорта.')
+        for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+            service = {
+                'name': f'Any {item.upper()}',
+                'description': f'Any {item.upper()} packet',
+                'protocols': [{'proto': item, 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
+                }
+            data['services'][item] = service
         return
 
     section_path = os.path.join(path, 'Libraries')
@@ -1447,7 +1454,7 @@ def convert_service_object(parent, path, data):
                     'source_port': source_port,
                     'alg': ''
                 })
-    
+
         if service['protocols']:
             data['services'][key] = service
         else:
@@ -1567,7 +1574,17 @@ def convert_network_object_group(parent, path, data):
 
     section_path = os.path.join(path, 'Libraries')
     ip_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(ip_path, delete='no')
+    if err:
+        parent.error = 1
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        return
     url_path = os.path.join(section_path, 'URLLists')
+    err, msg = func.create_dir(url_path, delete='no')
+    if err:
+        parent.error = 1
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        return
 
     ip_groups = {}
     url_groups = {}

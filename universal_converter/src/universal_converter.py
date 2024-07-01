@@ -18,12 +18,12 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 4.4
+# Version 4.6
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
-from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QSize, Qt, QObject
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QStackedLayout, QFileDialog, QFrame
 import vizard_classes as vc
 import common_func as func
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 4.4)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 4.6)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()

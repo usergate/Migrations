@@ -673,7 +673,7 @@ class McXmlRpc:
     def get_template_groups_list(self, template_id):
         """Получить список локальных групп в шаблоне"""
         try:
-            result = self._server.v1.ccaccounts.groups.list(self._auth_token, template_id, 0, 100, {}, [])
+            result = self._server.v1.ccaccounts.groups.list(self._auth_token, template_id, 0, 1000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_groups_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -704,7 +704,7 @@ class McXmlRpc:
     def get_template_group_users(self, template_id, group_guid):
         """Получить список пользователей в группе шаблона"""
         try:
-            result = self._server.v1.ccaccounts.group.users.list(self._auth_token, template_id, group_guid, 0, 1000, {})
+            result = self._server.v1.ccaccounts.group.users.list(self._auth_token, template_id, group_guid, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_group_users: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -712,7 +712,7 @@ class McXmlRpc:
     def get_template_users_list(self, template_id):
         """Получить список локальных пользователей в шаблоне"""
         try:
-            result = self._server.v1.ccaccounts.users.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccaccounts.users.list(self._auth_token, template_id, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error get_template_users_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']

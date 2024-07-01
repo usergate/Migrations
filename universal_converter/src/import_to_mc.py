@@ -1969,7 +1969,7 @@ def get_ips(parent, rule_ips, mc_ips, mc_urls, rule_name):
             elif ips[0] == 'urllist_id':
                 new_rule_ips.append(['urllist_id', mc_urls[ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Правило {rule_name}: Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
     return new_rule_ips
 
 

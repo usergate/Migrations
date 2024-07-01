@@ -767,9 +767,9 @@ class UtmXmlRpc:
         """Получить список изменённых категорий URL раздела Библиотеки"""
         try:
             if self.version.startswith('5'):
-                result = self._server.v1.content.override.domains.list(self._auth_token, 0, 1000, {})
+                result = self._server.v1.content.override.domains.list(self._auth_token, 0, 10000, {})
             else:
-                result = self._server.v1.content.override.domains.list(self._auth_token, 0, 1000, {}, [])
+                result = self._server.v1.content.override.domains.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error get_custom_url_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -805,7 +805,7 @@ class UtmXmlRpc:
     def get_nlists_list(self, list_type):
         """Получить список именованных списков по их типу из Библиотеки"""
         try:
-            result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 20000, {})
+            result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_nlists_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
@@ -814,7 +814,7 @@ class UtmXmlRpc:
         """Получить список пользовательских именованных списков c их содержимым."""
         array = []
         try:
-            result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 20000, {})
+            result = self._server.v2.nlists.list(self._auth_token, list_type, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_nlist_list: [{err.faultCode}] — {err.faultString}'
 
@@ -826,11 +826,11 @@ class UtmXmlRpc:
                 try:
                     if (list_type == 'ipspolicy' and self.version.startswith('5')) \
                              or (self.version.startswith('6.1') and int(utm_version[2]) > 8):
-                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, {}, [])
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, {}, [])
                     elif self.version.startswith('7'):
-                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, {}, [])
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, {}, [])
                     else:
-                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 20000, '', [])
+                        content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, '', [])
                 except rpc.Fault as err:
                     return 2, f'Error: Содержимое списка "{item["name"]}" не экспортировано. Ошибка загрузки списка!'
                 except ExpatError:
@@ -910,9 +910,9 @@ class UtmXmlRpc:
         """Получить список сервисов раздела Библиотеки"""
         try:
             if self.version.startswith('5'):
-                result = self._server.v1.libraries.services.list(self._auth_token, 0, 5000, '', [])
+                result = self._server.v1.libraries.services.list(self._auth_token, 0, 50000, '', [])
             else:
-                result = self._server.v1.libraries.services.list(self._auth_token, 0, 5000, {}, [])
+                result = self._server.v1.libraries.services.list(self._auth_token, 0, 50000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_services_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист сервисов (список словарей).
@@ -1134,7 +1134,7 @@ class UtmXmlRpc:
     def get_idps_profiles_list(self):
         """Получить список профилей СОВ. Только для версии 7.1 и выше."""
         try:
-            result = self._server.v1.idps.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.idps.profiles.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_idps_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list
@@ -1158,7 +1158,7 @@ class UtmXmlRpc:
     def get_netflow_profiles_list(self):
         """Получить список профилей netflow раздела Библиотеки"""
         try:
-            result = self._server.v1.netmanager.netflow.profiles.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.netmanager.netflow.profiles.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_notification_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1188,7 +1188,7 @@ class UtmXmlRpc:
     def get_lldp_profiles_list(self):
         """Получить список профилей LLDP раздела Библиотеки. Только для версии 7.0 и выше"""
         try:
-            result = self._server.v1.netmanager.lldp.profiles.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.netmanager.lldp.profiles.list(self._auth_token, 0, 1000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_lldp_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список словарей
@@ -1221,7 +1221,7 @@ class UtmXmlRpc:
     def get_ssl_profiles_list(self):
         """Получить список профилей SSL"""
         try:
-            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 100, '')
+            result = self._server.v1.content.ssl.profiles.list(self._auth_token, 0, 1000, '')
         except rpc.Fault as err:
             return 1, f'Error get_ssl_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1254,7 +1254,7 @@ class UtmXmlRpc:
     def get_ssl_forward_profiles(self):
         """Получить список профилей пересылки SSL. Только для версии 7.0 и выше"""
         try:
-            result = self._server.v1.content.ssl.forward.profiles.list(self._auth_token, 0, 100, '')
+            result = self._server.v1.content.ssl.forward.profiles.list(self._auth_token, 0, 1000, '')
         except rpc.Fault as err:
             return 1, f'Error get_ssl_forward_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1278,7 +1278,7 @@ class UtmXmlRpc:
     def get_hip_objects_list(self):
         """Получить список объектов HIP"""
         try:
-            result = self._server.v1.hip.objects.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.hip.objects.list(self._auth_token, 0, 5000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error get_hip_objects_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1302,7 +1302,7 @@ class UtmXmlRpc:
     def get_hip_profiles_list(self):
         """Получить список профилей HIP"""
         try:
-            result = self._server.v1.hip.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.hip.profiles.list(self._auth_token, 0, 5000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error get_hip_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1350,7 +1350,7 @@ class UtmXmlRpc:
     def get_useridagent_filters_list(self):
         """Получить Syslog фильтры UserID агента"""
         try:
-            result = self._server.v1.useridagent.filters.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.useridagent.filters.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error get_useridagent_filters_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1376,9 +1376,9 @@ class UtmXmlRpc:
         """Получить список локальных групп"""
         try:
             if self.version_hight == 5:
-                result = self._server.v3.accounts.groups.list(self._auth_token, 0, 1000, {})
+                result = self._server.v3.accounts.groups.list(self._auth_token, 0, 10000, {})
             else:
-                result = self._server.v3.accounts.groups.list(self._auth_token, 0, 1000, {}, [])
+                result = self._server.v3.accounts.groups.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_groups_list: [{err.faultCode}] — {err.faultString}'
 
@@ -1418,7 +1418,7 @@ class UtmXmlRpc:
     def get_group_users(self, group_guid):
         """Получить список пользователей в группе"""
         try:
-            result = self._server.v3.accounts.group.users.list(self._auth_token, group_guid, 0, 1000, {})
+            result = self._server.v3.accounts.group.users.list(self._auth_token, group_guid, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_group_users: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1426,7 +1426,7 @@ class UtmXmlRpc:
     def get_users_list(self):
         """Получить список локальных пользователей"""
         try:
-            result = self._server.v3.accounts.users.list(self._auth_token, 0, 1000, {})
+            result = self._server.v3.accounts.users.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error get_users_list: [{err.faultCode}] — {err.faultString}'
         if not (self.version_hight >= 7 and self.version_midle >= 1):
@@ -1556,7 +1556,7 @@ class UtmXmlRpc:
         """Получить список профилей MFA"""
         try:
             f = getattr(self._server, 'v1.2fa.profiles.list')
-            result = f(self._auth_token, 0, 100, '')
+            result = f(self._auth_token, 0, 1000, '')
         except rpc.Fault as err:
             return 1, f'Error utm.get_2fa_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1629,7 +1629,7 @@ class UtmXmlRpc:
     def get_captive_portal_rules(self):
         """Получить список правил Captive-портала"""
         try:
-            result = self._server.v1.captiveportal.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.captiveportal.rules.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_captive_portal_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1683,7 +1683,7 @@ class UtmXmlRpc:
     def get_byod_policy(self):
         """Получить список политик BYOD. Только для версий 5 и 6."""
         try:
-            result = self._server.v1.byod.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.byod.rules.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_byod_policy: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1773,7 +1773,7 @@ class UtmXmlRpc:
     def get_useridagent_servers(self):
         """Получить список UserID серверов"""
         try:
-            result = self._server.v1.useridagent.servers.list(self._auth_token, 0, 100, {}, [])
+            result = self._server.v1.useridagent.servers.list(self._auth_token, 0, 50000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_useridagent_servers: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список
@@ -1797,7 +1797,7 @@ class UtmXmlRpc:
     def get_useridagent_filters(self):
         """Получить список UserID фильтров"""
         try:
-            result = self._server.v1.useridagent.filters.list(self._auth_token, 0, 100, {}, [])
+            result = self._server.v1.useridagent.filters.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_useridagent_filters: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список
@@ -1864,7 +1864,7 @@ class UtmXmlRpc:
     def get_traffic_rules(self):
         """Получить список правил NAT"""
         try:
-            result = self._server.v1.traffic.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.traffic.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_traffic_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1954,7 +1954,7 @@ class UtmXmlRpc:
     def get_shaper_rules(self):
         """Получить список правил пропускной способности"""
         try:
-            result = self._server.v1.shaper.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.shaper.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_shaper_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1980,7 +1980,7 @@ class UtmXmlRpc:
     def get_content_rules(self):
         """Получить список правил фильтрации контента"""
         try:
-            result = self._server.v1.content.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.content.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_content_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2006,7 +2006,7 @@ class UtmXmlRpc:
     def get_safebrowsing_rules(self):
         """Получить список правил веб-безопасности"""
         try:
-            result = self._server.v1.content.filtering.options.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.content.filtering.options.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_safebrowsing_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2032,7 +2032,7 @@ class UtmXmlRpc:
     def get_tunnel_inspection_rules(self):
         """Получить список правил инспектирования туннелей. Для версии 7.0 и выше."""
         try:
-            result = self._server.v1.firewall.tunnel.inspection.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.firewall.tunnel.inspection.rules.list(self._auth_token, 0, 5000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_tunnel_inspection_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2058,7 +2058,7 @@ class UtmXmlRpc:
     def get_ssldecrypt_rules(self):
         """Получить список правил инспектирования SSL"""
         try:
-            result = self._server.v1.content.ssl.decryption.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.content.ssl.decryption.rules.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_ssldecrypt_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2084,7 +2084,7 @@ class UtmXmlRpc:
     def get_sshdecrypt_rules(self):
         """Получить список правил инспектирования SSH"""
         try:
-            result = self._server.v1.content.ssh.decryption.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.content.ssh.decryption.rules.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_sshdecrypt_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2114,7 +2114,7 @@ class UtmXmlRpc:
                 result = self._server.v1.idps.rules.list(self._auth_token, {})
                 return 0, result
             else:
-                result = self._server.v1.idps.rules.list(self._auth_token, 0, 1000, {})
+                result = self._server.v1.idps.rules.list(self._auth_token, 0, 100000, {})
                 return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error utm.get_idps_rules: [{err.faultCode}] — {err.faultString}'
@@ -2144,7 +2144,7 @@ class UtmXmlRpc:
                 result = self._server.v1.scada.rules.list(self._auth_token, {})
                 return 0, result
             else:
-                result = self._server.v1.scada.rules.list(self._auth_token, 0, 1000, {})
+                result = self._server.v1.scada.rules.list(self._auth_token, 0, 100000, {})
                 return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error utm.get_scada_rules: [{err.faultCode}] — {err.faultString}'
@@ -2170,7 +2170,7 @@ class UtmXmlRpc:
     def get_scenarios_rules(self):
         """Получить список сценариев"""
         try:
-            result = self._server.v1.scenarios.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.scenarios.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_scenarios_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2194,7 +2194,7 @@ class UtmXmlRpc:
     def get_mailsecurity_rules(self):
         """Получить список правил защиты почтового трафика"""
         try:
-            result = self._server.v1.mailsecurity.rules.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.mailsecurity.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_mailsecurity_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2274,7 +2274,7 @@ class UtmXmlRpc:
             if self.version.startswith('5'):
                 result = self._server.v1.icap.rules.list(self._auth_token, {})
             else:
-                result = self._server.v1.icap.rules.list(self._auth_token, 0, 100, {})
+                result = self._server.v1.icap.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_icap_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result if self.version.startswith('5') else result['items']
@@ -2298,7 +2298,7 @@ class UtmXmlRpc:
     def get_dos_profiles(self):
         """Получить список профилей DoS"""
         try:
-            result = self._server.v1.dos.profiles.list(self._auth_token, 0, 100, '')
+            result = self._server.v1.dos.profiles.list(self._auth_token, 0, 10000, '')
         except rpc.Fault as err:
             return 1, f'Error utm.get_dos_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2322,7 +2322,7 @@ class UtmXmlRpc:
     def get_dos_rules(self):
         """Получить список правил защиты DoS"""
         try:
-            result = self._server.v1.dos.rules.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.dos.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_dos_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2373,7 +2373,7 @@ class UtmXmlRpc:
         """Получить список серверов reverse-прокси"""
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.reverseproxy.profiles.list(self._auth_token, 0, 1000, {}, [])
+                result = self._server.v1.reverseproxy.profiles.list(self._auth_token, 0, 100000, {}, [])
                 return 0, result['items']   # Возвращает список настроек серверов reverse-прокси
             else:
                 result = self._server.v1.reverseproxy.profiles.list(self._auth_token)
@@ -2404,7 +2404,7 @@ class UtmXmlRpc:
                 result = self._server.v1.reverseproxy.rules.list(self._auth_token, {})
                 return 0, result
             else:
-                result = self._server.v1.reverseproxy.rules.list(self._auth_token, 0, 100, {})
+                result = self._server.v1.reverseproxy.rules.list(self._auth_token, 0, 100000, {})
                 return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error utm.get_reverseproxy_rules: [{err.faultCode}] — {err.faultString}'
@@ -2428,7 +2428,7 @@ class UtmXmlRpc:
     def get_waf_profiles(self):
         """Получить список профилей WAF"""
         try:
-            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 100000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_waf_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2460,7 +2460,7 @@ class UtmXmlRpc:
     def get_vpn_client_security_profiles(self):
         """Получить клиентские профили безопасности VPN. Только для версии 7.1 и выше."""
         try:
-            result = self._server.v1.vpn.client.security.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.vpn.client.security.profiles.list(self._auth_token, 0, 100000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_client_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2484,7 +2484,7 @@ class UtmXmlRpc:
     def get_vpn_server_security_profiles(self):
         """Получить серверные профили безопасности VPN. Только для версии 7.1 и выше."""
         try:
-            result = self._server.v1.vpn.server.security.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.vpn.server.security.profiles.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_server_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2532,7 +2532,7 @@ class UtmXmlRpc:
     def get_vpn_server_rules(self):
         """Получить список серверных правил VPN"""
         try:
-            result = self._server.v1.vpn.server.rules.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.vpn.server.rules.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_server_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result if self.version.startswith('5') else result['items']
@@ -2637,7 +2637,7 @@ class UtmXmlRpc:
     def get_snmp_security_profiles(self):
         """Получить профили безопасности SNMP. Для версии 7.1 и выше."""
         try:
-            result = self._server.v1.snmp.security.profiles.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.snmp.security.profiles.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_snmp_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2662,7 +2662,7 @@ class UtmXmlRpc:
         """Получить список правил SNMP"""
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.snmp.rules.list(self._auth_token, 0, 100, {})
+                result = self._server.v1.snmp.rules.list(self._auth_token, 0, 100000, {})
                 return 0, result['items']
             else:
                 result = self._server.v1.snmp.rules.list(self._auth_token)
@@ -2689,7 +2689,7 @@ class UtmXmlRpc:
     def get_notification_alert_rules(self):
         """Получить список правил оповещений"""
         try:
-            result = self._server.v1.notification.alert.rules.list(self._auth_token, 0, 100, {})
+            result = self._server.v1.notification.alert.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_notification_alert_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result if int(self.version[:1]) < 7 else result['items']
@@ -2714,7 +2714,7 @@ class UtmXmlRpc:
     def get_waf_technology_list(self):
         """Получить список технологий WAF"""
         try:
-            result = self._server.v1.waf.system.rules.technologies.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.waf.system.rules.technologies.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_waf_technology_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей: {'id': <int>; 'name': <str>}
@@ -2722,7 +2722,7 @@ class UtmXmlRpc:
     def get_waf_system_layers_list(self):
         """Получить список системных слоёв WAF"""
         try:
-            result = self._server.v1.waf.system.layers.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.waf.system.layers.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_waf_system_layers_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2730,7 +2730,7 @@ class UtmXmlRpc:
     def get_waf_custom_layers_list(self):
         """Получить список персональных слоёв WAF"""
         try:
-            result = self._server.v1.waf.custom.layers.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.waf.custom.layers.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_waf_custom_layers_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2754,7 +2754,7 @@ class UtmXmlRpc:
     def get_waf_profiles_list(self):
         """Получить список профилей WAF"""
         try:
-            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_waf_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей
@@ -2808,7 +2808,7 @@ class UtmXmlRpc:
     def get_l7_profiles_list(self):
         """Получить список профилей приложений. Только для версии 7.1 и выше."""
         try:
-            result = self._server.v1.l7.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.l7.profiles.list(self._auth_token, 0, 100000, {}, [])
         except rpc.Fault as err:
             return 1, f'Error utm.get_l7_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list
@@ -2851,15 +2851,15 @@ class UtmXmlRpc:
         """Получить список приложений l7"""
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.l7.signatures.list(self._auth_token, 0, 50000, {}, [])
+                result = self._server.v1.l7.signatures.list(self._auth_token, 0, 500000, {}, [])
 #                return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
                 return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 6 or (self.version_hight == 7 and self.version_midle == 0):
-                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, {}, [])
+                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 500000, {}, [])
 #                return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]
                 return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 5:
-                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 50000, '')
+                result = self._server.v2.core.get.l7apps(self._auth_token, 0, 500000, '')
 #                return 0, [{'id': x['app_id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
                 return 0, {x['app_id']: x['name'] for x in result['items']}
         except rpc.Fault as err:

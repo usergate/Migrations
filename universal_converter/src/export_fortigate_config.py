@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.6
+# Версия 2.7
 #
 
 import os, sys, json
@@ -80,8 +80,8 @@ class ConvertFortigateConfig(QThread):
                 convert_ntp_settings(self, self.current_ug_path, data)
                 convert_zone_settings(self, self.current_ug_path, data)
                 convert_dhcp_settings(self, self.current_ug_path, data)
-                convert_ip_lists(self, self.current_ug_path, data)
                 convert_url_lists(self, self.current_ug_path, data)
+                convert_ip_lists(self, self.current_ug_path, data)
                 convert_shapers_list(self, self.current_ug_path, data)
                 convert_shapers_rules(self, self.current_ug_path, data)
                 convert_auth_servers(self, self.current_ug_path, data)
@@ -994,12 +994,14 @@ def convert_ip_lists(parent, path, data):
         for item in members:
             if item in parent.ip_lists:
                 ip_list['content'].append({'list': func.get_restricted_name(item)})
+            elif item in parent.url_lists:
+                continue
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
                     ip_list['content'].append({'value': item})
                 except ValueError:
-                    parent.stepChanged.emit(f'bRED|    В списке "{list_name}" не найден список ip-адресов "{item}". Такого списка нет в списках IP-адресов.')
+                    parent.stepChanged.emit(f'bRED|    Для списка "{list_name}" не найден список ip-адресов "{item}". Такого списка нет в списках IP-адресов.')
 
         if ip_list['content']:
             parent.ip_lists.add(list_name)

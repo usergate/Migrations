@@ -113,6 +113,9 @@ ip-адрес на каждом интерфейсе.<br>
 1. sudo apt-get install libnvidia-egl-wayland1<br>
 2. Перезагрузить компьютер.<br>
 
+На виртуальных машинах возможна ошибка: "libEGL.so.1: cannot open shared object file: No such file or directory"<br>
+Может помочь: apt update && apt install -y libopencv-dev && apt clean && rm -rf /var/lib/apt/lists/*
+
 17.05.2024 Исправлена импорт списков IP-адресов в настройках зон для NGFW версии 7.1<br>
 08.04.2024 Сделана совместимость с релизом NGFW версии 7.1.0<br>
 20.03.2024 Исправлен экспорт шлюзов если они ранее были получены с МС.<br>

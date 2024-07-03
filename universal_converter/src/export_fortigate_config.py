@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.7
+# Версия 2.8
 #
 
 import os, sys, json
@@ -62,7 +62,8 @@ class ConvertFortigateConfig(QThread):
         }
 
     def run(self):
-        self.stepChanged.emit('GREEN|Конвертация файла конфигурации Fortigate в формат UserGate NGFW.')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Fortigate в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_file(self, self.current_fg_path)
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
@@ -1240,7 +1241,7 @@ def convert_shapers_rules(parent, path, data):
             'apps': [],
             'pool': '',
             'enabled': False,
-            'time_restriction': [],
+            'time_restrictions': [],
             'limit': True,
             'limit_value': '3/h',
             'limit_bust': 5,
@@ -1620,7 +1621,7 @@ def convert_dnat_rule(parent, path, data):
                 rule = {
                     'name': f'Rule {func.get_restricted_name(key)}',
                     'description': value.get('comment', 'Портировано с Fortigate'),
-                    'action': 'port-mapping' if port_mappings else 'dnat',
+                    'action': 'port_mapping' if port_mappings else 'dnat',
                     'position': 'last',
                     'zone_in': get_zones(parent, value.get('extintf', '')),
                     'zone_out': [],
@@ -1998,29 +1999,55 @@ def convert_bgp_routes(parent, path, data):
     if 'router-id' in bgp:
         neighbors = []
         try:
-            for key, value in bgp['config neighbor'].items():
-                neighbors.append({
-                    'enabled': True,
-                    'description': '',
-                    'host': key,
-                    'remote_asn': int(value['remote-as']),
-                    'weight': 10,
-                    'next_hop_self': False,
-                    'ebgp_multihop': False,
-                    'route_reflector_client': True if value.get('route-reflector-client', None) == 'enable' else False,
-                    'multihop_ttl': 10,
-                    'soft_reconfiguration': False,
-                    'default_originate': False,
-                    'send_community': False,
-                    'password': False,
-                    'filter_in': filter_keys[value.get('prefix-list-in', 'empty')],
-                    'filter_out': filter_keys[value.get('prefix-list-out', 'empty')],
-                    'routemap_in': routemaps_keys[value.get('route-map-in', 'empty')],
-                    'routemap_out': routemaps_keys[value.get('route-map-out', 'empty')],
-                    'allowas_in': False,
-                    'allowas_in_number': 3,
-                    'bfd_profile': -1
-                })
+            if 'config neighbor' in bgp:
+                for key, value in bgp['config neighbor'].items():
+                    neighbors.append({
+                        'enabled': True,
+                        'description': '',
+                        'host': key,
+                        'remote_asn': int(value['remote-as']),
+                        'weight': 10,
+                        'next_hop_self': False,
+                        'ebgp_multihop': False,
+                        'route_reflector_client': True if value.get('route-reflector-client', None) == 'enable' else False,
+                        'multihop_ttl': 10,
+                        'soft_reconfiguration': False,
+                        'default_originate': False,
+                        'send_community': False,
+                        'password': False,
+                        'filter_in': filter_keys[value.get('prefix-list-in', 'empty')],
+                        'filter_out': filter_keys[value.get('prefix-list-out', 'empty')],
+                        'routemap_in': routemaps_keys[value.get('route-map-in', 'empty')],
+                        'routemap_out': routemaps_keys[value.get('route-map-out', 'empty')],
+                        'allowas_in': False,
+                        'allowas_in_number': 3,
+                        'bfd_profile': -1
+                    })
+            elif 'config neighbor-range' in bgp:
+                for item in bgp['config neighbor-range'].values():
+                    neighbor_group = bgp['config neighbor-group'][item['neighbor-group']]
+                    neighbors.append({
+                        'enabled': True,
+                        'description': neighbor_group.get('description', ''),
+                        'host': item['prefix'].split()[0],
+                        'remote_asn': int(neighbor_group['remote-as']),
+                        'weight': int(neighbor_group.get('weight', 10)),
+                        'next_hop_self': True if neighbor_group.get('next-hop-self', False) == 'enable' else False,
+                        'ebgp_multihop': True if neighbor_group.get('ebgp-enforce-multihop', False) == 'enable' else False,
+                        'route_reflector_client': True if neighbor_group.get('route-reflector-client', None) == 'enable' else False,
+                        'multihop_ttl': 10,
+                        'soft_reconfiguration': False,
+                        'default_originate': False,
+                        'send_community': True if neighbor_group.get('send-community', False) == 'standard' else False,
+                        'password': False,
+                        'filter_in': filter_keys[neighbor_group.get('prefix-list-in', 'empty')],
+                        'filter_out': filter_keys[neighbor_group.get('prefix-list-out', 'empty')],
+                        'routemap_in': routemaps_keys[neighbor_group.get('route-map-in', 'empty')],
+                        'routemap_out': routemaps_keys[neighbor_group.get('route-map-out', 'empty')],
+                        'allowas_in': False,
+                        'allowas_in_number': 3,
+                        'bfd_profile': -1
+                    })
             if 'config network' in bgp and bgp['config network']:
                 config_network = [func.pack_ip_address(*x['prefix'].split()) for x in bgp['config network'].values()]
             else:

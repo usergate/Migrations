@@ -53,8 +53,8 @@ class ConvertMikrotikConfig(QThread):
         self.services = {}
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|                                                            Конвертация конфигурации MikroTik в формат UserGate NGFW.')
-        self.stepChanged.emit(f'ORANGE|====================================================================================================================')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации MikroTik в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_file(self, self.current_fpr_path)
         
         json_file = os.path.join(self.current_fpr_path, 'config.json')
@@ -722,8 +722,6 @@ def convert_services_list(parent, path, data):
     else:
         parent.stepChanged.emit('GRAY|    Нет сервисов для экспорта.')
 
-#    print(json.dumps(data['ip firewall filter'], indent=4, ensure_ascii=False))
-
 
 def convert_services_from_filter(parent, ip_firewall_filter):
     """Конвертируем список сервисов из правил firewall"""
@@ -985,7 +983,7 @@ def convert_firewall_rules(parent, path, data):
 
 def convert_dnat_rules(parent, path, data):
     """Конвертируем правила межсетевого экрана"""
-    parent.stepChanged.emit('BLUE|Конвертация правил межсетевого экрана.')
+    parent.stepChanged.emit('BLUE|Конвертация правил DNAT и Порт-форвардинг.')
     section_path = os.path.join(path, 'NetworkPolicies')
     current_path = os.path.join(section_path, 'NATandRouting')
     err, msg = func.create_dir(current_path)
@@ -1072,9 +1070,9 @@ def convert_dnat_rules(parent, path, data):
         json_file = os.path.join(current_path, 'config_nat_rules.json')
         with open(json_file, "w") as fh:
             json.dump(dnat_rules, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список правил DNAT выгружен в файл "{json_file}".')
+        parent.stepChanged.emit(f'BLACK|    Список правил DNAT/Порт-форвардинг выгружен в файл "{json_file}".')
     else:
-        parent.stepChanged.emit('GRAY|    Нет правил DNAT для экспорта.')
+        parent.stepChanged.emit('GRAY|    Нет правил DNAT/Порт-форвардинг для экспорта.')
 
 #####################################################################################################
 

@@ -68,6 +68,8 @@ class ConvertHuaweiConfig(QThread):
         }
 
     def run(self):
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Huawei в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_file(self, self.current_vendor_path)
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации Huawei в формат UserGate NGFW прервана.')
@@ -890,18 +892,16 @@ def convert_notification_profile(parent, path, data):
 def convert_services(parent, path, data):
     """Конвертируем сетевые сервисы."""
     parent.stepChanged.emit('BLUE|Конвертация сетевых сервисов.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'Services')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
 
     if 'services_lists' in data:
-        section_path = os.path.join(path, 'Libraries')
-        current_path = os.path.join(section_path, 'Services')
-        err, msg = func.create_dir(current_path)
-        if err:
-            parent.stepChanged.emit(f'RED|    {msg}.')
-            parent.error = 1
-            return
-
         services_proto = {'110': 'pop3', '995': 'pop3s', '25': 'smtp', '465': 'smtps'}
-
         for service in data['services_lists']:
             for protocol in service['protocols']:
                 if 'port' not in protocol:
@@ -915,13 +915,14 @@ def convert_services(parent, path, data):
                     protocol['port'] = ''
                 if protocol['source_port'] == '0-65535':
                     protocol['source_port'] = ''
-
-        json_file = os.path.join(current_path, 'config_services_list.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data['services_lists'], fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Сервисы выгружены в файл "{json_file}".')
     else:
-        parent.stepChanged.emit('GRAY|    Нет сетевых сервисов для экспорта.')
+        data['services_lists'] = []
+    data['services_lists'].extend(func.create_ug_services())
+
+    json_file = os.path.join(current_path, 'config_services_list.json')
+    with open(json_file, 'w') as fh:
+        json.dump(data['services_lists'], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Сервисы выгружены в файл "{json_file}".')
 
 
 def convert_ip_lists(parent, path, data):
@@ -1343,7 +1344,8 @@ def convert_static_routes(parent, path, data):
                     'weight': 1,
                     'multigate': False,
                     'default': False,
-                    'iface': 'undefined'
+                    'iface': 'undefined',
+                    'is_automatic': False
                 })
                 continue
             route['enabled'] = False

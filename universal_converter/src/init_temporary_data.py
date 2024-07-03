@@ -55,7 +55,7 @@ class GetTemporaryData(QThread):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.ngfw_data['certs'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
-        self.ngfw_data['certs'][-1] = -1
+        self.ngfw_data['certs'][-1] = 0
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
@@ -89,8 +89,8 @@ class GetTemporaryData(QThread):
                 self.stepChanged.emit(f'iRED|{result}')
                 return
             self.ngfw_data['ssl_profiles'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
-        # Получаем список IP-листов
 
+        # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов')
         err, result = self.utm.get_nlists_list('network')
         if err:

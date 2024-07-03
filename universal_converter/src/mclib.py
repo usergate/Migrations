@@ -401,7 +401,7 @@ class McXmlRpc:
             if err.faultCode == 9:
                 return 3, f'Сервис "{service["name"]}" уже существует.'
             else:
-                return 1, f'Error mclib.add_template_service: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.add_template_service: [{err.faultCode}] — {err.faultString} [Сервис "{service["name"]}"]'
         return 0, result     # Возвращает ID сервиса
 
     def update_template_service(self, template_id, service_id, service):
@@ -412,7 +412,7 @@ class McXmlRpc:
             if err.faultCode == 7:
                 return 4, f'Не удалось обновить сервис "{service["name"]}". Данный сервис не найден.'
             else:
-                return 1, f'Error mclib.update_template_service: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.update_template_service: [{err.faultCode}] — {err.faultString} [Сервис "{service["name"]}"]'
         return 0, result     # Возвращает True
 
     def get_template_nlists_list(self, template_id, list_type):
@@ -586,6 +586,30 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
+    def get_template_shaper_rules(self, template_id):
+        """Получить список правил пропускной способности"""
+        try:
+            result = self._server.v1.ccshaper.rules.list(self._auth_token, template_id, 0, 100000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_shaper_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_shaper_rule(self, template_id, rule):
+        """Добавить новое правило пропускной способности"""
+        try:
+            result = self._server.v1.ccshaper.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_shaper_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_shaper_rule(self, template_id, rule_id, rule):
+        """Обновить правило пропускной способности"""
+        try:
+            result = self._server.v1.ccshaper.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_shaper_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
 ########################## Политики безопасности ############################################################
     def get_template_content_rules(self, template_id):
         """Получить список правил фильтрации контента шаблона"""
@@ -616,7 +640,7 @@ class McXmlRpc:
         try:
             result = self._server.v1.ccscenarios.rules.list(self._auth_token, template_id, 0, 1000, {}, [])
         except rpc.Fault as err:
-            return 1, f'Error mclib.get_scenarios_rules: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.get_template_scenarios_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_template_scenarios_rule(self, template_id, rule):

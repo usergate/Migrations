@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 4.7
+# Version 4.8
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 4.7)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 4.8)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()

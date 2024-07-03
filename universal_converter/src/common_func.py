@@ -137,7 +137,10 @@ def create_ip_list(parent, path, ips=[], name=None):
 
 
 def get_time_restrictions(parent, time_restrictions, rule_name):
-    """Проверяем что календарь существует. Возвращаем список только существующих календарей."""
+    """
+    Проверяем что календарь существует. Возвращаем список только существующих календарей.
+    Применяется при экспорте конфигурации с вендоров.
+    """
     new_schedule = []
     for item in time_restrictions:
         if item in parent.time_restrictions:
@@ -145,17 +148,6 @@ def get_time_restrictions(parent, time_restrictions, rule_name):
         else:
             parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден календарь "{item}".')
     return new_schedule
-
-
-def get_time_restrictions_id(parent, time_restrictions, utm_schedules, rule_name):
-    """Получаем ID календарей по их именам. Если календарь не найден на UTM, то он пропускается."""
-    new_schedules = []
-    for name in time_restrictions:
-        try:
-            new_schedules.append(utm_schedules[name])
-        except KeyError:
-            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Не найден календарь "{name}".')
-    return new_schedules
 
 
 def pack_ip_address(ip, mask):
@@ -254,6 +246,54 @@ def check_auth(parent):
         return False
     else:
         return True
+
+def create_ug_services():
+    ug_services = [
+        {'name': 'DNS', 'description': 'Domain Name Service', 'protocols': [
+                {'proto': 'udp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'HTTP', 'description': 'Hypertext Transport Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'HTTPS', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
+            {'proto': 'tcp', 'port': '443', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
+                {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'IMAP', 'description': 'Internet Mail Access Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '143', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'IMAPS', 'description': 'Internet Mail Access Protocol over SSL', 'protocols': [
+            {'proto': 'tcp', 'port': '993', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'NTP', 'description': 'Network Time Protocol', 'protocols': [
+            {'proto': 'udp', 'port': '123', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'POP3', 'description': 'Post Office Protocol', 'protocols': [
+            {'proto': 'pop3', 'port': '110', 'app_proto': 'pop3', 'source_port': '', 'alg': ''}]},
+        {'name': 'POP3S', 'description': 'Post Office Protocol over SSL', 'protocols': [
+            {'proto': 'pop3s', 'port': '995', 'app_proto': 'pop3s', 'source_port': '', 'alg': ''}]},
+        {'name': 'Postgres SQL', 'description': '', 'protocols': [
+            {'proto': 'tcp', 'port': '5432', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'RDP', 'description': 'Remote Desktop Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '3389', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SIP', 'description': 'Session Initiation Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '5060-5061', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SMTP', 'description': 'Simple Mail Transfer Protocol', 'protocols': [
+            {'proto': 'smtp', 'port': '25', 'app_proto': 'smtp', 'source_port': '', 'alg': ''}]},
+        {'name': 'SNMP', 'description': 'Simple Network Management Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'udp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SSH', 'description': 'Secure Shell', 'protocols': [
+            {'proto': 'tcp', 'port': '22', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'TFTP', 'description': 'Trivial File Transfer Protocol', 'protocols': [
+            {'proto': 'udp', 'port': '69', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'Rsync', 'description': '', 'protocols': [
+            {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+    ]
+    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+        ug_services.append({
+            'name': f'Any {item.upper()}',
+            'description': f'Any {item.upper()} packet',
+            'protocols': [{'proto': item, 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
+        })
+    return ug_services
 
 def message_inform(parent, title, message):
     """Общее информационное окно. Принимает родителя, заголовок и текст сообщения"""

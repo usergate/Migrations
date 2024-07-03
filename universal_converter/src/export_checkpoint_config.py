@@ -56,8 +56,9 @@ class ConvertCheckPointConfig(QThread):
 
     def run(self):
         """Конвертируем всё в пакетном режиме"""
-        self.stepChanged.emit(f'GREEN|                       Преобразование конфигурации CheckPoint (Secure Gateway: {self.sg_name}) в формат UG NGFW')
-        self.stepChanged.emit(f'ORANGE|==============================================================================================================================')
+        title = f'Конвертация конфигурации CheckPoint (Secure Gateway: {self.sg_name}) в формат UG NGFW'
+        self.stepChanged.emit(f'GREEN|{title:>110}')
+        self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_cp(self)
 
         self.config_path = os.path.join(self.current_vendor_path, 'data_json')

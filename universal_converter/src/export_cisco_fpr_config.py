@@ -46,7 +46,8 @@ class ConvertCiscoFPRConfig(QThread):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit('GREEN|Конвертация конфигурации Cisco FPR в формат UserGate NGFW.')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco FPR в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_file(self, self.current_fpr_path)
         
         json_file = os.path.join(self.current_fpr_path, 'cisco_fpr.json')

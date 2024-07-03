@@ -45,7 +45,8 @@ class ConvertCiscoASAConfig(QThread):
         self.ip_lists = set()
 
     def run(self):
-        self.stepChanged.emit('GREEN|Конвертация конфигурации Cisco ASA в формат UserGate NGFW.')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco ASA в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_file(self, self.current_asa_path)
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прервана.\n')

@@ -250,15 +250,15 @@ def check_auth(parent):
 def create_ug_services():
     ug_services = [
         {'name': 'DNS', 'description': 'Domain Name Service', 'protocols': [
-                {'proto': 'udp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''},
-                {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+            {'proto': 'udp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'HTTP', 'description': 'Hypertext Transport Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'HTTPS', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
             {'proto': 'tcp', 'port': '443', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
-                {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
-                {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+            {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'IMAP', 'description': 'Internet Mail Access Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '143', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'IMAPS', 'description': 'Internet Mail Access Protocol over SSL', 'protocols': [
@@ -274,9 +274,12 @@ def create_ug_services():
         {'name': 'RDP', 'description': 'Remote Desktop Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '3389', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SIP', 'description': 'Session Initiation Protocol', 'protocols': [
-            {'proto': 'tcp', 'port': '5060-5061', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+            {'proto': 'tcp', 'port': '5060-5061', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'udp', 'port': '5060', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SMTP', 'description': 'Simple Mail Transfer Protocol', 'protocols': [
             {'proto': 'smtp', 'port': '25', 'app_proto': 'smtp', 'source_port': '', 'alg': ''}]},
+        {'name': 'SMTPS', 'description': 'Simple Mail Transfer Protocol over SSL', 'protocols': [
+            {'proto': 'smtps', 'port': '465', 'app_proto': 'smtps', 'source_port': '', 'alg': ''}]},
         {'name': 'SNMP', 'description': 'Simple Network Management Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'udp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''}]},

@@ -41,8 +41,11 @@ class ConvertCiscoASAConfig(QThread):
         super().__init__()
         self.current_asa_path = current_asa_path
         self.current_ug_path = current_ug_path
-        self.error = 0
+        self.services = {}
+        self.service_groups = {}
         self.ip_lists = set()
+        self.nat_rules = []
+        self.error = 0
 
     def run(self):
         self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco ASA в формат UserGate NGFW.":>110}')
@@ -77,11 +80,16 @@ class ConvertCiscoASAConfig(QThread):
                 convert_network_object_group(self, self.current_ug_path, data)
                 convert_service_object_group(self, self.current_ug_path, data)
                 convert_protocol_object_group(self, self.current_ug_path, data)
+                convert_icmp_object_group(self, self.current_ug_path, data)
                 convert_time_sets(self, self.current_ug_path, data)
                 convert_firewall_rules(self, self.current_ug_path, data)
                 convert_webtype_ace(self, self.current_ug_path, data)
                 convert_dnat_rule(self, self.current_ug_path, data)
                 convert_nat_rule(self, self.current_ug_path, data)
+
+                save_services(self, self.current_ug_path)
+                save_service_groups(self, self.current_ug_path)
+
             if self.error:
                 self.stepChanged.emit('iORANGE|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прошла с ошибками.\n')
             else:
@@ -1377,28 +1385,10 @@ def convert_local_users(parent, path, local_users):
 def convert_service_object(parent, path, data):
     """Конвертируем сетевой сервис"""
     parent.stepChanged.emit('BLUE|Конвертация сервисов.')
-    if not data['services']:
-        parent.stepChanged.emit(f'GRAY|    Нет сервисов для экспорта.')
-        for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
-            service = {
-                'name': f'Any {item.upper()}',
-                'description': f'Any {item.upper()} packet',
-                'protocols': [{'proto': item, 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
-                }
-            data['services'][item] = service
-        return
-
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.error = 1
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        return
-
     for key, value in data['services'].items():
+        service_name = ug_services.get(key, key)
         service = {
-            'name': key,
+            'name': service_name,
             'description': '',
             'protocols': []
         }
@@ -1421,14 +1411,14 @@ def convert_service_object(parent, path, data):
                     match other:
                         case ['source', 'eq', src_port]:
                             source_port = get_service_number(src_port)
-                            if source_port is None:
+                            if not source_port:
                                 parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
                                 proto = None
                         case ['source', 'range', port1, port2]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['destination', 'eq', dst_port]:
                             port = get_service_number(dst_port)
-                            if port is None:
+                            if not port:
                                 parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
                                 proto = None
                         case ['destination', 'range', port1, port2]:
@@ -1457,21 +1447,29 @@ def convert_service_object(parent, path, data):
                 })
 
         if service['protocols']:
-            data['services'][key] = service
+            parent.services[service_name] = service
         else:
-            data['services'][key] = {}
+            parent.services[service_name] = {}
 
-    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
-        service = {
-            'name': f'Any {item.upper()}',
-            'description': f'Any {item.upper()} packet',
-            'protocols': [{'proto': item, 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
-            }
-        data['services'][item] = service
+    for item in func.create_ug_services():
+        parent.services[item['name']] = item
+    parent.stepChanged.emit(f'GREEN|    Список сервисов конвертирован.')
 
+
+def save_services(parent, path):
+    """Сохраняем список сервисов в файл Libraries/Services/config_services_list.json"""
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'Services')
     json_file = os.path.join(current_path, 'config_services_list.json')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.error = 1
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.stepChanged.emit(f'RED|    Произошла ошибка при выгрузке списка сервисов в файл "{json_file}". Список сервисов не выгружен.')
+        return
+
     with open(json_file, 'w') as fh:
-        json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
+        json.dump([x for x in parent.services.values() if x], fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список сервисов выгружен в файл "{json_file}".')
 
 
@@ -1663,81 +1661,122 @@ def convert_service_object_group(parent, path, data):
         parent.stepChanged.emit(f'GRAY|    Нет групп сервисов для экспорта.')
         return
 
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path, delete='no')
-    if err:
-        parent.error = 1
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        return
-
     for key, value in data['service-group'].items():
         descr = key.split('|')
-        service = {
+        srv_group = {
             'name': descr[0],
             'description': '',
-            'protocols': []
+            'type': 'servicegroup',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {},
+            'content': []
         }
         for item in value:
+            service = {
+                'name': '',
+                'description': '',
+                'protocols': []
+            }
             proto_array = []
             source_port = ''
             port = ''
             match item:
+                case ['service-object', protocol]:
+                    if protocol.isdigit():
+                        protocol = ip_proto.get(protocol, None)
+                    if protocol and protocol in network_proto:
+                        match protocol:
+                            case 'icmp':
+                                srv_group['content'].append(parent.services['Any ICMP'])
+                                continue
+                            case 'icmp6':
+                                srv_group['content'].append(parent.services['Any IPV6-ICMP'])
+                                continue
+                            case 'sctp':
+                                srv_group['content'].append(parent.services['Any SCTP'])
+                                continue
+                            case 'tcp':
+                                srv_group['content'].append(parent.services['Any TCP'])
+                                continue
+                            case 'udp':
+                                srv_group['content'].append(parent.services['Any UDP'])
+                                continue
+                            case _:
+                                proto_array.append(protocol)
+                    else:
+                        parent.stepChanged.emit(f'rNOTE|    Сервис {item} в {descr[0]} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
+                        continue
                 case ['service-object', 'object', object_name]:
-                    service['protocols'].extend(data['services'][object_name]['protocols'])
+                    object_name = ug_services.get(object_name, object_name)
+                    srv_group['content'].append(parent.services[object_name])
+                    continue
                 case ['service-object', 'icmp', *other]:
-                    proto_array.insert(0, 'icmp')
+                    srv_group['content'].append(parent.services['Any ICMP'])
+                    continue
                 case ['service-object', 'icmp6', *other]:
-                    proto_array.insert(0, 'ipv6-icmp')
+                    srv_group['content'].append(parent.services['Any IPV6-ICMP'])
+                    continue
                 case ['service-object', 'sctp', *other]:
-                    proto_array.insert(0, 'sctp')
+                    srv_group['content'].append(parent.services['Any SCTP'])
+                    continue
                 case ['service-object', 'tcp'|'udp'|'tcp-udp', *other]:
                     proto_array = item[1].split('-')
                     match other:
-                        case ['source', 'eq', src_port]:
-                            source_port = get_service_number(src_port)
-                            if source_port is None:
-                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
-                                continue
-                        case ['source', 'range', port1, port2]:
-                            source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['destination', 'eq', dst_port]:
-                            port = get_service_number(dst_port)
-                            if port is None:
-                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
+                            if dst_port in ug_services:
+                                srv_group['content'].append(parent.services[ug_services[dst_port]])
                                 continue
+                            else:
+                                if dst_port.isalpha():
+                                    service['name'] = dst_port
+                                port = get_service_number(dst_port)
+                                if not port:
+                                    parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
+                                    continue
                         case ['destination', 'range', port1, port2]:
                             port = f'{get_service_number(port1)}-{get_service_number(port2)}'
+                        case ['source', 'eq', src_port]:
+                            if src_port in ug_services:
+                                srv_group['content'].append(parent.services[ug_services[src_port]])
+                                continue
+                            else:
+                                if src_port.isalpha():
+                                    service['name'] = src_port
+                                source_port = get_service_number(src_port)
+                                if not source_port:
+                                    parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
+                                    continue
+                        case ['source', 'range', port1, port2]:
+                            source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                         case ['source', 'eq', src_port, 'destination', protocol, *dst_ports]:
                             source_port = get_service_number(src_port)
                             port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                            if source_port is None or port is None:
+                            if not source_port or not port:
                                 parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Такой порт не поддерживается в UG NGFW.')
                                 continue
                         case ['source', 'range', port1, port2, 'destination', protocol, *dst_ports]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                             port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                            if port is None:
+                            if not port:
                                 parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт {dst_ports[0]} не поддерживается в UG NGFW.')
                                 continue
                         case ['source'|'destination', 'lt'|'gt'|'neq', *tmp]:
                             parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
                             continue
-                case ['service-object', protocol]:
-                    if protocol.isdigit():
-                        protocol = ip_proto.get(protocol, None)
-                    if protocol and protocol in network_proto:
-                        proto_array.insert(0, protocol)
-                    else:
-                        parent.stepChanged.emit(f'rNOTE|    Сервис {item} в {descr[0]} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
-                        continue
                 case ['port-object', 'eq'|'range', *dst_ports]:
+                    if dst_ports[0].isalpha():
+                        service['name'] = dst_ports[0]
                     proto_array = descr[1].split('-')
                     port = get_service_number(dst_ports[0]) if item[1] == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
+
                 case ['group-object', group_name]:
-                    service['protocols'].extend(data['services'][group_name]['protocols'])
+                    srv_group['content'].extend(parent.service_groups[group_name]['content'])
+                    continue
                 case ['description', *content]:
-                    service['description'] = " ".join(content)
+                    srv_group['description'] = " ".join(content)
+                    continue
 
             for proto in proto_array:
                 service['protocols'].append({
@@ -1747,78 +1786,114 @@ def convert_service_object_group(parent, path, data):
                     'source_port': source_port,
                     'alg': ''
                 })
+            if service['protocols']:
+                if not service['name']:
+                    service['name'] = '-'.join([f"{x['proto']}{x['port']}" for x in service['protocols']])
+                parent.services[service['name']] = service
+            srv_group['content'].append(service)
+            
+        parent.service_groups[srv_group['name']] = srv_group
+    parent.stepChanged.emit(f'GREEN|    Список групп сервисов конвертирован.')
 
-        data['services'][descr[0]] = service
 
-    json_file = os.path.join(current_path, 'config_services_list.json')
-    with open(json_file, 'w') as fh:
-        json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit(f'GREEN|    Список групп сервисов выгружен в файл "{json_file}".')
-
-
-def convert_protocol_object_group(parent, path, data):
-    """Конвертируем object-group protocol в список сервисов"""
+def save_service_groups(parent, path):
+    """Сохраняем список групп сервисов в файл Libraries/ServicesGroups/config_services_groups_list.json"""
     section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path, delete='no')
+    current_path = os.path.join(section_path, 'ServicesGroups')
+    err, msg = func.create_dir(current_path)
     if err:
         parent.error = 1
         parent.stepChanged.emit(f'RED|    {msg}.')
         return
 
-    parent.stepChanged.emit('BLUE|Конвертация групп протоколов в сервисы.')
-    if data['service-group']:
-        for key, value in data['protocol-group'].items():
-            service = {
-                'name': key,
-                'description': '',
-                'protocols': []
-            }
-            proto = set()
-            for item in value:
-                match item:
-                    case ['protocol-object', protocol]:
-                        if protocol.isdigit():
-                            protocol = ip_proto.get(protocol, None)
-                        if protocol and protocol in network_proto:
-                            proto.add(protocol)
-                        elif protocol == 'ip':
-                            proto.update(['tcp', 'udp'])
-                        else:
-                            parent.stepChanged.emit(f'bRED|    Сервис {item} в {key} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
-                            continue
-                    case ['description', *content]:
-                        service['description'] = " ".join(content)
-            for x in proto:
-                service['protocols'].append(
-                    {
-                        'proto': x,
-                        'port': '',
-                        'source_port': '',
-                    }
-                )
-            data['services'][key] = service
-    
-    """Конвертируем object-group icmp в список сервисов"""
-    if data['icmp-group']:
-        for key in data['icmp-group']:
-            service = {
-                'name': key,
-                'description': '',
-                'protocols': [
-                    {
-                        'proto': 'icmp',
-                        'port': '',
-                        'source_port': '',
-                    }
-                ]
-            }
-            data['services'][key] = service
-
-    json_file = os.path.join(current_path, 'config_services_list.json')
+    json_file = os.path.join(current_path, 'config_services_groups_list.json')
     with open(json_file, 'w') as fh:
-        json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit(f'GREEN|    Список групп протоколов выгружен в файл "{json_file}".')
+        json.dump([x for x in parent.service_groups.values()], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'GREEN|    Список групп сервисов выгружен в файл "{json_file}".')
+
+
+def convert_protocol_object_group(parent, path, data):
+    """Конвертируем object-group protocol в группы сервисов"""
+    parent.stepChanged.emit('BLUE|Конвертация групп протоколов в группы сервисов.')
+    if 'protocol-group' not in data or not data['protocol-group']:
+        parent.stepChanged.emit(f'GRAY|    Нет групп протоколов для экспорта.')
+        return
+
+    for key, value in data['protocol-group'].items():
+        srv_group = {
+            'name': key,
+            'description': '',
+            'type': 'servicegroup',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {},
+            'content': []
+        }
+        proto = set()
+        for item in value:
+            match item:
+                case ['protocol-object', protocol]:
+                    if protocol.isdigit():
+                        protocol = ip_proto.get(protocol, None)
+                    if protocol and protocol in network_proto:
+                        proto.add(protocol)
+                    elif protocol == 'ip':
+                        proto.update(['tcp', 'udp'])
+                    else:
+                        parent.stepChanged.emit(f'rNOTE|    Сервис {item} в {key} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
+                case ['description', *content]:
+                    srv_group['description'] = " ".join(content)
+
+        if proto:
+            for protocol in proto:
+                match protocol:
+                    case 'icmp':
+                        srv_group['content'].append(parent.services['Any ICMP'])
+                    case 'icmp6':
+                        srv_group['content'].append(parent.services['Any IPV6-ICMP'])
+                    case 'sctp':
+                        srv_group['content'].append(parent.services['Any SCTP'])
+                    case 'tcp':
+                        srv_group['content'].append(parent.services['Any TCP'])
+                    case 'udp':
+                        srv_group['content'].append(parent.services['Any UDP'])
+                    case _:
+                        service = {
+                            'name': protocol,
+                            'description': '',
+                            'protocols': [{'proto': protocol, 'port': ''}]
+                        }
+                        parent.services[service['name']] = service
+                        srv_group['content'].append(service)
+            
+        parent.service_groups[srv_group['name']] = srv_group
+    parent.stepChanged.emit(f'GREEN|    Список групп протоколов конвертирован.')
+    
+
+def convert_icmp_object_group(parent, path, data):
+    """Конвертируем object-group icmp в сервис"""
+    parent.stepChanged.emit('BLUE|Конвертация object-group icmp в сервис icmp.')
+    if 'icmp-group' not in data or not data['icmp-group']:
+        parent.stepChanged.emit(f'GRAY|    Нет icmp групп для экспорта.')
+        return
+
+    for key in data['icmp-group']:
+        service = {
+            'name': key,
+            'description': '',
+            'protocols': [
+                {
+                    'proto': 'icmp',
+                    'port': '',
+                    'app_proto': '',
+                    'source_port': '',
+                    'alg': ''
+                }
+            ]
+        }
+        parent.services[service['name']] = service
+    parent.stepChanged.emit(f'GREEN|    Объекты "object-group icmp" конвертированы.')
 
 
 def convert_firewall_rules(parent, path, data):
@@ -1887,13 +1962,16 @@ def convert_firewall_rules(parent, path, data):
 
         protocol = deq.popleft()
         match protocol:
-            case 'object'|'object-group':
+            case 'object':
                 protocol = deq.popleft()
-                rule['services'].append(["service", protocol])
+                rule['services'].append(['service', ug_services.get(protocol, protocol)])
+            case 'object-group':
+                protocol = deq.popleft()
+                rule['services'].append(['list_id', protocol])
             case 'ip':
                 pass
             case 'icmp'|'tcp'|'udp'|'sctp'|'ipv6-icmp':
-                rule['services'].append(["service", data['services'][protocol]['name']])
+                rule['services'].append(['service', f'Any {protocol.upper()}'])
 
         argument = deq.popleft()
         match argument:
@@ -1932,22 +2010,26 @@ def convert_firewall_rules(parent, path, data):
                     return
                 case 'eq':
                     port = deq.popleft()
-                    service_name = f'Eq {port} ({key})'
-                    create_service(data, service_name, ips_mode, protocol, port)
-                    rule['services'].clear()
-                    rule['services'].append(["service", service_name])
-                    parent.stepChanged.emit(f'NOTE|    Создан сервис "{service_name}" для правила "{rule["name"]}".')
+                    service_name = create_service(parent, ips_mode, protocol, port)
+                    if service_name:
+                        rule['services'].clear()
+                        rule['services'].append(["service", service_name])
                 case 'range':
                     port1 = deq.popleft()
                     port2 = deq.popleft()
-                    service_name = f'Range {port1}-{port2} ({key})'
-                    create_service(data, service_name, ips_mode, protocol, port1, port2)
-                    rule['services'].clear()
-                    rule['services'].append(["service", service_name])
-                    parent.stepChanged.emit(f'NOTE|    Создан сервис "{service_name}" для правила "{rule["name"]}".')
+                    service_name = create_service(parent, ips_mode, protocol, port1, port2)
+                    if service_name:
+                        rule['services'].clear()
+                        rule['services'].append(["service", service_name])
                 case 'object-group':
-                    ips_mode = 'dst_ips'
-                    get_ips(parent, path, data, ips_mode, argument, rule, deq)
+                    grp_name = deq.popleft()
+                    if grp_name in parent.service_groups:
+                        rule['services'].clear()
+                        rule['services'].append(['list_id', grp_name])
+                    else:
+                        deq.appendleft(grp_name)
+                        ips_mode = 'dst_ips'
+                        get_ips(parent, path, data, ips_mode, argument, rule, deq)
                 case 'log':
                     other = list(deq)
                     deq.clear()
@@ -1972,18 +2054,6 @@ def convert_firewall_rules(parent, path, data):
     with open(json_file, 'w') as fh:
         json.dump(fw_rules, fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список правил межсетевого экрана выгружен в файл "{json_file}".')
-
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-    else:
-        json_file = os.path.join(current_path, 'config_services_list.json')
-        with open(json_file, 'w') as fh:
-            json.dump([x for x in data['services'].values()], fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'GREEN|    Список сервисов, созданных для правил МЭ выгружен в файл "{json_file}".')
 
 
 def convert_webtype_ace(parent, path, data):
@@ -2153,27 +2223,15 @@ def convert_dnat_rule(parent, path, data):
             dst_port = value[i+2]
             if src_port == dst_port:
                 if dst_port in ug_services:
-                    service_name = ug_services[dst_port]
-                    rule['service'].append(['service', service_name])
-                    if service_name not in data['services']:
-                        create_service(data, service_name, 'dst_ips', proto, dst_port)
-                elif dst_port in data['services']:
-                    rule['service'].append(['service', dst_port])
+                    rule['service'].append(['service', ug_services[dst_port]])
                 else :
-                    service = {
-                        'name': dst_port,
-                        'description': f'Service for DNAT rule ({rule["name"]})',
-                        'protocols': [{
-                            'proto': proto,
-                            'port': service_ports.get(dst_port, dst_port),
-                            'app_proto': '',
-                            'source_port': '',
-                            'alg': ''
-                        }]
-                    }
-                    rule['service'].append(['service', dst_port])
-                    data['services'][dst_port] = service
-                    parent.stepChanged.emit(f'NOTE|    Создан сервис "{dst_port}" для правила "{rule["name"]}".')
+                    service_name = create_service(parent, 'dst_ips', proto, dst_port)
+                    if service_name:
+                        rule['service'].clear()
+                        rule['service'].append(["service", service_name])
+                    else:
+                        parent.stepChanged.emit(f'RED|    Не создано правило DNAT "{key}". Ошибка создания сервиса "{dst_port}".')
+                        continue
             else:
                 rule['action'] = 'port_mapping'
                 rule['port_mappings'].append({
@@ -2181,26 +2239,14 @@ def convert_dnat_rule(parent, path, data):
                     'src_port': int(service_ports.get(src_port, src_port)),
                     'dst_port': int(service_ports.get(dst_port, dst_port))
                 })
-        data['nat-dnat_rules'].append(rule)
+        parent.nat_rules.append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило DNAT/Port-форвардинг "{rule["name"]}".')
         time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_nat_rules.json')
     with open(json_file, 'w') as fh:
-        json.dump(data['nat-dnat_rules'], fh, indent=4, ensure_ascii=False)
+        json.dump(parent.nat_rules, fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список правил DNAT/Port-форвардинг выгружен в файл "{json_file}".')
-
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        parent.error = 1
-    else:
-        json_file = os.path.join(current_path, 'config_services_list.json')
-        with open(json_file, 'w') as fh:
-            json.dump([x for x in data['services'].values() if x], fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'GREEN|    Список сервисов, созданных для правил DNAT/Port-форвардинг выгружен в файл "{json_file}".')
 
 
 def convert_nat_rule(parent, path, data):
@@ -2282,50 +2328,72 @@ def convert_nat_rule(parent, path, data):
             i = value.index('description')
             rule['description'] = " ".join(value[i+1:])
 
-        data['nat-dnat_rules'].append(rule)
+        parent.nat_rules.append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило NAT "{rule["name"]}".')
         time.sleep(0.1)
 
     json_file = os.path.join(current_path, 'config_nat_rules.json')
     with open(json_file, 'w') as fh:
-        json.dump(data['nat-dnat_rules'], fh, indent=4, ensure_ascii=False)
+        json.dump(parent.nat_rules, fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'GREEN|    Список правил NAT выгружен в файл "{json_file}".')
 
 ############################################# Служебные функции ###################################################
-def create_service(data, name, ips_mode, protocol, port1, port2=None):
+def create_service(parent, ips_mode, protocol, port, port2=None):
     """Для ACE. Создаём сервис, заданный непосредственно в правиле, а не в сервисной группе."""
     if port2:
-        port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-    else:
-        port = get_service_number(port1)
-    if protocol in {'tcp', 'udp','sctp'}:
-            service = {
-                'name': name,
-                'description': '',
-                'protocols': [
-                    {
-                        'proto': protocol,
-                        'port': '',
-                        'app_proto': '',
-                        'source_port': '',
-                        'alg': ''
-                    }
-                ]
-            }
-            if ips_mode == 'src_ips':
-                service['protocols'][0]['source_port'] = port
-            else:
-                service['protocols'][0]['port'] = port
-    elif protocol in data['services']:
-        service = copy.deepcopy(data['services'][protocol])
-        service['name'] = name
-        for item in service['protocols']:
+        port = f'{get_service_number(port)}-{get_service_number(port2)}'
+
+    if port in parent.services:
+        return port
+    if port.upper() in parent.services:
+        return port.upper()
+    if f'{protocol}{port}' in parent.services:
+        return f'{protocol}{port}'
+    if f'{port}{protocol}' in parent.services:
+        return f'{port}{protocol}'
+    if protocol in parent.service_groups:
+        services = copy.deepcopy(parent.service_groups[protocol]['content'])
+        content = [x for service in services for x in service['protocols']]
+        for item in content:
             if ips_mode == 'src_ips':
                 item['source_port'] = port
             else:
                 item['port'] = port
-
-    data['services'][name] = service
+        service = {
+            'name': f'{protocol}-{port}' if ips_mode == 'dst_ips' else f'{protocol}-{port}-src',
+            'description': '',
+            'protocols': content
+        }
+        parent.services[service['name']] = service
+        parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}".')
+        return service['name']
+    if protocol in {'tcp', 'udp','sctp'}:
+        if not port2:
+            port = get_service_number(port)
+            if not port:
+#                print('ERROR2: ', ips_mode, protocol, port, port2)  ###################
+                parent.stepChanged.emit(f'ORANGE|    Не создан сервис [ERROR2: {ips_mode}, {protocol}, {port}, {port2}]". Откройте заявку в тех.поддержку.')
+                return False
+        service = {
+            'name': f'{protocol}{port}' if ips_mode == 'dst_ips' else f'{protocol}{port}-src',
+            'description': '',
+            'protocols': [
+                {
+                    'proto': protocol,
+                    'port': port if ips_mode == 'dst_ips' else '',
+                    'app_proto': '',
+                    'source_port': port if ips_mode == 'src_ips' else '',
+                    'alg': ''
+                }
+            ]
+        }
+        parent.services[service['name']] = service
+        parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}".')
+        return service['name']
+    else:
+#        print('ERROR3: ', ips_mode, protocol, port, port2)  ###################
+        parent.stepChanged.emit(f'ORANGE|    Не создан сервис [ERROR3: {ips_mode}, {protocol}, {port}, {port2}]". Откройте заявку в тех.поддержку.')
+        return False
 
 
 def get_ips(parent, path, data, ips_mode, address, rule, deq):
@@ -2389,7 +2457,9 @@ def get_service_number(service):
     if service.isdigit():
         return service
     elif service in service_ports:
-        return service_ports.get(service, service)
+        return service_ports[service]
+    else:
+        return False
 
 
 def create_url_list(parent, path, url, name):

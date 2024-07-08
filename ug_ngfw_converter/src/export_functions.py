@@ -1046,6 +1046,7 @@ def export_wccp(parent, path):
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
         return
+    json_file = os.path.join(path, 'config_wccp.json')
     error = 0
 
     err, data = parent.utm.get_wccp_list()
@@ -1063,12 +1064,13 @@ def export_wccp(parent, path):
                 for x in item['routers']:
                     x[1] = parent.ngfw_data['ip_lists'][x[1]] if x[0] == 'list_id' else x[1]
 
-        json_file = os.path.join(path, 'config_wccp.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
 
-    out_message = f'GREEN|    Список правил WCCP выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил WCCP!' if error else out_message)
+    if error:
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил WCCP!')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Список правил WCCP выгружен в файл "{json_file}".')
 
 
 def export_local_groups(parent, path):
@@ -2674,11 +2676,11 @@ def export_reverseproxy_rules(parent, path):
                     item['ssl_profile_id'] = 0
                     item['is_https'] = False
 
-            if item['certificate_id'] > 0:
+            if item['certificate_id']:
                 try:
                     item['certificate_id'] = parent.ngfw_data['certs'][item['certificate_id']]
                 except KeyError:
-                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий сертификат.')
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий сертификат "{item["certificate_id"]}".')
                     item['certificate_id'] = 0
                     item['is_https'] = False
             else:

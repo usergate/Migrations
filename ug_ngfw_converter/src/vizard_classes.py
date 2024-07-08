@@ -836,7 +836,7 @@ class MainTree(QTreeWidget):
         self.compliances = {
             "UserGate": "UserGate",
             "GeneralSettings": "Настройки",
-            "DeviceManagement": "Управление устройсвом",
+            "DeviceManagement": "Управление устройством",
             "Administrators": "Администраторы",
             "Certificates": "Сертификаты",
             "UserCertificateProfiles": "Профили пользовательских сертификатов",
@@ -936,7 +936,7 @@ class MainTree(QTreeWidget):
         self.over_compliances = {v: k for k, v in self.compliances.items()}
 
         data = {
-            "UserGate": ["Настройки", "Управление устройсвом", "Администраторы", "Сертификаты",
+            "UserGate": ["Настройки", "Управление устройством", "Администраторы", "Сертификаты",
                          "Профили пользовательских сертификатов"],
             "Сеть": ["Зоны", "Интерфейсы", "Шлюзы", "DHCP", "DNS", "Виртуальные маршрутизаторы", "WCCP", "Маршруты", "OSPF", "BGP"],
             "Пользователи и устройства": [

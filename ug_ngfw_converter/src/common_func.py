@@ -23,7 +23,7 @@
 import os, json, pickle
 import ipaddress
 from PyQt6.QtWidgets import QMessageBox
-from services import trans_filename
+from services import trans_filename, trans_name
 
 
 def create_dir(path, delete='yes'):
@@ -75,7 +75,7 @@ def write_bin_file(parent, data, bin_file_path='temporary_data.bin'):
     return 0
 
 
-def read_json_file(parent, json_file_path):
+def read_json_file(parent, json_file_path, mode=0):
     """Читаем json-файл с конфигурацией."""
     try:
         with open(json_file_path, "r") as fh:
@@ -83,19 +83,24 @@ def read_json_file(parent, json_file_path):
     except ValueError as err:
         parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
         parent.error = 1
-        return 1, 'RED'
+        return 1, f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".'
     except FileNotFoundError as err:
-        parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
-        parent.error = 1
-        return 2, 'RED'
+        if not mode:
+            parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
+            parent.error = 1
+        return 2, f'bRED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!'
     if not data:
-        parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
-        return 3, 'GRAY'
+        if not mode:
+            parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
+        return 3, f'GRAY|    Файл "{json_file_path}" пуст.'
     return 0, data
 
 
 def create_ip_list(parent, path, ips=[], name=None):
-    """Создаём IP-лист для правила. Возвращаем имя ip-листа."""
+    """
+    Создаём IP-лист для правила. Возвращаем имя ip-листа.
+    В вызываемом модуле должна быть структура: self.ip_lists = set()
+    """
     iplist_name = name if name else ips[0]
     if iplist_name not in parent.ip_lists:
         section_path = os.path.join(path, 'Libraries')
@@ -108,7 +113,7 @@ def create_ip_list(parent, path, ips=[], name=None):
 
         ip_list = {
             'name': iplist_name,
-            'description': 'Портировано с Fortigate',
+            'description': 'Портировано...',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -142,9 +147,38 @@ def pack_ip_address(ip, mask):
         ip = '0.0.0.0'
     if mask == '0':
         mask = '0.0.0.0'
-    interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    try:
+        interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    except ValueError as err:
+        return '10.10.10.1/32'
     return f'{ip}/{interface.network.prefixlen}'
 
+def get_restricted_name(name):
+    """
+    Получить имя объекта без запрещённых спецсимволов.
+    Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
+    """
+    if isinstance(name, str):
+        new_name = name.translate(trans_name)
+        if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+            new_name = new_name[1:]
+        return new_name
+    else:
+        return 'Name not valid'
+
+def check_auth(parent):
+    """Проверяем что авторизация не протухла. Если протухла, логинимся заново."""
+    err = 0; msg = ''
+    match parent.utm.ping_session()[0]:
+        case 1:
+            err, msg = parent.utm.connect()
+        case 2:
+            err, msg = parent.utm.login()
+    if err:
+        message_alert(parent, msg, '')
+        return False
+    else:
+        return True
 
 def message_inform(parent, title, message):
     """Общее информационное окно. Принимает родителя, заголовок и текст сообщения"""

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.15
+# Версия 3.16
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -2511,7 +2511,10 @@ class UtmXmlRpc:
             result = self._server.v1.vpn.tunnels.list(self._auth_token)
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_networks: [{err.faultCode}] — {err.faultString}'
-        return 0, result
+        if isinstance(result, list):
+            return 0, result
+        else:
+            return 0, result['items']
 
     def add_vpn_network(self, network):
         """Добавить новую сеть VPN"""
@@ -2561,7 +2564,10 @@ class UtmXmlRpc:
             result = self._server.v1.vpn.client.rules.list(self._auth_token)
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_client_rules: [{err.faultCode}] — {err.faultString}'
-        return 0, result
+        if isinstance(result, list):
+            return 0, result
+        else:
+            return 0, result['items']
 
     def add_vpn_client_rule(self, rule):
         """Добавить новое клиентское правило VPN"""

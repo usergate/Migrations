@@ -1143,7 +1143,7 @@ def import_services_groups(parent, path):
             new_content = []
             for service in content:
                 try:
-                    service['value'] = parent.services[service['name']]
+                    service['value'] = parent.mc_services[service['name']]
                     new_content.append(service)
                 except KeyError as err:
                     parent.stepChanged.emit(f'bRED|      Error: Не найден сервис "{err}". Загрузите сервисы в шаблон и повторите попытку.')

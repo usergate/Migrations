@@ -215,6 +215,21 @@ class SelectMode(QWidget):
         self.btn4.setStyleSheet('color: steelblue; background: white;')
         self.btn4.setEnabled(True)
 
+    def get_auth(self, mod='fw'):
+        """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
+        if self.utm:
+            self.utm.logout()
+            self.utm = None
+        dialog = LoginWindow(parent=self, mode=mod)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            self.utm = dialog.utm
+            self.label_node_name.setText(f'  {self.utm.node_name}')
+            self.label_version.setText(f'Версия: {self.utm.version}')
+            return True
+        else:
+            return False
+
     def get_selected_item(self, selected_item):
         """
         Получаем выбранный пункт меню и устанавливаем путь к разделу конфигурации.
@@ -514,21 +529,6 @@ class SelectImportMode(SelectMode):
         self.btn4.clicked.connect(lambda: self._save_logs('import.log'))
         self.parent.stacklayout.currentChanged.connect(self.init_import_widget)
 
-    def get_auth(self):
-        """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
-        if self.utm:
-            self.utm.logout()
-            self.utm = None
-        dialog = LoginWindow(parent=self, mode='fw')
-        result = dialog.exec()
-        if result == QDialog.DialogCode.Accepted:
-            self.utm = dialog.utm
-            self.label_node_name.setText(f'  {self.utm.node_name}')
-            self.label_version.setText(f'Версия: {self.utm.version}')
-            return True
-        else:
-            return False
-
     def init_temporary_data(self):
         """
         Запускаем в потоке itd.GetTemporaryData() для получения часто используемых данных с NGFW.
@@ -552,7 +552,7 @@ class SelectImportMode(SelectMode):
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_ug_config_path()}  ')
-                if self.get_auth():
+                if self.get_auth(mod='fw'):
                     self.enable_buttons()
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
                     self.tree.change_items_status(self.parent.get_ug_config_path())
@@ -650,7 +650,7 @@ class SelectImportMode(SelectMode):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_ug_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = self.read_json_file(json_file)
+        err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
@@ -701,7 +701,7 @@ class SelectImportMode(SelectMode):
     def import_dhcp(self):
         dhcp_path = os.path.join(self.current_ug_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = self.read_json_file(json_file)
+        err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
@@ -717,21 +717,6 @@ class SelectImportMode(SelectMode):
             return ngfw_ports, data
         else:
             return 3, 'LBLUE|    Импорт настроек DHCP отменён пользователем.'
-
-    def read_json_file(self, json_file_path):
-        """Читаем файл json с конфигурацией"""
-        try:
-            with open(json_file_path, 'r') as fh:
-                data = json.load(fh)
-        except FileNotFoundError as err:
-            return 2, f'dGRAY|    Нет данных для импорта. Не найден файл {json_file_path} с конфигурацией.'
-        except json.JSONDecodeError as err:
-            return 1, f'RED|    JSONDecodeError: {err} [{json_file_path}]'
-        except Exception as err:
-            return 1, f'RED|    {err}'
-        if not data:
-            return 3, f'dGRAY|    Нет данных для импорта. Файл {json_file_path} пуст.'
-        return 0, data
 
 
 class SelectMcImportMode(SelectMode):
@@ -750,21 +735,6 @@ class SelectMcImportMode(SelectMode):
         
         self.parent.stacklayout.currentChanged.connect(self.init_import_widget)
 
-    def get_auth(self):
-        """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
-        if self.utm:
-            self.utm.logout()
-            self.utm = None
-        dialog = LoginWindow(parent=self, mode='mc')
-        result = dialog.exec()
-        if result == QDialog.DialogCode.Accepted:
-            self.utm = dialog.utm
-            self.label_node_name.setText(f'  {self.utm.node_name}')
-            self.label_version.setText(f'Версия: {self.utm.version}')
-            return True
-        else:
-            return False
-
     def init_import_widget(self, e):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
@@ -775,7 +745,7 @@ class SelectMcImportMode(SelectMode):
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_ug_config_path()}  ')
-                if self.get_auth():
+                if self.get_auth(mod='mc'):
                     if float(f'{self.utm.version_hight}.{self.utm.version_midle}') < 7.1:
                         message = 'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
                         self.add_item_log(message, color='RED')
@@ -1576,7 +1546,7 @@ class MainTree(QTreeWidget):
             "Политики сети": ["Межсетевой экран", "NAT и маршрутизация", "Балансировка нагрузки", "Пропускная способность"],
             "Политики безопасности": [
                 "Фильтрация контента", "Веб-безопасность", "Инспектирование туннелей", "Инспектирование SSL",
-                "Инспектирование SSH", "СОВ", "Правила АСУ ТП", "Сценарии", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила",
+                "Инспектирование SSH", "СОВ", "Правила АСУ ТП", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила",
                 "Профили DoS", "Правила защиты DoS"
             ],
             "Глобальный портал": ["Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси"],
@@ -1590,7 +1560,7 @@ class MainTree(QTreeWidget):
                 "Календари", "Полосы пропускания", "Профили АСУ ТП", "Шаблоны страниц", "Категории URL", "Изменённые категории URL",
                 "Приложения", "Профили приложений", "Группы приложений", "Почтовые адреса", "Номера телефонов", "Сигнатуры СОВ",
                 "Профили СОВ", "Профили оповещений", "Профили netflow", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Сценарии"
             ],
             "Оповещения": ["Правила оповещений", "Профили безопасности SNMP", "SNMP", "Параметры SNMP"],
         }

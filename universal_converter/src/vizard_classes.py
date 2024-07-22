@@ -46,19 +46,19 @@ class SelectAction(QWidget):
         
         self.btn_export = QPushButton("Экспорт конфигурации")
         self.btn_export.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn_export.setFixedWidth(250)
+        self.btn_export.setFixedWidth(260)
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self.set_export_page)
 
         self.btn_import = QPushButton("Импорт конфигурации на UG NGFW")
         self.btn_import.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn_import.setFixedWidth(250)
+        self.btn_import.setFixedWidth(260)
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
 
         self.btn_import_mc = QPushButton("Импорт в шаблон Мanagement Сenter")
         self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn_import_mc.setFixedWidth(250)
+        self.btn_import_mc.setFixedWidth(260)
         self.btn_import_mc.setEnabled(False)
         self.btn_import_mc.clicked.connect(self.set_import_mc_page)
 
@@ -169,11 +169,11 @@ class SelectMode(QWidget):
         self.btn1.setFixedWidth(100)
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2 = QPushButton()
-        self.btn2.setFixedWidth(190)
+        self.btn2.setFixedWidth(220)
         self.btn3 = QPushButton()
-        self.btn3.setFixedWidth(140)
+        self.btn3.setFixedWidth(220)
         self.btn4 = QPushButton("Сохранить лог")
-        self.btn4.setFixedWidth(100)
+        self.btn4.setFixedWidth(120)
 
         hbox_btn = QHBoxLayout()
         hbox_btn.addWidget(self.btn1)
@@ -464,6 +464,9 @@ class SelectExportMode(QWidget):
                                 json.dump(data, fh, indent=4, ensure_ascii=False)
                         except json.decoder.JSONDecodeError as err:
                             return 1, f'Ошибка парсинга файла конфигурации "{file_name}" [{err}].'
+                        except UnicodeDecodeError as err:
+                            return 1, f'Ошибка файла конфигурации "{file_name}" [{err}].'
+
                 dialog = SelectSecureGateway(self.parent, cp_data_json)
                 result = dialog.exec()
                 if result == QDialog.DialogCode.Accepted:

@@ -1224,7 +1224,7 @@ def import_ip_lists(parent, path):
             for item in data['content']:
                 if 'list' in item:
                     try:
-                        item['list'] = parent.mc_iplists[item['list']]
+                        item['list'] = parent.mc_iplists[func.get_restricted_name(item['list'])]
                         new_content.append(item)
                     except KeyError:
                         parent.stepChanged.emit(f'RED|   Error: Нет IP-листа "{item["list"]}" в списках IP-адресов шаблона МС.')
@@ -1232,6 +1232,9 @@ def import_ip_lists(parent, path):
                         error = 1
                 else:
                     new_content.append(item)
+            if not new_content:
+                parent.stepChanged.emit(f'ORANGE|    Список "{data["name"]}" не импортирован так как он пуст.')
+                continue
 
             err, result = parent.utm.add_template_nlist_items(parent.template_id, list_id, new_content)
             if err == 1:
@@ -1242,7 +1245,7 @@ def import_ip_lists(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" обновлено.')
         else:
-            parent.stepChanged.emit(f'GRAY|    Список "{data["name"]}" пуст.')
+            parent.stepChanged.emit(f'ORANGE|    Список "{data["name"]}" не импортирован так как он пуст.')
 
     if error:
         parent.error = 1
@@ -1474,12 +1477,12 @@ def import_application_groups(parent, path):
 
         for app in content:
             if 'name' not in app:   # Так бывает при некорректном добавлении приложения через API
-                parent.stepChanged.emit(f'bRED|       Приложение "{app}" не добавлено, так как не содержит имя. [Группа приложений "{item["name"]}"]')
+                parent.stepChanged.emit(f'bRED|       Приложение "{app}" не добавлено в группу, так как не содержит имя. [Группа приложений "{item["name"]}"]')
                 continue
             try:
                 app['value'] = l7_app_id[app['name']]
             except KeyError as err:
-                parent.stepChanged.emit(f'RED|       Error: Приложение "{app["name"]}" не импортировано. Такого приложения нет на UG NGFW. [Группа приложений "{item["name"]}"]')
+                parent.stepChanged.emit(f'RED|       Error: Приложение "{app["name"]}" не добавлено в группу. Такого приложения нет на UG NGFW. [Группа приложений "{item["name"]}"]')
                 error = 1
                 continue
 
@@ -1658,7 +1661,7 @@ def import_firewall_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило МЭ "{item["name"]}" обновлено.')
         else:
-            item['enabled'] = False
+#            item['enabled'] = False
             err, result = parent.utm.add_template_firewall_rule(parent.template_id, item)
             if err:
                 error = 1

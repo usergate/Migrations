@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.2
+# Версия 3.3
 #
 
 import os, sys, json, uuid, time
@@ -46,6 +46,7 @@ class ConvertCheckPointConfig(QThread):
         self.config_path = None
         self.objects = None
         self.access_layers = []
+        self.log_tracker = {}
         self.error = 0
 
         self.services = {}
@@ -80,6 +81,8 @@ class ConvertCheckPointConfig(QThread):
         with open(json_file, 'w') as fh:
             json.dump(self.objects, fh, indent=4, ensure_ascii=False)
 
+        convert_log_tracker(self)
+        convert_timesets(self)
         convert_services(self)
         convert_other(self)
         convert_services_groups(self)
@@ -425,6 +428,65 @@ def convert_config_cp(parent):
         parent.stepChanged.emit(f'GRAY|    Нет статических маршрутов для экспорта.')
 
 #-------------------------------------------------------------------------------------------------------------------
+def convert_log_tracker(parent):
+    """Получаем статус логирования правил и устанавливаем атрибут parent.log_tracker"""
+    for key, value in parent.objects.items():
+        if value['type'] == 'Track':
+            if value['name'] == 'Log':
+                parent.log_tracker[key] = True
+            else:
+                parent.log_tracker[key] = False
+
+
+def convert_timesets(parent):
+    """Конверируем календари"""
+    parent.stepChanged.emit('BLUE|Конвертация календарей.')
+
+    timerestrictiongroup = []
+    for key, value in parent.objects.items():
+        if value['type'] == 'time':
+            time_set = {
+                'name': func.get_restricted_name(value['name']),
+                'description': value['comments'],
+                'type': 'timerestrictiongroup',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {},
+                'content': []
+            }
+            content = {
+                'name': time_set['name'],
+                'type': 'span',
+                'time_to': value['end']['time'],
+                'time_from': value['start']['time'],
+            }
+            tmp_date = value['end']['iso-8601'].split('T')
+            content['fixed_date_to'] = f'{tmp_date[0]}T00:00:00'
+            tmp_date = value['start']['iso-8601'].split('T')
+            content['fixed_date_from'] = f'{tmp_date[0]}T00:00:00'
+            
+            time_set['content'].append(content)
+            timerestrictiongroup.append(time_set)
+            parent.objects[key] = {'type': 'time', 'name': time_set['name']}
+
+    if timerestrictiongroup:
+        section_path = os.path.join(parent.current_ug_path, 'Libraries')
+        current_path = os.path.join(section_path, 'TimeSets')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_calendars.json')
+        with open(json_file, 'w') as fh:
+            json.dump(timerestrictiongroup, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список календарей выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit(f'GRAY|    Нет календарей для экспорта.')
+
+
 def convert_services(parent):
     """
     Конвертируем список сервисов. В "objects" UID-ы с сервисами переписываются в вид:
@@ -465,28 +527,41 @@ def convert_services(parent):
             }
         elif value['type'] in ('service-tcp', 'service-udp'):
             _, proto = value['type'].split('-')
-            parent.objects[key] = ServicePorts.get_dict_by_port(proto, value['port'], value['name'])
-            service_name = ServicePorts.get_name_by_port(proto, value['port'], value['name'])
+#            parent.objects[key] = ServicePorts.get_dict_by_port(proto, value['port'], value['name'])
+#            service_name = ServicePorts.get_name_by_port(proto, value['port'], value['name'])
+            service_name = value['name']
+            parent.objects[key] = {'type': 'service', 'name': value['name']}
             
+#            if 'Kerberos' in value['name']:
+#                print(value['name'], service_name)
+
             port = value.get('port', "")
             if (">" or "<") in port:
-                parent.objects[key]['type'] = 'error'
-                parent.objects[key]['description'] = f'Сервис "{service_name}" не конвертирован (символы "<" и ">" не поддерживаются в определении порта).'
-                parent.stepChanged.emit(f'bRED|    Warning: Сервис "{service_name}" не конвертирован (символы "<" и ">" не поддерживаются в определении порта.')
-            else:
-                parent.services[service_name] = {
-                    'name': service_name,
-                    'description': value['comments'],
-                    'protocols': [
-                        {
-                            'proto': proto,
-                            'port': value.get('port', ''),
-                            'app_proto': '',
-                            'source_port': '',
-                            'alg': ''
-                        }
-                    ]
-                }
+                if port[0] == '<':
+                    value['port'] = f'0-{port[1:]}'
+                elif port[0] == '>':
+                    value['port'] = f'{port[1:]}-65535'
+                else:
+                    parent.objects[key]['type'] = 'error'
+                    parent.objects[key]['description'] = f'Сервис "{service_name}" не конвертирован (символы "<" и ">" не поддерживаются в определении порта).'
+                    parent.stepChanged.emit(f'bRED|    Warning: Сервис "{service_name}" не конвертирован (символы "<" и ">" не поддерживаются в определении порта.')
+                    continue
+            parent.services[service_name] = {
+                'name': service_name,
+                'description': value['comments'],
+                'protocols': [
+                    {
+                        'proto': proto,
+                        'port': value.get('port', ''),
+                        'app_proto': '',
+                        'source_port': value.get('source-port', ''),
+                        'alg': ''
+                    }
+                ]
+            }
+
+#            if 'Kerberos' in value['name']:
+#                print(parent.services[service_name], '\n')
 
     if parent.services:
         section_path = os.path.join(parent.current_ug_path, 'Libraries')
@@ -1247,7 +1322,6 @@ def convert_access_policy_files(parent):
                 item.pop('vpn', None)
                 item.pop('domain', None)
                 item.pop('install-on', None)
-                item.pop('track', None)
                 item.pop('custom-fields', None)
                 item.pop('user-check', None)
                 item['description'] = []
@@ -1270,6 +1344,12 @@ def convert_access_policy_files(parent):
                 item['action'] = parent.objects[item['action']]
                 item['service'] = [parent.objects[uid] for uid in item['service']]
                 item['time'] = [parent.objects[uid] for uid in item['time']]
+
+#                if item['track']['per-session'] or item['track']['per-connection']:
+#                    item['track'] = 1
+#                else:
+#                    item['track'] = 0
+                item['track'] = parent.log_tracker.get(item['track']['type'], False)
                 
         access_rules.extend(data)
 
@@ -1392,12 +1472,12 @@ def create_firewall_rule(parent):
             'services': item['services'],
             'apps': item['apps'],
             'users': get_users_list(item['source'], item['destination']),
-            'enabled': False,
+            'enabled': item['enabled'],
             'limit': True,
             'lmit_value': '3/h',
             'lmit_burst': 5,
-            'log': False,
-            'log_session_start': True,
+            'log': item['track'],
+            'log_session_start': True if item['track'] else False,
             'src_zones_negate': False,
             'dst_zones_negate': False,
             'src_ips_negate': item['source-negate'],
@@ -1405,7 +1485,7 @@ def create_firewall_rule(parent):
             'services_negate': item['service-negate'],
             'apps_negate': item['service-negate'],
             'fragmented': 'ignore',
-            'time_restrictions': [],
+            'time_restrictions': [x['name'] for x in item['time'] if 'name' in x],
             'send_host_icmp': ''
         }
         rules.append(rule)

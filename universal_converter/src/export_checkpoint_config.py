@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.3
+# Версия 3.4
 #
 
 import os, sys, json, uuid, time
@@ -87,6 +87,9 @@ class ConvertCheckPointConfig(QThread):
         convert_other(self)
         convert_services_groups(self)
         convert_ip_lists(self)
+        convert_simple_cluster(self)
+        convert_cluster_members(self)
+        convert_checkpoint_host(self)
         convert_ip_lists_groups(self)
         convert_ip_group_with_exclusion(self)
         convert_url_lists(self)
@@ -750,6 +753,197 @@ def convert_ip_lists(parent):
                 parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
                 parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
                 parent.stepChanged.emit(f'RED|    {err}')
+            time.sleep(0.1)
+
+    if error:
+        parent.stepChanged.emit('ORANGE|    Списки IP-адресов выгружены с ошибками.')
+    else:
+        if n:
+            parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
+        else:
+            parent.stepChanged.emit(f'GRAY|    Нет списков IP-адресов для экспорта.')
+
+
+def convert_simple_cluster(parent):
+    """
+    Конвертируем объекты type: simple-cluster в списки IP-адресов.
+    В "objects" тип "simple-cluster" переписываются в вид:
+    uid: {"type": "network", "name": {"list": "ИМЯ_IP_ЛИСТА"}} для загрузки ip-листов в правила. Или
+    Если интерфейс ноды содержит IPv6 и не содержит IPv4, то он пропускается.
+    """
+    parent.stepChanged.emit('BLUE|Конвертация объектов с типом "simple-cluster" в списки IP-адресов.')
+    section_path = os.path.join(parent.current_ug_path, 'Libraries')
+    current_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+
+    error = 0
+    n = 0
+    for key, value in parent.objects.items():
+        if value['type'] == 'simple-cluster':
+            n += 1
+            content = []
+            for member in value['cluster-members']:
+                for item in member['interfaces']:
+                    ipv4 = item.get('ipv4-address', None)
+                    if ipv4:
+                        content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
+            for item in value['interfaces']['objects']:
+                ipv4 = item.get('ipv4-address', None)
+                if ipv4:
+                    content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
+
+            ip_list = {
+                'name': func.get_restricted_name(value['name']),
+                'description': value['comments'],
+                'type': 'network',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {'threat_level': 3},
+                'content': content
+            }
+
+            json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
+            try:
+                with open(json_file, 'w') as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            except OSError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'RED|    {err}')
+
+            parent.objects[key] = {'type': 'network', 'name': {'list': ip_list['name']}}
+            time.sleep(0.1)
+
+    if error:
+        parent.stepChanged.emit('ORANGE|    Списки IP-адресов выгружены с ошибками.')
+    else:
+        if n:
+            parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
+        else:
+            parent.stepChanged.emit(f'GRAY|    Нет списков IP-адресов для экспорта.')
+
+
+def convert_cluster_members(parent):
+    """
+    Конвертируем объекты "type: cluster-member" в списки IP-адресов.
+    В "objects" тип "cluster-member" переписываются в вид:
+    uid: {"type": "network", "name": {"list": "ИМЯ_IP_ЛИСТА"}} для загрузки ip-листов в правила.
+    Если интерфейс ноды содержит IPv6 и не содержит IPv4, то он пропускается.
+    """
+    parent.stepChanged.emit('BLUE|Конвертация объектов с типом "cluster-member" в списки IP-адресов.')
+    section_path = os.path.join(parent.current_ug_path, 'Libraries')
+    current_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+
+    error = 0
+    n = 0
+    for key, value in parent.objects.items():
+        if value['type'] == 'cluster-member':
+            n += 1
+            content = []
+            for item in value['interfaces']:
+                ipv4 = item.get('ipv4-address', None)
+                if ipv4:
+                    content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
+
+            ip_list = {
+                'name': func.get_restricted_name(value['name']),
+                'description': value.get('comments', ''),
+                'type': 'network',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {'threat_level': 3},
+                'content': content
+            }
+
+            json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
+            try:
+                with open(json_file, 'w') as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            except OSError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'RED|    {err}')
+
+            parent.objects[key] = {'type': 'network', 'name': {'list': ip_list['name']}}
+            time.sleep(0.1)
+
+    if error:
+        parent.stepChanged.emit('ORANGE|    Списки IP-адресов выгружены с ошибками.')
+    else:
+        if n:
+            parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
+        else:
+            parent.stepChanged.emit(f'GRAY|    Нет списков IP-адресов для экспорта.')
+
+
+def convert_checkpoint_host(parent):
+    """
+    Конвертируем объекты "type: checkpoint_host" в списки IP-адресов.
+    В "objects" тип "checkpoint_host" переписываются в вид:
+    uid: {"type": "network", "name": {"list": "ИМЯ_IP_ЛИСТА"}} для загрузки ip-листов в правила.
+    Если интерфейс ноды содержит IPv6 и не содержит IPv4, то он пропускается.
+    """
+    parent.stepChanged.emit('BLUE|Конвертация объектов с типом "checkpoint_host" в списки IP-адресов.')
+    section_path = os.path.join(parent.current_ug_path, 'Libraries')
+    current_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.error = 1
+        return
+
+    error = 0
+    n = 0
+    for key, value in parent.objects.items():
+        if value['type'] == 'checkpoint-host':
+            n += 1
+            content = []
+            for item in value['interfaces']:
+                ipv4 = item.get('subnet4', None)
+                if ipv4:
+                    content.append({'value': f"{ipv4}/{item['mask-length4']}"})
+
+            ip_list = {
+                'name': func.get_restricted_name(value['name']),
+                'description': value.get('comments', ''),
+                'type': 'network',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {'threat_level': 3},
+                'content': content
+            }
+
+            json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
+            try:
+                with open(json_file, 'w') as fh:
+                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            except OSError as err:
+                error = 1
+                parent.error = 1
+                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
+                parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                parent.stepChanged.emit(f'RED|    {err}')
+
+            parent.objects[key] = {'type': 'network', 'name': {'list': ip_list['name']}}
             time.sleep(0.1)
 
     if error:
@@ -1537,7 +1731,7 @@ def create_content_rule(parent):
             'name': item['name'],
             'public_name': '',
             'description': description,
-            'enabled': False,
+            'enabled': item['enabled'],
             'enable_custom_redirect': False,
             'blockpage_template_id': -1,
             'users': get_users_list(item['source'], item['destination']),
@@ -1551,7 +1745,7 @@ def create_content_rule(parent):
             'referers': [],
             'referer_categories': [],
             'user_agents': [],
-            'time_restrictions': [],
+            'time_restrictions': [x['name'] for x in item['time'] if 'name' in x],
             'content_types': [],
             'http_methods': [],
             'src_zones_negate': False,
@@ -1565,7 +1759,7 @@ def create_content_rule(parent):
             'custom_redirect': '',
             'enable_kav_check': False,
             'enable_md5_check': False,
-            'rule_log': True,
+            'rule_log': item['track'],
             'scenario_rule_id': False,
             'layer': 'Content Rules',
             'users_negate': False

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.6
+# Версия 1.7
 #
 
 import os, sys, json, time
@@ -1661,7 +1661,6 @@ def import_firewall_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило МЭ "{item["name"]}" обновлено.')
         else:
-#            item['enabled'] = False
             err, result = parent.utm.add_template_firewall_rule(parent.template_id, item)
             if err:
                 error = 1
@@ -1757,7 +1756,6 @@ def import_nat_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило "{item["name"]}" updated.')
         else:
-            item['enabled'] = False
             err, result = parent.utm.add_template_traffic_rule(parent.template_id, item)
             if err:
                 error = 1
@@ -1872,7 +1870,6 @@ def import_shaper_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило пропускной способности "{item["name"]}" updated.')
         else:
-            item['enabled'] = False
             err, result = parent.utm.add_template_shaper_rule(parent.template_id, item)
             if err:
                 error = 1

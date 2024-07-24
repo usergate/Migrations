@@ -112,10 +112,56 @@ class McXmlRpc:
             result = self._server.v1.core.realms.list(self._auth_token)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получения списка областей [Error mclib.get_realms_list: {err.faultString}].'
+                return 2, f'Нет прав на получение списка областей [Error mclib.get_realms_list: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_realms_list: [{err.faultCode}] — {err.faultString}'
         return 0, result
+
+############## Realm API module (API для области) ###########################################################
+    def get_usercatalog_servers_status(self):
+        """Получить статус всех серверов авторизации LDAP области"""
+        try:
+            result = self._server.v1.usercatalogs.check.all.servers.status(self._auth_token)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение списка серверов авторизации [Error mclib.get_usercatalog_servers_status: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_usercatalog_servers_status: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def get_usercatalog_ldap_servers(self):
+        """Получить список активных LDAP серверов области находящихся в каталогах пользователей."""
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {'enabled': True}, [])
+                return 0, result['items']
+            else:
+                result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
+                return 0, result
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_usercatalog_ldap_servers: [{err.faultCode}] — {err.faultString}"
+
+    def get_usercatalog_ldap_user_guid(self, ldap_id, user_name):
+        """Получить GUID пользователя LDAP по его имени"""
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                users = self._server.v1.usercatalogs.ldap.users.list(self._auth_token, ldap_id, user_name)
+            else:
+                users = self._server.v1.usercatalogs.realm.ldap.users.list(self._auth_token, ldap_id, user_name)
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_usercatalog_ldap_user_guid: [{err.faultCode}] — {err.faultString}"
+        return 0, users[0]['guid'] if users else 0  # Возвращает или guid или 0
+
+    def get_usercatalog_ldap_group_guid(self, ldap_id, group_name):
+        """Получить GUID группы LDAP по её имени"""
+        try:
+            if self.version_hight >= 7 and self.version_midle >= 1:
+                groups = self._server.v1.usercatalogs.ldap.groups.list(self._auth_token, ldap_id, group_name)
+            else:
+                groups = self._server.v1.usercatalogs.realm.ldap.groups.list(self._auth_token, ldap_id, group_name)
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_usercatalog_ldap_group_guid: [{err.faultCode}] — {err.faultString}"
+        return 0, groups[0]['guid'] if groups else 0  # Возвращает или guid или 0
 
 ######## NGFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
     def get_device_templates(self):
@@ -124,7 +170,7 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.templates.list(self._auth_token, 0, 1000, {}, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получения списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
+                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_device_templates: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей.
@@ -135,7 +181,7 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.template.fetch(self._auth_token, template_id)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получения списка шаблонов [Error mclib.fetch_device_template: {err.faultString}].'
+                return 2, f'Нет прав на получение списка шаблонов [Error mclib.fetch_device_template: {err.faultString}].'
             else:
                 return 1, f'Error mclib.fetch_device_template: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает словарь.
@@ -660,40 +706,6 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Пользователи #####################################################################
-    def get_usercatalog_ldap_servers(self):
-        """Получить список активных LDAP серверов области находящихся в каталогах пользователей."""
-        try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
-                result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {'enabled': True}, [])
-                return 0, result['items']
-            else:
-                result = self._server.v1.usercatalogs.servers.list(self._auth_token, {'enabled': True})
-                return 0, result
-        except rpc.Fault as err:
-            return 1, f"Error mclib.get_usercatalog_ldap_servers: [{err.faultCode}] — {err.faultString}"
-
-    def get_usercatalog_ldap_user_guid(self, ldap_id, user_name):
-        """Получить GUID пользователя LDAP по его имени"""
-        try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
-                users = self._server.v1.usercatalogs.ldap.users.list(self._auth_token, ldap_id, user_name)
-            else:
-                users = self._server.v1.usercatalogs.realm.ldap.users.list(self._auth_token, ldap_id, user_name)
-        except rpc.Fault as err:
-            return 1, f"Error mclib.get_usercatalog_ldap_user_guid: [{err.faultCode}] — {err.faultString}"
-        return 0, users[0]['guid'] if users else 0  # Возвращает или guid или 0
-
-    def get_usercatalog_ldap_group_guid(self, ldap_id, group_name):
-        """Получить GUID группы LDAP по её имени"""
-        try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
-                groups = self._server.v1.usercatalogs.ldap.groups.list(self._auth_token, ldap_id, group_name)
-            else:
-                groups = self._server.v1.usercatalogs.realm.ldap.groups.list(self._auth_token, ldap_id, group_name)
-        except rpc.Fault as err:
-            return 1, f"Error mclib.get_usercatalog_ldap_group_guid: [{err.faultCode}] — {err.faultString}"
-        return 0, groups[0]['guid'] if groups else 0  # Возвращает или guid или 0
-
     def get_template_groups_list(self, template_id):
         """Получить список локальных групп в шаблоне"""
         try:

@@ -8,6 +8,7 @@ l7_categories = {
     'File sharing P2P',
     'File storage and backup',
     'Games',
+    'ICS/IoT',
     'Instant messaging',
     'Media streaming',
     'Mobile',

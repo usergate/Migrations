@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.8
+# Версия 2.9
 #
 
 import os, sys, json
@@ -1630,7 +1630,7 @@ def convert_dnat_rule(parent, path, data):
                     'service': services,
                     'target_ip': value['mappedip'],
                     'gateway': '',
-                    'enabled': False,
+                    'enabled': True,
                     'log': False,
                     'log_session_start': False,
                     'target_snat': True,
@@ -1805,6 +1805,15 @@ def convert_firewall_policy(parent, path, data):
             users = get_users_and_groups(parent, value['groups'], rule_name)
         elif 'users' in value:
             users = get_users_and_groups(parent, value['users'], rule_name)
+        if 'fsso-groups' in value:
+            domain = []
+            group_name = ''
+            for item in [x.split('=') for x in value['fsso-groups'].split(',')]:
+                if item[0].upper() == 'CN':
+                    group_name = item[1]
+                elif item[0].upper() == 'DC':
+                    domain.append(item[1])
+            users.append(['group', f"{'.'.join(domain)}\\{group_name}"])
         rule = {
             'name': func.get_restricted_name(rule_name),
             'description': value.get('comments', 'Портировано с Fortigate'),
@@ -1818,7 +1827,7 @@ def convert_firewall_policy(parent, path, data):
             'services': get_services(parent, value.get('service', ''), rule_name),
             'apps': [],
             'users': users,
-            'enabled': False,
+            'enabled': True,
             'limit': True,
             'limit_value': '3/h',
             'limit_burst': 5,

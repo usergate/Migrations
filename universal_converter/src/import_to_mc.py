@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.7
+# Версия 1.8
 #
 
 import os, sys, json, time
@@ -70,14 +70,12 @@ class ImportAll(QThread):
         else:
             self.template_name = result['name']
 
-        err, self.ldap_servers = get_ldap_servers(self)
-        if err:
-            if err == 1:
-                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
-                error = 1
-            else:
-                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
-            self.ldap_servers = 0
+        err, result = get_ldap_servers(self)
+        if err == 1:
+            self.stepChanged.emit(f'bRED|    {result}')
+            error = 1
+        else:
+            self.ldap_servers = result
 
         path_dict = {}
         for item in self.all_points:
@@ -135,14 +133,12 @@ class ImportSelectedPoints(QThread):
         else:
             self.template_name = result['name']
 
-        err, self.ldap_servers = get_ldap_servers(self)
-        if err:
-            if err == 1:
-                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
-                error = 1
-            else:
-                self.stepChanged.emit(f'bRED|    {self.ldap_servers}')
-            self.ldap_servers = 0
+        err, result = get_ldap_servers(self)
+        if err == 1:
+            self.stepChanged.emit(f'bRED|    {result}')
+            error = 1
+        else:
+            self.ldap_servers = result
 
         for point in self.selected_points:
             current_path = os.path.join(self.selected_path, point)
@@ -2200,16 +2196,29 @@ def get_ldap_servers(parent):
     Получаем список всех активных LDAP-серверов области.
     Выдаём словарь: {"имя_домена": "id_ldap-коннектора", ...}.
     """
+    parent.stepChanged.emit('BLUE|Проверяем статус LDAP-коннекторов в каталогах пользователей области.')
     err, result = parent.utm.get_usercatalog_ldap_servers()
     if err:
         return 1, result
     if not result:
-        return 4, 'Доменные пользователи не будут импортированы. Нет доступных LDAP-серверов в области.'
+        parent.stepChanged.emit('NOTE|    Нет доступных LDAP-серверов в области. Доменные пользователи не будут импортированы.')
+        return 2, {}
+
+    err, result2 = parent.utm.get_usercatalog_servers_status()
+    if err:
+        return 1, result2
+    servers_status = {item['id']: item['status'] for item in result2}
 
     ldap_servers = {}
     for srv in result:
-        for domain in srv['domains']:
-            ldap_servers[domain.lower()] = srv['id']
+        if servers_status[srv['id']] == 'connected':
+            for domain in srv['domains']:
+                ldap_servers[domain.lower()] = srv['id']
+            parent.stepChanged.emit(f'BLACK|    LDAP-коннектор "{srv["name"]}" - статус: "{servers_status[srv["id"]]}".')
+        else:
+            parent.stepChanged.emit(f'bRED|    LDAP-коннектор "{srv["name"]}" в каталогах пользователей области имеет не корректный статус: "{servers_status[srv["id"]]}".')
+    if not ldap_servers:
+        parent.stepChanged.emit(f'GRAY|    Нет подключённых LDAP-коннекторов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
     return 0, ldap_servers
 
 

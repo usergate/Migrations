@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 2.9
+# Версия 3.0 06-08-2024
 #
 
 import os, sys, json
@@ -1230,7 +1230,7 @@ def convert_shapers_rules(parent, path, data):
         shaping_rules = []
         rule = {
             'name': '',
-            'description': '',
+            'description': f'{value.get("comments", "Портировано с Fortigate.")}',
             'scenario_rule_id': False,
             'src_zones': [],
             'dst_zones': [],
@@ -1240,7 +1240,7 @@ def convert_shapers_rules(parent, path, data):
             'services': [],
             'apps': [],
             'pool': '',
-            'enabled': False,
+            'enabled': True,
             'time_restrictions': [],
             'limit': True,
             'limit_value': '3/h',
@@ -1253,22 +1253,29 @@ def convert_shapers_rules(parent, path, data):
             'dst_ips_negate': False,
             'services_negate': False,
             'apps_negate': False,
+            'rule_error': 0
         }
 
         for key, value in data['config firewall shaping-policy'].items():
             if value.get('traffic-shaper', None):
                 rule['name'] = f'{key}-{value["name"]}'
-                rule['src_ips'] = get_ips(parent, path, value.get('srcaddr', ''), value['name'])
-                rule['dst_ips'] = get_ips(parent, path, value.get('dstaddr', ''), value['name'])
-                rule['services'] = get_services(parent, value.get('service', ''), value['name'])
                 rule['pool'] = value['traffic-shaper']
+                get_ips(parent, path, value.get('srcaddr', ''), value.get('dstaddr', ''), rule)
+                get_services(parent, value.get('service', ''), rule)
+                if rule['rule_error']:
+                    rule['name'] = f'ERROR - {rule["name"]}'
+                    rule['enabled'] = False
+                rule.pop('rule_error', None)
                 shaping_rules.append(copy.deepcopy(rule))
             if value.get('traffic-shaper-reverse', None):
                 rule['name'] = f'{key}-{value["name"]}-reverse'
-                rule['src_ips'] = get_ips(parent, path, value.get('dstaddr', ''), value['name'])
-                rule['dst_ips'] = get_ips(parent, path, value.get('srcaddr', ''), value['name'])
-                rule['services'] = get_services(parent, value.get('service', ''), value['name'])
                 rule['pool'] = value['traffic-shaper-reverse']
+                get_ips(parent, path, value.get('srcaddr', ''), value.get('dstaddr', ''), rule)
+                get_services(parent, value.get('service', ''), rule)
+                if rule['rule_error']:
+                    rule['name'] = f'ERROR - {rule["name"]}'
+                    rule['enabled'] = False
+                rule.pop('rule_error', None)
                 shaping_rules.append(copy.deepcopy(rule))
 
         if shaping_rules:
@@ -1516,7 +1523,8 @@ def convert_time_sets(parent, path, data):
                 }
                 content = {
                     'name': func.get_restricted_name(key),
-                    'type': 'range',
+#                    'type': 'range',
+                    'type': 'span',
                 }
                 if 'start' in value and 'end' in value:
                     start = value['start'].split()
@@ -1527,12 +1535,12 @@ def convert_time_sets(parent, path, data):
                     content['fixed_date_from'] = f'{start[1].replace("/", "-")}T00:00:00'
                 elif 'start' not in value:
                     time_to, fixed_date_to = value['end'].split()
-                    content['type'] = 'span'
+#                    content['type'] = 'span'
                     content['time_to'] = time_to
-                    content['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00',
+                    content['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00'
                 elif 'end' not in value:
                     time_from, fixed_date_from = value['start'].split()
-                    content['type'] = 'span'
+#                    content['type'] = 'span'
                     content['time_from'] = time_from
                     content['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
                 time_set['content'].append(content)
@@ -1797,10 +1805,10 @@ def convert_firewall_policy(parent, path, data):
         return
 
     n = 0
-    rules = {}
+    rules = []
     for key, value in data['config firewall policy'].items():
-        rule_name = f'Rule - {value.get("name", key)}'
         users = []
+        rule_name = func.get_restricted_name(value.get("name", key))
         if 'groups' in value:
             users = get_users_and_groups(parent, value['groups'], rule_name)
         elif 'users' in value:
@@ -1815,16 +1823,16 @@ def convert_firewall_policy(parent, path, data):
                     domain.append(item[1])
             users.append(['group', f"{'.'.join(domain)}\\{group_name}"])
         rule = {
-            'name': func.get_restricted_name(rule_name),
-            'description': value.get('comments', 'Портировано с Fortigate'),
+            'name': '',
+            'description': f"{value.get('comments', 'Портировано с Fortigate')}\nFortigate UUID: {value['uuid']}",
             'action': value['action'] if value.get('action', None) else 'drop',
             'position': 'last',
             'scenario_rule_id': False,     # При импорте заменяется на UID или "0". 
             'src_zones': get_zones(parent, value.get('srcintf', '')),
             'dst_zones': get_zones(parent, value.get('dstintf', '')),
-            'src_ips': get_ips(parent, path, value.get('srcaddr', ''), rule_name),
-            'dst_ips': get_ips(parent, path, value.get('dstaddr', ''), rule_name),
-            'services': get_services(parent, value.get('service', ''), rule_name),
+            'src_ips': [],
+            'dst_ips': [],
+            'services': [],
             'apps': [],
             'users': users,
             'enabled': True,
@@ -1840,10 +1848,21 @@ def convert_firewall_policy(parent, path, data):
             'services_negate': False,
             'apps_negate': False,
             'fragmented': 'ignore',
-            'time_restrictions': get_time_restrictions(parent, value['schedule'], rule_name),
+            'time_restrictions': [],
             'send_host_icmp': '',
+            'rule_error': 0
         }
-        rules[int(key)] = rule
+        get_ips(parent, path, value.get('srcaddr', ''), value.get('dstaddr', ''), rule)
+        get_services(parent, value.get('service', ''), rule)
+        get_time_restrictions(parent, value['schedule'], rule)
+        if rule['rule_error']:
+            rule['name'] = f'ERROR - {rule_name}'
+            rule['enabled'] = False
+        else:
+            rule['name'] = f'Rule - {rule_name}'
+        rule.pop('rule_error', None)
+#        rules[int(key)] = rule
+        rules.append(rule)
         n += 1
         parent.stepChanged.emit(f'BLACK|    {n} - Создано правило МЭ "{rule["name"]}".')
         time.sleep(0.1)
@@ -1851,7 +1870,8 @@ def convert_firewall_policy(parent, path, data):
     if rules:
         json_file = os.path.join(current_path, 'config_firewall_rules.json')
         with open(json_file, 'w') as fh:
-            json.dump([v for _, v in sorted(rules.items())], fh, indent=4, ensure_ascii=False)
+#            json.dump([v for _, v in sorted(rules.items())], fh, indent=4, ensure_ascii=False)
+            json.dump(rules, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'GREEN|    Павила межсетевого экрана выгружены в файл "{json_file}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
@@ -2093,13 +2113,13 @@ def convert_bgp_routes(parent, path, data):
 
 
 ############################################# Служебные функции ###################################################
-def get_ips(parent, path, rule_ips, rule_name):
+def get_ips(parent, path, src_ips, dst_ips, rule):
     """
     Получить имена списков IP-адресов и URL-листов.
     Если списки не найдены, то они создаются или пропускаются, если невозможно создать."""
-    new_rule_ips = []
-    if rule_ips:
-        for item in rule_ips.split(','):
+    if src_ips:
+        new_rule_ips = []
+        for item in src_ips.split(','):
             if item == 'all':
                 continue
             if item in parent.ip_lists:
@@ -2111,10 +2131,30 @@ def get_ips(parent, path, rule_ips, rule_name):
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
                     new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item)])
                 except ValueError as err:
-                    parent.stepChanged.emit(f'bRED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
-    return new_rule_ips
+                    parent.stepChanged.emit(f'bRED|    Error! Не найден src-адрес "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
+                    rule['description'] = f'{rule["description"]}\nError! Не найден src-адрес "{item}".'
+                    rule['rule_error'] = 1
+        rule['src_ips'] = new_rule_ips
+    if dst_ips:
+        new_rule_ips = []
+        for item in dst_ips.split(','):
+            if item == 'all':
+                continue
+            if item in parent.ip_lists:
+                new_rule_ips.append(['list_id', func.get_restricted_name(item)])
+            elif item in parent.url_lists:
+                new_rule_ips.append(['urllist_id', func.get_restricted_name(item)])
+            else:
+                try:
+                    ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
+                    new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item)])
+                except ValueError as err:
+                    parent.stepChanged.emit(f'bRED|    Error! Не найден dst-адрес "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
+                    rule['description'] = f'{rule["description"]}\nError! Не найден dst-адрес "{item}".'
+                    rule['rule_error'] = 1
+        rule['dst_ips'] = new_rule_ips
 
-def get_services(parent, rule_services, rule_name):
+def get_services(parent, rule_services, rule):
     """Получить список сервисов"""
     new_service_list = []
     if rule_services:
@@ -2126,8 +2166,10 @@ def get_services(parent, rule_services, rule_name):
             elif service in parent.service_groups:
                 new_service_list.append(['list_id', service])
             else:
-                parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{service}" для правила "{rule_name}".')
-    return new_service_list
+                parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{service}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
+                rule['description'] = f'{rule["description"]}\nError! Не найден сервис "{service}".'
+                rule['rule_error'] = 1
+        rule['services'] = new_service_list
 
 def get_zones(parent, intf):
     """Получить список зон для правила"""
@@ -2153,7 +2195,7 @@ def get_users_and_groups(parent, users, rule_name):
             parent.stepChanged.emit(f'bRED|    Error! Не найден локальный пользователь/группа "{item}" для правила "{rule_name}".')
     return new_users_list
 
-def get_time_restrictions(parent, time_restrictions, rule_name):
+def get_time_restrictions(parent, time_restrictions, rule):
     """Получить значение календаря."""
     new_schedule = []
     for item in time_restrictions.split():
@@ -2162,8 +2204,10 @@ def get_time_restrictions(parent, time_restrictions, rule_name):
         if item in parent.time_restrictions:
             new_schedule.append(item)
         else:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден календарь {item} для правила "{rule_name}".')
-    return new_schedule
+            parent.stepChanged.emit(f'bRED|    Error! Не найден календарь "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
+            rule['description'] = f'{rule["description"]}\nError! Не найден календарь "{item}".'
+            rule['rule_error'] = 1
+    rule['time_restrictions'] = new_schedule
 
 
 def main(args):

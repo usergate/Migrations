@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.16
+# Версия 3.11
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -61,7 +61,7 @@ class UtmXmlRpc:
             tmp = self.version.split(".")
             self.version_hight = int(tmp[0])
             self.version_midle = int(tmp[1])
-            self.version_low = int(tmp[2])
+            self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
             return 0, True
 
@@ -1364,7 +1364,7 @@ class UtmXmlRpc:
         return 0, result     # Возвращает ID добавленного фильтра
 
     def update_useridagent_filter(self, filter_id, filter_info):
-        """Добавить Syslog фильтр UserID агента"""
+        """Обновить Syslog фильтр UserID агента"""
         try:
             result = self._server.v1.useridagent.filter.update(self._auth_token, filter_id, filter_info)
         except rpc.Fault as err:

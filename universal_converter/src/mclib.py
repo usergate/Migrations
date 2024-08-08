@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.6
+# Версия 1.7
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -68,7 +68,7 @@ class McXmlRpc:
             tmp = self.version.split(".")
             self.version_hight = int(tmp[0])
             self.version_midle = int(tmp[1])
-            self.version_low = int(tmp[2])
+            self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
             return 0, True
 

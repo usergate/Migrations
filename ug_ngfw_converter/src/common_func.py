@@ -23,7 +23,7 @@
 import os, json, pickle
 import ipaddress
 from PyQt6.QtWidgets import QMessageBox
-from services import trans_filename, trans_name
+from services import trans_filename, trans_name, trans_userlogin
 
 
 def create_dir(path, delete='yes'):
@@ -81,9 +81,13 @@ def read_json_file(parent, json_file_path, mode=0):
         with open(json_file_path, "r") as fh:
             data = json.load(fh)
     except ValueError as err:
-        parent.stepChanged.emit(f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".')
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
         parent.error = 1
-        return 1, f'RED|    Error: JSONDecodeError - {err} "{json_file_path}".'
+        return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
+    except json.JSONDecodeError as err:
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
+        parent.error = 1
+        return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
     except FileNotFoundError as err:
         if not mode:
             parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
@@ -102,6 +106,7 @@ def create_ip_list(parent, path, ips=[], name=None):
     В вызываемом модуле должна быть структура: self.ip_lists = set()
     """
     iplist_name = name if name else ips[0]
+    iplist_name = get_restricted_name(iplist_name)
     if iplist_name not in parent.ip_lists:
         section_path = os.path.join(path, 'Libraries')
         current_path = os.path.join(section_path, 'IPAddresses')
@@ -132,7 +137,10 @@ def create_ip_list(parent, path, ips=[], name=None):
 
 
 def get_time_restrictions(parent, time_restrictions, rule_name):
-    """Проверяем что календарь существует. Возвращаем список только существующих календарей."""
+    """
+    Проверяем что календарь существует. Возвращаем список только существующих календарей.
+    Применяется при экспорте конфигурации с вендоров.
+    """
     new_schedule = []
     for item in time_restrictions:
         if item in parent.time_restrictions:
@@ -143,6 +151,7 @@ def get_time_restrictions(parent, time_restrictions, rule_name):
 
 
 def pack_ip_address(ip, mask):
+    """depricated"""
     if ip == '0':
         ip = '0.0.0.0'
     if mask == '0':
@@ -153,18 +162,76 @@ def pack_ip_address(ip, mask):
         return '10.10.10.1/32'
     return f'{ip}/{interface.network.prefixlen}'
 
+def pack_ip_addr(ip, mask):
+    """На замену pack_ip_address"""
+    if ip == '0':
+        ip = '0.0.0.0'
+    if mask == '0':
+        mask = '0.0.0.0'
+    try:
+        interface = ipaddress.ip_interface(f'{ip}/{mask}')
+    except ValueError as err:
+        return 1, err
+    return 0, f'{ip}/{interface.network.prefixlen}'
+
+def unpack_ip_address(iface):
+    """Получаем данные в виде ip/mask (пример: 192.168.10.1/29)"""
+    try:
+        interface = ipaddress.ip_interface(iface)
+        ipv4 = {'ip': f'{interface.ip}', 'mask': f'{interface.netmask}'}
+    except ValueError as err:
+        return 1, err
+    return 0, ipv4
+
+def ip_isglobal(ip):
+    """
+    Получаем данные в виде ip и проверяем что он в глобальном адресном пространстве
+    Если нет ошибки, возвращаем True или False. Если получили не валидный IP, возвращаем ошибку.
+    """
+    try:
+        ip_addr = ipaddress.ip_address(ip)
+        return 0, ip_addr.is_global
+    except ValueError as err:
+        return 1, err
+
+def get_netroute(net):
+    """Получаем шлюз для подсети. Подразумевается что это первый ip-адрес."""
+    try:
+        net_route = ipaddress.ip_interface(net).network[1]
+        return 0, str(net_route)
+    except (IndexError, ValueError) as err:
+        return 1, err
+
+
 def get_restricted_name(name):
     """
     Получить имя объекта без запрещённых спецсимволов.
     Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
     """
     if isinstance(name, str):
-        new_name = name.translate(trans_name)
+        new_name = name.translate(trans_name).strip()
         if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
             new_name = new_name[1:]
+            if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+                new_name = new_name[1:]
         return new_name
     else:
         return 'Name not valid'
+
+def get_restricted_userlogin(user_login):
+    """
+    Получить валидный логин пользователя без запрещённых спецсимволов.
+    Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
+    """
+    if isinstance(user_login, str):
+        new_name = user_login.translate(trans_userlogin).strip()
+        if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+            new_name = new_name[1:]
+            if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+                new_name = new_name[1:]
+        return new_name
+    else:
+        return 'Login_not_valid'
 
 def check_auth(parent):
     """Проверяем что авторизация не протухла. Если протухла, логинимся заново."""
@@ -179,6 +246,57 @@ def check_auth(parent):
         return False
     else:
         return True
+
+def create_ug_services():
+    ug_services = [
+        {'name': 'DNS', 'description': 'Domain Name Service', 'protocols': [
+            {'proto': 'udp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'HTTP', 'description': 'Hypertext Transport Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'HTTPS', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
+            {'proto': 'tcp', 'port': '443', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'IMAP', 'description': 'Internet Mail Access Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '143', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'IMAPS', 'description': 'Internet Mail Access Protocol over SSL', 'protocols': [
+            {'proto': 'tcp', 'port': '993', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'NTP', 'description': 'Network Time Protocol', 'protocols': [
+            {'proto': 'udp', 'port': '123', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'POP3', 'description': 'Post Office Protocol', 'protocols': [
+            {'proto': 'pop3', 'port': '110', 'app_proto': 'pop3', 'source_port': '', 'alg': ''}]},
+        {'name': 'POP3S', 'description': 'Post Office Protocol over SSL', 'protocols': [
+            {'proto': 'pop3s', 'port': '995', 'app_proto': 'pop3s', 'source_port': '', 'alg': ''}]},
+        {'name': 'Postgres SQL', 'description': '', 'protocols': [
+            {'proto': 'tcp', 'port': '5432', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'RDP', 'description': 'Remote Desktop Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '3389', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SIP', 'description': 'Session Initiation Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '5060-5061', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'udp', 'port': '5060', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SMTP', 'description': 'Simple Mail Transfer Protocol', 'protocols': [
+            {'proto': 'smtp', 'port': '25', 'app_proto': 'smtp', 'source_port': '', 'alg': ''}]},
+        {'name': 'SMTPS', 'description': 'Simple Mail Transfer Protocol over SSL', 'protocols': [
+            {'proto': 'smtps', 'port': '465', 'app_proto': 'smtps', 'source_port': '', 'alg': ''}]},
+        {'name': 'SNMP', 'description': 'Simple Network Management Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'udp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SSH', 'description': 'Secure Shell', 'protocols': [
+            {'proto': 'tcp', 'port': '22', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'TFTP', 'description': 'Trivial File Transfer Protocol', 'protocols': [
+            {'proto': 'udp', 'port': '69', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'Rsync', 'description': '', 'protocols': [
+            {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+    ]
+    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+        ug_services.append({
+            'name': f'Any {item.upper()}',
+            'description': f'Any {item.upper()} packet',
+            'protocols': [{'proto': item, 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
+        })
+    return ug_services
 
 def message_inform(parent, title, message):
     """Общее информационное окно. Принимает родителя, заголовок и текст сообщения"""

@@ -8,13 +8,16 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
-                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter)
+                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog)
+import common_func as func
 import config_style as cs
 import export_functions as ef
 import import_functions as tf
+import import_to_mc as mc
 import get_temporary_data as gtd
+import get_mc_temporary_data as mc_td
 from utm import UtmXmlRpc
-from common_func import create_dir, message_inform, message_question, message_alert
+from mclib import McXmlRpc
 
 
 class SelectAction(QWidget):
@@ -23,31 +26,54 @@ class SelectAction(QWidget):
         super().__init__()
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации NGFW UserGate</font></b>"
-        text2 = "Экспорт конфигурации из NGFW версий 5, 6, 7 и сохранение её в файлах json в каталоге 'data' в текущей директории. \
-После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
-        text3 = "Импорт файлов конфигурации из каталога 'data' на NGFW версий 5, 6 и 7."
+        text2 = "Экспорт конфигурации из <b>UG NGFW</b> версий <b>5, 6, 7</b> и сохранение её в файлах json в каталоге \
+<b>data</b> в текущей директории. После экспорта вы можете просмотреть результат и изменить содержимое файлов в \
+соответствии с вашими потребностями."
+        text3 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> версий <b>5, 6 и 7</b>."
+        text4 = "Импорт файлов конфигурации из каталога <b>data</b> в шаблон <b>UserGate Management Center</b> версий <b>7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
         label2.setWordWrap(True)
         label3 = QLabel(text3)
-        
-        layout = QGridLayout()
-        layout.addWidget(QLabel("<font color='blue'>Экспорт конфигурации:</font>"), 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(label2, 0, 1)
-        layout.addWidget(QLabel("<font color='blue'>Импорт конфигурации:</font>"), 1, 0)
-        layout.addWidget(label3, 1, 1)
+        label3.setWordWrap(True)
+        label4 = QLabel(text4)
+        label4.setWordWrap(True)
+
+        btn_font = QFont("SansSerif", pointSize=9, weight=600)
 
         self.btn_export = QPushButton("Экспорт конфигурации")
         self.btn_export.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn_export.setFixedWidth(200)
+        self.btn_export.setFont(btn_font)
+        self.btn_export.setFixedWidth(280)
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self.set_export_page)
-        self.btn_import = QPushButton("Импорт конфигурации")
+        
+        self.btn_import = QPushButton("Импорт конфигурации на UG NGFW")
         self.btn_import.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn_import.setFixedWidth(200)
+        self.btn_import.setFont(btn_font)
+        self.btn_import.setFixedWidth(280)
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
+
+        self.btn_import_mc = QPushButton("Импорт в шаблон Management Center")
+        self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn_import_mc.setFont(btn_font)
+        self.btn_import_mc.setFixedWidth(280)
+        self.btn_import_mc.setEnabled(False)
+        self.btn_import_mc.clicked.connect(self.set_import_mc_page)
+
+        layout = QGridLayout()
+        layout.addWidget(self.btn_export, 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(label2, 0, 1)
+        layout.addWidget(self.btn_import, 1, 0)
+        layout.addWidget(label3, 1, 1)
+        layout.addWidget(self.btn_import_mc, 2, 0)
+        layout.addWidget(label4, 2, 1)
+        layout.setHorizontalSpacing(20)
+        layout.setVerticalSpacing(20)
+        layout.setColumnStretch(1, 10)
+
         btn_exit = QPushButton("Выход")
         btn_exit.setStyleSheet('color: darkred; background: white;')
         btn_exit.setFixedWidth(200)
@@ -58,9 +84,6 @@ class SelectAction(QWidget):
 
         btn_vbox = QVBoxLayout()
         btn_vbox.addSpacerItem(QSpacerItem(5, 10))
-        btn_vbox.addWidget(self.btn_export)
-        btn_vbox.addWidget(self.btn_import)
-        btn_vbox.addSpacerItem(QSpacerItem(5, 10))
         btn_vbox.addWidget(btn_exit)
         btn_vbox.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
@@ -68,7 +91,7 @@ class SelectAction(QWidget):
         vbox.addWidget(label1)
         vbox.addSpacerItem(QSpacerItem(5, 10))
         vbox.addLayout(layout)
-        vbox.addSpacerItem(QSpacerItem(5, 15))
+        vbox.addSpacerItem(QSpacerItem(5, 10))
         vbox.addWidget(line)
         vbox.addLayout(btn_vbox)
         self.setLayout(vbox)
@@ -77,21 +100,29 @@ class SelectAction(QWidget):
 
     def resize_window(self, e):
         if e == 0:
-            self.parent.resize(610, 291)
+            self.parent.resize(610, 350)
 
     def set_export_page(self):
-        """Переходим на страницу экспорта конфигурации."""
+        """Переходим на страницу экспорта конфигурации. Номер в стеке 1."""
         self.parent.stacklayout.setCurrentIndex(1)
 
     def set_import_page(self):
-        """Переходим на страницу импорта конфигурации."""
+        """Переходим на страницу импорта конфигурации на NGFW. Номер в стеке 2."""
         self.parent.stacklayout.setCurrentIndex(2)
+
+    def set_import_mc_page(self):
+        """Переходим на страницу импорта конфигурации в шаболон МС. Номер в стеке 3."""
+        self.parent.stacklayout.setCurrentIndex(3)
+        pass
 
     def enable_buttons(self):
         self.btn_export.setStyleSheet('color: forestgreen; background: white;')
         self.btn_export.setEnabled(True)
         self.btn_import.setStyleSheet('color: steelblue; background: white;')
         self.btn_import.setEnabled(True)
+        self.btn_import_mc.setStyleSheet('color: steelblue; background: white;')
+        self.btn_import_mc.setEnabled(True)
+
 
 class SelectMode(QWidget):
     """Класс для выбора раздела конфигурации для экспорта/импорта."""
@@ -140,11 +171,11 @@ class SelectMode(QWidget):
         self.btn1.setFixedWidth(100)
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2 = QPushButton()
-        self.btn2.setFixedWidth(190)
+        self.btn2.setFixedWidth(230)
         self.btn3 = QPushButton()
-        self.btn3.setFixedWidth(140)
+        self.btn3.setFixedWidth(230)
         self.btn4 = QPushButton("Сохранить лог")
-        self.btn4.setFixedWidth(100)
+        self.btn4.setFixedWidth(130)
 
         hbox_btn = QHBoxLayout()
         hbox_btn.addWidget(self.btn1)
@@ -186,12 +217,12 @@ class SelectMode(QWidget):
         self.btn4.setStyleSheet('color: steelblue; background: white;')
         self.btn4.setEnabled(True)
 
-    def get_auth(self):
+    def get_auth(self, mod='fw'):
         """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
         if self.utm:
             self.utm.logout()
             self.utm = None
-        dialog = LoginWindow(parent=self)
+        dialog = LoginWindow(self, mode=mod)
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
             self.utm = dialog.utm
@@ -220,7 +251,7 @@ class SelectMode(QWidget):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
@@ -229,7 +260,7 @@ class SelectMode(QWidget):
         with open(path_logfile, 'w') as fh:
             print(*list_items, sep='\n', file=fh)
             fh.write('\n')
-        message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
+        func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
 
     def run_page_0(self):
         """Возвращаемся на стартовое окно"""
@@ -246,19 +277,17 @@ class SelectMode(QWidget):
         self.parent.stacklayout.setCurrentIndex(0)
 
     def add_item_log(self, message, color='BLACK'):
-        """
-        Добавляем запись лога в log_list.
-        """
+        """Добавляем запись лога в log_list."""
         i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color[color]))
+        i.setForeground(QColor(cs.color.get(color, 'RED')))
         self.log_list.addItem(i)
 
     def on_step_changed(self, msg):
-        color, message = msg.split('|')
+        color, _, message = msg.partition('|')
         self.add_item_log(message, color=color)
         self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):
-            message_inform(self, 'Внимание!', message)
+            func.message_inform(self, 'Внимание!', message)
 
     def on_finished(self):
         self.thread = None
@@ -266,7 +295,7 @@ class SelectMode(QWidget):
 
 
 class SelectExportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для экспорта. Номер в стеке 1."""
+    """Класс для выбора раздела конфигурации для экспорта из NGFW. Номер в стеке 1."""
     def __init__(self, parent):
         super().__init__(parent)
         self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для экспорта</font></b>")
@@ -287,10 +316,10 @@ class SelectExportMode(SelectMode):
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
-                if self.get_auth():
+                if self.get_auth(mod='fw'):
                     self.enable_buttons()
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
-                    self.tree.change_items_status()
+                    self.tree.change_items_status_for_export()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
                     self.init_temporary_data('export')
                 else:
@@ -303,14 +332,7 @@ class SelectExportMode(SelectMode):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем экспорт выбранного раздела конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         if self.selected_points:
@@ -321,23 +343,16 @@ class SelectExportMode(SelectMode):
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
             else:
-                message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
+                func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
         else:
-            message_inform(self, "Внимание!", "Вы не выбрали раздел для экспорта.")
+            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для экспорта.")
 
     def export_all(self):
         """
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем экспорт выбранного раздела конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
@@ -349,7 +364,7 @@ class SelectExportMode(SelectMode):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
 
 
 class SelectImportMode(SelectMode):
@@ -374,10 +389,10 @@ class SelectImportMode(SelectMode):
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
-                if self.get_auth():
+                if self.get_auth(mod='fw'):
                     self.enable_buttons()
                     self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
-                    self.tree.change_items_status()
+                    self.tree.change_items_status_for_import(self.parent.get_config_path())
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
                     self.init_temporary_data('import')
                 else:
@@ -390,14 +405,7 @@ class SelectImportMode(SelectMode):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт выбранного раздела конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         if self.selected_points:
@@ -412,29 +420,26 @@ class SelectImportMode(SelectMode):
                 }
                 self.set_arguments(arguments)
 
-                self.thread = tf.ImportSelectedPoints(self.utm, self.parent.get_config_path(), self.current_path, self.selected_points, arguments)
+                self.thread = tf.ImportSelectedPoints(self.utm,
+                                            self.parent.get_config_path(),
+                                            self.current_path,
+                                            self.selected_points,
+                                            arguments)
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
             else:
-                message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+                func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
         else:
-            message_inform(self, "Внимание!", "Вы не выбрали раздел для импорта.")
+            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для импорта.")
 
     def import_all(self):
         """
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт всей конфигурации.
         """
-        err = 0; msg = ' '
-        match self.utm.ping_session()[0]:
-            case 1:
-                err, msg = self.utm.connect()
-            case 2:
-                err, msg = self.utm.login()
-        if err:
-            message_alert(self, msg, '')
+        if not func.check_auth(self):
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
@@ -457,14 +462,18 @@ class SelectImportMode(SelectMode):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
         self.tree.setCurrentItem(self.tree.topLevelItem(0))
 
     def set_arguments(self, arguments):
         """Заполняем структуру параметров для импорта."""
+        err, ngfw_interfaces = self.utm.get_interfaces_list()
+        if err:
+            return err, f'RED|    {ngfw_interfaces}'
+
         if 'DHCP' in self.selected_points:
-            err, result = self.import_dhcp()
+            err, result = self.import_dhcp(ngfw_interfaces)
             arguments['ngfw_ports'] = err
             arguments['dhcp_settings'] = result
         if 'Interfaces' in self.selected_points:
@@ -472,7 +481,7 @@ class SelectImportMode(SelectMode):
                 arguments['ngfw_vlans'] = 2
                 arguments['new_vlans'] = f'bRED|    VLAN нельзя импортировать на NGFW версии {self.utm.version}.'
             else:
-                err, result = self.create_vlans()
+                err, result = self.create_vlans(ngfw_interfaces)
                 if err:
                     arguments['ngfw_vlans'] = err
                     arguments['new_vlans'] = result
@@ -481,11 +490,11 @@ class SelectImportMode(SelectMode):
                     arguments['ngfw_vlans'] = result[1]
                     arguments['new_vlans'] = result[2]
 
-    def create_vlans(self):
+    def create_vlans(self, ngfw_interfaces):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = self.read_json_file(json_file)
+        err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
@@ -502,12 +511,9 @@ class SelectImportMode(SelectMode):
         # Составляем список легитимных интерфейсов (interfaces_list).
         ngfw_vlans = {}
         management_port = ''
-        interfaces_list = []
-        err, result = self.utm.get_interfaces_list()
-        if err:
-            return err, f'RED|    {result}'
+        interfaces_list = ['Undefined']
 
-        for item in result:
+        for item in ngfw_interfaces:
             if item['kind'] == 'vlan':
                 ngfw_vlans[item['vlan_id']] = item['name']
                 continue
@@ -521,7 +527,6 @@ class SelectImportMode(SelectMode):
             if item["name"] == management_port:
                 continue
             interfaces_list.append(item['name'])
-        interfaces_list.insert(0, "Undefined")
 
         dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones)
         result = dialog.exec()
@@ -533,17 +538,14 @@ class SelectImportMode(SelectMode):
         else:
             return 3, 'LBLUE|    Импорт настроек VLAN отменён пользователем.'
 
-    def import_dhcp(self):
+    def import_dhcp(self, ngfw_interfaces):
         dhcp_path = os.path.join(self.current_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = self.read_json_file(json_file)
+        err, data = func.read_json_file(self, json_file, mode=1)
         if err:
             return err, data
 
-        err, result = self.utm.get_interfaces_list()
-        if err:
-            return err, f'RED|    {result}'
-        ngfw_ports = [x['name'] for x in result if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+        ngfw_ports = [x['name'] for x in ngfw_interfaces if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
         ngfw_ports.insert(0, 'Undefined')
 
         dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
@@ -553,18 +555,340 @@ class SelectImportMode(SelectMode):
         else:
             return 3, 'LBLUE|    Импорт настроек DHCP отменён пользователем.'
 
-    def read_json_file(self, json_file_path):
-        """Читаем файл json с конфигурацией"""
-        try:
-            with open(json_file_path, 'r') as fh:
-                data = json.load(fh)
-        except FileNotFoundError as err:
-            return 2, f'dGRAY|    Нет данных для импорта. Не найден файл {json_file_path} с конфигурацией.'
-        except Exception as err:
-            return 1, f'iRED|    {err}'
-        if not data:
-            return 3, f'dGRAY|    Нет данных для импорта. Файл {json_file_path} пуст.'
-        return 0, data
+
+class SelectMcImportMode(SelectMode):
+    """Класс для выбора раздела конфигурации для импорта в шаблон МС. Номер в стеке 3."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.template_id = None
+        self.template_name = None
+        self.id_nodes = [f'node_{i}' for i in range(1, 100)]
+        self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта в шаблон Management Center</font></b>")
+        self.btn2.setText("Импорт выбранного раздела")
+        self.btn2.clicked.connect(self.import_selected_points)
+        self.btn3.setText("Импортировать всё")
+        self.btn3.clicked.connect(self.import_all)
+        self.btn4.clicked.connect(lambda: self._save_logs('import.log'))
+        
+        self.parent.stacklayout.currentChanged.connect(self.init_import_widget)
+
+    def init_temporary_data(self):
+        """
+        Запускаем в потоке mc_td.GetTemporaryData() для получения часто используемых данных с NGFW.
+        """
+        if self.thread is None:
+            self.disable_buttons()
+            self.thread = mc_td.GetTemporaryData(self.utm, self.template_id)
+            self.thread.stepChanged.connect(self.on_step_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
+        else:
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+
+    def init_import_widget(self, e):
+        """
+        При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
+        """
+        if e == 3:
+            self.parent.resize(900, 500)
+            dialog =  SelectConfigDirectoryWindow(self.parent, mode='import')
+            result = dialog.exec()
+            if result == QDialog.DialogCode.Accepted:
+                self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
+                if self.get_auth(mod='mc'):
+                    if float(f'{self.utm.version_hight}.{self.utm.version_midle}') < 7.1:
+                        message = 'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
+                        self.add_item_log(message, color='RED')
+                        func.message_inform(self, 'Внимание!', message)
+                        self.run_page_0()
+                        return
+
+                    template_dialog = SelectMcDestinationTemplate(self, self.parent)
+                    template_result = template_dialog.exec()
+                    if template_result == QDialog.DialogCode.Accepted:
+                        self.template_name = template_dialog.current_template_name
+                        self.template_id = template_dialog.templates[self.template_name]
+                        self.label_version.setText(f'MC (версия {self.utm.version}) - шаблон: {self.template_name}')
+                        self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                        self.tree.change_items_status_for_import(self.parent.get_config_path())
+                        title = f'Импорт конфигурации в шаблон "{self.template_name}" на МС.'
+                        self.add_item_log(f'{title:>100}', color='GREEN')
+                        self.add_item_log(f'{"="*100}', color='ORANGE')
+                        self.init_temporary_data()
+                    else:
+                        self.run_page_0()
+                else:
+                    self.run_page_0()
+            else:
+                self.run_page_0()
+
+    def import_selected_points(self):
+        """
+        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
+        Затем запускаем импорт выбранного раздела конфигурации.
+        """
+        if not func.check_auth(self):
+            self.run_page_0()
+
+        if self.selected_points:
+            arguments = {
+                'ngfw_ports': '',
+                'dhcp_settings': '',
+                'ngfw_vlans': '',
+                'new_vlans': '',
+                'iface_settings': '',
+            }
+            node_name = 'node_1'
+            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
+                node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
+                if not ok:
+                    func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
+                    return
+                self.set_arguments(node_name, arguments)
+            if self.thread is None:
+                self.disable_buttons()
+                self.thread = mc.ImportSelectedPoints(self.utm,
+                                                      self.parent.get_config_path(),
+                                                      self.current_path,
+                                                      self.selected_points,
+                                                      self.template_id,
+                                                      arguments,
+                                                      node_name)
+                self.thread.stepChanged.connect(self.on_step_changed)
+                self.thread.finished.connect(self.on_finished)
+                self.thread.start()
+            else:
+                func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+
+        else:
+            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для импорта.")
+
+    def import_all(self):
+        """
+        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
+        Затем запускаем импорт всей конфигурации.
+        """
+        if not func.check_auth(self):
+            self.run_page_0()
+
+        message = 'Перед тем как импортировать всё, убедитесь, что на Management Center существуют интерфейсы и зоны. Это необходимо для создания '
+        message1 = 'интерфейсов VLAN, подсетей DHCP, Gateways и VRF. Если нет интерфейсов, VLAN, подсети DHCP, Gateways и VRF не будут созданы.'
+        func.message_inform(self, 'Внимание!', f'{message}{message1}')
+
+        node_name = 'node_1'
+        node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
+        if not ok:
+            func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
+            return
+
+        all_points = self.tree.select_all_items()
+        arguments = {
+            'ngfw_ports': '',
+            'dhcp_settings': '',
+            'ngfw_vlans': '',
+            'new_vlans': '',
+            'iface_settings': '',
+        }
+        for item in all_points:
+            self.current_path = os.path.join(self.parent.get_config_path(), item['path'])
+            self.selected_points = item['points']
+            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
+                self.set_arguments(node_name, arguments)
+        self.tree.set_current_item()
+
+        if self.thread is None:
+            self.disable_buttons()
+            self.thread = mc.ImportAll(self.utm,
+                                       self.parent.get_config_path(),
+                                       all_points,
+                                       self.template_id,
+                                       arguments,
+                                       node_name)
+            self.thread.stepChanged.connect(self.on_step_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
+        else:
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+
+    def set_arguments(self, node, arguments):
+        """Заполняем структуру параметров для импорта."""
+        err, mc_interfaces = self.utm.get_template_interfaces_list(self.template_id, node_name=node)
+        if err:
+            return err, f'RED|    {mc_interfaces}'
+        mc_interfaces = [item for item in mc_interfaces if item['node_name'] == node]
+        if not mc_interfaces:
+            msg = f'Для "{node}" отсутствуют интерфейсы.\nVLAN, Gateways, subnet DHCP и VRF не будут импортированы.'
+            func.message_inform(self, 'Внимание!', msg)
+            arguments['ngfw_ports'] = 3
+            arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле {node} шаблона.'
+            arguments['ngfw_vlans'] = 3
+            arguments['new_vlans'] = f'ORANGE|    Импорт настроек VLAN отменён из-за отсутствия портов на узле {node} шаблона.'
+            return
+ 
+        if 'DHCP' in self.selected_points:
+            err, result = self.import_dhcp(mc_interfaces)
+            arguments['ngfw_ports'] = err
+            arguments['dhcp_settings'] = result
+        if 'Interfaces' in self.selected_points:
+            err, result = self.create_vlans(mc_interfaces)
+            if err:
+                arguments['ngfw_vlans'] = err
+                arguments['new_vlans'] = result
+            else:
+                arguments['iface_settings'] = result[0]
+                arguments['ngfw_vlans'] = result[1]
+                arguments['new_vlans'] = result[2]
+
+    def create_vlans(self, mc_interfaces):
+        """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
+        iface_path = os.path.join(self.current_path, 'Interfaces')
+        json_file = os.path.join(iface_path, 'config_interfaces.json')
+        err, data = func.read_json_file(self, json_file, mode=1)
+        if err:
+            return err, data
+
+        vlans = sorted([item['vlan_id'] for item in data if item['kind'] == 'vlan'])
+        if not vlans:
+            return 3, 'LBLUE|    Нет VLAN для импорта.'
+
+        err, result = self.utm.get_template_zones_list(self.template_id)
+        if err:
+            return err, f'RED|    {result}'
+        zones = sorted([x['name'] for x in result])
+        zones.insert(0, "Undefined")
+
+        # Составляем список легитимных интерфейсов (interfaces_list).
+        ngfw_vlans = {}
+        interfaces_list = ['Undefined']
+
+        for item in mc_interfaces:
+            if item['kind'] == 'vlan':
+                ngfw_vlans[item['vlan_id']] = item['name']
+                continue
+            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
+                continue
+            interfaces_list.append(item['name'])
+
+        dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            new_vlans = {}
+            for key, value in dialog.vlans.items():
+                new_vlans[key] = {'port': value['port'].currentText(), 'zone': value['zone'].currentText()}
+            return 0, [data, ngfw_vlans, new_vlans]
+        else:
+            return 3, 'LBLUE|    Импорт настроек VLAN отменён пользователем.'
+
+    def import_dhcp(self, mc_interfaces):
+        dhcp_path = os.path.join(self.current_path, 'DHCP')
+        json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
+        err, data = func.read_json_file(self, json_file, mode=1)
+        if err:
+            return err, data
+
+        ngfw_ports = [x['name'] for x in mc_interfaces if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+        ngfw_ports.insert(0, 'Undefined')
+
+        dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            return ngfw_ports, data
+        else:
+            return 3, 'LBLUE|    Импорт настроек DHCP отменён пользователем.'
+
+
+class SelectMcDestinationTemplate(QDialog):
+    """Для МС. Диалоговое окно для выбора шаблона MC для импорта."""
+    def __init__(self, parent, main_window):
+        super().__init__(main_window)
+        self.main_window = main_window
+        self.parent = parent
+        self.templates = {}
+        self.current_template_name = None
+        self.setWindowTitle("Выбор шаблона для импорта")
+        self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
+        self.setFixedHeight(200)
+
+        label = QLabel("<b><font color='green'>Выберите шаблон для импорта конфигурации или создайте новый.</font></b><br>")
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.device_templates_list = QListWidget()
+
+        self.btn_enter = QPushButton("Ввод")
+        self.btn_enter.setStyleSheet('color: steelblue; background: white;')
+        self.btn_enter.setFixedWidth(80)
+        self.btn_enter.clicked.connect(self._send_accept)
+
+        self.btn3 = QPushButton("Создать новый шаблон")
+        self.btn3.setFixedWidth(160)
+        self.btn3.clicked.connect(self.create_new_template)
+
+        btn_exit = QPushButton("Отмена")
+        btn_exit.setStyleSheet('color: darkred;')
+        btn_exit.setFixedWidth(80)
+        btn_exit.clicked.connect(self.reject)
+
+        btn_hbox = QHBoxLayout()
+        btn_hbox.addWidget(self.btn_enter)
+        btn_hbox.addStretch()
+        btn_hbox.addWidget(self.btn3)
+        btn_hbox.addStretch()
+        btn_hbox.addWidget(btn_exit)
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(label)
+        vbox.addWidget(self.device_templates_list)
+        vbox.addSpacerItem(QSpacerItem(3, 5))
+        vbox.addLayout(btn_hbox)
+        self.setLayout(vbox)
+
+        self.device_templates_list.currentTextChanged.connect(self.select_dest_template)
+        self.disable_buttons()
+        self.add_device_template_items()
+
+    def disable_buttons(self):
+        self.btn_enter.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn_enter.setEnabled(False)
+        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn3.setEnabled(False)
+
+    def enable_buttons(self):
+        self.btn3.setStyleSheet('color: sienna; background: white;')
+        self.btn3.setEnabled(True)
+
+    def _send_accept(self):
+        self.accept()
+
+    def add_device_template_items(self):
+        """При открытии этого диалога получаем с МС список шаблонов устройств и заполняем список выбора шаблонов."""
+        err, result = self.parent.utm.get_device_templates()
+        if err:
+            func.message_alert(self, 'Не удалось получить список шаблонов устройств!', result)
+        else:
+            self.device_templates_list.clear()
+            for item in result:
+                self.device_templates_list.addItem(item['name'])
+                self.templates[item['name']] = item['id']
+            self.device_templates_list.setCurrentRow(0)
+            self.enable_buttons()
+
+    def create_new_template(self):
+        """Создаём новый шаблон устройства в области."""
+        template_name, ok = QInputDialog.getText(self, 'Создание шаблона устройства', 'Введите имя шаблона')
+        if ok:
+            if func.check_auth(self.parent):
+                err, result = self.parent.utm.add_device_template({'name': template_name, 'description': 'Шаблон для импорта с Check Point'})
+                if err:
+                    func.message_alert(self, result, 'Не удалось добавить шаблон устройства!')
+                else:
+                    func.message_inform(self, 'Создание шаблона', f'Создан шаблон "{template_name}".')
+                    self.add_device_template_items()
+            else:
+                self.run_page_0()
+
+    def select_dest_template(self, item_text):
+        self.current_template_name = item_text
+        self.btn_enter.setStyleSheet('color: steelblue; background: white;')
+        self.btn_enter.setEnabled(True)
 
 
 class SelectConfigDirectoryWindow(QDialog):
@@ -615,21 +939,27 @@ class SelectConfigDirectoryWindow(QDialog):
     def _send_accept(self):
         if self.config_directory.currentText():
             self.main_window.set_config_path(self.config_directory.currentText())
-            err, msg = create_dir(self.main_window.get_config_path(), delete='no')
+            err, msg = func.create_dir(self.main_window.get_config_path(), delete='no')
             if err:
                 self.main_window.del_config_path()
-                message_alert(self, msg, '')
+                func.message_alert(self, msg, '')
             else:
                 self.accept()
 
 
 class LoginWindow(QDialog):
-    def __init__(self, parent):
+    def __init__(self, parent, mode='fw'):
         super().__init__(parent)
-        self.setWindowTitle("Авторизация на UG NGFW")
+        self.mode = mode
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
-        self.setFixedHeight(190)
-        title = QLabel(f"<b><font color='green'>Введите учётнные данные<br>администратора NGFW</font></b>")
+        if self.mode == 'fw':
+            self.setWindowTitle("Авторизация на UG NGFW")
+            self.setFixedHeight(190)
+            title = QLabel(f"<b><font color='green'>Введите учётнные данные<br>администратора NGFW</font></b>")
+        elif self.mode == 'mc':
+            self.setWindowTitle("Авторизация на UG MC")
+            self.setFixedHeight(200)
+            title = QLabel(f"<b><font color='green'>Введите учётнные данные<br>администратора области<br>Management Center</font></b>")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self.ngfw_ip = QLineEdit()
@@ -671,10 +1001,13 @@ class LoginWindow(QDialog):
         
     def _send_accept(self):
         if self.check_ip_is_valid(self.ngfw_ip.text()) and self.login.text() and self.password.text():
-            self.utm = UtmXmlRpc(self.ngfw_ip.text(), self.login.text(), self.password.text())
+            if self.mode == 'fw':
+                self.utm = UtmXmlRpc(self.ngfw_ip.text(), self.login.text(), self.password.text())
+            elif self.mode == 'mc':
+                self.utm = McXmlRpc(self.ngfw_ip.text(), self.login.text(), self.password.text())
             err, result = self.utm.connect()
             if err:
-                message_alert(self, 'Не удалось подключиться с указанными параметрами!', result)
+                func.message_alert(self, 'Не удалось подключиться с указанными параметрами!', result)
             else:
                 self.accept()
 
@@ -684,7 +1017,7 @@ class LoginWindow(QDialog):
             ipaddress.ip_address(ip_addr)
             return True
         except ValueError:
-            message_inform(self, 'Ошибка!', 'Вы ввели не корректный IP-адрес.')
+            func.message_inform(self, 'Ошибка!', 'Вы ввели не корректный IP-адрес.')
             return False
 
 
@@ -946,7 +1279,7 @@ class MainTree(QTreeWidget):
             "Политики сети": ["Межсетевой экран", "NAT и маршрутизация", "Балансировка нагрузки", "Пропускная способность"],
             "Политики безопасности": [
                 "Фильтрация контента", "Веб-безопасность", "Инспектирование туннелей", "Инспектирование SSL",
-                "Инспектирование SSH", "СОВ", "Правила АСУ ТП", "Сценарии", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила",
+                "Инспектирование SSH", "СОВ", "Правила АСУ ТП", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила",
                 "Профили DoS", "Правила защиты DoS"
             ],
             "Глобальный портал": ["Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси"],
@@ -960,7 +1293,7 @@ class MainTree(QTreeWidget):
                 "Календари", "Полосы пропускания", "Профили АСУ ТП", "Шаблоны страниц", "Категории URL", "Изменённые категории URL",
                 "Приложения", "Профили приложений", "Группы приложений", "Почтовые адреса", "Номера телефонов", "Сигнатуры СОВ",
                 "Профили СОВ", "Профили оповещений", "Профили netflow", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Сценарии"
             ],
             "Оповещения": ["Правила оповещений", "Профили безопасности SNMP", "SNMP", "Параметры SNMP"],
         }
@@ -1035,7 +1368,7 @@ class MainTree(QTreeWidget):
         
         self.itemSelectionChanged.connect(self.select_item)
 
-    def change_items_status(self):
+    def change_items_status_for_export(self):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем остальные."""
 #        item = self.findItems(self.compliances[name], Qt.MatchFlag.MatchRecursive)[0]
         for item in self.findItems('*', Qt.MatchFlag.MatchWrap|Qt.MatchFlag.MatchWildcard|Qt.MatchFlag.MatchRecursive):
@@ -1044,6 +1377,37 @@ class MainTree(QTreeWidget):
             else:
                 item.setHidden(False)
                 item.setDisabled(False)
+
+    def change_items_status_for_import(self, current_path):
+        """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем те, для которых есть конфигурация."""
+        for i in range(self.topLevelItemCount()):
+            item = self.topLevelItem(i)
+            if item.text(0) in self.restricted_items[self.version]:
+                item.setHidden(True)
+            else:
+                item_dir = self.over_compliances[item.text(0)]
+                item_config_path = os.path.join(current_path, item_dir)
+                if os.path.isdir(item_config_path):
+                    item.setHidden(False)
+                    item.setDisabled(False)
+                    for i in range(item.childCount()):
+                        child_text = item.child(i).text(0)
+                        try:
+                            if child_text in self.restricted_items[self.version]:
+                                item.child(i).setHidden(True)
+                            else:
+                                child_dir = self.over_compliances[child_text]
+                                child_config_path = os.path.join(item_config_path, child_dir)
+                                if os.path.isdir(child_config_path):
+                                    item.child(i).setHidden(False)
+                                    item.child(i).setDisabled(False)
+                                else:
+                                    item.child(i).setHidden(True)
+                        except KeyError:
+                            pass
+                else:
+                    item.setHidden(True)
+        self.set_current_item()
 
     def select_item(self):
         """
@@ -1088,6 +1452,14 @@ class MainTree(QTreeWidget):
                     pass
             array.append({'path': item_text, 'points': item_childs})
         return array
+
+    def set_current_item(self):
+        """Устанавливаем верхний раздел дерева в качестве текущего (выделенного)."""
+        for i in range(self.topLevelItemCount()):
+            item = self.topLevelItem(i)
+            if not item.isHidden():
+                self.setCurrentItem(item)
+                break
 
 #----------------------------------------------------------------------------------------------------------------------------
 def main(args):

@@ -23,10 +23,10 @@
 #
 
 import os, sys, json
+import common_func as func
 from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import zone_services, trans_filename, trans_name, default_urlcategorygroup
-from common_func import read_bin_file
 
 
 class ExportAll(QThread):
@@ -44,7 +44,7 @@ class ExportAll(QThread):
 
     def run(self):
         """Экспортируем всё в пакетном режиме"""
-        err, self.ngfw_data = read_bin_file(self)
+        err, self.ngfw_data = func.read_bin_file(self)
         if err:
             self.stepChanged.emit('iRED|Экспорт конфигурации с UserGate NGFW прерван!')
             return
@@ -53,8 +53,8 @@ class ExportAll(QThread):
             top_level_path = os.path.join(self.config_path, item['path'])
             for point in item['points']:
                 current_path = os.path.join(top_level_path, point)
-                if point in func:
-                    func[point](self, current_path)
+                if point in export_funcs:
+                    export_funcs[point](self, current_path)
                 else:
                     self.error = 1
                     self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
@@ -78,15 +78,15 @@ class ExportSelectedPoints(QThread):
 
     def run(self):
         """Экспортируем определённый раздел конфигурации"""
-        err, self.ngfw_data = read_bin_file(self)
+        err, self.ngfw_data = func.read_bin_file(self)
         if err:
             self.stepChanged.emit('iRED|Экспорт конфигурации с UserGate NGFW прерван!')
             return
 
         for point in self.selected_points:
             current_path = os.path.join(self.selected_path, point)
-            if point in func:
-                func[point](self, current_path)
+            if point in export_funcs:
+                export_funcs[point](self, current_path)
             else:
                 self.error = 1
                 self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
@@ -96,7 +96,7 @@ class ExportSelectedPoints(QThread):
 def export_general_settings(parent, path):
     """Экспортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
     parent.stepChanged.emit('BLUE|Экспорт раздела "UserGate/Настройки/Настройки интерфейса".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -177,7 +177,7 @@ def export_general_settings(parent, path):
     if 5 < parent.version < 7.1:
         parent.stepChanged.emit('BLUE|Экспорт SNMP Engine ID из раздела "UserGate/Настройки/Модули/SNMP Engine ID".')
         engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
-        err, msg = create_dir(engine_path)
+        err, msg = func.create_dir(engine_path)
         if err:
             parent.stepChanged.emit(f'RED|    {msg}')
             parent.error = 1
@@ -338,7 +338,7 @@ def export_certificates(parent, path):
 
             # Для каждого сертификата создаём свой каталог.
             path_cert = os.path.join(path, item['name'])
-            err, msg = create_dir(path_cert)
+            err, msg = func.create_dir(path_cert)
             if err:
                 parent.stepChanged.emit(f'RED|    {msg}')
                 parent.error = 1
@@ -391,19 +391,22 @@ def export_certificates(parent, path):
 def export_users_certificate_profiles(parent, path):
     """Экспортируем профили пользовательских сертификатов. Только для версии 7.1 и выше."""
     parent.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Профили пользовательских сертификатов".')
-    err, msg = create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
     err, result = parent.utm.get_client_certificate_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        error = 1
+        parent.stepChanged.emit('ORANGE|    Ошибка экспорта профилей пользовательских сертификатов!')
         parent.error = 1
-    else:
+        return
+
+    if result:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Ошибка экспорта профилей пользовательских сертификатов!')
+            parent.error = 1
+            return
+
         for item in result:
             item.pop('id', None)
             item.pop('cc', None)
@@ -412,15 +415,15 @@ def export_users_certificate_profiles(parent, path):
         json_file = os.path.join(path, 'users_certificate_profiles.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Профили пользовательских сертификатов выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Ошибка экспорта профилей пользовательских сертификатов!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Профили пользовательских сертификатов выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет профилей пользовательских сертификатов для экспорта.')
 
 
 def export_zones(parent, path):
     """Экспортируем список зон."""
     parent.stepChanged.emit('BLUE|Экспорт настроек раздела "Сеть/Зоны".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -469,7 +472,7 @@ def export_zones(parent, path):
 def export_interfaces_list(parent, path):
     """Экспортируем список интерфейсов"""
     parent.stepChanged.emit('BLUE|Экспорт интерфейсов из раздела "Сеть/Интерфейсы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -574,7 +577,7 @@ def export_interfaces_list(parent, path):
 def export_gateways_list(parent, path):
     """Экспортируем список шлюзов"""
     parent.stepChanged.emit('BLUE|Экспорт шлюзов раздела "Сеть/Шлюзы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -642,7 +645,7 @@ def export_gateways_list(parent, path):
 def export_dhcp_subnets(parent, path):
     """Экспортируем настройки DHCP"""
     parent.stepChanged.emit('BLUE|Экспорт настроек DHCP раздела "Сеть/DHCP".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -680,7 +683,7 @@ def export_dhcp_subnets(parent, path):
 def export_dns_config(parent, path):
     """Экспортируем настройки DNS"""
     parent.stepChanged.emit('BLUE|Экспорт настройек DNS раздела "Сеть/DNS".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -755,7 +758,7 @@ def export_dns_config(parent, path):
 def export_vrf_list(parent, path):
     """Экспортируем настройки VRF"""
     parent.stepChanged.emit('BLUE|Экспорт настроек VRF раздела "Сеть/Виртуальные маршрутизаторы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -830,7 +833,7 @@ def export_routes(parent, path):
     """Экспортируем список маршрутов. Только версия 5."""
     parent.stepChanged.emit('BLUE|Экспорт списка маршрутов раздела "Сеть/Маршруты".')
     path = path.replace('Routes', 'VRF', 1)
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -890,7 +893,7 @@ def export_ospf_config(parent, path):
     json_file = os.path.join(path, 'config_vrf.json')
     error = 0
 
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -960,7 +963,7 @@ def export_bgp_config(parent, path):
     json_file = os.path.join(path, 'config_vrf.json')
     error = 0
 
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1041,7 +1044,7 @@ def export_bgp_config(parent, path):
 def export_wccp(parent, path):
     """Экспортируем список правил WCCP"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил WCCP из раздела "Сеть/WCCP".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1076,7 +1079,7 @@ def export_wccp(parent, path):
 def export_local_groups(parent, path):
     """Экспортируем список локальных групп пользователей"""
     parent.stepChanged.emit('BLUE|Экспорт списка локальных групп из раздела "Пользователи и устройства/Группы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1116,7 +1119,7 @@ def export_local_groups(parent, path):
 def export_local_users(parent, path):
     """Экспортируем список локальных пользователей"""
     parent.stepChanged.emit('BLUE|Экспорт списка локальных пользователей из раздела "Пользователи и устройства/Пользователи".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1151,7 +1154,7 @@ def export_local_users(parent, path):
 def export_auth_servers(parent, path):
     """Экспортируем список серверов аутентификации"""
     parent.stepChanged.emit('BLUE|Экспорт списка серверов аутентификации из раздела "Пользователи и устройства/Серверы аутентификации".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1196,18 +1199,13 @@ def export_auth_servers(parent, path):
 
 
 def export_2fa_profiles(parent, path):
-    """Экспортируем список 2FA профилей"""
-    parent.stepChanged.emit('BLUE|Экспорт списка 2FA профилей из раздела "Пользователи и устройства/Профили MFA".')
-    err, msg = create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
+    """Экспортируем список MFA профилей"""
+    parent.stepChanged.emit('BLUE|Экспорт списка MFA профилей из раздела "Пользователи и устройства/Профили MFA".')
 
     err, result = parent.utm.get_notification_profiles_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка MFA профилей!')
         parent.error = 1
         return
     list_notifications = {x['id']: x['name'].strip().translate(trans_name) for x in result}
@@ -1215,9 +1213,17 @@ def export_2fa_profiles(parent, path):
     err, data = parent.utm.get_2fa_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка MFA профилей!')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+            return
+
         for item in data:
             item.pop('id', None)
             item.pop('cc', None)
@@ -1232,15 +1238,15 @@ def export_2fa_profiles(parent, path):
         json_file = os.path.join(path, 'config_2fa_profiles.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список 2FA профилей выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка 2FA профилей!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Список MFA профилей выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет MFA профилей для экспорта.')
 
 
 def export_auth_profiles(parent, path):
     """Экспортируем список профилей аутентификации"""
     parent.stepChanged.emit('BLUE|Экспорт списка профилей авторизации из раздела "Пользователи и устройства/Профили аутентификации".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1291,7 +1297,7 @@ def export_auth_profiles(parent, path):
 def export_captive_profiles(parent, path):
     """Экспортируем список Captive-профилей"""
     parent.stepChanged.emit('BLUE|Экспорт списка Captive-профилей из раздела "Пользователи и устройства/Captive-профили".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1371,7 +1377,7 @@ def export_captive_profiles(parent, path):
 def export_captive_portal_rules(parent, path):
     """Экспортируем список правил Captive-портала"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил Captive-портала из раздела "Пользователи и устройства/Captive-портал".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1419,7 +1425,7 @@ def export_captive_portal_rules(parent, path):
 def export_terminal_servers(parent, path):
     """Экспортируем список терминальных серверов"""
     parent.stepChanged.emit('BLUE|Экспорт списка терминальных серверов из раздела "Пользователи и устройства/Терминальные серверы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1449,7 +1455,7 @@ def export_terminal_servers(parent, path):
 def export_byod_policy(parent, path):
     """Экспортируем список Политики BYOD"""
     parent.stepChanged.emit('BLUE|Экспорт списка Политики BYOD из раздела "Пользователи и устройства/Политики BYOD".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1480,7 +1486,7 @@ def export_byod_policy(parent, path):
 def export_userid_agent(parent, path):
     """Экспортируем настройки UserID агент"""
     parent.stepChanged.emit('BLUE|Экспорт настроек UserID агент из раздела "Пользователи и устройства/UserID агент".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1536,7 +1542,7 @@ def export_userid_agent(parent, path):
 def export_firewall_rules(parent, path):
     """Экспортируем список правил межсетевого экрана"""
     parent.stepChanged.emit('BLUE|Экспорт правил межсетевого экрана из раздела "Политики сети/Межсетевой экран".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1622,7 +1628,7 @@ def export_firewall_rules(parent, path):
 def export_nat_rules(parent, path):
     """Экспортируем список правил NAT"""
     parent.stepChanged.emit('BLUE|Экспорт правил NAT из раздела "Политики сети/NAT и маршрутизация".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1680,7 +1686,7 @@ def export_nat_rules(parent, path):
 def export_loadbalancing_rules(parent, path):
     """Экспортируем список правил балансировки нагрузки"""
     parent.stepChanged.emit('BLUE|Экспорт правил балансировки нагрузки из раздела "Политики сети/Балансировка нагрузки".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1752,7 +1758,7 @@ def export_loadbalancing_rules(parent, path):
 def export_shaper_rules(parent, path):
     """Экспортируем список правил пропускной способности"""
     parent.stepChanged.emit('BLUE|Экспорт правил пропускной способности из раздела "Политики сети/Пропускная способность".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1815,7 +1821,7 @@ def export_shaper_rules(parent, path):
 def export_content_rules(parent, path):
     """Экспортируем список правил фильтрации контента"""
     parent.stepChanged.emit('BLUE|Экспорт список правил фильтрации контента из раздела "Политики безопасности/Фильтрация контента".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1922,7 +1928,7 @@ def export_content_rules(parent, path):
 def export_safebrowsing_rules(parent, path):
     """Экспортируем список правил веб-безопасности"""
     parent.stepChanged.emit('BLUE|Экспорт правил веб-безопасности из раздела "Политики безопасности/Веб-безопасность".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -1974,7 +1980,7 @@ def export_safebrowsing_rules(parent, path):
 def export_tunnel_inspection_rules(parent, path):
     """Экспортируем правила инспектирования туннелей"""
     parent.stepChanged.emit('BLUE|Экспорт правил инспектирования туннелей из раздела "Политики безопасности/Инспектирование туннелей".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2007,7 +2013,7 @@ def export_tunnel_inspection_rules(parent, path):
 def export_ssldecrypt_rules(parent, path):
     """Экспортируем список правил инспектирования SSL"""
     parent.stepChanged.emit('BLUE|Экспорт правил инспектирования SSL из раздела "Политики безопасности/Инспектирование SSL".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2074,7 +2080,7 @@ def export_ssldecrypt_rules(parent, path):
 def export_sshdecrypt_rules(parent, path):
     """Экспортируем список правил инспектирования SSH"""
     parent.stepChanged.emit('BLUE|Экспорт правил инспектирования SSH из раздела "Политики безопасности/Инспектирование SSH".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2123,7 +2129,7 @@ def export_sshdecrypt_rules(parent, path):
 def export_idps_rules(parent, path):
     """Экспортируем список правил СОВ"""
     parent.stepChanged.emit('BLUE|Экспорт правил СОВ из раздела "Политики безопасности/СОВ".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2183,7 +2189,7 @@ def export_idps_rules(parent, path):
 def export_scada_rules(parent, path):
     """Экспортируем список правил АСУ ТП"""
     parent.stepChanged.emit('BLUE|Экспорт правил АСУ ТП из раздела "Политики безопасности/Правила АСУ ТП".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2226,7 +2232,7 @@ def export_scada_rules(parent, path):
 def export_scenarios(parent, path):
     """Экспортируем список сценариев"""
     parent.stepChanged.emit('BLUE|Экспорт списка сценариев из раздела "Политики безопасности/Сценарии".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2262,7 +2268,7 @@ def export_scenarios(parent, path):
 def export_mailsecurity_rules(parent, path):
     """Экспортируем список правил защиты почтового трафика"""
     parent.stepChanged.emit('BLUE|Экспорт правил защиты почтового трафика из раздела "Политики безопасности/Защита почтового трафика".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2336,7 +2342,7 @@ def export_mailsecurity_rules(parent, path):
 def export_icap_rules(parent, path):
     """Экспортируем список правил ICAP"""
     parent.stepChanged.emit('BLUE|Экспорт правил ICAP из раздела "Политики безопасности/ICAP-правила".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2414,7 +2420,7 @@ def export_icap_rules(parent, path):
 def export_icap_servers(parent, path):
     """Экспортируем список серверов ICAP"""
     parent.stepChanged.emit('BLUE|Экспорт серверов ICAP из раздела "Политики безопасности/ICAP-серверы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2445,7 +2451,7 @@ def export_icap_servers(parent, path):
 def export_dos_profiles(parent, path):
     """Экспортируем список профилей DoS"""
     parent.stepChanged.emit('BLUE|Экспорт профилей DoS из раздела "Политики безопасности/Профили DoS".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2475,7 +2481,7 @@ def export_dos_profiles(parent, path):
 def export_dos_rules(parent, path):
     """Экспортируем список правил защиты DoS"""
     parent.stepChanged.emit('BLUE|Экспорт правил защиты DoS из раздела "Политики безопасности/Правила защиты DoS".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2533,7 +2539,7 @@ def export_dos_rules(parent, path):
 def export_proxyportal_rules(parent, path):
     """Экспортируем список URL-ресурсов веб-портала"""
     parent.stepChanged.emit('BLUE|Экспорт списка ресурсов веб-портала из раздела "Глобальный портал/Веб-портал".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2575,7 +2581,7 @@ def export_proxyportal_rules(parent, path):
 def export_reverseproxy_servers(parent, path):
     """Экспортируем список серверов reverse-прокси"""
     parent.stepChanged.emit('BLUE|Экспорт списка серверов reverse-прокси из раздела "Глобальный портал/Серверы reverse-прокси".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2605,7 +2611,7 @@ def export_reverseproxy_servers(parent, path):
 def export_reverseproxy_rules(parent, path):
     """Экспортируем список правил reverse-прокси"""
     parent.stepChanged.emit('BLUE|Экспорт правил reverse-прокси из раздела "Глобальный портал/Правила reverse-прокси".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2717,7 +2723,7 @@ def export_reverseproxy_rules(parent, path):
 def export_waf_custom_layers(parent, path):
     """Экспортируем персональные WAF-слои. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт персональных слоёв WAF из раздела "WAF/Персональные WAF-слои".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2745,7 +2751,7 @@ def export_waf_custom_layers(parent, path):
 def export_waf_profiles_list(parent, path):
     """Экспортируем профили WAF. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт профилей WAF из раздела "WAF/WAF-профили".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2801,7 +2807,7 @@ def export_waf_profiles_list(parent, path):
 def export_vpn_security_profiles(parent, path):
     """Экспортируем список профилей безопасности VPN. Для версий 5, 6, 7.0"""
     parent.stepChanged.emit('BLUE|Экспорт профилей безопасности VPN из раздела "VPN/Профили безопасности VPN".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2842,7 +2848,7 @@ def export_vpn_security_profiles(parent, path):
 def export_vpnclient_security_profiles(parent, path):
     """Экспортируем клиентские профили безопасности VPN. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт клиентских профилей безопасности VPN из раздела "VPN/Клиентские профили безопасности".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2871,7 +2877,7 @@ def export_vpnclient_security_profiles(parent, path):
 def export_vpnserver_security_profiles(parent, path):
     """Экспортируем серверные профили безопасности VPN. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт серверных профилей безопасности VPN из раздела "VPN/Серверные профили безопасности".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2908,7 +2914,7 @@ def export_vpnserver_security_profiles(parent, path):
 def export_vpn_networks(parent, path):
     """Экспортируем список сетей VPN"""
     parent.stepChanged.emit('BLUE|Экспорт списка сетей VPN из раздела "VPN/Сети VPN".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2952,7 +2958,7 @@ def export_vpn_networks(parent, path):
 def export_vpn_client_rules(parent, path):
     """Экспортируем список клиентских правил VPN"""
     parent.stepChanged.emit('BLUE|Экспорт клиентских правил VPN из раздела "VPN/Клиентские правила".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -2999,7 +3005,7 @@ def export_vpn_client_rules(parent, path):
 def export_vpn_server_rules(parent, path):
     """Экспортируем список серверных правил VPN"""
     parent.stepChanged.emit('BLUE|Экспорт серверных правил VPN из раздела "VPN/Серверные правила".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3062,7 +3068,7 @@ def export_vpn_server_rules(parent, path):
 def export_morphology_lists(parent, path):
     """Экспортируем списки морфологии"""
     parent.stepChanged.emit('BLUE|Экспорт списков морфологии из раздела "Библиотеки/Морфология".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3115,7 +3121,7 @@ def export_morphology_lists(parent, path):
 def export_services_list(parent, path):
     """Экспортируем список сервисов раздела библиотеки"""
     parent.stepChanged.emit('BLUE|Экспорт списка сервисов из раздела "Библиотеки/Сервисы".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3163,7 +3169,7 @@ def export_services_list(parent, path):
 def export_services_groups(parent, path):
     """Экспортируем группы сервисов раздела библиотеки. Только для версии 7 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт списка групп сервисов сервисов из раздела "Библиотеки/Группы сервисов".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3199,7 +3205,7 @@ def export_services_groups(parent, path):
 def export_IP_lists(parent, path):
     """Экспортируем списки IP-адресов и преобразует формат атрибутов списков к версии 7"""
     parent.stepChanged.emit('BLUE|Экспорт списка IP-адресов из раздела "Библиотеки/IP-адреса".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3253,7 +3259,7 @@ def export_IP_lists(parent, path):
 def export_useragent_lists(parent, path):
     """Экспортируем списки useragent и преобразует формат атрибутов списков к версии 7"""
     parent.stepChanged.emit('BLUE|Экспорт списка "Useragent браузеров" из раздела "Библиотеки/Useragent браузеров".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3300,7 +3306,7 @@ def export_useragent_lists(parent, path):
 def export_mime_lists(parent, path):
     """Экспортируем списки Типов контента и преобразует формат атрибутов списков к версии 7"""
     parent.stepChanged.emit('BLUE|Экспорт списка "Типы контента" из раздела "Библиотеки/Типы контента".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3347,7 +3353,7 @@ def export_mime_lists(parent, path):
 def export_url_lists(parent, path):
     """Экспортируем списки URL и преобразует формат атрибутов списков к версии 6"""
     parent.stepChanged.emit('BLUE|Экспорт списков URL из раздела "Библиотеки/Списки URL".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3396,7 +3402,7 @@ def export_url_lists(parent, path):
 def export_time_restricted_lists(parent, path):
     """Экспортируем содержимое календарей и преобразует формат атрибутов списков к версии 7"""
     parent.stepChanged.emit('BLUE|Экспорт списка "Календари" из раздела "Библиотеки/Календари".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3447,7 +3453,7 @@ def export_time_restricted_lists(parent, path):
 def export_shaper_list(parent, path):
     """Экспортируем список Полосы пропускания"""
     parent.stepChanged.emit('BLUE|Экспорт списка "Полосы пропускания" из раздела "Библиотеки/Полосы пропускания".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3477,7 +3483,7 @@ def export_shaper_list(parent, path):
 def export_scada_profiles(parent, path):
     """Экспортируем список профилей АСУ ТП"""
     parent.stepChanged.emit('BLUE|Экспорт списка профилей АСУ ТП из раздела "Библиотеки/Профили АСУ ТП".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3509,7 +3515,7 @@ def export_templates_list(parent, path):
     Выгружает файл HTML только для изменённых страниц шаблонов.
     """
     parent.stepChanged.emit('BLUE|Экспорт шаблонов страниц из раздела "Библиотеки/Шаблоны страниц".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3544,7 +3550,7 @@ def export_templates_list(parent, path):
 def export_url_categories(parent, path):
     """Экспортируем категории URL"""
     parent.stepChanged.emit('BLUE|Экспорт категорий URL из раздела "Библиотеки/Категории URL".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3591,7 +3597,7 @@ def export_url_categories(parent, path):
 def export_custom_url_category(parent, path):
     """Экспортируем изменённые категории URL"""
     parent.stepChanged.emit('BLUE|Экспорт изменённых категорий URL из раздела "Библиотеки/Изменённые категории URL".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3623,7 +3629,7 @@ def export_custom_url_category(parent, path):
 def export_applications(parent, path):
     """Экспортируем список пользовательских приложений для версии 7.1 и выше."""
     parent.stepChanged.emit('BLUE|Экспорт пользовательских приложений из раздела "Библиотеки/Приложения".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3653,7 +3659,7 @@ def export_applications(parent, path):
 def export_app_profiles(parent, path):
     """Экспортируем профили приложений. Только для версии 7.1 и выше."""
     parent.stepChanged.emit('BLUE|Экспорт профилей приложений из раздела "Библиотеки/Профили приложений".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3683,7 +3689,7 @@ def export_app_profiles(parent, path):
 def export_application_groups(parent, path):
     """Экспортируем группы приложений."""
     parent.stepChanged.emit('BLUE|Экспорт групп приложений из раздела "Библиотеки/Группы приложений".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3738,7 +3744,7 @@ def export_application_groups(parent, path):
 def export_email_groups(parent, path):
     """Экспортируем группы почтовых адресов."""
     parent.stepChanged.emit('BLUE|Экспорт групп почтовых адресов из раздела "Библиотеки/Почтовые адреса".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3785,7 +3791,7 @@ def export_email_groups(parent, path):
 def export_phone_groups(parent, path):
     """Экспортируем группы телефонных номеров."""
     parent.stepChanged.emit('BLUE|Экспорт групп телефонных номеров из раздела "Библиотеки/Номера телефонов".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3832,7 +3838,7 @@ def export_phone_groups(parent, path):
 def export_custom_idps_signatures(parent, path):
     """Экспортируем пользовательские сигнатуры СОВ для версии 7.1 и выше."""
     parent.stepChanged.emit('BLUE|Экспорт пользовательских сигнатур СОВ из раздела "Библиотеки/Сигнатуры СОВ".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3861,7 +3867,7 @@ def export_custom_idps_signatures(parent, path):
 def export_idps_profiles(parent, path):
     """Экспортируем список профилей СОВ"""
     parent.stepChanged.emit('BLUE|Экспорт профилей СОВ из раздела "Библиотеки/Профили СОВ".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3928,7 +3934,7 @@ def export_idps_profiles(parent, path):
 def export_notification_profiles(parent, path):
     """Экспортируем список профилей оповещения"""
     parent.stepChanged.emit('BLUE|Экспорт профилей оповещений из раздела "Библиотеки/Профили оповещений".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3957,7 +3963,7 @@ def export_notification_profiles(parent, path):
 def export_netflow_profiles(parent, path):
     """Экспортируем список профилей netflow"""
     parent.stepChanged.emit('BLUE|Экспорт профилей netflow из раздела "Библиотеки/Профили netflow".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -3986,7 +3992,7 @@ def export_netflow_profiles(parent, path):
 def export_ssl_profiles(parent, path):
     """Экспортируем список профилей SSL"""
     parent.stepChanged.emit('BLUE|Экспорт профилей SSL из раздела "Библиотеки/Профили SSL".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4015,7 +4021,7 @@ def export_ssl_profiles(parent, path):
 def export_lldp_profiles(parent, path):
     """Экспортируем список профилей LLDP"""
     parent.stepChanged.emit('BLUE|Экспорт профилей LLDP из раздела "Библиотеки/Профили LLDP".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4044,7 +4050,7 @@ def export_lldp_profiles(parent, path):
 def export_ssl_forward_profiles(parent, path):
     """Экспортируем профили пересылки SSL"""
     parent.stepChanged.emit('BLUE|Экспорт профилей пересылки SSL из раздела "Библиотеки/Профили пересылки SSL".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4073,7 +4079,7 @@ def export_ssl_forward_profiles(parent, path):
 def export_hip_objects(parent, path):
     """Экспортируем HIP объекты"""
     parent.stepChanged.emit('BLUE|Экспорт HIP объектов из раздела "Библиотеки/HIP объекты".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4101,7 +4107,7 @@ def export_hip_objects(parent, path):
 def export_hip_profiles(parent, path):
     """Экспортируем HIP профили"""
     parent.stepChanged.emit('BLUE|Экспорт HIP профилей из раздела "Библиотеки/HIP профили".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4138,7 +4144,7 @@ def export_hip_profiles(parent, path):
 def export_bfd_profiles(parent, path):
     """Экспортируем профили BFD"""
     parent.stepChanged.emit('BLUE|Экспорт профилей BFD из раздела "Библиотеки/Профили BFD".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4166,7 +4172,7 @@ def export_bfd_profiles(parent, path):
 def export_useridagent_syslog_filters(parent, path):
     """Экспортируем syslog фильтры UserID агента"""
     parent.stepChanged.emit('BLUE|Экспорт syslog фильтров UserID агента из раздела "Библиотеки/Syslog фильтры UserID агента".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4194,7 +4200,7 @@ def export_useridagent_syslog_filters(parent, path):
 def export_snmp_rules(parent, path):
     """Экспортируем список правил SNMP"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил SNMP из раздела "Диагностика и мониторинг/Оповещения/SNMP".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4233,7 +4239,7 @@ def export_snmp_rules(parent, path):
 def export_notification_alert_rules(parent, path):
     """Экспортируем список правил оповещений"""
     parent.stepChanged.emit('BLUE|Экспорт правил оповещений из раздела "Диагностика и мониторинг/Оповещения/Правила оповещений".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4285,7 +4291,7 @@ def export_notification_alert_rules(parent, path):
 def export_snmp_security_profiles(parent, path):
     """Экспортируем профили безопасности SNMP. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт профилей безопасности SNMP из раздела "Диагностика и мониторинг/Оповещения/Профили безопасности SNMP".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4314,7 +4320,7 @@ def export_snmp_security_profiles(parent, path):
 def export_snmp_settings(parent, path):
     """Экспортируем параметры SNMP. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт параметров SNMP из раздела "Диагностика и мониторинг/Оповещения/Параметры SNMP".')
-    err, msg = create_dir(path)
+    err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
         parent.error = 1
@@ -4380,7 +4386,7 @@ def pass_function(parent, path):
     parent.stepChanged.emit(f'GRAY|Экспорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
 
 
-func = {
+export_funcs = {
     'GeneralSettings':  export_general_settings,
     'DeviceManagement': pass_function,
     'Administrators': pass_function,
@@ -4645,16 +4651,3 @@ def translate_iface_name(ngfw_version, path, data):
         iface_name = {x['name']: x['name'] for x in data}
     return iface_name
 
-def create_dir(path, delete='yes'):
-    if not os.path.isdir(path):
-        try:
-            os.makedirs(path)
-        except Exception as err:
-            return 1, f'Ошибка создания каталога:/n{path}'
-        else:
-            return 0, f'Создан каталог {path}'
-    else:
-        if delete == 'yes':
-            for file_name in os.listdir(path):
-                os.remove(os.path.join(path, file_name))
-        return 0, f'Каталог {path} уже существует.'

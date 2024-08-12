@@ -55,6 +55,7 @@ class GetExportTemporaryData(QThread):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.ngfw_data['certs'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['certs'][-1] = 0
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')

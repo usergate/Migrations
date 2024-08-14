@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.8
+# Версия 1.9
 #
 
 import os, sys, json, time
@@ -1619,6 +1619,659 @@ def import_scenarios(parent, path):
         parent.stepChanged.emit('GREEN|    Список сценариев импортирован в раздел "Библиотеки/Сценарии".')
 
 
+#-------------------------------------------- Сеть ------------------------------------------------------------
+def import_zones(parent, path):
+    """Импортируем зоны на NGFW, если они есть."""
+    json_file = os.path.join(path, 'config_zones.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
+
+    service_ids = {
+        'Ping': 'ffffff03-ffff-ffff-ffff-ffffff000001',
+        'SNMP': 'ffffff03-ffff-ffff-ffff-ffffff000002',
+        'Captive-портал и страница блокировки': 'ffffff03-ffff-ffff-ffff-ffffff000004',
+        'XML-RPC для управления': 'ffffff03-ffff-ffff-ffff-ffffff000005',
+        'Кластер': 'ffffff03-ffff-ffff-ffff-ffffff000006',
+        'VRRP': 'ffffff03-ffff-ffff-ffff-ffffff000007',
+        'Консоль администрирования': 'ffffff03-ffff-ffff-ffff-ffffff000008',
+        'DNS': 'ffffff03-ffff-ffff-ffff-ffffff000009',
+        'HTTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000010',
+        'Агент аутентификации': 'ffffff03-ffff-ffff-ffff-ffffff000011',
+        'SMTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000012',
+        'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
+        'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
+        'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
+        'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
+        'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
+        'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
+        'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
+        'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
+        'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
+        'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
+        'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
+        'SNMP-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000026',
+        'SSH-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000027',
+        'Multicast': 'ffffff03-ffff-ffff-ffff-ffffff000028',
+        'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
+        'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
+        'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
+        'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
+    }
+
+    error = 0
+    for zone in data:
+        zone['name'] = func.get_restricted_name(zone['name'])
+        new_services_access = []
+        for service in zone['services_access']:
+            if service['enabled']:
+                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
+                    allowed_ips = []
+                    for item in service['allowed_ips']:
+                        if item[0] == 'list_id':
+                            try:
+                                item[1] = parent.mc_data['ip_lists'][item[1]]
+                            except KeyError as err:
+                                parent.stepChanged.emit(f'bRED|    Зона "{zone["name"]}": в контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
+                                error = 1
+                        allowed_ips.append(item)
+                    service['allowed_ips'] = allowed_ips
+                service['service_id'] = service_ids.get(service['service_id'], 'ffffff03-ffff-ffff-ffff-ffffff000001')
+                new_services_access.append(service)
+        zone['services_access'] = new_services_access
+
+        zone_networks = []
+        for net in zone['networks']:
+            if net[0] == 'list_id':
+                try:
+                    net[1] = parent.mc_data['ip_lists'][net[1]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'ORANGE|    Зона "{zone["name"]}": В защите от IP-спуфинга не найден список IP-адресов "{err}".')
+                    error = 1
+                    continue
+            zone_networks.append(net)
+        zone['networks'] = zone_networks
+
+        sessions_limit_exclusions = []
+        for item in zone['sessions_limit_exclusions']:
+            try:
+                item[1] = parent.mc_data['ip_lists'][item[1]]
+            except KeyError as err:
+                parent.stepChanged.emit(f'ORANGE|    Зона "{zone["name"]}": В ограничении сессий не найден список IP-адресов "{err}".')
+                error = 1
+                continue
+            sessions_limit_exclusions.append(item)
+        zone['sessions_limit_exclusions'] = sessions_limit_exclusions
+
+        err, result = parent.utm.add_template_zone(parent.template_id, zone)
+        if err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        elif err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        else:
+            parent.mc_data['zones'][zone['name']] = result
+            parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.')
+    else:
+        parent.stepChanged.emit('GREEN|    Зоны импортированы в раздел "Сеть/Зоны".')
+
+
+def import_interfaces(parent, path):
+    import_vlans(parent, path)
+    import_ipip_interface(parent, path)
+
+def import_ipip_interface(parent, path):
+    """Импортируем интерфесы IP-IP."""
+    json_file = os.path.join(path, 'config_interfaces.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    # Проверяем что есть интерфейсы IP-IP для импорта.
+    is_gre = False
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'][:3] == 'gre':
+            is_gre = True
+    if not is_gre:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
+    err, result = parent.utm.get_template_interfaces_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_gre = [int(x['name'][3:]) for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
+    gre_num = max(mc_gre) if mc_gre else 0
+    error = 0
+
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
+            gre_num += 1
+            item.pop('id', None)      # удаляем readonly поле
+            item.pop('master', None)      # удаляем readonly поле
+            item.pop('mac', None)
+            item['node_name'] = parent.node_name
+
+            item['name'] = f"gre{gre_num}"
+            if item['zone_id']:
+                try:
+                    item['zone_id'] = parent.mc_data['zones'][item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    item['zone_id'] = 0
+
+            new_ipv4 = []
+            for ip in item['ipv4']:
+                err, result = func.unpack_ip_address(ip)
+                if err:
+                    parent.stepChanged.emit(f'bRED|    Не удалось преобразовать IP: "{ip}" для VLAN {item["vlan_id"]}. IP-адрес использован не будет. Error: {result}')
+                else:
+                    new_ipv4.append(result)
+            if not new_ipv4:
+                item['config_on_device'] = True
+            item['ipv4'] = new_ipv4
+
+            err, result = parent.utm.add_template_interface(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error: Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован!')
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов GRE/IPIP/VXLAN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интерфейсы GRE/IPIP/VXLAN импортированы в раздел "Сеть/Интерфейсы".')
+
+
+def import_vlans(parent, path):
+    """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
+    parent.stepChanged.emit('BLUE| Импорт VLAN в раздел "Сеть/Интерфейсы"')
+    error = 0
+    if isinstance(parent.ngfw_vlans, int):
+        parent.stepChanged.emit(parent.new_vlans)
+        if parent.ngfw_vlans == 1:
+            parent.error = 1
+        return
+
+    err, result = parent.utm.get_template_netflow_profiles_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    netflow_profiles = {x['name']: x['id'] for x in result}
+    netflow_profiles['undefined'] = 'undefined'
+
+    err, result = parent.utm.get_template_lldp_profiles_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    lldp_profiles = {x['name']: x['id'] for x in result}
+    lldp_profiles['undefined'] = 'undefined'
+
+    for item in parent.iface_settings:
+        if 'kind' in item and item['kind'] == 'vlan':
+            current_port = parent.new_vlans[item['vlan_id']]['port']
+            current_zone = parent.new_vlans[item['vlan_id']]['zone']
+            if item["vlan_id"] in parent.ngfw_vlans:
+                parent.stepChanged.emit(f"GRAY|    VLAN {item['vlan_id']} уже существует на порту {parent.ngfw_vlans[item['vlan_id']]}")
+                continue
+            if current_port == "Undefined":
+                parent.stepChanged.emit(f"rNOTE|    VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
+                continue
+
+            item.pop('running', None)
+            item.pop('master', None)
+            item.pop('mac', None)
+            item.pop('id', None)
+            item['node_name'] = parent.node_name
+            item['config_on_device'] = False
+            item['link'] = current_port
+            item['name'] = f'{current_port}.{item["vlan_id"]}'
+            try:
+                item['zone_id'] = 0 if current_zone == "Undefined" else parent.mc_data['zones'][current_zone]
+            except KeyError as err:
+                parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
+                item['zone_id'] = 0
+            new_ipv4 = []
+            for ip in item['ipv4']:
+                err, result = func.unpack_ip_address(ip)
+                if err:
+                    parent.stepChanged.emit(f'bRED|    Не удалось преобразовать IP: "{ip}" для VLAN {item["vlan_id"]}. IP-адрес использован не будет. Error: {result}')
+                else:
+                    new_ipv4.append(result)
+            if not new_ipv4:
+                item['mode'] = 'manual'
+            item['ipv4'] = new_ipv4
+
+            try:
+                item['lldp_profile'] = lldp_profiles[item['lldp_profile']]
+            except KeyError:
+                parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}" . Импортируйте профили LLDP и повторите попытку.')
+                item['lldp_profile'] = 'undefined'
+            try:
+                item['netflow_profile'] = netflow_profiles[item['netflow_profile']]
+            except KeyError:
+                parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}" . Импортируйте профили netflow и повторите попытку.')
+                item['netflow_profile'] = 'undefined'
+
+            err, result = parent.utm.add_template_interface(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Интерфейс {item["name"]} не импортирован. Error: {result}')
+                error = 1
+            else:
+                parent.ngfw_vlans[item['vlan_id']] = item['name']
+                parent.stepChanged.emit(f'BLACK|    Добавлен VLAN {item["vlan_id"]}, name: {item["name"]}, zone: {current_zone}.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов VLAN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".')
+
+
+def import_gateways(parent, path):
+    import_gateways_list(parent, path)
+    import_gateway_failover(parent, path)
+
+def import_gateways_list(parent, path):
+    """Импортируем список шлюзов"""
+    json_file = os.path.join(path, 'config_gateways.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
+    if isinstance(parent.ngfw_ports, int):
+        if parent.ngfw_ports == 1:
+            parent.error = 1
+            return
+        elif parent.ngfw_ports == 3:
+            parent.stepChanged.emit(f'NOTE|    Интерфейсы будут установлены в значение "Автоматически" так как порты отсутствуют на узле {parent.node_name} шаблона.')
+    error = 0
+
+    err, result = parent.utm.get_template_gateways_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
+
+    err, result = parent.utm.get_template_interfaces_list(parent.template_id, node_name=parent.node_name)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_ifaces = {x['name'] for x in result}
+
+    err, result = parent.utm.get_template_vrf_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_vrf = {x['name']: x['interfaces'] for x in result}
+
+    config_vrf = {item['vrf']: [] for item in data}
+    for item in data:
+        if item['iface'] in mc_ifaces:
+            config_vrf[item['vrf']].append(item['iface'])
+    if 'default' in mc_vrf:
+        mc_vrf['default'] = config_vrf.get('default', [])
+
+    for item in data:
+        item['is_automatic'] = False
+        item['node_name'] = parent.node_name
+        if item['vrf'] not in mc_vrf:
+            err, result = add_empty_vrf(parent, item['vrf'], config_vrf[item['vrf']])
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.stepChanged.emit(f'RED|    Error: Для шлюза "{item["name"]}" не удалось добавить VRF "{item["vrf"]}". Установлен VRF по умолчанию.')
+                error = 1
+                item['vrf'] = 'default'
+                item['default'] = False
+            else:
+                parent.stepChanged.emit(f'NOTE|    Для шлюза "{item["name"]}" создан VRF "{item["vrf"]}".')
+                mc_vrf[item['vrf']] = config_vrf[item['vrf']]
+
+        if item['iface'] not in mc_vrf[item['vrf']]:
+            item['iface'] = 'undefined'
+
+        if item['name'] in gateways_list:
+            err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error: Шлюз "{item["name"]}" не обновлён. {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" уже существует - Updated!')
+        else:
+            err, result = parent.utm.add_template_gateway(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error:  Шлюз "{item["name"]}" не импортирован. {result}')
+                error = 1
+            else:
+                gateways_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шлюзов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Шлюзы импортированы в раздел "Сеть/Шлюзы".')
+
+
+def import_gateway_failover(parent, path):
+    """Импортируем настройки проверки сети"""
+    json_file = os.path.join(path, 'config_gateway_failover.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт настроек проверки сети раздела "Сеть/Шлюзы/Проверка сети".')
+
+    err, result = parent.utm.update_template_gateway_failover(parent.template_id, data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при обновлении настроек проверки сети!')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки проверки сети обновлены.')
+
+
+def import_dhcp_subnets(parent, path):
+    """Импортируем настойки DHCP"""
+    parent.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
+    if isinstance(parent.ngfw_ports, int):
+        parent.stepChanged.emit(parent.dhcp_settings)
+        if parent.ngfw_ports == 1:
+            parent.error = 1
+        return
+    error = 0
+
+    err, result = parent.utm.get_template_dhcp_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_dhcp_subnets = [x['name'] for x in result]
+
+    for item in parent.dhcp_settings:
+        if item['iface_id'] == 'Undefined':
+            parent.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как для него не указан порт.')
+            continue
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in mc_dhcp_subnets:
+            parent.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как уже существует.')
+            continue
+        if item['iface_id'] not in parent.ngfw_ports:
+            parent.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не добавлен так как порт: {item["iface_id"]} не существует на МС.')
+            continue
+        item['node_name'] = parent.node_name
+
+        err, result = parent.utm.add_template_dhcp_subnet(parent.template_id, item)
+        if err == 1:
+            error = 1
+            parent.stepChanged.emit(f'RED|    {result}  [subnet "{item["name"]}"]')
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}.')
+        else:
+            parent.stepChanged.emit(f'BLACK|    DHCP subnet "{item["name"]}" импортирован.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки DHCP импортированы в раздел "Сеть/DHCP".')
+
+
+def import_dns_config(parent, path):
+    """Импортируем раздел 'UserGate/DNS'."""
+    import_dns_proxy(parent, path)
+    import_dns_servers(parent, path)
+    import_dns_rules(parent, path)
+    import_dns_static(parent, path)
+
+def import_dns_proxy(parent, path):
+    """Импортируем настройки DNS прокси"""
+    json_file = os.path.join(path, 'config_dns_proxy.json')
+    err, result = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт настроек DNS-прокси раздела "Сеть/DNS/Настройки DNS-прокси".')
+    error = 0
+
+    for key, value in result.items():
+        value = {'enabled': True, 'code': key, 'value': value}
+        err, result = parent.utm.update_template_dns_setting(parent.template_id, key, value)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DNS-прокси!')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки DNS-прокси импортированы.')
+
+def import_dns_servers(parent, path):
+    """Импортируем список системных DNS серверов"""
+    json_file = os.path.join(path, 'config_dns_servers.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
+    error = 0
+
+    for item in data:
+        item.pop('is_bad', None)
+        err, result = parent.utm.add_template_dns_server(parent.template_id, item)
+        if err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        elif err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        else:
+            parent.stepChanged.emit(f'BLACK|    DNS сервер "{item["dns"]}" добавлен.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте DNS-серверов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Cистемные DNS-сервера Импортированы в раздел "Сеть/DNS/Системные DNS-серверы".')
+
+def import_dns_rules(parent, path):
+    """Импортируем правила DNS-прокси"""
+    json_file = os.path.join(path, 'config_dns_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".')
+    error = 0
+
+    for item in data:
+        err, result = parent.utm.add_template_dns_rule(parent.template_id, item)
+        if err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        elif err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        else:
+            parent.stepChanged.emit(f'BLACK|    Правило DNS-прокси "{item["name"]}" импортировано.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил DNS-прокси.')
+    else:
+        parent.stepChanged.emit('GREEN|    Импортированы правила DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".')
+
+def import_dns_static(parent, path):
+    """Импортируем статические записи DNS"""
+    json_file = os.path.join(path, 'config_dns_static.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт статических записей DNS в раздел "Сеть/DNS/DNS-прокси/Статические записи".')
+    error = 0
+
+    for item in data:
+        err, result = parent.utm.add_template_dns_static_record(parent.template_id, item)
+        if err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        elif err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        else:
+            parent.stepChanged.emit(f'BLACK|    Статическая запись DNS "{item["name"]}" импортирована.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте статических записей DNS.')
+    else:
+        parent.stepChanged.emit('GREEN|    Статические записи DNS импортированы в раздел "Сеть/DNS/DNS-прокси/Статические записи".')
+
+
+def import_vrf(parent, path):
+    """Импортируем виртуальный маршрутизатор по умолчанию"""
+    json_file = os.path.join(path, 'config_vrf.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
+    if isinstance(parent.ngfw_ports, int):
+        if parent.ngfw_ports == 1:
+            parent.error = 1
+            return
+        elif parent.ngfw_ports == 3:
+            parent.stepChanged.emit(f'NOTE|    Интерфейсы не будут добавлены в виртуальный маршрутизатор так как отсутствуют порты на узле {parent.node_name} шаблона.')
+
+    parent.stepChanged.emit('LBLUE|    Если вы используете BGP, после импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
+    parent.stepChanged.emit('LBLUE|    Если вы используете OSPF, после импорта установите нужный профиль BFD для каждого интерфейса в настройках OSPF.')
+    error = 0
+    
+    err, result = parent.utm.get_template_vrf_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    virt_routers = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_bfd_profiles_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    bfd_profiles = {x['name']: x['id'] for x in result}
+    bfd_profiles[-1] = -1
+    
+    for item in data:
+        item['node_name'] = parent.node_name
+        for x in item['routes']:
+            x['name'] = func.get_restricted_name(x['name'])
+        if item['ospf']:
+            for x in item['ospf']['interfaces']:
+                try:
+                    x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
+                except KeyError as err:
+                    x['bfd_profile'] = -1
+                    parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD "{err}". Установлено значение по умолчанию. [vrf: "{item["name"]}"]')
+        if item['bgp']:
+            for x in item['bgp']['neighbors']:
+                x['filter_in'] = []
+                x['filter_out'] = []
+                x['routemap_in'] = []
+                x['routemap_out'] = []
+                try:
+                    x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
+                except KeyError as err:
+                    x['bfd_profile'] = -1
+                    parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD "{err}". Установлено значение по умолчанию. [vrf: "{item["name"]}"]')
+
+        try:
+            if item['name'] in virt_routers:
+                err, result = parent.utm.update_template_vrf(parent.template_id, virt_routers[item['name']], item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result} [vrf: "{item["name"]}"]')
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'BLACK|    VRF "{item["name"]}" уже существует - Updated!')
+            else:
+                err, result = parent.utm.add_template_vrf(parent.template_id, item)
+                if err:
+                    parent.stepChanged.emit(f'RED|    {result} [vrf: "{item["name"]}"]')
+                    error = 1
+                else:
+                    parent.stepChanged.emit(f'BLACK|    Создан виртуальный маршрутизатор "{item["name"]}".')
+        except OverflowError as err:
+            parent.stepChanged.emit(f'RED|    Произошла ошибка при импорте виртуального маршрутизатора "{item["name"]}" [{err}].')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте виртуального маршрутизатора.')
+    else:
+        parent.stepChanged.emit('GREEN|    Виртуальный маршрутизатор импортирован в раздел "Сеть/Виртуальные маршрутизаторы".')
+
+
+def import_wccp_rules(parent, path):
+    """Импортируем список правил WCCP"""
+    json_file = os.path.join(path, 'config_wccp.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил WCCP в раздел "Сеть/WCCP".')
+    error = 0
+
+    err, result = parent.utm.get_template_wccp_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    wccp_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['routers']:
+            routers = []
+            for x in item['routers']:
+                if x[0] == 'list_id':
+                    try:
+                        x[1] = parent.mc_data['ip_lists'][x[1]]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'ORANGE|    Не найден список {err} для правила "{item["name"]}". Загрузите списки IP-адресов и повторите попытку.')
+                        continue
+                routers.append(x)
+            item['routers'] = routers
+
+        if item['name'] in wccp_rules:
+            err, result = parent.utm.update_template_wccp_rule(parent.template_id, wccp_rules[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'GRAY|    Правило WCCP "{item["name"]}" уже существует. Произведено обновление.')
+        else:
+            err, result = parent.utm.add_template_wccp_rule(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Правило WCCP "{item["name"]}" добавлено.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Ошибка импорта правил WCCP!')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила WCCP импортированы в раздел "Сеть/WCCP".')
+
 ###########################################
 def import_general_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки'."""
@@ -1739,472 +2392,7 @@ def import_proxy_port(parent, path):
     else:
         parent.stepChanged.emit(f'BLACK|    HTTP(S)-прокси порт установлен в значение "{data}"')
 
-
-def import_dns_config(parent, path):
-    """Импортируем раздел 'UserGate/DNS'."""
-    import_dns_servers(parent, path)
-    import_dns_rules(parent, path)
-    import_dns_static(parent, path)
-
-def import_dns_servers(parent, path):
-    """Импортируем список системных DNS серверов"""
-    json_file = os.path.join(path, 'config_dns_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-    parent.stepChanged.emit('BLUE|Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
-
-    error = 0
-    for item in data:
-        item.pop('is_bad', None)
-        err, result = parent.utm.add_template_dns_server(parent.template_id, item)
-        if err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}')
-        elif err == 1:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-            parent.error = 1
-        else:
-            parent.stepChanged.emit(f'BLACK|    DNS сервер "{item["dns"]}" добавлен.')
-
-    out_message = 'GREEN|    Импортированы системные DNS-сервера в раздел "Сеть/DNS/Системные DNS-серверы".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте DNS-серверов.' if error else out_message)
-
-def import_dns_rules(parent, path):
-    """Импортируем правила DNS-прокси"""
-    json_file = os.path.join(path, 'config_dns_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-    parent.stepChanged.emit('BLUE|Импорт правил DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".')
-
-    error = 0
-    for item in data:
-        err, result = parent.utm.add_template_dns_rule(parent.template_id, item)
-        if err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}')
-        elif err == 1:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-            parent.error = 1
-        else:
-            parent.stepChanged.emit(f'BLACK|    Правило DNS-прокси "{item["name"]}" импортировано.')
-
-    out_message = 'GREEN|    Импортированы правила DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил DNS-прокси.' if error else out_message)
-
-def import_dns_static(parent, path):
-    """Импортируем статические записи DNS"""
-    json_file = os.path.join(path, 'config_dns_static.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-    parent.stepChanged.emit('BLUE|Импорт статических записей DNS в раздел "Сеть/DNS/DNS-прокси/Статические записи".')
-
-    error = 0
-    for item in data:
-        err, result = parent.utm.add_template_dns_static_record(parent.template_id, item)
-        if err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}')
-        elif err == 1:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-            parent.error = 1
-        else:
-            parent.stepChanged.emit(f'BLACK|    Статическая запись DNS "{item["name"]}" импортирована.')
-
-    out_message = 'GREEN|    Статические записи DNS импортированы в раздел "Сеть/DNS/DNS-прокси/Статические записи".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте статических записей DNS.' if error else out_message)
-
-
-def import_zones(parent, path):
-    """Импортируем зоны на NGFW, если они есть."""
-    json_file = os.path.join(path, 'config_zones.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
-    if not parent.mc_iplists:
-        if set_mc_iplists(parent):     # Устанавливаем атрибут parent.mc_iplists
-            return
-
-    parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
-
-    service_ids = {
-        'Ping': 'ffffff03-ffff-ffff-ffff-ffffff000001',
-        'SNMP': 'ffffff03-ffff-ffff-ffff-ffffff000002',
-        'Captive-портал и страница блокировки': 'ffffff03-ffff-ffff-ffff-ffffff000004',
-        'XML-RPC для управления': 'ffffff03-ffff-ffff-ffff-ffffff000005',
-        'Кластер': 'ffffff03-ffff-ffff-ffff-ffffff000006',
-        'VRRP': 'ffffff03-ffff-ffff-ffff-ffffff000007',
-        'Консоль администрирования': 'ffffff03-ffff-ffff-ffff-ffffff000008',
-        'DNS': 'ffffff03-ffff-ffff-ffff-ffffff000009',
-        'HTTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000010',
-        'Агент аутентификации': 'ffffff03-ffff-ffff-ffff-ffffff000011',
-        'SMTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000012',
-        'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
-        'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
-        'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
-        'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
-        'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
-        'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
-        'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
-        'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
-        'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
-        'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
-        'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
-        'SNMP-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000026',
-        'SSH-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000027',
-        'Multicast': 'ffffff03-ffff-ffff-ffff-ffffff000028',
-        'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
-        'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
-        'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
-        'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
-    }
-
-    error = 0
-    for zone in data:
-        new_services_access = []
-        for service in zone['services_access']:
-            if service['enabled']:
-                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
-                    allowed_ips = []
-                    for item in service['allowed_ips']:
-                        if item[0] == 'list_id':
-                            try:
-                                item[1] = parent.mc_iplists[item[1]]
-                            except KeyError as err:
-                                parent.stepChanged.emit(f'bRED|    Зона "{zone["name"]}": в контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
-                                error = 1
-                        allowed_ips.append(item)
-                    service['allowed_ips'] = allowed_ips
-                service['service_id'] = service_ids.get(service['service_id'], 'ffffff03-ffff-ffff-ffff-ffffff000001')
-                new_services_access.append(service)
-        zone['services_access'] = new_services_access
-        err, result = parent.utm.add_template_zone(parent.template_id, zone)
-        if err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}')
-        elif err == 1:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-        else:
-            parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')
-
-    if error:
-        parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.')
-    else:
-        parent.stepChanged.emit('GREEN|    Зоны импортированы в раздел "Сеть/Зоны".')
-
-
-def import_interfaces(parent, path):
-    import_vlans(parent, path)
-    import_ipip_interface(parent, path)
-
-def import_ipip_interface(parent, path):
-    """Импортируем интерфесы IP-IP."""
-    json_file = os.path.join(path, 'config_interfaces.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
-    # Проверяем что есть интерфейсы IP-IP для импорта.
-    is_gre = False
-    for item in data:
-        if 'kind' in item and item['kind'] == 'tunnel' and item['name'] == 'gre':
-            is_gre = True
-    if not is_gre:
-        return
-
-    parent.stepChanged.emit('BLUE|Импорт интерфейсов IP-IP в раздел "Сеть/Интерфейсы".')
-    err, result = parent.utm.get_template_interfaces_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    ngfw_gre = [x['name'] for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
-
-    if not parent.mc_zones:
-        if set_mc_zones(parent):     # Устанавливаем атрибут parent.mc_zones
-            return
-
-    error = 0
-    gre_num = 0
-    for item in ngfw_gre:
-        if int(item[3:]) > gre_num:
-            gre_num = int(item[3:])
-
-    for item in data:
-        if 'kind' in item and item['kind'] == 'tunnel' and item['name'] == 'gre':
-            gre_num += 1
-            item.pop('id', None)      # удаляем readonly поле
-            item.pop('master', None)      # удаляем readonly поле
-            item.pop('mac', None)
-            item['node_name'] = parent.node_name
-            item['enabled'] = False   # Отключаем интерфейс. После импорта надо включить руками.
-
-            item['name'] = f"{item['name']}{gre_num}"
-            if item['zone_id']:
-                try:
-                    item['zone_id'] = parent.mc_zones[item['zone_id']]
-                except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Для интерфейса IP-IP "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
-                    item['zone_id'] = 0
-
-            new_ipv4 = []
-            for ip in item['ipv4']:
-                err, result = func.unpack_ip_address(ip)
-                if err:
-                    parent.stepChanged.emit(f'bRED|    Не удалось преобразовать IP: "{ip}" для VLAN {item["vlan_id"]}. IP-адрес использован не будет. Error: {result}')
-                else:
-                    new_ipv4.append(result)
-            if not new_ipv4:
-                item['config_on_device'] = True
-            item['ipv4'] = new_ipv4
-
-            err, result = parent.utm.add_template_interface(parent.template_id, item)
-            if err:
-                parent.stepChanged.emit(f'RED|    Error: Интерфейс IP-IP {item["ipv4"]} не импортирован!')
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-            else:
-                parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс IP-IP {item["ipv4"]}.')
-    if error:
-        parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса IP-IP!')
-    else:
-        parent.stepChanged.emit('GREEN|    Интерфейсы IP-IP импортированы в раздел "Сеть/Интерфейсы".')
-        parent.stepChanged.emit('LBLUE|    Установите зону импортированным интерфейсам IP-IP.')
-
-
-def import_vlans(parent, path):
-    """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
-    parent.stepChanged.emit('BLUE| Импорт VLAN в раздел "Сеть/Интерфейсы"')
-    error = 0
-    if isinstance(parent.ngfw_vlans, int):
-        parent.stepChanged.emit(parent.new_vlans)
-        if parent.ngfw_vlans == 1:
-            parent.error = 1
-        return
-
-    if not parent.mc_zones:
-        err = set_mc_zones(parent)
-        if err:
-            return
-
-    for item in parent.iface_settings:
-        if item['kind'] == 'vlan':
-            current_port = parent.new_vlans[item['vlan_id']]['port']
-            current_zone = parent.new_vlans[item['vlan_id']]['zone']
-            if item["vlan_id"] in parent.ngfw_vlans:
-                parent.stepChanged.emit(f"GRAY|    VLAN {item['vlan_id']} уже существует на порту {parent.ngfw_vlans[item['vlan_id']]}")
-                continue
-            if current_port == "Undefined":
-                parent.stepChanged.emit(f"rNOTE|    VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
-                continue
-
-            item.pop('running', None)
-            item.pop('master', None)
-            item.pop('mac', None)
-            item['node_name'] = parent.node_name
-            item['config_on_device'] = False
-            item['link'] = current_port
-            item['name'] = f'{current_port}.{item["vlan_id"]}'
-            try:
-                item['zone_id'] = 0 if current_zone == "Undefined" else parent.mc_zones[current_zone]
-            except KeyError as err:
-                parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
-                item['zone_id'] = 0
-            new_ipv4 = []
-            for ip in item['ipv4']:
-                err, result = func.unpack_ip_address(ip)
-                if err:
-                    parent.stepChanged.emit(f'bRED|    Не удалось преобразовать IP: "{ip}" для VLAN {item["vlan_id"]}. IP-адрес использован не будет. Error: {result}')
-                else:
-                    new_ipv4.append(result)
-            if not new_ipv4:
-                item['mode'] = 'manual'
-            item['ipv4'] = new_ipv4
-
-            err, result = parent.utm.add_template_interface(parent.template_id, item)
-            if err:
-                parent.stepChanged.emit(f'RED|    Интерфейс {item["name"]} не импортирован. Error: {result}')
-                error = 1
-                parent.error = 1
-            else:
-                parent.ngfw_vlans[item['vlan_id']] = item['name']
-                parent.stepChanged.emit(f'BLACK|    Добавлен VLAN {item["vlan_id"]}, name: {item["name"]}, zone: {current_zone}.')
-
-    out_message = 'GREEN|    Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов VLAN.' if error else out_message)
-
-
-def import_gateways(parent, path):
-    """Импортируем список шлюзов"""
-    json_file = os.path.join(path, 'config_gateways.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
-    parent.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
-    if isinstance(parent.ngfw_ports, int) and parent.ngfw_ports == 3:
-        parent.stepChanged.emit(f'ORANGE|    Импорт шлюзов отменён из-за отсутствия портов на узле {parent.node_name} шаблона.')
-        if parent.ngfw_ports == 1:
-            parent.error = 1
-        return
-
-    err, result = parent.utm.get_template_gateways_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
-    error = 0
-
-    for item in data:
-        if not item['is_automatic']:
-            item['node_name'] = parent.node_name
-            if item['name'] in gateways_list:
-                err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    Error: Шлюз "{item["name"]}" не обновлён. {result}')
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" уже существует - Updated!')
-            else:
-                err, result = parent.utm.add_template_gateway(parent.template_id, item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    Error:  Шлюз "{item["name"]}" не импортирован. {result}')
-                    error = 1
-                else:
-                    gateways_list[item['name']] = result
-                    parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" импортирован.')
-    if error:
-        parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шлюзов.')
-    else:
-        parent.stepChanged.emit('GREEN|    Шлюзы импортированы в раздел "Сеть/Шлюзы".')
-
-
-def import_dhcp_subnets(parent, path):
-    """Импортируем настойки DHCP"""
-    parent.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
-    if isinstance(parent.ngfw_ports, int):
-        parent.stepChanged.emit(parent.dhcp_settings)
-        if parent.ngfw_ports == 1:
-            parent.error = 1
-        return
-    error = 0
-
-    err, result = parent.utm.get_dhcp_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    mc_dhcp_subnets = [x['name'] for x in result]
-
-    for item in parent.dhcp_settings:
-        if item['iface_id'] == 'Undefined':
-            parent.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как для него не указан порт.')
-            continue
-        item['name'] = func.get_restricted_name(item['name'])
-        if item['name'] in mc_dhcp_subnets:
-            parent.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как уже существует.')
-            continue
-        if item['iface_id'] not in parent.ngfw_ports:
-            parent.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не добавлен так как порт: {item["iface_id"]} не существует на МС.')
-            continue
-        item['node_name'] = parent.node_name
-
-        err, result = parent.utm.add_dhcp_subnet(parent.template_id, item)
-        if err == 1:
-            error = 1
-            parent.stepChanged.emit(f'RED|    {result}  [subnet "{item["name"]}"]')
-        elif err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}.')
-        else:
-            parent.stepChanged.emit(f'BLACK|    DHCP subnet "{item["name"]}" импортирован.')
-
-    if error:
-        parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
-    else:
-        parent.stepChanged.emit('GREEN|    Настройки DHCP импортированы в раздел "Сеть/DHCP".')
-
-
-def import_vrf(parent, path):
-    """Импортируем виртуальный маршрутизатор по умолчанию"""
-    json_file = os.path.join(path, 'config_vrf.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
-    parent.stepChanged.emit('BLUE|Импорт виртуального маршрутизатора по умолчанию в раздел "Сеть/Виртуальные маршрутизаторы".')
-    if isinstance(parent.ngfw_ports, int) and parent.ngfw_ports == 3:
-        parent.stepChanged.emit(f'ORANGE|    Импорт виртуального маршрутизатора отменён из-за отсутствия портов на узле {parent.node_name} шаблона.')
-        if parent.ngfw_ports == 1:
-            parent.error = 1
-        return
-
-    parent.stepChanged.emit('LBLUE|    Добавляемые маршруты будут в не активном состоянии. Необходимо проверить маршрутизацию и включить их.')
-    parent.stepChanged.emit('LBLUE|    Если вы используете BGP, после импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
-    parent.stepChanged.emit('LBLUE|    Если вы используете OSPF, после импорта установите нужный профиль BFD для каждого интерфейса в настройках OSPF.')
-    
-    err, result = parent.utm.get_template_vrf_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-
-    virt_routers = {x['name']: x['id'] for x in result}
-    error = 0    
-    
-    for item in data:
-        item['node_name'] = parent.node_name
-        for x in item['routes']:
-            x['enabled'] = False
-            x['name'] = func.get_restricted_name(x['name'])
-        if item['ospf']:
-            item['ospf']['enabled'] = False
-            for x in item['ospf']['interfaces']:
-                x['bfd_profile'] = -1
-        if item['rip']:
-            item['rip']['enabled'] = False
-        if item['pimsm']:
-            item['pimsm']['enabled'] = False
-        if item['bgp']:
-            item['bgp']['enabled'] = False
-            for x in item['bgp']['neighbors']:
-                x['filter_in'] = []
-                x['filter_out'] = []
-                x['routemap_in'] = []
-                x['routemap_out'] = []
-
-        try:
-            if item['name'] in virt_routers:
-                err, result = parent.utm.update_template_vrf(parent.template_id, virt_routers[item['name']], item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    {result} [vrf: "{item["name"]}"]')
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'BLACK|    VRF "{item["name"]}" уже существует - Updated!')
-            else:
-                err, result = parent.utm.add_template_vrf(parent.template_id, item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    {result} [vrf: "{item["name"]}"]')
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Создан виртуальный маршрутизатор "{item["name"]}".')
-        except OverflowError as err:
-            parent.stepChanged.emit(f'RED|    Произошла ошибка при импорте виртуального маршрутизатора "{item["name"]}" [{err}].')
-            error = 1
-    if error:
-        parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте виртуального маршрутизатора.')
-    else:
-        parent.stepChanged.emit('GREEN|    Виртуальный маршрутизатор импортирован в раздел "Сеть/Виртуальные маршрутизаторы".')
-
-
+#---------------------------------------- Пользователи и устройства --------------------------------------------------------
 def import_local_groups(parent, path):
     """Импортируем список локальных групп пользователей"""
     json_file = os.path.join(path, 'config_groups.json')
@@ -2977,18 +3165,18 @@ import_funcs = {
     "BfdProfiles": import_bfd_profiles,
     "UserIdAgentSyslogFilters": pass_function, # import_useridagent_syslog_filters,
     "Scenarios": import_scenarios,
-    'Certificates': pass_function,
-    'UserCertificateProfiles': pass_function, # import_users_certificate_profiles,
-    'GeneralSettings': import_general_settings,
-#    'DeviceManagement': pass_function,
-#    'Administrators': pass_function,
     'Zones': import_zones,
     'Interfaces': import_interfaces,
     'Gateways': import_gateways,
     'DNS': import_dns_config,
     'DHCP': import_dhcp_subnets,
     'VRF': import_vrf,
-    'WCCP': pass_function, # import_wccp_rules,
+    'WCCP': import_wccp_rules,
+    'Certificates': pass_function,
+    'UserCertificateProfiles': pass_function, # import_users_certificate_profiles,
+    'GeneralSettings': import_general_settings,
+#    'DeviceManagement': pass_function,
+#    'Administrators': pass_function,
     'AuthServers': import_auth_servers,
     'AuthProfiles': pass_function, # import_auth_profiles,
     'CaptiveProfiles': pass_function, # import_captive_profiles,
@@ -3198,4 +3386,21 @@ def get_response_pages(parent):
     parent.response_pages = {x['name']: x['id'] for x in result}
     return 0
 
+
+def add_empty_vrf(parent, vrf_name, ports):
+    """Добавляем пустой VRF"""
+    vrf = {
+        'name': vrf_name,
+        'description': '',
+        'interfaces': ports if vrf_name != 'default' else [],
+        'routes': [],
+        'ospf': {},
+        'bgp': {},
+        'rip': {},
+        'pimsm': {}
+    }
+    err, result = parent.utm.add_template_vrf(parent.template_id, vrf)
+    if err:
+        return err, result
+    return 0, result    # Возвращаем ID добавленного VRF
 

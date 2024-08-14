@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.6
+# Версия 1.9
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -229,7 +229,61 @@ class McXmlRpc:
             return 1, f'Error mclib.get_template_certificates_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']  # Возвращает список
 
-######## Настройки шлюзов шаблона #############################################################################
+########################## Zone #############################################################################
+    def get_template_zones_list(self, template_id):
+        """Получить список зон шаблона"""
+        try:
+            result = self._server.v1.ccnetmanager.zones.list(self._auth_token, template_id, 0, 200, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_zones_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']    # Возвращает список зон.
+
+    def add_template_zone(self, template_id, zone):
+        """Добавить зону в шаблон"""
+        try:
+            result = self._server.v1.ccnetmanager.zone.add(self._auth_token, template_id, zone)
+        except TypeError as err:
+            return 1, err
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Зона {zone["name"]} уже существует.'
+            else:
+                return 1, f'Error mclib.add_template_zone: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID созданной зоны
+
+    def update_template_zone(self, template_id, zone_id, zone):
+        """Обновить параметры зоны в шаблоне"""
+        try:
+            result = self._server.v1.ccnetmanager.zone.update(self._auth_token, template_id, zone_id, zone)
+        except TypeError as err:
+            return 1, err
+        except rpc.Fault as err:
+            if err.faultCode == 7:
+                return 4, f'Зона {zone["name"]} не найдена в шаблоне!'
+            elif err.faultCode == 9:
+                return 3, f'Зона {zone["name"]} - нет отличающихся параметров для изменения.'
+            else:
+                return 1, f'Error mclib.update_template_zone: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+########################## Interfaces #######################################################################
+    def get_template_interfaces_list(self, template_id, node_name=''):
+        """Получить список сетевых интерфейсов шаблона"""
+        try:
+            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {'node_name': node_name})
+            return 0, result['items']    # Возвращает список интерфейсов.
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_interfaces_list: [{err.faultCode}] — {err.faultString}'
+
+    def add_template_interface(self, template_id, iface):
+        """Добавить vlan интерфейс в шаблон"""
+        try:
+            result = self._server.v1.ccnetmanager.interface.add(self._auth_token, template_id, iface)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_interface: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID созданного интерфейса.
+
+################################ Gateways ################################################################
     def get_template_gateways_list(self, template_id):
         """Получить список шлюзов шаблона"""
         try:
@@ -278,7 +332,46 @@ class McXmlRpc:
                 return 1, f'Error mclib.delete_template_gateway: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-##################################### DNS ######################################
+    def get_template_gateway_failover(self, template_id):
+        """Получить настройки проверки сети шлюзов шаблона"""
+        try:
+            result = self._server.v1.ccnetmanager.failover.config.fetch(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_template_gateway_failover: [{err.faultCode}] — {err.faultString}"
+        return 0, result
+
+    def update_template_gateway_failover(self, template_id, params):
+        """Изменить настройки проверки сети шлюзов в шаблоне"""
+        try:
+            result = self._server.v1.ccnetmanager.failover.config.update(self._auth_token, template_id, params)
+        except rpc.Fault as err:
+            return 1, f"Error mclib.update_template_gateway_failover: [{err.faultCode}] — {err.faultString}"
+        return 0, result    # Возвращает True
+
+##################################### DHCP ######################################
+    def get_template_dhcp_list(self, template_id):
+        """Получить список подсетей dhcp для шаблона"""
+        try:
+            result = self._server.v1.ccnetmanager.dhcp.subnets.list(self._auth_token, template_id, 0, 100, {}, [])
+        except rpc.Fault as err:
+            return 1, f"Error mclib.get_template_dhcp_list: [{err.faultCode}] — {err.faultString}"
+        return 0, result['items']    # Возвращает list of all DHCP subnets on that node
+
+    def add_template_dhcp_subnet(self, template_id, subnet):
+        """Добавить DHCP subnet в шаблон"""
+        try:
+            result = self._server.v1.ccnetmanager.dhcp.subnet.add(self._auth_token, template_id,  subnet)
+        except TypeError as err:
+            return 1, err
+        except rpc.Fault as err:
+            if err.faultCode == 9:  # 1017:
+                return 3, f'DHCP subnet "{subnet["name"]}" уже существует.'
+            else:
+                return 1, f"Error mclib.add_template_dhcp_subnet: [{err.faultCode}] — {err.faultString}"
+        else:
+            return 0, result    # Возвращает ID созданной subnet
+
+################################## DNS ##################################################################
     def get_template_dns_servers(self, template_id):
         """Получить список системных DNS-серверов шаблона"""
         try:
@@ -336,6 +429,22 @@ class McXmlRpc:
                 return 1, f'Error mclib.add_template_dns_static_record: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта.
 
+    def get_template_dns_settings(self, template_id):
+        """Получить список настроек DNS-прокси шаблона"""
+        try:
+            result = self._server.v1.ccdns.settings.list(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_dns_settings: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает список
+
+    def update_template_dns_setting(self, template_id, key, value):
+        """Изменить параметр настроек DNS-прокси шаблона"""
+        try:
+            result = self._server.v1.ccdns.setting.update.param(self._auth_token, template_id, key, value)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_dns_setting: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
+
 ########################## VPF  #############################################################################
     def get_template_vrf_list(self, template_id):
         """Получить список VRFs шаблона со всей конфигурацией"""
@@ -361,82 +470,35 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_vrf: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-########################## Zone #############################################################################
-    def get_template_zones_list(self, template_id):
-        """Получить список зон шаблона"""
+######################################## WCCP  ########################################
+    def get_template_wccp_rules(self, template_id):
+        """Получить список правил wccp шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.zones.list(self._auth_token, template_id, 0, 200, {}, [])
+            result = self._server.v1.ccwccp.rules.list(self._auth_token, template_id)
         except rpc.Fault as err:
-            return 1, f'Error mclib.get_template_zones_list: [{err.faultCode}] — {err.faultString}'
-        return 0, result['items']    # Возвращает список зон.
-
-    def add_template_zone(self, template_id, zone):
-        """Добавить зону в шаблон"""
-        try:
-            result = self._server.v1.ccnetmanager.zone.add(self._auth_token, template_id, zone)
-        except TypeError as err:
-            return 1, err
-        except rpc.Fault as err:
-            if err.faultCode == 9:
-                return 3, f'Зона {zone["name"]} уже существует.'
+            if err.faultCode == 102:
+                return 2, f'Ошибка: нет прав на чтение конфигурации WCCP. Конфигурация WWCP не выгружена.'
             else:
-                return 1, f'Error mclib.add_template_zone: [{err.faultCode}] — {err.faultString}'
-        return 0, result     # Возвращает ID созданной зоны
+                return 1, f'Error utm.get_template_wccp_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает список записей
 
-    def update_template_zone(self, template_id, zone_id, zone):
-        """Обновить параметры зоны в шаблоне"""
+    def add_template_wccp_rule(self, template_id, rule):
+        """Добавить правило wccp в шаблон"""
         try:
-            result = self._server.v1.ccnetmanager.zone.update(self._auth_token, template_id, zone_id, zone)
-        except TypeError as err:
-            return 1, err
+            result = self._server.v1.ccwccp.rule.add(self._auth_token, template_id, rule)
         except rpc.Fault as err:
-            if err.faultCode == 7:
-                return 4, f'Зона {zone["name"]} не найдена в шаблоне!'
-            elif err.faultCode == 9:
-                return 3, f'Зона {zone["name"]} - нет отличающихся параметров для изменения.'
-            else:
-                return 1, f'Error mclib.update_template_zone: [{err.faultCode}] — {err.faultString}'
-        return 0, result     # Возвращает True
-
-########################## Interfaces #######################################################################
-    def get_template_interfaces_list(self, template_id, node_name=''):
-        """Получить список сетевых интерфейсов шаблона"""
-        try:
-            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {'node_name': node_name})
-            return 0, result['items']    # Возвращает список интерфейсов.
-        except rpc.Fault as err:
-            return 1, f'Error mclib.get_template_interfaces_list: [{err.faultCode}] — {err.faultString}'
-
-    def add_template_interface(self, template_id, iface):
-        """Добавить vlan интерфейс в шаблон"""
-        try:
-            result = self._server.v1.ccnetmanager.interface.add(self._auth_token, template_id, iface)
-        except rpc.Fault as err:
-            return 1, f'Error mclib.add_template_interface: [{err.faultCode}] — {err.faultString}'
-        return 0, result     # Возвращает ID созданного интерфейса.
-
-##################################### DHCP ######################################
-    def get_dhcp_list(self, template_id):
-        """Получить список подсетей dhcp для шаблона"""
-        try:
-            result = self._server.v1.ccnetmanager.dhcp.subnets.list(self._auth_token, template_id, 0, 100, {}, [])
-        except rpc.Fault as err:
-            return 1, f"Error mclib.get_dhcp_list: [{err.faultCode}] — {err.faultString}"
-        return 0, result['items']    # Возвращает list of all DHCP subnets on that node
-
-    def add_dhcp_subnet(self, template_id, subnet):
-        """Добавить DHCP subnet в шаблон"""
-        try:
-            result = self._server.v1.ccnetmanager.dhcp.subnet.add(self._auth_token, template_id,  subnet)
-        except TypeError as err:
-            return 1, err
-        except rpc.Fault as err:
-            if err.faultCode == 9:  # 1017:
-                return 3, f'DHCP subnet "{subnet["name"]}" уже существует.'
-            else:
-                return 1, f"Error mclib.add_dhcp_subnet: [{err.faultCode}] — {err.faultString}"
+            return 1, f'Error utm.add_template_wccp_rule: [{err.faultCode}] — {err.faultString}'
         else:
-            return 0, result    # Возвращает ID созданной subnet
+            return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_wccp_rule(self, template_id, rule_id, rule):
+        """Изменить правило wccp в шаблоне"""
+        try:
+            result = self._server.v1.ccwccp.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_template_wccp_rule: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает ID добавленного правила
 
 ########################## Library ##########################################################################
     def get_template_services_list(self, template_id):

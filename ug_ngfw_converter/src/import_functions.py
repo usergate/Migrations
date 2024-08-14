@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.0
+# Версия 2.1 12.08.2024
 #
 
 import os, sys, time, copy, json
@@ -580,6 +580,64 @@ def import_zones(parent, path):
         parent.stepChanged.emit('GREEN|    Зоны импортированы в раздел "Сеть/Зоны".')
 
 
+def import_interfaces(parent, path):
+    import_vlans(parent, path)
+    import_ipip_interface(parent, path)
+
+
+def import_ipip_interface(parent, path):
+    """Импортируем интерфесы IP-IP."""
+    json_file = os.path.join(path, 'config_interfaces.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    # Проверяем что есть интерфейсы IP-IP для импорта.
+    is_gre = False
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'][:3] == 'gre':
+            is_gre = True
+    if not is_gre:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
+    err, result = parent.utm.get_interfaces_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_gre = [int(x['name'][3:]) for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
+    gre_num = max(mc_gre) if mc_gre else 0
+    error = 0
+
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
+            gre_num += 1
+            item.pop('id', None)      # удаляем readonly поле
+            item.pop('master', None)      # удаляем readonly поле
+            item.pop('mac', None)
+            item['name'] = f"gre{gre_num}"
+            if item['zone_id']:
+                try:
+                    item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    item['zone_id'] = 0
+
+            err, result = parent.utm.add_interface_tunnel(item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error: Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован!')
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов GRE/IPIP/VXLAN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интерфейсы GRE/IPIP/VXLAN импортированы в раздел "Сеть/Интерфейсы".')
+
+
 def import_vlans(parent, path):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
     parent.stepChanged.emit('BLUE|Импорт VLAN в раздел "Сеть/Интерфейсы".')
@@ -636,7 +694,7 @@ def import_vlans(parent, path):
                 try:
                     item['lldp_profile'] = list_lldp[item['lldp_profile']]
                 except KeyError:
-                    parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден lldp profile "{item["netflow_profile"]}". Импортируйте профили lldp.')
+                    parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
                     item['lldp_profile'] = 'undefined'
             try:
                 item['netflow_profile'] = list_netflow[item['netflow_profile']]
@@ -5894,7 +5952,7 @@ import_funcs = {
     "UserIdAgentSyslogFilters": import_useridagent_syslog_filters,
     "Scenarios": import_scenarios,
     'Zones': import_zones,
-    'Interfaces': import_vlans,
+    'Interfaces': import_interfaces,
     'Gateways': import_gateways,
     'AuthServers': import_auth_servers,
     'AuthProfiles': import_auth_profiles,

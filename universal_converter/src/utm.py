@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.11
+# Версия 3.16
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -2858,15 +2858,12 @@ class UtmXmlRpc:
         try:
             if self.version_hight >= 7 and self.version_midle >= 1:
                 result = self._server.v1.l7.signatures.list(self._auth_token, 0, 500000, {}, [])
-#                return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
                 return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 6 or (self.version_hight == 7 and self.version_midle == 0):
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 500000, {}, [])
-#                return 0, [{'id': x['id'], 'name': x['name']} for x in result['items']]
                 return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 5:
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 500000, '')
-#                return 0, [{'id': x['app_id'], 'name': x['name']} for x in result['items']]  # Возвращает список словарей.
                 return 0, {x['app_id']: x['name'] for x in result['items']}
         except rpc.Fault as err:
             return 1, f'Error utm.get_l7_apps: [{err.faultCode}] — {err.faultString}'

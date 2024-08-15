@@ -1861,7 +1861,6 @@ def convert_firewall_policy(parent, path, data):
         else:
             rule['name'] = f'Rule - {rule_name}'
         rule.pop('rule_error', None)
-#        rules[int(key)] = rule
         rules.append(rule)
         n += 1
         parent.stepChanged.emit(f'BLACK|    {n} - Создано правило МЭ "{rule["name"]}".')
@@ -1870,7 +1869,6 @@ def convert_firewall_policy(parent, path, data):
     if rules:
         json_file = os.path.join(current_path, 'config_firewall_rules.json')
         with open(json_file, 'w') as fh:
-#            json.dump([v for _, v in sorted(rules.items())], fh, indent=4, ensure_ascii=False)
             json.dump(rules, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'GREEN|    Павила межсетевого экрана выгружены в файл "{json_file}".')
     else:
@@ -2132,7 +2130,7 @@ def get_ips(parent, path, src_ips, dst_ips, rule):
                     new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item)])
                 except ValueError as err:
                     parent.stepChanged.emit(f'bRED|    Error! Не найден src-адрес "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
-                    rule['description'] = f'{rule["description"]}\nError! Не найден src-адрес "{item}".'
+                    rule['description'] = f'{rule["description"]}\nError: Не найден src-адрес "{item}".'
                     rule['rule_error'] = 1
         rule['src_ips'] = new_rule_ips
     if dst_ips:

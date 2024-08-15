@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.1
+# Версия 2.0
 #
 
 import os, sys, time, copy, json
@@ -580,6 +580,64 @@ def import_zones(parent, path):
         parent.stepChanged.emit('GREEN|    Зоны импортированы в раздел "Сеть/Зоны".')
 
 
+def import_interfaces(parent, path):
+    import_vlans(parent, path)
+    import_ipip_interface(parent, path)
+
+
+def import_ipip_interface(parent, path):
+    """Импортируем интерфесы IP-IP."""
+    json_file = os.path.join(path, 'config_interfaces.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    # Проверяем что есть интерфейсы IP-IP для импорта.
+    is_gre = False
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'][:3] == 'gre':
+            is_gre = True
+    if not is_gre:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
+    err, result = parent.utm.get_interfaces_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_gre = [int(x['name'][3:]) for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
+    gre_num = max(mc_gre) if mc_gre else 0
+    error = 0
+
+    for item in data:
+        if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
+            gre_num += 1
+            item.pop('id', None)      # удаляем readonly поле
+            item.pop('master', None)      # удаляем readonly поле
+            item.pop('mac', None)
+            item['name'] = f"gre{gre_num}"
+            if item['zone_id']:
+                try:
+                    item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'bRED|    Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    item['zone_id'] = 0
+
+            err, result = parent.utm.add_interface_tunnel(item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error: Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован!')
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов GRE/IPIP/VXLAN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интерфейсы GRE/IPIP/VXLAN импортированы в раздел "Сеть/Интерфейсы".')
+
+
 def import_vlans(parent, path):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
     parent.stepChanged.emit('BLUE|Импорт VLAN в раздел "Сеть/Интерфейсы".')
@@ -636,7 +694,7 @@ def import_vlans(parent, path):
                 try:
                     item['lldp_profile'] = list_lldp[item['lldp_profile']]
                 except KeyError:
-                    parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден lldp profile "{item["netflow_profile"]}". Импортируйте профили lldp.')
+                    parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
                     item['lldp_profile'] = 'undefined'
             try:
                 item['netflow_profile'] = list_netflow[item['netflow_profile']]
@@ -1963,7 +2021,7 @@ def import_firewall_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|    Правило МЭ "{item["name"]}" updated.')
         else:
-            item['enabled'] = False
+#            item['enabled'] = False
             err, result = parent.utm.add_firewall_rule(item)
             if err:
                 error = 1
@@ -5065,8 +5123,6 @@ def import_custom_idps_signature(parent, path):
     signatures = {x['msg']: x['id'] for x in result}
 
     for item in data:
-        item.pop('signature_id', None)
-
         if item['msg'] in signatures:
             parent.stepChanged.emit(f'GRAY|    Сигнатура СОВ "{item["msg"]}" уже существует.')
             err, result = parent.utm.update_idps_signature(signatures[item['msg']], item)
@@ -5168,8 +5224,8 @@ def import_idps_profiles(parent, path):
                 try:
                     if 1000000 < signature['signature_id'] < 1099999:
                         signature['id'] = custom_idps[signature['msg']]
-                    signature.pop('signature_id', None)
-                    signature.pop('msg', None)
+#                    signature.pop('signature_id', None)
+#                    signature.pop('msg', None)
                     new_overrides.append(signature)
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error: Не найдена сигнатура "{err}" [Профиль СОВ "{item["name"]}"].')
@@ -5583,7 +5639,7 @@ def import_useridagent_syslog_filters(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили BFD импортированы в раздел "Библиотеки/Syslog фильтры UserID агента".')
+        parent.stepChanged.emit('GREEN|    Syslog фильтры UserID агента импортированы в раздел "Библиотеки/Syslog фильтры UserID агента".')
 
 #--------------------------------------------------- Оповещения ---------------------------------------------------------
 def import_snmp_rules(parent, path):
@@ -5896,7 +5952,7 @@ import_funcs = {
     "UserIdAgentSyslogFilters": import_useridagent_syslog_filters,
     "Scenarios": import_scenarios,
     'Zones': import_zones,
-    'Interfaces': import_vlans,
+    'Interfaces': import_interfaces,
     'Gateways': import_gateways,
     'AuthServers': import_auth_servers,
     'AuthProfiles': import_auth_profiles,

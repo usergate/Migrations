@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.8
+# Версия 2.0 15.08.2024
 #
 
 import os, sys, json, time
@@ -552,11 +552,13 @@ def import_gateways(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
-    if isinstance(parent.ngfw_ports, int) and parent.ngfw_ports == 3:
-        parent.stepChanged.emit(f'ORANGE|    Импорт шлюзов отменён из-за отсутствия портов на узле {parent.node_name} шаблона.')
+    if isinstance(parent.ngfw_ports, int):
         if parent.ngfw_ports == 1:
             parent.error = 1
-        return
+            return
+        elif parent.ngfw_ports == 3:
+            parent.stepChanged.emit(f'NOTE|    Интерфейсы будут установлены в значение "Автоматически" так как порты отсутствуют на узле {parent.node_name} шаблона.')
+    error = 0
 
     err, result = parent.utm.get_template_gateways_list(parent.template_id)
     if err:
@@ -564,26 +566,61 @@ def import_gateways(parent, path):
         parent.error = 1
         return
     gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
-    error = 0
+
+    err, result = parent.utm.get_template_interfaces_list(parent.template_id, node_name=parent.node_name)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_ifaces = {x['name'] for x in result}
+
+    err, result = parent.utm.get_template_vrf_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mc_vrf = {x['name']: x['interfaces'] for x in result}
+
+    config_vrf = {item['vrf']: [] for item in data}
+    for item in data:
+        if item['iface'] in mc_ifaces:
+            config_vrf[item['vrf']].append(item['iface'])
+    if 'default' in mc_vrf:
+        mc_vrf['default'] = config_vrf.get('default', [])
 
     for item in data:
-        if not item['is_automatic']:
-            item['node_name'] = parent.node_name
-            if item['name'] in gateways_list:
-                err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    Error: Шлюз "{item["name"]}" не обновлён. {result}')
-                    error = 1
-                else:
-                    parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" уже существует - Updated!')
+        item['is_automatic'] = False
+        item['node_name'] = parent.node_name
+        if item['vrf'] not in mc_vrf:
+            err, result = add_empty_vrf(parent, item['vrf'], config_vrf[item['vrf']])
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.stepChanged.emit(f'RED|    Error: Для шлюза "{item["name"]}" не удалось добавить VRF "{item["vrf"]}". Установлен VRF по умолчанию.')
+                error = 1
+                item['vrf'] = 'default'
+                item['default'] = False
             else:
-                err, result = parent.utm.add_template_gateway(parent.template_id, item)
-                if err:
-                    parent.stepChanged.emit(f'RED|    Error:  Шлюз "{item["name"]}" не импортирован. {result}')
-                    error = 1
-                else:
-                    gateways_list[item['name']] = result
-                    parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" импортирован.')
+                parent.stepChanged.emit(f'NOTE|    Для шлюза "{item["name"]}" создан VRF "{item["vrf"]}".')
+                mc_vrf[item['vrf']] = config_vrf[item['vrf']]
+
+        if item['iface'] not in mc_vrf[item['vrf']]:
+            item['iface'] = 'undefined'
+
+        if item['name'] in gateways_list:
+            err, result = parent.utm.update_template_gateway(parent.template_id, gateways_list[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error: Шлюз "{item["name"]}" не обновлён. {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" уже существует - Updated!')
+        else:
+            err, result = parent.utm.add_template_gateway(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    Error:  Шлюз "{item["name"]}" не импортирован. {result}')
+                error = 1
+            else:
+                gateways_list[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Шлюз "{item["name"]}" импортирован.')
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шлюзов.')
@@ -645,13 +682,13 @@ def import_vrf(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт виртуального маршрутизатора по умолчанию в раздел "Сеть/Виртуальные маршрутизаторы".')
-    if isinstance(parent.ngfw_ports, int) and parent.ngfw_ports == 3:
-        parent.stepChanged.emit(f'ORANGE|    Импорт виртуального маршрутизатора отменён из-за отсутствия портов на узле {parent.node_name} шаблона.')
+    if isinstance(parent.ngfw_ports, int):
         if parent.ngfw_ports == 1:
             parent.error = 1
-        return
+            return
+        elif parent.ngfw_ports == 3:
+            parent.stepChanged.emit(f'ORANGE|    Интерфейсы не будут добавлены в виртуальный маршрутизатор так как отсутствуют порты на узле {parent.node_name} шаблона.')
 
-    parent.stepChanged.emit('LBLUE|    Добавляемые маршруты будут в не активном состоянии. Необходимо проверить маршрутизацию и включить их.')
     parent.stepChanged.emit('LBLUE|    Если вы используете BGP, после импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
     parent.stepChanged.emit('LBLUE|    Если вы используете OSPF, после импорта установите нужный профиль BFD для каждого интерфейса в настройках OSPF.')
     
@@ -667,7 +704,6 @@ def import_vrf(parent, path):
     for item in data:
         item['node_name'] = parent.node_name
         for x in item['routes']:
-            x['enabled'] = False
             x['name'] = func.get_restricted_name(x['name'])
         if item['ospf']:
             item['ospf']['enabled'] = False
@@ -1303,7 +1339,7 @@ def import_url_lists(parent, path):
             list_id = parent.mc_url_lists[data['name']]
         except KeyError:
             parent.stepChanged.emit(f'RED|   Error: Нет листа URL "{data["name"]}" в списках URL шаблона МС.')
-            parent.stepChanged.emit(f'RED|   Error: Содержимое не добавлено в список IP-адресов "{data["name"]}".')
+            parent.stepChanged.emit(f'RED|   Error: Содержимое не добавлено в список URL "{data["name"]}".')
             error = 1
             continue
         if data['content']:
@@ -1641,11 +1677,13 @@ def import_firewall_rules(parent, path):
         item['hip_profile'] = []
         item['src_zones'] = get_zones(parent, item['src_zones'], item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
+#        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
+#        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
+        item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
-        item['services'] = get_services(parent, item['services'], item['name'])
-        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item['name'])
+        item['services'] = get_services(parent, item['services'], item)
+        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
         
         if item['name'] in firewall_rules:
             parent.stepChanged.emit(f'GRAY|    Правило МЭ "{item["name"]}" уже существует.')
@@ -1727,9 +1765,11 @@ def import_nat_rules(parent, path):
         item['position_layer'] = 'pre'
         item['zone_in'] = get_zones(parent, item['zone_in'], item['name'])
         item['zone_out'] = get_zones(parent, item['zone_out'], item['name'])
-        item['source_ip'] = get_ips(parent, item['source_ip'], item['name'])
-        item['dest_ip'] = get_ips(parent, item['dest_ip'], item['name'])
-        item['service'] = get_services(parent, item['service'], item['name'])
+#        item['source_ip'] = get_ips(parent, item['source_ip'], item['name'])
+#        item['dest_ip'] = get_ips(parent, item['dest_ip'], item['name'])
+        item['source_ip'] = get_ips(parent, 'src', item['source_ip'], item)
+        item['dest_ip'] = get_ips(parent, 'dst', item['dest_ip'], item)
+        item['service'] = get_services(parent, item['service'], item)
         item['gateway'] = mc_gateways.get(item['gateway'], item['gateway'])
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
         if item['scenario_rule_id']:
@@ -1844,12 +1884,14 @@ def import_shaper_rules(parent, path):
                 item['scenario_rule_id'] = False
         item['src_zones'] = get_zones(parent, item['src_zones'], item['name'])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item['name'])
-        item['src_ips'] = get_ips(parent, item['src_ips'], item['name'])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], item['name'])
-        item['services'] = get_services(parent, item['services'], item['name'])
+#        item['src_ips'] = get_ips(parent, item['src_ips'], item['name'])
+#        item['dst_ips'] = get_ips(parent, item['dst_ips'], item['name'])
+        item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
+        item['services'] = get_services(parent, item['services'], item)
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
         item['apps'] = get_apps(parent, item['apps'], item['name'])
-        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item['name'])
+        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
         try:
             item['pool'] = shaper_list[item['pool']]
         except KeyError as err:
@@ -1937,12 +1979,14 @@ def import_content_rules(parent, path):
         item['position_layer'] = 'pre'
         item['src_zones'] = get_zones(parent, item['src_zones'], item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
+#        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
+#        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
+        item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
-        item['url_categories'] = get_url_categories_id(parent, item['url_categories'], url_category_groups, url_categories, item["name"])
-        item['urls'] = get_urls_id(parent, item['urls'], item["name"])
-        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item['name'])
+        item['url_categories'] = get_url_categories_id(parent, item['url_categories'], url_category_groups, url_categories, item)
+        item['urls'] = get_urls_id(parent, item['urls'], item)
+        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
         if item['scenario_rule_id']:
             try:
                 item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
@@ -2070,8 +2114,27 @@ import_funcs = {
 }
 
 ######################################### Служебные функции ################################################
-def get_ips(parent, rule_ips, rule_name):
-    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается."""
+#def get_ips(parent, rule_ips, rule_name):
+#    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается."""
+#    new_rule_ips = []
+#    for ips in rule_ips:
+#        if ips[0] == 'geoip_code':
+#            new_rule_ips.append(ips)
+#        try:
+#            if ips[0] == 'list_id':
+#                new_rule_ips.append(['list_id', parent.mc_iplists[ips[1]]])
+#            elif ips[0] == 'urllist_id':
+#                new_rule_ips.append(['urllist_id', parent.mc_url_lists[ips[1]]])
+#        except KeyError as err:
+#            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+#    return new_rule_ips
+
+
+def get_ips(parent, mode, rule_ips, rule):
+    """
+    Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается.
+    mode - принимает значения: src | dst (для формирования сообщений).
+    """
     new_rule_ips = []
     for ips in rule_ips:
         if ips[0] == 'geoip_code':
@@ -2082,7 +2145,11 @@ def get_ips(parent, rule_ips, rule_name):
             elif ips[0] == 'urllist_id':
                 new_rule_ips.append(['urllist_id', parent.mc_url_lists[ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule["name"]}": Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
+            if not rule['name'].startswith('ERROR'):
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
     return new_rule_ips
 
 
@@ -2152,7 +2219,7 @@ def get_guids_users_and_groups(parent, users, rule_name):
     return new_users
 
 
-def get_services(parent, service_list, rule_name):
+def get_services(parent, service_list, rule):
     """Получаем ID сервисов по из именам. Если сервис не найден, то он пропускается."""
     new_service_list = []
     for item in service_list:
@@ -2162,11 +2229,15 @@ def get_services(parent, service_list, rule_name):
             elif item[0] == 'list_id':
                 new_service_list.append(['list_id', parent.mc_servicegroups[item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найден сервис "{item[1]}".')
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден сервис "{item[1]}".')
+            rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+            if not rule['name'].startswith('ERROR'):
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
     return new_service_list
 
 
-def get_url_categories_id(parent, url_categories, mc_urlcategory_groups, mc_urlcategories, rule_name):
+def get_url_categories_id(parent, url_categories, mc_urlcategory_groups, mc_urlcategories, rule):
     """Получаем ID категорий URL и групп категорий URL. Если список не существует на MC, то он пропускается."""
     new_categories = []
     for item in url_categories:
@@ -2176,18 +2247,26 @@ def get_url_categories_id(parent, url_categories, mc_urlcategory_groups, mc_urlc
             if item[0] == 'category_id':
                 new_categories.append(['category_id', mc_urlcategories[item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
+            if not rule['name'].startswith('ERROR'):
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
     return new_categories
 
 
-def get_urls_id(parent, urls, rule_name):
+def get_urls_id(parent, urls, rule):
     """Получаем ID списков URL. Если список не существует на MC, то он пропускается."""
     new_urls = []
     for item in urls:
         try:
             new_urls.append(parent.mc_url_lists[item])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
+            if not rule['name'].startswith('ERROR'):
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
     return new_urls
 
 
@@ -2243,14 +2322,18 @@ def get_apps(parent, array_apps, rule_name):
     return new_app_list
 
 
-def get_time_restrictions(parent, time_restrictions, rule_name):
+def get_time_restrictions(parent, time_restrictions, rule):
     """Получаем ID календарей шаблона по их именам. Если календарь не найден в шаблоне, то он пропускается."""
     new_schedules = []
     for name in time_restrictions:
         try:
             new_schedules.append(parent.mc_time_restrictions[name])
         except KeyError:
-            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Не найден календарь "{name}".')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]: Не найден календарь "{name}".')
+            rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{name}".'
+            if not rule['name'].startswith('ERROR'):
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
     return new_schedules
 
 
@@ -2323,3 +2406,19 @@ def set_mc_time_restrictions(parent):
     parent.mc_time_restrictions = {x['name']: x['id'] for x in result}
     return 0
 
+def add_empty_vrf(parent, vrf_name, ports):
+    """Добавляем пустой VRF"""
+    vrf = {
+        'name': vrf_name,
+        'description': '',
+        'interfaces': ports if vrf_name != 'default' else [],
+        'routes': [],
+        'ospf': {},
+        'bgp': {},
+        'rip': {},
+        'pimsm': {}
+    }
+    err, result = parent.utm.add_template_vrf(parent.template_id, vrf)
+    if err:
+        return err, result
+    return 0, result    # Возвращаем ID добавленного VRF

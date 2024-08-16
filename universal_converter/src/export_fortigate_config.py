@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 3.0 06-08-2024
+# Версия 3.1 16-08-2024
 #
 
 import os, sys, json
@@ -73,14 +73,14 @@ class ConvertFortigateConfig(QThread):
             if err:
                 self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.\n')
             else:
+                convert_ntp_settings(self, self.current_ug_path, data)
                 convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
+                convert_zone_settings(self, self.current_ug_path, data)
                 convert_dns_servers(self, self.current_ug_path, data)
+                convert_dhcp_settings(self, self.current_ug_path, data)
                 convert_notification_profile(self, self.current_ug_path, data)
                 convert_services(self, self.current_ug_path, data)
                 convert_service_groups(self, self.current_ug_path, data)
-                convert_ntp_settings(self, self.current_ug_path, data)
-                convert_zone_settings(self, self.current_ug_path, data)
-                convert_dhcp_settings(self, self.current_ug_path, data)
                 convert_url_lists(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data)
                 convert_shapers_list(self, self.current_ug_path, data)
@@ -289,6 +289,8 @@ def convert_vpn_interfaces(parent, path, interfaces):
 
     ifaces = []
     for ifname, ifblock in interfaces.items():
+        if 'role' in ifblock:
+            parent.zones.add(ifblock['role'])
         if 'vlanid' in ifblock:
             ip, mask = ifblock['ip'].split(' ')
             iface = {
@@ -647,8 +649,207 @@ def convert_ntp_settings(parent, path, data):
 
 def convert_zone_settings(parent, path, data):
     """Конвертируем зоны"""
+    parent.stepChanged.emit('BLUE|Конвертация Зон.')
+    new_zone = {
+        'name': '',
+        'description': '',
+        'dos_profiles': [
+            {
+                "enabled": True,
+                "kind": "syn",
+                "alert_threshold": 3000,
+                "drop_threshold": 6000,
+                "aggregate": False,
+                "excluded_ips": []
+            },
+            {
+                "enabled": True,
+                "kind": "udp",
+                "alert_threshold": 3000,
+                "drop_threshold": 6000,
+                "aggregate": False,
+                "excluded_ips": []
+            },
+            {
+                "enabled": True,
+                "kind": "icmp",
+                "alert_threshold": 100,
+                "drop_threshold": 200,
+                "aggregate": False,
+                "excluded_ips": []
+            }
+        ],
+        'services_access': [
+            {
+                'enabled': True,
+                'service_id': 'Ping',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'SNMP',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Captive-портал и страница блокировки',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'XML-RPC для управления',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Кластер',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'VRRP',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Консоль администрирования',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'DNS',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'HTTP(S)-прокси',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Агент аутентификации',
+                'allowed_ips': []
+            },
+            {
+                'enabled': True,
+                'service_id': 'SMTP(S)-прокси',
+                'allowed_ips': []
+            },
+            {
+                'enabled': True,
+                'service_id': 'POP(S)-прокси',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'CLI по SSH',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'VPN',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'SCADA',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Reverse-прокси',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Веб-портал',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'SAML сервер',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Log analyzer',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'OSPF',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'BGP',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'SNMP-прокси',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'SSH-прокси',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Multicast',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'NTP сервис',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'RIP',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'UserID syslog collector',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'BFD',
+                'allowed_ips': []
+            },
+            {
+                'enabled': False,
+                'service_id': 'Endpoints connect',
+                'allowed_ips': []
+            }
+        ],
+        'readonly': False,
+        'enable_antispoof': False,
+        'antispoof_invert': False,
+        'networks': [],
+        'sessions_limit_enabled': False,
+        'sessions_limit_threshold': 0,
+        'sessions_limit_exclusions': []
+    }
+
+    zones = []
+    if parent.zones:
+        for zone_name in parent.zones:
+            new_zone['name'] = zone_name
+            new_zone['description'] = ''
+            zones.append(copy.deepcopy(new_zone))
     if 'config system zone' in data:
-        parent.stepChanged.emit('BLUE|Конвертация Зон.')
+        for key, value in data.get('config system zone', {}).items():
+            zone_name = func.get_restricted_name(key.strip())
+            new_zone['name'] = zone_name
+            new_zone['description'] = f'{value.get("description", "")}.',
+            zones.append(copy.deepcopy(new_zone))
+            parent.zones.add(zone_name)
+        
+    if zones:
         section_path = os.path.join(path, 'Network')
         current_path = os.path.join(section_path, 'Zones')
         err, msg = func.create_dir(current_path)
@@ -657,202 +858,12 @@ def convert_zone_settings(parent, path, data):
             parent.error = 1
             return
 
-        zones = []
-        for key, value in data.get('config system zone', {}).items():
-            zone_name = func.get_restricted_name(key.strip())
-            parent.zones.add(zone_name)
-            zones.append({
-                'name': zone_name,
-                'description': f'{value.get("description", "")}.',
-                'dos_profiles': [
-                    {
-                        "enabled": True,
-                        "kind": "syn",
-                        "alert_threshold": 3000,
-                        "drop_threshold": 6000,
-                        "aggregate": False,
-                        "excluded_ips": []
-                    },
-                    {
-                        "enabled": True,
-                        "kind": "udp",
-                        "alert_threshold": 3000,
-                        "drop_threshold": 6000,
-                        "aggregate": False,
-                        "excluded_ips": []
-                    },
-                    {
-                        "enabled": True,
-                        "kind": "icmp",
-                        "alert_threshold": 100,
-                        "drop_threshold": 200,
-                        "aggregate": False,
-                        "excluded_ips": []
-                    }
-                ],
-                'services_access': [
-                    {
-                        'enabled': True,
-                        'service_id': 'Ping',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'SNMP',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Captive-портал и страница блокировки',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'XML-RPC для управления',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Кластер',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'VRRP',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Консоль администрирования',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'DNS',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'HTTP(S)-прокси',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Агент аутентификации',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': True,
-                        'service_id': 'SMTP(S)-прокси',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': True,
-                        'service_id': 'POP(S)-прокси',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'CLI по SSH',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'VPN',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'SCADA',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Reverse-прокси',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Веб-портал',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'SAML сервер',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Log analyzer',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'OSPF',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'BGP',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'SNMP-прокси',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'SSH-прокси',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Multicast',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'NTP сервис',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'RIP',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'UserID syslog collector',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'BFD',
-                        'allowed_ips': []
-                    },
-                    {
-                        'enabled': False,
-                        'service_id': 'Endpoints connect',
-                        'allowed_ips': []
-                    }
-                ],
-                'readonly': False,
-                'enable_antispoof': False,
-                'antispoof_invert': False,
-                'networks': [],
-                'sessions_limit_enabled': False,
-                'sessions_limit_threshold': 0,
-                'sessions_limit_exclusions': []
-            })
-        
-        if zones:
-            json_file = os.path.join(current_path, 'config_zones.json')
-            with open(json_file, 'w') as fh:
-                json.dump(zones, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'GREEN|    Настройки зон выгружены в файл "{json_file}".')
-        else:
-            parent.stepChanged.emit('GRAY|    Нет зон для экспорта.')
+        json_file = os.path.join(current_path, 'config_zones.json')
+        with open(json_file, 'w') as fh:
+            json.dump(zones, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Настройки зон выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет зон для экспорта.')
 
 
 def convert_dhcp_settings(parent, path, data):
@@ -1823,7 +1834,7 @@ def convert_firewall_policy(parent, path, data):
                     domain.append(item[1])
             users.append(['group', f"{'.'.join(domain)}\\{group_name}"])
         rule = {
-            'name': '',
+            'name': rule_name,
             'description': f"{value.get('comments', 'Портировано с Fortigate')}\nFortigate UUID: {value['uuid']}",
             'action': value['action'] if value.get('action', None) else 'drop',
             'position': 'last',
@@ -1850,17 +1861,19 @@ def convert_firewall_policy(parent, path, data):
             'fragmented': 'ignore',
             'time_restrictions': [],
             'send_host_icmp': '',
-            'rule_error': 0
+            'rule_error': 0,
+            'uuid': value.get('uuid', 'Отсутствует')
         }
         get_ips(parent, path, value.get('srcaddr', ''), value.get('dstaddr', ''), rule)
         get_services(parent, value.get('service', ''), rule)
         get_time_restrictions(parent, value['schedule'], rule)
         if rule['rule_error']:
-            rule['name'] = f'ERROR - {rule_name}'
+            rule['name'] = f'ERROR - {rule["name"]}'
             rule['enabled'] = False
         else:
-            rule['name'] = f'Rule - {rule_name}'
+            rule['name'] = f'Rule - {rule["name"]}'
         rule.pop('rule_error', None)
+        rule.pop('uuid', None)
         rules.append(rule)
         n += 1
         parent.stepChanged.emit(f'BLACK|    {n} - Создано правило МЭ "{rule["name"]}".')

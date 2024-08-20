@@ -213,6 +213,14 @@ class McXmlRpc:
         return 0, result    # Возвращает ID созданного шаблона.
 
 ######## Settings ###########################################################################################
+    def get_template_general_settings(self, template_id):
+        """Get NGFW general setting value"""
+        try:
+            result = self._server.v1.ccgeneralsettings.settings.list(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_general_settings: [{err.faultCode}] — {err.faultString}'
+        return 0, result  # Возвращает список
+
     def set_template_settings(self, template_id, param):
         """Set NGFW general setting value"""
         try:
@@ -228,6 +236,76 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_certificates_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']  # Возвращает список
+
+    def add_template_certificate(self, template_id, cert_info, cert_data, private_key=None):
+        """Импортировать сертификат в шаблон"""
+        try:
+            cert_info['cert_data'] = rpc.Binary(cert_data)
+            if private_key:
+                cert_info['key_data'] = rpc.Binary(private_key) 
+            f = getattr(self._server, 'v1.cccertificates.certificate.import')
+            result = f(self._auth_token, template_id, cert_info)
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Сертификат "{cert_info["name"]}" уже существует.'
+            return 1, f'Error mclib.add_template_certificate: [{err.faultCode}] — {err.faultString}'
+        return 0, result  # Возвращает ID добавленого сертификата
+
+    def new_template_certificate(self, template_id, cert_info):
+        """Создать новый сертификат в шаблоне"""
+        try:
+            result = self._server.v1.cccertificates.certificate.generate.ca(self._auth_token, template_id, cert_info)
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Сертификат "{cert_info["name"]}" уже существует.'
+            return 1, f'Error mclib.new_template_certificate: [{err.faultCode}] — {err.faultString}'
+        return 0, result  # Возвращает ID добавленого сертификата
+
+    def update_template_certificate(self, template_id, cert_id, cert_info, cert_data, private_key=None):
+        """Создать новый сертификат в шаблоне"""
+        try:
+            cert_info['cert_data'] = rpc.Binary(cert_data)
+            if private_key:
+                cert_info['key_data'] = rpc.Binary(private_key) 
+            result = self._server.v1.cccertificates.certificate.update(self._auth_token, template_id, cert_id, cert_info)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_certificate: [{err.faultCode}] — {err.faultString}'
+        return 0, result  # Возвращает True
+
+    def get_template_client_certificate_profiles(self, template_id):
+        """Получить список профилей пользовательских сертификатов шаблона"""
+        try:
+            result = self._server.v1.cccertificates.client.profiles.list(self._auth_token, template_id, 0, 500, {}, [])
+            return 0, result['items']
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_template_client_certificate_profiles: [{err.faultCode}] — {err.faultString}'
+
+    def add_template_client_certificate_profile(self, template_id, profile):
+        """Создать профиль сертификата пользователя в шаблоне"""
+        try:
+            result = self._server.v1.cccertificates.client.profile.add(self._auth_token, template_id, profile)
+            return 0, result    # Возвращает ID созданного профиля
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Профиль "{profile["name"]} уже существует.'
+            else:
+                return 1, f'Error utm.add_template_client_certificate_profile: [{err.faultCode}] — {err.faultString}'
+
+    def get_proxyportal_config(self):
+        """Получить настройки веб-портала"""
+        try:
+            result = self._server.v1.proxyportal.config.get(self._auth_token)
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_proxyportal_config: [{err.faultCode}] — {err.faultString}"
+        return 0, result
+
+    def set_proxyportal_config(self, params):
+        """Изменить настройки веб-портала"""
+        try:
+            result = self._server.v1.proxyportal.config.set(self._auth_token, params)
+        except rpc.Fault as err:
+            return 1, f"Error utm.set_proxyportal_config: [{err.faultCode}] — {err.faultString}"
+        return 0, result    # Возвращает True
 
 ########################## Zone #############################################################################
     def get_template_zones_list(self, template_id):
@@ -1290,6 +1368,14 @@ class McXmlRpc:
             return 0, result
         except rpc.Fault as err:
             return 1, f"Error mclib.add_template_auth_server: [{err.faultCode}] — {err.faultString}"
+
+    def get_template_auth_profiles(self, template_id):
+        """Получить список профилей аутентификации в шаблоне"""
+        try:
+            result = self._server.v1.ccauth.user.auth.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error get_template_auth_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
 
 ####################################### Служебные методы ######################################################################
     def get_ip_protocol_list(self):

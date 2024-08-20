@@ -717,7 +717,7 @@ class SelectMcImportMode(SelectMode):
             return err, f'RED|    {mc_interfaces}'
         mc_interfaces = [item for item in mc_interfaces if item['node_name'] == node]
         if not mc_interfaces:
-            msg = f'Для "{node}" отсутствуют интерфейсы.\nVLAN, Gateways, subnet DHCP и VRF не будут импортированы.'
+            msg = f'Для "{node}" отсутствуют интерфейсы.\nVLAN и subnet DHCP не будут импортированы.'
             func.message_inform(self, 'Внимание!', msg)
             arguments['ngfw_ports'] = 3
             arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле {node} шаблона.'

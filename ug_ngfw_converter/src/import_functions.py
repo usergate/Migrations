@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.1 12.08.2024
+# Версия 2.2 16.08.2024
 #
 
 import os, sys, time, copy, json
@@ -677,12 +677,17 @@ def import_vlans(parent, path):
                 continue
             item['link'] = current_port
             item['name'] = f'{current_port}.{item["vlan_id"]}'
-            item['zone_id'] = 0 if current_zone == "Undefined" else parent.ngfw_data['zones'][current_zone]
+
             item.pop('id', None)      # удаляем readonly поле
             item.pop('master', None)      # удаляем readonly поле
             item.pop('kind', None)    # удаляем readonly поле
             item.pop('mac', None)
             item['enabled'] = False   # Отключаем интерфейс. После импорта надо включить руками.
+
+            if current_zone != "Undefined":
+                item['zone_id'] = parent.ngfw_data['zones'][current_zone]
+            else:
+                item['zone_id'] = parent.ngfw_data['zones'].get(item['zone_id'], 0)
 
             if parent.version < 7.1:
                 item.pop('ifalias', None)
@@ -2021,7 +2026,7 @@ def import_firewall_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|    Правило МЭ "{item["name"]}" updated.')
         else:
-            item['enabled'] = False
+#            item['enabled'] = False
             err, result = parent.utm.add_firewall_rule(item)
             if err:
                 error = 1

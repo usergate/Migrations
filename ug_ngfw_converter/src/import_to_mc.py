@@ -19,10 +19,11 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 1.9
+# Версия 2.0
 #
 
 import os, sys, json, time
+import copy
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -48,6 +49,7 @@ class ImportAll(QThread):
 
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.response_pages = {}
+        self.client_certificate_profiles = {}
         self.error = 0
 
     def run(self):
@@ -103,6 +105,7 @@ class ImportSelectedPoints(QThread):
 
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.response_pages = {}
+        self.client_certificate_profiles = {}
         self.error = 0
 
 
@@ -1837,11 +1840,20 @@ def import_vlans(parent, path):
             item['config_on_device'] = False
             item['link'] = current_port
             item['name'] = f'{current_port}.{item["vlan_id"]}'
-            try:
-                item['zone_id'] = 0 if current_zone == "Undefined" else parent.mc_data['zones'][current_zone]
-            except KeyError as err:
-                parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
-                item['zone_id'] = 0
+
+            if current_zone != "Undefined":
+                try:
+                    item['zone_id'] = parent.mc_data['zones'][current_zone]
+                except KeyError as err:
+                    parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
+                    item['zone_id'] = 0
+            else:
+                try:
+                    item['zone_id'] = parent.mc_data['zones'][item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
+                    item['zone_id'] = 0
+
             new_ipv4 = []
             for ip in item['ipv4']:
                 err, result = func.unpack_ip_address(ip)
@@ -2272,86 +2284,200 @@ def import_wccp_rules(parent, path):
     else:
         parent.stepChanged.emit('GREEN|    Правила WCCP импортированы в раздел "Сеть/WCCP".')
 
-###########################################
+#------------------------------------------- UserGate ------------------------------------------------------------
+def import_certificates(parent, path):
+    """Импортируем сертификаты"""
+    parent.stepChanged.emit('BLUE|Импорт сертификатов в раздел "UserGate/Сертификаты".')
+
+    if not os.path.isdir(path):
+        return
+    certificates = {entry.name: entry.path for entry in os.scandir(path) if entry.is_dir()}
+    if not certificates:
+        parent.stepChanged.emit('GRAY|    Нет сертификатов для импорта.')
+        return
+    error = 0
+    
+    for cert_name, cert_path in certificates.items():
+        files = [entry.name for entry in os.scandir(cert_path) if entry.is_file()]
+
+        json_file = os.path.join(cert_path, 'certificate_list.json')
+        err, data = func.read_json_file(parent, json_file, mode=1)
+        if err:
+            continue
+
+        if 'cert.pem' in files:
+            with open(os.path.join(cert_path, 'cert.pem'), mode='rb') as fh:
+                cert_data = fh.read()
+        elif 'cert.der' in files:
+            with open(os.path.join(cert_path, 'cert.der'), mode='rb') as fh:
+                cert_data = fh.read()
+        else:
+            parent.stepChanged.emit(f'NOTE|    Не найден файл сертификата "{cert_name}" для импорта. Будет сгенерирован новый сертификат "{cert_name}".')
+            data.update(data['issuer'])
+            err, result = parent.utm.new_template_certificate(parent.template_id, data)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            elif err == 3:
+                parent.stepChanged.emit(f'GRAY|       {result}')
+                continue
+            else:
+                parent.mc_data['certs'][cert_name] = result
+                parent.stepChanged.emit(f'BLACK|    Создан новый сертификат "{cert_name}".')
+                parent.stepChanged.emit(f'LBLUE|       Необходимо назначить роль новому сертификату "{cert_name}".')
+                continue
+
+        if 'key.der' in files:
+            with open(os.path.join(cert_path, 'key.der'), mode='rb') as fh:
+                key_data = fh.read()
+        elif 'key.pem' in files:
+            with open(os.path.join(cert_path, 'key.pem'), mode='rb') as fh:
+                key_data = fh.read()
+        else:
+            key_data = None
+
+        if data['name'] in parent.mc_data['certs']:
+            parent.stepChanged.emit(f'GRAY|    Сертификат "{cert_name}" уже существует.')
+            err, result = parent.utm.update_template_certificate(parent.template_id, parent.mc_data['certs'][data['name']], data, cert_data, private_key=key_data)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|       Cертификат "{cert_name}" updated.')
+        else:
+            err, result = parent.utm.add_template_certificate(parent.template_id, data, cert_data, private_key=key_data)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.mc_data['certs'][cert_name] = result
+                parent.stepChanged.emit(f'BLACK|    Импортирован сертификат "{cert_name}".')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте сертификатов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Сертификаты импортированы в раздел "UserGate/Сертификаты".')
+
+
+def import_client_certificate_profiles(parent, path):
+    """Импортируем профили пользовательских сертификатов в шаблон"""
+    json_file = os.path.join(path, 'users_certificate_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    if not parent.client_certificate_profiles:
+        if get_client_certificate_profiles(parent): # Заполняем атрибут parent.client_certificate_profiles
+            return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Профили клиентских сертификатов".')
+    error = 0
+
+    for item in data:
+        item['ca_certificates'] = [parent.mc_data['certs'][x] for x in item['ca_certificates']]
+
+        err, result = parent.utm.add_template_client_certificate_profile(parent.template_id, item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    {result}')
+        else:
+            parent.stepChanged.emit(f'BLACK|    Импортирован профиль "{item["name"]}".')
+            parent.client_certificate_profiles[item['name']] = result
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Ошибка импорта профилей клиентских сертификатов!')
+    else:
+        parent.stepChanged.emit('GREEN|    Импортированы профили клиентских сертификатов в раздел "UserGate/Профили клиентских сертификатов".')
+
+
 def import_general_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки'."""
 #    import_ui(parent, path)
-#    import_modules(parent, path)
 #    import_ntp_settings(parent, path)
-    import_proxy_port(parent, path)
+#    import_proxy_port(parent, path)
+#    import_modules(parent, path)
+#    import_cache_settings(parent, path)
+#    import_proxy_exceptions(parent, path)
+    import_web_portal_settings(parent, path)
+    import_upstream_proxy_settings(parent, path)
 
 def import_ui(parent, path):
-    """Импортируем часовой пояс"""
+    """Импортируем раздел UserGate/Настройки/Настройки интерфейса"""
     json_file = os.path.join(path, 'config_settings_ui.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
-    parent.stepChanged.emit('BLUE|Импорт часового пояса и локализации интерфейса в "Настройки/Настройки интерфейса".')
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки интерфейса".')
     params = {
         'ui_timezone': 'Часовой пояс',
         'ui_language': 'Язык интерфейса по умолчанию',
+        'web_console_ssl_profile_id': 'Профиль SSL для веб-консоли',
+        'response_pages_ssl_profile_id': 'Профиль SSL для страниц блокировки/аутентификации',
+        'endpoint_ssl_profile_id': 'Профиль SSL конечного устройства',
+        'endpoint_certificate_id': 'Сертификат конечного устройства'
     }
     error = 0
 
+    data.pop('webui_auth_mode', None)
     for key in data:
         if key in params:
+            value = data[key]
+            if key == 'web_console_ssl_profile_id':
+                try:
+                    value = parent.mc_data['ssl_profiles'][data[key]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Не найден профиль SSL "{err}" для "{params[key]}". Загрузите профили SSL и повторите попытку.')
+                    error = 1
+                    continue
+            if key == 'response_pages_ssl_profile_id':
+                try:
+                    value = parent.mc_data['ssl_profiles'][data[key]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Не найден профиль SSL "{err}" для "{params[key]}". Загрузите профили SSL и повторите попытку.')
+                    error = 1
+                    continue
+            if key == 'endpoint_ssl_profile_id':
+                try:
+                    value = parent.mc_data['ssl_profiles'][data[key]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Не найден профиль SSL "{err}" для "{params[key]}". Загрузите профили SSL и повторите попытку.')
+                    error = 1
+                    continue
+            if key == 'endpoint_certificate_id':
+                try:
+                    value = parent.mc_data['certs'][data[key]]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Не найден сертификат "{err}" для "{params[key]}". Загрузите сертификаты и повторите попытку.')
+                    error = 1
+                    continue
             setting = {}
-            setting[key] = {'value': data[key]}
+            setting[key] = {'value': value}
             err, result = parent.utm.set_template_settings(parent.template_id, setting)
             if err:
                 parent.stepChanged.emit(f'RED|    {result}')
                 error = 1
-                parent.error = 1
             else:
-                parent.stepChanged.emit(f'BLACK|    "{params[key]}" установлен в знчение "{data[key]}".')
-
-    out_message = 'GREEN|    Часовой пояс и локализация интерфейса импортированы в раздел "Настройки/Настройки интерфейса".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте часового пояса и локализации интерфейса.' if error else out_message)
-
-
-def import_modules(parent, path):
-    """Импортируем модули"""
-    json_file = os.path.join(path, 'config_settings_modules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
-    parent.stepChanged.emit('BLUE|Импорт домена captive-портала в "Настройки/Модули".')
-    params = {
-        'auth_captive': 'Домен Auth captive-портала',
-        'logout_captive': 'Домен Logout captive-портала',
-        'block_page_domain': 'Домен страницы блокировки',
-        'ftpclient_captive': 'FTP поверх HTTP домен',
-        'ftp_proxy_enabled': 'FTP поверх HTTP',
-        'lldp_config': 'Настройка LLDP',
-    }
-    error = 0
-    
-    for key in data:
-        if key in params:
-            setting = {}
-            setting[key] = {'value': data[key]}
-            err, result = parent.utm.set_template_settings(parent.template_id, setting)
-            if err:
-                parent.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                parent.error = 1
-            else:
-                parent.stepChanged.emit(f'BLACK|    "{params[key]}" установлен в знчение "{data[key]}".')
-
-    out_message = 'GREEN|    Настройки домена captive-портала импортированы в раздел "Настройки/Модули".'
-    parent.stepChanged.emit('ORANGE|    Импорт домена captive-портала прошёл с ошибками.' if error else out_message)
+                parent.stepChanged.emit(f'BLACK|    "{params[key]}" установлен в значение "{data[key]}".')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек интерфейса.')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки интерфейса импортированы в раздел "UserGate/Настройки/Настройки интерфейса".')
 
 
 def import_ntp_settings(parent, path):
-    """Импортируем настройки NTP"""
+    """Импортируем настройки NTP в шаблон"""
     json_file = os.path.join(path, 'config_ntp.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
-    parent.stepChanged.emit('BLUE|Импорт настроек NTP раздела "Настройки/Настройки времени сервера".')
+    parent.stepChanged.emit('BLUE|Импорт настроек NTP раздела "UserGate/Настройки/Настройки времени сервера".')
     error = 0
     for i, ntp_server in enumerate(data['ntp_servers']):
         ns = {f'ntp_server{i+1}': {'value': ntp_server}}
@@ -2359,24 +2485,27 @@ def import_ntp_settings(parent, path):
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
             error = 1
-            parent.error = 1
         else:
             parent.stepChanged.emit(f'BLACK|    NTP-сервер {ntp_server} добавлен.')
+        if i >= 1:
+            break
 
     err, result = parent.utm.set_template_settings(parent.template_id, {'ntp_enabled': {'value': data['ntp_enabled']}})
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
-        parent.error = 1
     else:
         parent.stepChanged.emit(f'BLACK|    Использование NTP {"включено" if data["ntp_enabled"] else "отключено"}.')
 
-    out_message = 'GREEN|    Импортированы сервера NTP в раздел "Настройки/Настройки времени сервера".'
-    parent.stepChanged.emit('ORANGE|    Произоша ошибка при импорте настроек NTP.' if error else out_message)
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произоша ошибка при импорте настроек NTP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Импортированы сервера NTP в раздел "Настройки/Настройки времени сервера".')
 
 
 def import_proxy_port(parent, path):
-    """Импортируем раздел UserGate/Настройки/Модули/HTTP(S)-прокси порт"""
+    """Импортируем HTTP(S)-прокси порт в шаблон"""
     json_file = os.path.join(path, 'config_proxy_port.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
@@ -2392,19 +2521,256 @@ def import_proxy_port(parent, path):
     else:
         parent.stepChanged.emit(f'BLACK|    HTTP(S)-прокси порт установлен в значение "{data}"')
 
+
+def import_modules(parent, path):
+    """Импортируем модули"""
+    json_file = os.path.join(path, 'config_settings_modules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули".')
+    params = {
+        'auth_captive': 'Домен Auth captive-портала',
+        'logout_captive': 'Домен Logout captive-портала',
+        'block_page_domain': 'Домен страницы блокировки',
+        'ftpclient_captive': 'FTP поверх HTTP домен',
+        'ftp_proxy_enabled': 'FTP поверх HTTP',
+        'tunnel_inspection_zone_config': 'Зона для инспектируемых туннелей',
+        'lldp_config': 'Настройка LLDP',
+    }
+    error = 0
+    
+    for key in data:
+        if key in params:
+            value = copy.deepcopy(data[key])
+            if key == 'tunnel_inspection_zone_config':
+                try:
+                    value['target_zone'] = parent.mc_data['zones'][value['target_zone']]
+                    value.pop('cc', None)
+                    data[key].pop('cc', None)   # Удаляем для корректного вывода в лог.
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Не найдена зона "{err}" для "{params[key]}". Загрузите зоны и повторите попытку.')
+                    error = 1
+                    continue
+            setting = {}
+            setting[key] = {'value': value}
+            err, result = parent.utm.set_template_settings(parent.template_id, setting)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Параметр "{params[key]}" установлен в знчение "{data[key]}".')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Импорт модулей прошёл с ошибками.')
+    else:
+        parent.stepChanged.emit('GREEN|    Модули импортированы в раздел "UserGate/Настройки/Модули".')
+
+
+def import_cache_settings(parent, path):
+    """Импортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
+    json_file = os.path.join(path, 'config_proxy_settings.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт разделов "Расширенные настройки" и "Настройки кэширования HTTP" из "UserGate/Настройки".')
+    error = 0
+    settings = {
+        'Настройки кэширования HTTP': {
+            'http_cache': {
+                'value': {},
+                'enabled': False
+            }
+        },
+        'Расширенные настройки': {
+            'advanced': {
+                'value': {},
+                'enabled': False
+            }
+        }
+    }
+    for key, value in data.items():
+        if key in {'http_cache_mode', 'http_cache_docsize_max', 'http_cache_precache_size'}:
+            settings['Настройки кэширования HTTP']['http_cache']['value'][key] = value
+        else:
+            settings['Расширенные настройки']['advanced']['value'][key] = value
+    
+    for key in settings:
+        err, result = parent.utm.set_template_settings(parent.template_id, settings[key])
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        else:
+            parent.stepChanged.emit(f'BLACK|    {key} импортированы.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка импорта настроек.')
+    else:
+        parent.stepChanged.emit('GREEN|    Импортированы "Расширенные настройки" и "Настройки кэширования HTTP".')
+
+
+def import_proxy_exceptions(parent, path):
+    """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
+    json_file = os.path.join(path, 'config_proxy_exceptions.json')
+    err, exceptions = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования".')
+    error = 0
+
+    err, nlist = parent.utm.get_template_nlists_list(parent.template_id, 'httpcwl')
+    list_id = nlist[0]['id']
+    
+    for item in exceptions:
+        err, result = parent.utm.add_template_nlist_item(parent.template_id, list_id, item)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+        elif err == 3:
+            parent.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
+        else:
+            parent.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
+
+#    if exceptions:
+#        err, result = parent.utm.set_template_settings(parent.template_id, {'http_cache_exceptions': {'enabled': True}})
+#        if err:
+#            parent.stepChanged.emit(f'RED|    {result}')
+#            error = 1
+#            parent.stepChanged.emit('ORANGE|    Произошла ошибка при установке статуса исключения кэширования.')
+#        else:
+#            parent.stepChanged.emit(f'BLACK|    Исключения кэширования включено.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Ошибка импорта исключений кэширования HTTP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Исключения кэширования HTTP импортированы".')
+
+
+def import_web_portal_settings(parent, path):
+    """Импортируем раздел 'UserGate/Настройки/Веб-портал'"""
+    json_file = os.path.join(path, 'config_web_portal.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Веб-портал".')
+    error = 0
+    error_message = 'ORANGE|    Произошла ошибка при импорте настроек Веб-портала!'
+    out_message = 'GREEN|    Импортирован раздел "UserGate/Настройки/Веб-портал".'
+
+    if not parent.response_pages:
+        if get_response_pages(parent):    # Устанавливаем атрибут parent.response_pages
+            return
+
+    if not parent.client_certificate_profiles:
+        if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
+            return
+
+    try:
+        data['ssl_profile_id'] = parent.mc_data['ssl_profiles'][data['ssl_profile_id']]
+    except KeyError as err:
+        parent.stepChanged.emit(f'RED|    Не найден профиль SSL {err}". Загрузите профили SSL и повторите попытку.')
+        parent.stepChanged.emit(error_message)
+        parent.error = 1
+        return
+
+    try:
+        data['user_auth_profile_id'] = parent.mc_data['auth_profiles'][data['user_auth_profile_id']]
+    except KeyError as err:
+        parent.stepChanged.emit(f'RED|    Не найден профиль аутентификации {err}". Загрузите профили аутентификации и повторите попытку.')
+        parent.stepChanged.emit(error_message)
+        parent.error = 1
+        return
+
+    if data['client_certificate_profile_id']:
+        try:
+            data['client_certificate_profile_id'] = parent.client_certificate_profiles[data['client_certificate_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'rNOTE|    Не найден профиль клиентского сертификата {err}". Укажите его вручную или загрузите профили клиентских сертификатов и повторите попытку.')
+            data['client_certificate_profile_id'] = 0
+            data['cert_auth_enabled'] = False
+
+    if data['certificate_id']:
+        try:
+            data['certificate_id'] = parent.mc_data['certs'][data['certificate_id']]
+        except KeyError as err:
+            data['certificate_id'] = -1
+            parent.stepChanged.emit(f'rNOTE|    Не найден сертификат {err}". Укажите сертификат вручную или загрузите сертификаты и повторите попытку.')
+    else:
+        data['certificate_id'] = -1
+
+    if data['proxy_portal_template_id'] != -1:
+        try:
+            data['proxy_portal_template_id'] = parent.response_pages[data['proxy_portal_template_id']]
+        except KeyError as err:
+            data['proxy_portal_template_id'] = -1
+            parent.stepChanged.emit(f'rNOTE|    Не найден шаблон портала {err}". Укажите шаблон портала вручную или загрузите шаблоны страниц и повторите попытку.')
+
+    if data['proxy_portal_login_template_id'] != -1:
+        try:
+            data['proxy_portal_login_template_id'] = parent.response_pages[data['proxy_portal_login_template_id']]
+        except KeyError as err:
+            data['proxy_portal_login_template_id'] = -1
+            parent.stepChanged.emit(f'rNOTE|    Не найден шаблон страницы аутентификации {err}". Укажите её вручную или загрузите шаблоны страниц и повторите попытку.')
+
+    settings = {
+        'proxy_portal': {
+            'value': {},
+            'enabled': False
+        }
+    }
+    for key, value in data.items():
+        settings['proxy_portal']['value'][key] = value
+    
+    err, result = parent.utm.set_template_settings(parent.template_id, settings)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        parent.stepChanged.emit(error_message)
+    else:
+        parent.stepChanged.emit(out_message)
+
+
+def import_upstream_proxy_settings(parent, path):
+    """Импортируем настройки вышестоящего прокси"""
+    json_file = os.path.join(path, 'upstream_proxy_settings.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
+
+    settings = {
+        'upstream_proxy': {
+            'value': {},
+            'enabled': False
+        }
+    }
+    for key, value in data.items():
+        settings['upstream_proxy']['value'][key] = value
+    
+    err, result = parent.utm.set_template_settings(parent.template_id, settings)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек вышестоящего прокси!')
+    else:
+        parent.stepChanged.emit('GREEN|    Импортированы настройки вышестоящего прокси в раздел "UserGate/Настройки/Вышестоящий прокси".')
+
+
 #---------------------------------------- Пользователи и устройства --------------------------------------------------------
 def import_local_groups(parent, path):
     """Импортируем список локальных групп пользователей"""
     json_file = os.path.join(path, 'config_groups.json')
-    err, groups = func.read_json_file(parent, json_file)
+    err, groups = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
-    err, result = parent.utm.get_template_groups_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    local_groups = {x['name']: x['id'] for x in result}
 
     parent.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
     parent.stepChanged.emit(f'LBLUE|    Если используются доменные пользователи, необходимы настроенные LDAP-коннекторы в "Управление областью/Каталоги пользователей"')
@@ -2421,14 +2787,16 @@ def import_local_groups(parent, path):
         elif err == 3:
             parent.stepChanged.emit(f'GRAY|    {result}') # В версиях 6 и выше проверяется что группа уже существует.
         else:
-            local_groups[item['name']] = result
+            parent.mc_data['local_groups'][item['name']] = result
             parent.stepChanged.emit(f'BLACK|    Локальная группа "{item["name"]}" импортирована.')
 
         # Добавляем доменных пользователей в группу.
-        parent.stepChanged.emit(f'LBLUE|       Добавляем доменных пользователей в группу "{item["name"]}".')
+        parent.stepChanged.emit(f'NOTE|       Добавляем доменных пользователей в группу "{item["name"]}".')
+        n = 0
         for user_name in users:
             user_array = user_name.split(' ')
             if len(user_array) > 1 and ('\\' in user_array[1]):
+                n += 1
                 domain, name = user_array[1][1:len(user_array[1])-1].split('\\')
                 try:
                     ldap_id = parent.mc_data['ldap_servers'][domain.lower()]
@@ -2443,12 +2811,14 @@ def import_local_groups(parent, path):
                     elif not result1:
                         parent.stepChanged.emit(f'NOTE|       Нет пользователя "{user_name}" в домене "{domain}". Доменный пользователь не импортирован в группу "{item["name"]}".')
                         continue
-                    err2, result2 = parent.utm.add_user_in_template_group(parent.template_id, local_groups[item['name']], result1)
+                    err2, result2 = parent.utm.add_user_in_template_group(parent.template_id, parent.mc_data['local_groups'][item['name']], result1)
                     if err2:
                         parent.stepChanged.emit(f'RED|       {result2}  [{user_name}]')
                         error = 1
                     else:
                         parent.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
+        if not n:
+            parent.stepChanged.emit(f'GRAY|       Нет доменных пользователей в группе "{item["name"]}".')
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте локальных групп пользователей.')
@@ -2459,23 +2829,9 @@ def import_local_groups(parent, path):
 def import_local_users(parent, path):
     """Импортируем список локальных пользователей"""
     json_file = os.path.join(path, 'config_users.json')
-    err, users = func.read_json_file(parent, json_file)
+    err, users = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
-
-    err, result = parent.utm.get_template_users_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    local_users = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_template_groups_list(parent.template_id)
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    local_groups = {x['name']: x['id'] for x in result}
 
     parent.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
     error = 0
@@ -2491,17 +2847,17 @@ def import_local_users(parent, path):
         elif err == 3:
             parent.stepChanged.emit(f'GRAY|    {result}.') # В версиях 6 и выше проверяется что пользователь уже существует.
         else:
-            local_users[item['name']] = result
+            parent.mc_data['local_users'][item['name']] = result
             parent.stepChanged.emit(f'BLACK|    Добавлен локальный пользователь "{item["name"]}".')
 
         # Добавляем пользователя в группу.
         for group in user_groups:
             try:
-                group_guid = local_groups[group]
+                group_guid = parent.mc_data['local_groups'][group]
             except KeyError as err:
                 parent.stepChanged.emit(f'bRED|       Не найдена группа {err} для пользователя {item["name"]}. Импортируйте список групп и повторите импорт пользователей.')
             else:
-                err2, result2 = parent.utm.add_user_in_template_group(parent.template_id, group_guid, local_users[item['name']])
+                err2, result2 = parent.utm.add_user_in_template_group(parent.template_id, group_guid, parent.mc_data['local_users'][item['name']])
                 if err2:
                     parent.stepChanged.emit(f'RED|       {result2}  [User: {item["name"]}, Group: {group}]')
                     error = 1
@@ -3172,8 +3528,8 @@ import_funcs = {
     'DHCP': import_dhcp_subnets,
     'VRF': import_vrf,
     'WCCP': import_wccp_rules,
-    'Certificates': pass_function,
-    'UserCertificateProfiles': pass_function, # import_users_certificate_profiles,
+    'Certificates': import_certificates,
+    'UserCertificateProfiles': import_client_certificate_profiles,
     'GeneralSettings': import_general_settings,
 #    'DeviceManagement': pass_function,
 #    'Administrators': pass_function,
@@ -3386,6 +3742,18 @@ def get_response_pages(parent):
     parent.response_pages = {x['name']: x['id'] for x in result}
     return 0
 
+def get_client_certificate_profiles(parent):
+    """
+    Получаем список профилей клиентских сертификатов и
+    устанавливаем значение атрибута parent.client_certificate_profiles.
+    """
+    err, result = parent.utm.get_template_client_certificate_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return 1
+    parent.client_certificate_profiles = {x['name']: x['id'] for x in result}
+    return 0
 
 def add_empty_vrf(parent, vrf_name, ports):
     """Добавляем пустой VRF"""

@@ -154,37 +154,37 @@ class GetTemporaryData(QThread):
         self.mc_data['scenarios'] = {x['name']: x['id'] for x in result}
 
         # Получаем список сертификатов
-#        self.stepChanged.emit(f'BLACK|    Получаем список сертификатов')
-#        err, result = self.utm.get_certificates_list()
-#        if err:
-#            self.stepChanged.emit(f'iRED|{result}')
-#            return
-#        self.ngfw_data['certs'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
-#        self.ngfw_data['certs'][-1] = 0
+        self.stepChanged.emit(f'BLACK|    Получаем список сертификатов')
+        err, result = self.utm.get_template_certificates_list(self.template_id)
+        if err:
+            self.stepChanged.emit(f'iRED|{result}')
+            return
+        self.mc_data['certs'] = {x['name']: x['id'] for x in result}
+        self.mc_data['certs'][-1] = 0
 
         # Получаем список профилей аутентификации
-#        self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
-#        err, result = self.utm.get_auth_profiles()
-#        if err:
-#            self.stepChanged.emit(f'iRED|{result}')
-#            return
-#        self.ngfw_data['auth_profiles'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
+        err, result = self.utm.get_template_auth_profiles(self.template_id)
+        if err:
+            self.stepChanged.emit(f'iRED|{result}')
+            return
+        self.mc_data['auth_profiles'] = {x['name']: x['id'] for x in result}
 
         # Получаем список локальных групп
-#        self.stepChanged.emit(f'BLACK|    Получаем список локальных групп')
-#        err, result = self.utm.get_groups_list()
-#        if err:
-#            self.stepChanged.emit(f'iRED|{result}')
-#            return
-#        self.ngfw_data['local_groups'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список локальных групп')
+        err, result = self.utm.get_template_groups_list(self.template_id)
+        if err:
+            self.stepChanged.emit(f'iRED|{result}')
+            return
+        self.mc_data['local_groups'] = {x['name']: x['id'] for x in result}
 
         # Получаем список локальных пользователей
-#        self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей')
-#        err, result = self.utm.get_users_list()
-#        if err:
-#            self.stepChanged.emit(f'iRED|{result}')
-#            return
-#        self.ngfw_data['local_users'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей')
+        err, result = self.utm.get_template_users_list(self.template_id)
+        if err:
+            self.stepChanged.emit(f'iRED|{result}')
+            return
+        self.mc_data['local_users'] = {x['name']: x['id'] for x in result}
 
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений.')

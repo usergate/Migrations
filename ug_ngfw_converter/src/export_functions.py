@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.5
+# Версия 1.7 14.08.2024
 #
 
 import os, sys, json
@@ -108,6 +108,8 @@ def export_general_settings(parent, path):
         params.extend(['web_console_ssl_profile_id', 'response_pages_ssl_profile_id'])
     if parent.version >= 7.1:
         params.append('api_session_lifetime')
+        params.append('endpoint_ssl_profile_id')
+        params.append('endpoint_certificate_id')
 
     err, data = parent.utm.get_settings_params(params)
     if err:
@@ -130,6 +132,12 @@ def export_general_settings(parent, path):
             else:
                 data.pop('web_console_ssl_profile_id', None)
                 data.pop('response_pages_ssl_profile_id', None)
+        if parent.version >= 7.1:
+            data['endpoint_certificate_id'] = parent.ngfw_data['certs'].get(data['endpoint_certificate_id'], 0)
+            if parent.ngfw_data['ssl_profiles']:
+                data['endpoint_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'].get(data['endpoint_ssl_profile_id'], 0)
+            else:
+                data.pop('endpoint_ssl_profile_id', 0)
 
         json_file = os.path.join(path, 'config_settings_ui.json')
         with open(json_file, 'w') as fh:
@@ -457,6 +465,9 @@ def export_zones(parent, path):
             new_services_access = []
             for service in zone['services_access']:
                 service['service_id'] = zone_services[service['service_id']]
+                for item in service['allowed_ips']:
+                    if item[0] == 'list_id':
+                        item[1] = parent.ngfw_data['ip_lists'][item[1]]
                 if service['service_id']:
                     new_services_access.append(service)
             zone['services_access'] = new_services_access

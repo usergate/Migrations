@@ -296,9 +296,9 @@ def convert_vpn_interfaces(parent, path, interfaces):
             iface = {
                 'name': ifname,
                 'kind': 'vlan',
-                'enabled': False,
-                'description': ifblock.get('description', ''),
-                'zone_id': 0,
+                'enabled': False if ifblock.get('status', 'up') == 'down' else True,
+                'description': f'{ifname} {ifblock.get("description", "")}',
+                'zone_id': ifblock.get('role', 0),
                 'master': False,
                 'netflow_profile': 'undefined',
                 'lldp_profile': 'undefined',

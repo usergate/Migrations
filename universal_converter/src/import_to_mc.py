@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.0 15.08.2024
+# Версия 2.3 21.08.2024
 #
 
 import os, sys, json, time
@@ -515,11 +515,20 @@ def import_vlans(parent, path):
             item['config_on_device'] = False
             item['link'] = current_port
             item['name'] = f'{current_port}.{item["vlan_id"]}'
-            try:
-                item['zone_id'] = 0 if current_zone == "Undefined" else parent.mc_zones[current_zone]
-            except KeyError as err:
-                parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
-                item['zone_id'] = 0
+
+            if current_zone != "Undefined":
+                try:
+                    item['zone_id'] = parent.mc_zones[current_zone]
+                except KeyError as err:
+                    parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
+                    item['zone_id'] = 0
+            else:
+                try:
+                    item['zone_id'] = parent.mc_zones[item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f"bRED|    В шаблоне не найдена зона {err} для VLAN {item['vlan_id']}. Импортируйте зоны и повторите попытку.")
+                    item['zone_id'] = 0
+
             new_ipv4 = []
             for ip in item['ipv4']:
                 err, result = func.unpack_ip_address(ip)
@@ -1677,8 +1686,6 @@ def import_firewall_rules(parent, path):
         item['hip_profile'] = []
         item['src_zones'] = get_zones(parent, item['src_zones'], item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
-#        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
-#        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
         item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
@@ -1686,9 +1693,10 @@ def import_firewall_rules(parent, path):
         item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
         
         if item['name'] in firewall_rules:
+            rule_id = firewall_rules[item['name']]
             parent.stepChanged.emit(f'GRAY|    Правило МЭ "{item["name"]}" уже существует.')
             item.pop('position', None)
-            err, result = parent.utm.update_template_firewall_rule(parent.template_id, firewall_rules[item['name']], item)
+            err, result = parent.utm.update_template_firewall_rule(parent.template_id, rule_id, item)
             if err:
                 error = 1
                 parent.stepChanged.emit(f'RED|       {result}  [Правило МЭ: "{item["name"]}"]')
@@ -1765,8 +1773,6 @@ def import_nat_rules(parent, path):
         item['position_layer'] = 'pre'
         item['zone_in'] = get_zones(parent, item['zone_in'], item['name'])
         item['zone_out'] = get_zones(parent, item['zone_out'], item['name'])
-#        item['source_ip'] = get_ips(parent, item['source_ip'], item['name'])
-#        item['dest_ip'] = get_ips(parent, item['dest_ip'], item['name'])
         item['source_ip'] = get_ips(parent, 'src', item['source_ip'], item)
         item['dest_ip'] = get_ips(parent, 'dst', item['dest_ip'], item)
         item['service'] = get_services(parent, item['service'], item)
@@ -1783,9 +1789,10 @@ def import_nat_rules(parent, path):
             parent.stepChanged.emit(f'LBLUE|    Проверьте шлюз для правила ПБР "{item["name"]}". В случае отсутствия, установите вручную.')
 
         if item['name'] in nat_rules:
+            rule_id = nat_rules[item['name']]
             parent.stepChanged.emit(f'GRAY|    Правило "{item["name"]}" уже существует.')
             item.pop('position', None)
-            err, result = parent.utm.update_template_traffic_rule(parent.template_id, nat_rules[item['name']], item)
+            err, result = parent.utm.update_template_traffic_rule(parent.template_id, rule_id, item)
             if err:
                 error = 1
                 parent.stepChanged.emit(f'RED|       {result}  [Правило: {item["name"]}]')
@@ -1884,8 +1891,6 @@ def import_shaper_rules(parent, path):
                 item['scenario_rule_id'] = False
         item['src_zones'] = get_zones(parent, item['src_zones'], item['name'])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item['name'])
-#        item['src_ips'] = get_ips(parent, item['src_ips'], item['name'])
-#        item['dst_ips'] = get_ips(parent, item['dst_ips'], item['name'])
         item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
         item['services'] = get_services(parent, item['services'], item)
@@ -1900,8 +1905,9 @@ def import_shaper_rules(parent, path):
             error = 1
 
         if item['name'] in shaper_rules:
+            rule_id = shaper_rules[item['name']]
             parent.stepChanged.emit(f'GRAY|    Правило пропускной способности "{item["name"]}" уже существует.')
-            err, result = parent.utm.update_template_shaper_rule(parent.template_id, shaper_rules[item['name']], item)
+            err, result = parent.utm.update_template_shaper_rule(parent.template_id, rule_id, item)
             if err:
                 error = 1
                 parent.stepChanged.emit(f'RED|       {result}  [Правило: {item["name"]}]')
@@ -1979,8 +1985,6 @@ def import_content_rules(parent, path):
         item['position_layer'] = 'pre'
         item['src_zones'] = get_zones(parent, item['src_zones'], item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
-#        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
-#        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
         item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
@@ -1996,9 +2000,10 @@ def import_content_rules(parent, path):
             
 
         if item['name'] in content_rules:
+            rule_id = content_rules[item['name']]
             parent.stepChanged.emit(f'GRAY|    Правило контентной фильтрации "{item["name"]}" уже существует.')
             item.pop('position', None)
-            err, result = parent.utm.update_template_content_rule(parent.template_id, content_rules[item['name']], item)
+            err, result = parent.utm.update_template_content_rule(parent.template_id, rule_id, item)
             if err:
                 error = 1
                 parent.stepChanged.emit(f'RED|       {result}  [Правило "{item["name"]}"]')
@@ -2114,22 +2119,6 @@ import_funcs = {
 }
 
 ######################################### Служебные функции ################################################
-#def get_ips(parent, rule_ips, rule_name):
-#    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается."""
-#    new_rule_ips = []
-#    for ips in rule_ips:
-#        if ips[0] == 'geoip_code':
-#            new_rule_ips.append(ips)
-#        try:
-#            if ips[0] == 'list_id':
-#                new_rule_ips.append(['list_id', parent.mc_iplists[ips[1]]])
-#            elif ips[0] == 'urllist_id':
-#                new_rule_ips.append(['urllist_id', parent.mc_url_lists[ips[1]]])
-#        except KeyError as err:
-#            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
-#    return new_rule_ips
-
-
 def get_ips(parent, mode, rule_ips, rule):
     """
     Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается.
@@ -2147,9 +2136,7 @@ def get_ips(parent, mode, rule_ips, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error! Правило "{rule["name"]}": Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
-            if not rule['name'].startswith('ERROR'):
-                rule['name'] = f'ERROR - {rule["name"]}'
-                rule['enabled'] = False
+            rule['enabled'] = False
     return new_rule_ips
 
 
@@ -2188,13 +2175,16 @@ def get_guids_users_and_groups(parent, users, rule_name):
                     try:
                         ldap_id = parent.ldap_servers[ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.error = 1
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
                         if err:
-                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule_name}"]')
+                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule_name}"]')
+                            parent.error = 1
                         elif not result:
-                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
+                            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
+                            parent.error = 1
                         else:
                             new_users.append(['user', result])
             case 'group':
@@ -2207,13 +2197,16 @@ def get_guids_users_and_groups(parent, users, rule_name):
                     try:
                         ldap_id = parent.ldap_servers[ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.error = 1
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
                         if err:
-                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule_name}"]')
+                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule_name}"]')
+                            parent.error = 1
                         elif not result:
-                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                            parent.error = 1
                         else:
                             new_users.append(['group', result])
     return new_users
@@ -2231,9 +2224,7 @@ def get_services(parent, service_list, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден сервис "{item[1]}".')
             rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
-            if not rule['name'].startswith('ERROR'):
-                rule['name'] = f'ERROR - {rule["name"]}'
-                rule['enabled'] = False
+            rule['enabled'] = False
     return new_service_list
 
 
@@ -2249,9 +2240,7 @@ def get_url_categories_id(parent, url_categories, mc_urlcategory_groups, mc_urlc
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
-            if not rule['name'].startswith('ERROR'):
-                rule['name'] = f'ERROR - {rule["name"]}'
-                rule['enabled'] = False
+            rule['enabled'] = False
     return new_categories
 
 
@@ -2264,9 +2253,7 @@ def get_urls_id(parent, urls, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
-            if not rule['name'].startswith('ERROR'):
-                rule['name'] = f'ERROR - {rule["name"]}'
-                rule['enabled'] = False
+            rule['enabled'] = False
     return new_urls
 
 
@@ -2331,9 +2318,7 @@ def get_time_restrictions(parent, time_restrictions, rule):
         except KeyError:
             parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]: Не найден календарь "{name}".')
             rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{name}".'
-            if not rule['name'].startswith('ERROR'):
-                rule['name'] = f'ERROR - {rule["name"]}'
-                rule['enabled'] = False
+            rule['enabled'] = False
     return new_schedules
 
 

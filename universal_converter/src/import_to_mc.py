@@ -533,7 +533,7 @@ def import_vlans(parent, path):
             for ip in item['ipv4']:
                 err, result = func.unpack_ip_address(ip)
                 if err:
-                    parent.stepChanged.emit(f'bRED|    Не удалось преобразовать IP: "{ip}" для VLAN {item["vlan_id"]}. IP-адрес использован не будет. Error: {result}')
+                    parent.stepChanged.emit(f'bRED|    Не удалось преобразовать IP: "{ip}" для VLAN {item["vlan_id"]}. IP-адрес использован не будет. Error: {result}.')
                 else:
                     new_ipv4.append(result)
             if not new_ipv4:
@@ -989,7 +989,7 @@ def import_radius_server(parent, path):
             if item['name'] in radius_servers:
                 parent.stepChanged.emit(f'GRAY|    RADIUS-сервер "{item["name"]}" уже существует.')
             else:
-                item['enabled'] = False
+#                item['enabled'] = False
                 item['type'] = 'radius'
                 item.pop("cc", None)
                 err, result = parent.utm.add_template_auth_server(parent.template_id, item)
@@ -1029,7 +1029,7 @@ def import_tacacs_server(parent, path):
             if item['name'] in tacacs_servers:
                 parent.stepChanged.emit(f'GRAY|    TACACS-сервер "{item["name"]}" уже существует.')
             else:
-                item['enabled'] = False
+#                item['enabled'] = False
                 item['type'] = 'tacacs_plus'
                 item.pop("cc", None)
                 err, result = parent.utm.add_template_auth_server(parent.template_id, item)
@@ -1253,11 +1253,12 @@ def import_ip_lists(parent, path):
             continue
 
         data['name'] = func.get_restricted_name(data['name'])
+        parent.stepChanged.emit(f'BLACK|    Импортируем содержимое списка IP-адресов "{data["name"]}".')
         try:
             list_id = parent.mc_iplists[data['name']]
         except KeyError:
-            parent.stepChanged.emit(f'RED|   Error: Нет IP-листа "{data["name"]}" в списках IP-адресов шаблона МС.')
-            parent.stepChanged.emit(f'RED|   Error: Содержимое не добавлено в список IP-адресов "{data["name"]}".')
+            parent.stepChanged.emit(f'RED|       Error: Нет IP-листа "{data["name"]}" в списках IP-адресов шаблона МС.')
+            parent.stepChanged.emit(f'RED|       Error [Список IP-адресов: "{data["name"]}"]: Содержимое не добавлено.')
             error = 1
             continue
         if data['content']:
@@ -1268,25 +1269,26 @@ def import_ip_lists(parent, path):
                         item['list'] = parent.mc_iplists[func.get_restricted_name(item['list'])]
                         new_content.append(item)
                     except KeyError:
-                        parent.stepChanged.emit(f'RED|   Error: Нет IP-листа "{item["list"]}" в списках IP-адресов шаблона МС.')
-                        parent.stepChanged.emit(f'RED|   Error: Содержимое "{item["list"]}" не добавлено в список IP-адресов "{data["name"]}".')
+                        parent.stepChanged.emit(f'RED|       Error: Нет IP-листа "{item["list"]}" в списках IP-адресов шаблона МС.')
+                        parent.stepChanged.emit(f'RED|       Error [Список IP-адресов: "{data["name"]}"]: Содержимое "{item["list"]}" не добавлено.')
                         error = 1
                 else:
                     new_content.append(item)
             if not new_content:
-                parent.stepChanged.emit(f'ORANGE|    Список "{data["name"]}" не импортирован так как он пуст.')
+                parent.stepChanged.emit(f'ORANGE|       Список "{data["name"]}" не имеет содержимого.')
                 continue
 
             err, result = parent.utm.add_template_nlist_items(parent.template_id, list_id, new_content)
             if err == 1:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result} [Список IP-адресов: "{data["name"]}"]')
+                parent.stepChanged.emit(f'RED|       {result} [Список IP-адресов: "{data["name"]}"]')
+                parent.stepChanged.emit(f'RED|       Error [Список IP-адресов: "{data["name"]}"]: Содержимое не добавлено.')
             elif err == 3:
-                parent.stepChanged.emit(f'GRAY|    {result}')
+                parent.stepChanged.emit(f'GRAY|       {result}')
             else:
-                parent.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" обновлено.')
+                parent.stepChanged.emit(f'BLACK|       Содержимое списка IP-адресов "{data["name"]}" обновлено.')
         else:
-            parent.stepChanged.emit(f'ORANGE|    Список "{data["name"]}" не импортирован так как он пуст.')
+            parent.stepChanged.emit(f'GRAY|       Список "{data["name"]}" пуст.')
 
     if error:
         parent.error = 1
@@ -1344,24 +1346,26 @@ def import_url_lists(parent, path):
             continue
 
         data['name'] = func.get_restricted_name(data['name'])
+        parent.stepChanged.emit('BLACK|    Импортируем содержимое списка URL "{data["name"]}".')
         try:
             list_id = parent.mc_url_lists[data['name']]
         except KeyError:
-            parent.stepChanged.emit(f'RED|   Error: Нет листа URL "{data["name"]}" в списках URL шаблона МС.')
-            parent.stepChanged.emit(f'RED|   Error: Содержимое не добавлено в список URL "{data["name"]}".')
+            parent.stepChanged.emit(f'RED|       Error: Нет листа URL "{data["name"]}" в списках URL шаблона МС.')
+            parent.stepChanged.emit(f'RED|       Error [Список URL "{data["name"]}"]: Содержимое не добавлено.')
             error = 1
             continue
         if data['content']:
             err, result = parent.utm.add_template_nlist_items(parent.template_id, list_id, data['content'])
             if err == 1:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result} [Список URL: "{data["name"]}"]')
+                parent.stepChanged.emit(f'RED|       {result} [Список URL: "{data["name"]}"]')
+                parent.stepChanged.emit(f'RED|       Error [Список URL "{data["name"]}"]: Содержимое не добавлено.')
             elif err == 3:
-                parent.stepChanged.emit(f'GRAY|    {result}')
+                parent.stepChanged.emit(f'GRAY|       {result}')
             else:
-                parent.stepChanged.emit(f'BLACK|    Содержимое списка URL "{data["name"]}" обновлено. Added {result} record')
+                parent.stepChanged.emit(f'BLACK|       Содержимое списка URL "{data["name"]}" обновлено. Added {result} record')
         else:
-            parent.stepChanged.emit(f'GRAY|   Список URL "{data["name"]}" пуст.')
+            parent.stepChanged.emit(f'GRAY|       Список URL "{data["name"]}" пуст.')
 
     if error:
         parent.error = 1

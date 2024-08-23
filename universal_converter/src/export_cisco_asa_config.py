@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.7
+# Версия 1.8 23.08.2024
 #
 
 import os, sys, json
@@ -67,6 +67,7 @@ class ConvertCiscoASAConfig(QThread):
                 convert_zone_access(self, self.current_ug_path, data)
                 convert_dns_servers(self, self.current_ug_path, data['dns']['system_dns'])
                 convert_dns_rules(self, self.current_ug_path, data['dns']['dns_rules'])
+                convert_dns_static(self, self.current_ug_path, data['dns']['dns_static'])
                 convert_vlan_interfaces(self, self.current_ug_path, data)
                 convert_gateways(self, self.current_ug_path, data)
                 convert_routes(self, self.current_ug_path, data)
@@ -126,7 +127,8 @@ def convert_config_file(parent, path):
         'dns': {
             'domain-lookup': [],
             'dns_rules': [],
-            'system_dns': []
+            'system_dns': [],
+            'dns_static': []
         },
         'ifaces': [],
         'gateways': {},
@@ -188,6 +190,8 @@ def convert_config_file(parent, path):
                     case ['server-group', servergroup_name]:
                         num, tmp_block = get_block(config_data, num)
                         create_dns_rules(data, servergroup_name, tmp_block)
+            case 'name':
+                data['dns']['dns_static'].append(x[1:])
             case 'interface':
                 num, tmp_block = get_block(config_data, num)
                 create_interface(data, tmp_block)
@@ -538,8 +542,8 @@ def convert_zones(parent, path, data):
 
         zones = []
         for key, value in data['zones'].items():
-            if key.lower() == 'management':
-                continue
+#            if key.lower() == 'management':
+#                continue
             zones.append({
                 'name': key,
                 'description': 'Перенесено с Cisco ASA',
@@ -854,6 +858,36 @@ def convert_dns_rules(parent, path, dns_rules):
         parent.stepChanged.emit(f'GRAY|    Нет правил DNS для экспорта.')
 
 
+def convert_dns_static(parent, path, dns_static):
+    """Конвертируем статические записи DNS"""
+    parent.stepChanged.emit('BLUE|Конвертация статических записей DNS.')
+    if dns_static:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DNS')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.error = 1
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            return
+
+        records = []
+        for item in dns_static:
+            records.append({
+                'name': item[1],
+                'description': 'Перенесено с Cisco ASA' if len(item) < 3 else ' '.join(item[3:]),
+                'enabled': True,
+                'domain_name': item[1],
+                'ip_addresses': [item[0]]
+            })
+
+        json_file = os.path.join(current_path, 'config_dns_static.json')
+        with open(json_file, 'w') as fh:
+            json.dump(records, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Статические записи DNS выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit(f'GRAY|    Нет статических записей DNS для экспорта.')
+
+
 def convert_vlan_interfaces(parent, path, data):
     """Конвертируем интерфейсы VLAN."""
     parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
@@ -967,7 +1001,7 @@ def convert_routes(parent, path, data):
             default_vrf['routes'].append({
                 'name': route['name'],
                 'description': '',
-                'enabled': False,
+                'enabled': True,
                 'dest': route['dest'],
                 'gateway': route['gateway'],
                 'ifname': 'undefined',
@@ -1611,7 +1645,12 @@ def convert_network_object_group(parent, path, data):
         for item in value:
             match item:
                 case ['network-object', 'host', ip]:
-                    ip_list['content'].append({'value': ip})
+                    try:
+                        ipaddress.ip_address(ip)
+                    except ValueError:
+                        url_list['content'].append({'value': ip})
+                    else:
+                        ip_list['content'].append({'value': ip})
                 case ['network-object', 'object', object_name]:
                     try:
                         ip_list['content'].extend(match_item(data['ip_lists'][object_name]))
@@ -1724,46 +1763,97 @@ def convert_service_object_group(parent, path, data):
                 case ['service-object', 'tcp'|'udp'|'tcp-udp', *other]:
                     proto_array = item[1].split('-')
                     match other:
-                        case ['destination', 'eq', dst_port]:
+                        case ['destination', protocol, dst_port]:
                             if dst_port in ug_services:
                                 srv_group['content'].append(parent.services[ug_services[dst_port]])
                                 continue
                             else:
                                 if dst_port.isalpha():
                                     service['name'] = dst_port
-                                port = get_service_number(dst_port)
-                                if not port:
-                                    parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
+                                new_port = get_service_number(dst_port)
+                                if not new_port:
+                                    parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Порт "{dst_port}" не поддерживается в UG NGFW.')
                                     continue
+                                if protocol == 'eq':
+                                    port = new_port
+                                elif protocol == 'gt':
+                                    port = f'{int(new_port)+1}-65535'
+                                elif protocol == 'lt':
+                                    port = f'0-{int(new_port)-1}'
+                                else:
+                                    parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Оператор {protocol} не поддерживается в UG NGFW.')
                         case ['destination', 'range', port1, port2]:
                             port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                        case ['source', 'eq', src_port]:
-                            if src_port in ug_services:
-                                srv_group['content'].append(parent.services[ug_services[src_port]])
+                        case ['source', protocol, src_port]:
+#                            if src_port in ug_services:
+#                                srv_group['content'].append(parent.services[ug_services[src_port]])
+#                                continue
+#                            else:
+                            if src_port.isalpha():
+                                service['name'] = src_port
+                            new_port = get_service_number(src_port)
+                            if not new_port:
+                                parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
                                 continue
+                            if protocol == 'eq':
+                                source_port = new_port
+                            elif protocol == 'gt':
+                                source_port = f'{int(new_port)+1}-65535'
+                            elif protocol == 'lt':
+                                source_port = f'0-{int(new_port)-1}'
                             else:
-                                if src_port.isalpha():
-                                    service['name'] = src_port
-                                source_port = get_service_number(src_port)
-                                if not source_port:
-                                    parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
-                                    continue
+                                parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Оператор {protocol} не поддерживается в UG NGFW.')
                         case ['source', 'range', port1, port2]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                        case ['source', 'eq', src_port, 'destination', protocol, *dst_ports]:
-                            source_port = get_service_number(src_port)
-                            port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                            if not source_port or not port:
-                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Такой порт не поддерживается в UG NGFW.')
-                                continue
+                        case ['source', src_protocol, src_port, 'destination', dst_protocol, *dst_ports]:
+                            if src_protocol == 'eq':
+                                source_port = get_service_number(src_port)
+                                if not source_port:
+                                    parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Порт "{src_port}" не поддерживается в UG NGFW.')
+                                    continue
+                            elif src_protocol == 'gt':
+                                source_port = f'{int(get_service_number(src_port))+1}-65535'
+                            elif dst_protocol == 'ge':
+                                source_port = f'{int(get_service_number(src_port))}-65535'
+                            elif dst_protocol == 'lt':
+                                source_port = f'0-{int(get_service_number(src_port))-1}'
+                            else:
+                                parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Оператор {src_protocol} не поддерживается в UG NGFW.')
+
+                            if dst_protocol == 'eq':
+                                port = get_service_number(dst_ports[0])
+                                if not port:
+                                    parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Порт {dst_ports[0]} не поддерживается в UG NGFW.')
+                                    continue
+                            elif dst_protocol == 'gt':
+                                port = f'{int(get_service_number(dst_ports[0]))+1}-65535'
+                            elif dst_protocol == 'ge':
+                                port = f'{int(get_service_number(dst_ports[0]))}-65535'
+                            elif dst_protocol == 'lt':
+                                port = f'0-{int(get_service_number(dst_ports[0]))-1}'
+                            elif dst_protocol == 'range':
+                                port = f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
+                            else:
+                                parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Оператор {dst_protocol} не поддерживается в UG NGFW.')
                         case ['source', 'range', port1, port2, 'destination', protocol, *dst_ports]:
                             source_port = f'{get_service_number(port1)}-{get_service_number(port2)}'
-                            port = get_service_number(dst_ports[0]) if protocol == 'eq' else f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
-                            if not port:
-                                parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Порт {dst_ports[0]} не поддерживается в UG NGFW.')
-                                continue
-                        case ['source'|'destination', 'lt'|'gt'|'neq', *tmp]:
-                            parent.stepChanged.emit(f'bRED|    Сервис {item} в группе сервисов {descr[0]} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
+                            if protocol == 'eq':
+                                port = get_service_number(dst_ports[0])
+                                if not port:
+                                    parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Порт {dst_ports[0]} не поддерживается в UG NGFW.')
+                                    continue
+                            elif protocol == 'gt':
+                                port = f'{int(get_service_number(dst_ports[0]))+1}-65535'
+                            elif protocol == 'ge':
+                                port = f'{int(get_service_number(dst_ports[0]))}-65535'
+                            elif protocol == 'lt':
+                                port = f'0-{int(get_service_number(dst_ports[0]))-1}'
+                            elif protocol == 'range':
+                                port = f'{get_service_number(dst_ports[0])}-{get_service_number(dst_ports[1])}'
+                            else:
+                                parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Оператор {protocol} не поддерживается в UG NGFW.')
+                        case ['source'|'destination', 'neq', *tmp]:
+                            parent.stepChanged.emit(f'bRED|    Группа сервисов "{descr[0]}": Сервис {item} не конвертирован. Оператор "neq" не поддерживаются в UG NGFW.')
                             continue
                 case ['port-object', 'eq'|'range', *dst_ports]:
                     if dst_ports[0].isalpha():
@@ -1788,7 +1878,16 @@ def convert_service_object_group(parent, path, data):
                 })
             if service['protocols']:
                 if not service['name']:
-                    service['name'] = '-'.join([f"{x['proto']}{x['port']}" for x in service['protocols']])
+                    tmp_name = []
+                    for x in service['protocols']:
+                        if x['source_port']:
+                            tmp_name.append(f"{x['proto']}(src{x['source_port']}/dst{x['port']})")
+                        else:
+                            tmp_name.append(f"{x['proto']}{x['port']}")
+                    service['name'] = '--'.join(tmp_name)
+#                    service['name'] = ' - '.join([f"{x['proto']}(src{x['source_port']}/dst{x['port']})" for x in service['protocols']])
+#                    else:
+#                        service['name'] = '-'.join([f"{x['proto']}{x['port']}" for x in service['protocols']])
                 parent.services[service['name']] = service
             srv_group['content'].append(service)
             
@@ -1938,7 +2037,7 @@ def convert_firewall_rules(parent, path, data):
             'services': [],
             'apps': [],
             'users': [],
-            'enabled': False,
+            'enabled': True,
             'limit': True,
             'limit_value': '3/h',
             'limit_burst': 5,
@@ -1960,17 +2059,20 @@ def convert_firewall_rules(parent, path, data):
             rule['src_zones'].extend(data['direction'][value['name']]['src_zones'])
             rule['dst_zones'].extend(data['direction'][value['name']]['dst_zones'])
 
+        rule_service = {'src_ips': '', 'dst_ips': '', 'protocol': ''}
         protocol = deq.popleft()
         match protocol:
             case 'object':
                 protocol = deq.popleft()
                 rule['services'].append(['service', ug_services.get(protocol, protocol)])
             case 'object-group':
-                protocol = deq.popleft()
-                rule['services'].append(['list_id', protocol])
+                object_group = deq.popleft()
+                rule_service['protocol'] = object_group
+                rule['services'].append(['list_id', object_group])
             case 'ip':
                 pass
             case 'icmp'|'tcp'|'udp'|'sctp'|'ipv6-icmp':
+                rule_service['protocol'] = protocol if protocol in ('tcp', 'udp', 'sctp') else ''
                 rule['services'].append(['service', f'Any {protocol.upper()}'])
 
         argument = deq.popleft()
@@ -2006,21 +2108,33 @@ def convert_firewall_rules(parent, path, data):
         while deq:
             argument = deq.popleft()
             match argument:
-                case 'lt'|'gt'|'neq':
-                    return
-                case 'eq':
+                case 'neq':
                     port = deq.popleft()
-                    service_name = create_service(parent, ips_mode, protocol, port)
-                    if service_name:
-                        rule['services'].clear()
-                        rule['services'].append(["service", service_name])
-                case 'range':
-                    port1 = deq.popleft()
-                    port2 = deq.popleft()
-                    service_name = create_service(parent, ips_mode, protocol, port1, port2)
-                    if service_name:
-                        rule['services'].clear()
-                        rule['services'].append(["service", service_name])
+                    parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{rule["name"]}"]: Сервис "neq {port}" не добавлен в правило так как оператор "neq" не поддерживается.')
+                    parent.error = 1
+                    rule['enabled'] = False
+                    rule['description'] = f'{rule["description"]}\nError: Сервис "neq {port}" не добавлен так как оператор "neq" не поддерживается.'
+                    rule_service['protocol'] = ''
+
+                case 'eq'|'range'|'lt'|'gt':
+                    tmp = deq.popleft()
+                    port = get_service_number(tmp)
+                    if not port:
+                        parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{rule["name"]}"]: Сервис "{argument} {tmp}" не добавлен в правило так как порт "{tmp}" не поддерживается.')
+                        parent.error = 1
+                        rule['enabled'] = False
+                        rule['description'] = f'{rule["description"]}\nError: Сервис "{argument} {tmp}" не добавлен так как порт "{tmp}" не поддерживается.'
+                        rule_service['protocol'] = ''
+                    elif argument == 'eq':
+                        rule_service[ips_mode] = port
+                    elif argument == 'range':
+                        port2 = deq.popleft()
+                        rule_service[ips_mode] = f'{port}-{port2}'
+                    elif argument == 'lt':
+                        rule_service[ips_mode] = f'0-{int(port)-1}'
+                    elif argument == 'gt':
+                        rule_service[ips_mode] = f'{int(port)+1}-65535'
+
                 case 'object-group':
                     grp_name = deq.popleft()
                     if grp_name in parent.service_groups:
@@ -2031,6 +2145,7 @@ def convert_firewall_rules(parent, path, data):
                         ips_mode = 'dst_ips'
                         get_ips(parent, path, data, ips_mode, argument, rule, deq)
                 case 'log':
+                    rule['log'] = True
                     other = list(deq)
                     deq.clear()
                     if 'time-range' in other:
@@ -2045,6 +2160,12 @@ def convert_firewall_rules(parent, path, data):
                 case _:
                     ips_mode = 'dst_ips'
                     get_ips(parent, path, data, ips_mode, argument, rule, deq)
+
+        if rule_service['protocol'] and (rule_service['src_ips'] or rule_service['dst_ips']):
+            service_name = create_rule_service(parent, rule_service)
+            if service_name:
+                rule['services'].clear()
+                rule['services'].append(["service", service_name])
 
         fw_rules.append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило межсетевого экрана "{rule["name"]}".')
@@ -2183,7 +2304,7 @@ def convert_dnat_rule(parent, path, data):
             'service': [],
             'target_ip': data['ip_lists'][key][0][1],
             'gateway': '',
-            'enabled': False,
+            'enabled': True,
             'log': False,
             'log_session_start': True,
             'log_limit': False,
@@ -2222,16 +2343,14 @@ def convert_dnat_rule(parent, path, data):
             src_port = value[i+3]
             dst_port = value[i+2]
             if src_port == dst_port:
-                if dst_port in ug_services:
-                    rule['service'].append(['service', ug_services[dst_port]])
-                else :
-                    service_name = create_service(parent, 'dst_ips', proto, dst_port)
-                    if service_name:
-                        rule['service'].clear()
-                        rule['service'].append(["service", service_name])
-                    else:
-                        parent.stepChanged.emit(f'RED|    Не создано правило DNAT "{key}". Ошибка создания сервиса "{dst_port}".')
-                        continue
+                rule_service = {'src_ips': '', 'dst_ips': dst_port, 'protocol': proto}
+                service_name = create_rule_service(parent, rule_service, mode='dnat')
+                if service_name:
+                    rule['service'].clear()
+                    rule['service'].append(["service", service_name])
+                else:
+                    parent.stepChanged.emit(f'RED|    Не создано правило DNAT "{key}". Ошибка создания сервиса "{dst_port}".')
+                    continue
             else:
                 rule['action'] = 'port_mapping'
                 rule['port_mappings'].append({
@@ -2285,7 +2404,7 @@ def convert_nat_rule(parent, path, data):
             'service': [],
             'target_ip': '',
             'gateway': '',
-            'enabled': False,
+            'enabled': True,
             'log': False,
             'log_session_start': True,
             'log_limit': False,
@@ -2338,62 +2457,52 @@ def convert_nat_rule(parent, path, data):
     parent.stepChanged.emit(f'GREEN|    Список правил NAT выгружен в файл "{json_file}".')
 
 ############################################# Служебные функции ###################################################
-def create_service(parent, ips_mode, protocol, port, port2=None):
+def create_rule_service(parent, rule_service, mode='fw'):
     """Для ACE. Создаём сервис, заданный непосредственно в правиле, а не в сервисной группе."""
-    if port2:
-        port = f'{get_service_number(port)}-{get_service_number(port2)}'
+    if mode == 'dnat':
+        rule_service['dst_ips'] = ug_services.get(rule_service['dst_ips'], rule_service['dst_ips'])
+        if rule_service['dst_ips'].upper() in parent.services:
+            return rule_service['dst_ips'].upper()
+        else:
+            rule_service['dst_ips'] = get_service_number(rule_service['dst_ips'])
 
-    if port in parent.services:
-        return port
-    if port.upper() in parent.services:
-        return port.upper()
-    if f'{protocol}{port}' in parent.services:
-        return f'{protocol}{port}'
-    if f'{port}{protocol}' in parent.services:
-        return f'{port}{protocol}'
-    if protocol in parent.service_groups:
-        services = copy.deepcopy(parent.service_groups[protocol]['content'])
+    service = {
+        'name': '',
+        'description': '',
+        'protocols': []
+    }
+    if rule_service['protocol'] in parent.service_groups:
+        services = copy.deepcopy(parent.service_groups[rule_service['protocol']]['content'])
         content = [x for service in services for x in service['protocols']]
+        rule_service['protocol'] = ''
         for item in content:
-            if ips_mode == 'src_ips':
-                item['source_port'] = port
-            else:
-                item['port'] = port
-        service = {
-            'name': f'{protocol}-{port}' if ips_mode == 'dst_ips' else f'{protocol}-{port}-src',
-            'description': '',
-            'protocols': content
-        }
-        parent.services[service['name']] = service
-        parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}".')
-        return service['name']
-    if protocol in {'tcp', 'udp','sctp'}:
-        if not port2:
-            port = get_service_number(port)
-            if not port:
-#                print('ERROR2: ', ips_mode, protocol, port, port2)  ###################
-                parent.stepChanged.emit(f'ORANGE|    Не создан сервис [ERROR2: {ips_mode}, {protocol}, {port}, {port2}]". Откройте заявку в тех.поддержку.')
-                return False
-        service = {
-            'name': f'{protocol}{port}' if ips_mode == 'dst_ips' else f'{protocol}{port}-src',
-            'description': '',
-            'protocols': [
-                {
-                    'proto': protocol,
-                    'port': port if ips_mode == 'dst_ips' else '',
-                    'app_proto': '',
-                    'source_port': port if ips_mode == 'src_ips' else '',
-                    'alg': ''
-                }
-            ]
-        }
-        parent.services[service['name']] = service
-        parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}".')
-        return service['name']
+            item['source_port'] = rule_service['src_ips']
+            item['port'] = rule_service['dst_ips']
+            rule_service['protocol'] = f'{rule_service["protocol"]}-{item["proto"]}' if rule_service['protocol'] else f'{item["proto"]}'
+        service['protocols'] = content
     else:
-#        print('ERROR3: ', ips_mode, protocol, port, port2)  ###################
-        parent.stepChanged.emit(f'ORANGE|    Не создан сервис [ERROR3: {ips_mode}, {protocol}, {port}, {port2}]". Откройте заявку в тех.поддержку.')
-        return False
+        service['protocols'].append({
+            'proto': rule_service['protocol'],
+            'port': rule_service['dst_ips'],
+            'app_proto': '',
+            'source_port': rule_service['src_ips'],
+            'alg': ''
+        })
+    if rule_service['src_ips']:
+        if rule_service['dst_ips']:
+            service['name'] = f'{rule_service["protocol"]}(src{rule_service["src_ips"]}/dst{rule_service["dst_ips"]})'
+        else:
+            service['name'] = f'{rule_service["protocol"]}(src{rule_service["src_ips"]})'
+    else:
+        if rule_service['protocol'] == 'tcp' and rule_service['dst_ips'] in ug_services:
+            service['name'] = ug_services[rule_service['dst_ips']]
+        else:
+            service['name'] = f'{rule_service["protocol"]}{rule_service["dst_ips"]}'
+
+    if service['name'] not in parent.services:
+        parent.services[service['name']] = service
+        parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}".')
+    return service['name']
 
 
 def get_ips(parent, path, data, ips_mode, address, rule, deq):

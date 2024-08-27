@@ -1329,8 +1329,7 @@ class McXmlRpc:
                 return 3, f'Пользователь "{user["name"]}" уже существует.'
             else:
                 return 1, f'Error mclib.add_template_user: [{err.faultCode}] — {err.faultString}'
-        else:
-            return 0, result     # Возвращает ID добавленного пользователя
+        return 0, result     # Возвращает ID добавленного пользователя
 
     def update_template_user(self, template_id, user_UID, user):
         """Обновить локального пользователя шаблона"""
@@ -1338,8 +1337,7 @@ class McXmlRpc:
             result = self._server.v1.ccaccounts.user.update(self._auth_token, template_id, user_UID, user)
         except rpc.Fault as err:
             return 1, f'Error mclib.update_template_user: [{err.faultCode}] — {err.faultString}'
-        else:
-            return 0, result     # Возвращает True
+        return 0, result     # Возвращает True
 
     def add_user_in_template_group(self, template_id, group_guid, user_guid):
         """Добавить локального пользователя в локальную группу шаблона"""
@@ -1347,8 +1345,7 @@ class McXmlRpc:
             result = self._server.v1.ccaccounts.group.user.add(self._auth_token, template_id, group_guid, user_guid)
         except rpc.Fault as err:
             return 1, f'Error mclib.add_user_in_template_group: [{err.faultCode}] — {err.faultString}'
-        else:
-            return 0, result     # Возвращает true
+        return 0, result     # Возвращает true
 
     def get_template_auth_servers(self, template_id, servers_type=''):
         """
@@ -1374,8 +1371,166 @@ class McXmlRpc:
         try:
             result = self._server.v1.ccauth.user.auth.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
         except rpc.Fault as err:
-            return 1, f'Error get_template_auth_profiles: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.get_template_auth_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
+
+    def add_template_auth_profile(self, template_id, profile):
+        """Добавить профиль аутентификации в шаблон"""
+        try:
+            result = self._server.v1.ccauth.user.auth.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_auth_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID
+
+    def update_template_auth_profile(self, template_id, profile_id, profile):
+        """Обновить профиль аутентификации в шаблоне"""
+        try:
+            result = self._server.v1.ccauth.user.auth.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_auth_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
+
+    def get_template_captive_profiles(self, template_id):
+        """Получить список Captive-профилей шаблона"""
+        try:
+            result = self._server.v1.cccaptiveportal.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_captive_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_captive_profile(self, template_id, profile):
+        """Добавить новый Captive-профиль в шаблон"""
+        try:
+            result = self._server.v1.cccaptiveportal.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            if err.faultCode == 110:
+                return 1, f'Error: Профиль авторизации "{profile["name"]}" не добавлен — {err.faultString}.'
+            elif err.faultCode == 111:
+                return 1, f'Error: Недопустимые символы в названии captive-профиля "{profile["name"]}".'
+            else:
+                return 1, f'Error mclib.add_template_captive_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def update_template_captive_profile(self, template_id, profile_id, profile):
+        """Обновить Captive-профиль в шаблоне"""
+        try:
+            result = self._server.v1.cccaptiveportal.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_captive_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_captive_portal_rules(self, template_id):
+        """Получить список правил Captive-портала шаблона"""
+        try:
+            result = self._server.v1.cccaptiveportal.rules.list(self._auth_token, template_id, 0, 10000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_captive_portal_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_captive_portal_rule(self, template_id, rule):
+        """Добавить новое правило Captive-портала в шаблон"""
+        try:
+            result = self._server.v1.cccaptiveportal.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            if err.faultCode == 110:
+                return 1, f'Error: Правило Captive-портала "{rule["name"]}" не добавлено — {err.faultString}.'
+            elif err.faultCode == 111:
+                return 1, f'Error: Недопустимые символы в названии правила captive-портала "{rule["name"]}".'
+            else:
+                return 1, f'Error mclib.add_template_captive_portal_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_captive_portal_rule(self, template_id, rule_id, rule):
+        """Обновить правило Captive-портала в шаблоне"""
+        try:
+            result = self._server.v1.cccaptiveportal.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_captive_portal_rule: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
+    def get_template_2fa_profiles(self, template_id):
+        """Получить список профилей MFA шаблона"""
+        try:
+            result = self._server.v1.ccauth.cc2fa.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_2fa_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_2fa_profile(self, template_id, profile):
+        """Добавить новый профиль MFA в шаблон"""
+        try:
+            result = self._server.v1.ccauth.cc2fa.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_2fa_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def get_template_terminal_servers(self, template_id):
+        """Получить список терминальных серверов шаблона"""
+        try:
+            result = self._server.v1.ccauth.terminal.agent.list(self._auth_token, template_id, 0, 1000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_terminal_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']    # Возвращает список
+
+    def add_template_terminal_server(self, template_id, server):
+        """Добавить новый терминальнй сервер в шаблон"""
+        try:
+            result = self._server.v1.ccauth.terminal.agent.add(self._auth_token, template_id, server)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_terminal_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID
+
+    def update_template_terminal_server(self, template_id, server_id, server):
+        """Обновить терминальнй серверв шаблоне"""
+        try:
+            result = self._server.v1.ccauth.terminal.agent.update(self._auth_token, template_id, server_id, server)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_terminal_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
+
+    def get_template_useridagent_servers(self, template_id):
+        """Получить список UserID агентов шаблона"""
+        try:
+            result = self._server.v1.ccuseridagent.servers.list(self._auth_token, template_id, 0, 50000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_useridagent_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']    # Возвращает список
+
+    def add_template_useridagent_server(self, template_id, server):
+        """Добавить новый агент UserID в шаблон"""
+        try:
+            result = self._server.v1.ccuseridagent.server.add(self._auth_token, template_id, server)
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Агент UserID "{server["name"]}" уже существует.'
+            else:
+                return 1, f'Error mclib.add_template_useridagent_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID
+
+    def update_template_useridagent_server(self, template_id, server_id, server):
+        """Обновить агент UserID в шаблоне"""
+        try:
+            result = self._server.v1.ccuseridagent.server.update(self._auth_token, template_id, server_id, server)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_useridagent_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
+
+    def get_template_useridagent_config(self, template_id):
+        """Получить список параметров UserID шаблона"""
+        try:
+            result = self._server.v1.useridagent.get.agent.config(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_useridagent_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает dict
+
+    def set_template_useridagent_config(self, template_id, config_info):
+        """Установить параметры UserID агента шаблона"""
+        try:
+            result = self._server.v1.ccuseridagent.set.agent.config(self._auth_token, template_id, config_info)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.set_template_useridagent_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID
 
 ####################################### Служебные методы ######################################################################
     def get_ip_protocol_list(self):

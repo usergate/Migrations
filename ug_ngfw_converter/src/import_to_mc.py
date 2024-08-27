@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.0
+# Версия 2.1
 #
 
 import os, sys, json, time
@@ -50,6 +50,7 @@ class ImportAll(QThread):
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.response_pages = {}
         self.client_certificate_profiles = {}
+        self.notification_profiles = {}
         self.error = 0
 
     def run(self):
@@ -106,6 +107,7 @@ class ImportSelectedPoints(QThread):
         self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.response_pages = {}
         self.client_certificate_profiles = {}
+        self.notification_profiles = {}
         self.error = 0
 
 
@@ -2396,12 +2398,12 @@ def import_client_certificate_profiles(parent, path):
 
 def import_general_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки'."""
-#    import_ui(parent, path)
-#    import_ntp_settings(parent, path)
-#    import_proxy_port(parent, path)
-#    import_modules(parent, path)
-#    import_cache_settings(parent, path)
-#    import_proxy_exceptions(parent, path)
+    import_ui(parent, path)
+    import_ntp_settings(parent, path)
+    import_proxy_port(parent, path)
+    import_modules(parent, path)
+    import_cache_settings(parent, path)
+    import_proxy_exceptions(parent, path)
     import_web_portal_settings(parent, path)
     import_upstream_proxy_settings(parent, path)
 
@@ -3093,6 +3095,464 @@ def import_saml_server(parent, path):
         parent.stepChanged.emit('GREEN|    Сервера SAML импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
 
 
+def import_2fa_profiles(parent, path):
+    """Импортируем список 2FA профилей"""
+    json_file = os.path.join(path, 'config_2fa_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт профилей MFA в раздел "Пользователи и устройства/Профили MFA".')
+    error = 0
+
+    if not parent.notification_profiles:
+        if get_notification_profiles(parent):      # Устанавливаем атрибут parent.notification_profiles
+            return
+
+    err, result = parent.utm.get_template_2fa_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    else:
+        profiles_2fa = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in profiles_2fa:
+            parent.stepChanged.emit(f'GRAY|    Профиль MFA "{item["name"]}" уже существует.')
+        else:
+            if item['type'] == 'totp':
+                if item['init_notification_profile_id'] not in parent.notification_profiles:
+                    parent.stepChanged.emit(f'RED|    Error: Профиль MFA "{item["name"]}" не добавлен. Не найден профиль оповещения "{item["init_notification_profile_id"]}". Загрузите профили оповещения и повторите попытку.')
+                    error = 1
+                    continue
+                item['init_notification_profile_id'] = parent.notification_profiles[item['init_notification_profile_id']]
+            else:
+                if item['auth_notification_profile_id'] not in parent.notification_profiles:
+                    parent.stepChanged.emit(f'RED|    Error: Профиль MFA "{item["name"]}" не добавлен. Не найден профиль оповещения "{item["auth_notification_profile_id"]}". Загрузите профили оповещения и повторите попытку.')
+                    error = 1
+                    continue
+                item['auth_notification_profile_id'] = parent.notification_profiles[item['auth_notification_profile_id']]
+
+            err, result = parent.utm.add_template_2fa_profile(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Profile: item["name"]]')
+                error = 1
+            else:
+                profiles_2fa[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль MFA "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей MFA.')
+    else:
+        parent.stepChanged.emit('GREEN|    Профили MFA импортированы в раздел "Пользователи и устройства/Профили MFA".')
+
+
+def import_auth_profiles(parent, path):
+    """Импортируем список профилей аутентификации"""
+    json_file = os.path.join(path, 'config_auth_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт профилей аутентификации в раздел "Пользователи и устройства/Профили аутентификации".')
+    error = 0
+
+    err, result = parent.utm.get_template_auth_servers(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    auth_servers = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_2fa_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    profiles_2fa = {x['name']: x['id'] for x in result}
+
+    auth_type = {
+        'ldap': 'ldap_server_id',
+        'radius': 'radius_server_id',
+        'tacacs_plus': 'tacacs_plus_server_id',
+        'ntlm': 'ntlm_server_id',
+        'saml_idp': 'saml_idp_server_id'
+    }
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['2fa_profile_id']:
+            try:
+                item['2fa_profile_id'] = profiles_2fa[item['2fa_profile_id']]
+            except KeyError:
+                parent.stepChanged.emit(f'bRED|    Для "{item["name"]}" не найден профиль MFA "{item["2fa_profile_id"]}". Загрузите профили MFA и повторите попытку.')
+                item['2fa_profile_id'] = False
+                error = 1
+
+        for auth_method in item['allowed_auth_methods']:
+            if len(auth_method) == 2:
+                method_server_id = auth_type[auth_method['type']]
+                try:
+                    auth_method[method_server_id] = auth_servers[auth_method[method_server_id]]
+                except KeyError:
+                    parent.stepChanged.emit(f'bRED|    Для "{item["name"]}" не найден сервер аутентификации "{auth_method[method_server_id]}". Загрузите серверы аутентификации и повторите попытку.')
+                    auth_method.clear()
+                    error = 1
+        item['allowed_auth_methods'] = [x for x in item['allowed_auth_methods'] if x]
+
+        if item['name'] in parent.mc_data['auth_profiles']:
+            parent.stepChanged.emit(f'GRAY|    Профиль аутентификации "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_auth_profile(parent.template_id, parent.mc_data['auth_profiles'][item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|       {result}  [Profile: item["name"]]')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|       Профиль аутентификации "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_auth_profile(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Profile: item["name"]]')
+                error = 1
+            else:
+                parent.mc_data['auth_profiles'][item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль аутентификации "{item["name"]}" добавлен.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей аутентификации.')
+    else:
+        parent.stepChanged.emit('GREEN|    Профили аутентификации импортированы в раздел "Пользователи и устройства/Профили аутентификации".')
+
+
+def import_captive_profiles(parent, path):
+    """Импортируем список Captive-профилей"""
+    json_file = os.path.join(path, 'config_captive_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
+    error = 0
+
+    if not parent.response_pages:
+        if get_response_pages(parent):    # Устанавливаем атрибут parent.response_pages
+            return
+
+    if not parent.notification_profiles:
+        if get_notification_profiles(parent):      # Устанавливаем атрибут parent.notification_profiles
+            return
+
+    if not parent.client_certificate_profiles:
+        if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
+            return
+
+    err, result = parent.utm.get_template_captive_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    captive_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['captive_template_id'] = parent.response_pages.get(item['captive_template_id'], -1)
+        try:
+            item['user_auth_profile_id'] = parent.mc_data['auth_profiles'][item['user_auth_profile_id']]
+        except KeyError:
+            parent.stepChanged.emit(f'bRED|    Error: Не найден профиль аутентификации "{item["user_auth_profile_id"]}". Загрузите профили аутентификации и повторите попытку.')
+            item['user_auth_profile_id'] = 1
+            item['description'] = f'{item["description"]}\nError: Не найден профиль аутентификации "{item["user_auth_profile_id"]}".'
+            error = 1
+
+        if item['notification_profile_id'] != -1:
+            try:
+                item['notification_profile_id'] = parent.notification_profiles[item['notification_profile_id']]
+            except KeyError:
+                parent.stepChanged.emit(f'bRED|    Error: Не найден профиль оповещения "{item["notification_profile_id"]}". Загрузите профили оповещения и повторите попытку.')
+                item['notification_profile_id'] = -1
+                item['description'] = f'{item["description"]}\nError: Не найден профиль оповещения "{item["notification_profile_id"]}".'
+                error = 1
+        try:
+            item['ta_groups'] = [parent.mc_data['local_groups'][name] for name in item['ta_groups']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'bRED|    Error: Группа гостевых пользователей "{err}" не найдена. Загрузите локальные группы и повторите попытку.')
+            item['ta_groups'] = []
+            item['description'] = f'{item["description"]}\nError: Не найдена группа гостевых пользователей "{err}".'
+            error = 1
+
+        if item['ta_expiration_date']:
+            item['ta_expiration_date'] = item['ta_expiration_date'].replace(' ', 'T')
+        else:
+            item.pop('ta_expiration_date', None)
+
+        item.pop('use_https_auth', None)
+        if item['captive_auth_mode'] != 'aaa':
+            item['client_certificate_profile_id'] = parent.client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
+            if not item['client_certificate_profile_id']:
+                parent.stepChanged.emit(f'RED|    Error: Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}". Загрузите профили сертификата пользователя и повторите попытку.')
+                item['captive_auth_mode'] = 'aaa'
+                item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}".'
+                error = 1
+
+        if item['name'] in captive_profiles:
+            parent.stepChanged.emit(f'GRAY|    Captive-профиль "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_captive_profile(parent.template_id, captive_profiles[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Captive-profile: {item["name"]}]')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Captive-профиль "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_captive_profile(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Captive-profile: {item["name"]}]')
+                error = 1
+            else:
+                captive_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Captive-профиль "{item["name"]}" импортирован.')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте Captive-профилей.')
+    else:
+        parent.stepChanged.emit('GREEN|    Captive-профили импортированы в раздел "Пользователи и устройства/Captive-профили".')
+
+
+def import_captive_portal_rules(parent, path):
+    """Импортируем список правил Captive-портала"""
+    json_file = os.path.join(path, 'config_captive_portal_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил Captive-портала в раздел "Пользователи и устройства/Captive-портал".')
+    error = 0
+
+    err, result = parent.utm.get_template_captive_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    captive_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_captive_portal_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    captive_portal_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['profile_id']:
+            try:
+                item['profile_id'] = captive_profiles[item['profile_id']]
+            except KeyError:
+                parent.stepChanged.emit('bRED|    Error: Captive-профиль "{item["profile_id"]}"  в правиле "{item["name"]}" не найден. Загрузите Captive-профили и повторите попытку.')
+                item['profile_id'] = 0
+                item['description'] = f'{item["description"]}\nError: Не найден Captive-профиль "{item["profile_id"]}".'
+                error = 1
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['urls'] = get_urls_id(parent, item)
+        item['url_categories'] = get_url_categories_id(parent, item)
+        item['time_restrictions'] = get_time_restrictions(parent, item)
+
+        if item['name'] in captive_portal_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило Captive-портала "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_captive_portal_rule(parent.template_id, captive_portal_rules[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Captive-portal: {item["name"]}]')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Правило Captive-портала "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_captive_portal_rule(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Captive-portal: {item["name"]}]')
+                error = 1
+            else:
+                captive_portal_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило Captive-портала "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил Captive-портала.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила Captive-портала импортированы в раздел "Пользователи и устройства/Captive-портал".')
+
+
+def import_terminal_servers(parent, path):
+    """Импортируем список терминальных серверов"""
+    json_file = os.path.join(path, 'config_terminal_servers.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт списка терминальных серверов в раздел "Пользователи и устройства/Терминальные серверы".')
+    error = 0
+
+    err, result = parent.utm.get_template_terminal_servers(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    terminal_servers = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in terminal_servers:
+            parent.stepChanged.emit(f'GRAY|    Терминальный сервер "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_terminal_server(parent.template_id, terminal_servers[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Terminal Server: {item["name"]}]')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|    Терминальный сервер "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_terminal_server(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [Terminal Server: {item["name"]}]')
+                error = 1
+            else:
+                terminal_servers[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Терминальный сервер "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка терминальных серверов.')
+    else:
+        parent.stepChanged.emit('GREEN|    Список терминальных серверов импортирован в раздел "Пользователи и устройства/Терминальные серверы".')
+
+
+def import_userid_agent(parent, path):
+    """Импортируем настройки UserID агент"""
+    import_agent_config(parent, path)
+    import_agent_servers(parent, path)
+
+
+def import_agent_config(parent, path):
+    """Импортируем настройки UserID агент"""
+    json_file = os.path.join(path, 'userid_agent_config.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    error = 0
+    parent.stepChanged.emit('BLUE|Импорт настроек UserID агент в раздел "Пользователи и устройства/UserID агент".')
+    if data['tcp_ca_certificate_id']:
+        try:
+            data['tcp_ca_certificate_id'] = parent.mc_data['certs'][data['tcp_ca_certificate_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Не найден сертификат "{err}". Загрузите сертификаты и повторите попытку.')
+            data.pop('tcp_ca_certificate_id', None)
+            error = 1
+    else:
+        data.pop('tcp_ca_certificate_id', None)
+
+    if data['tcp_server_certificate_id']:
+        try:
+            data['tcp_server_certificate_id'] = parent.mc_data['certs'][data['tcp_server_certificate_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Не найден сертификат УЦ "{err}". Загрузите сертификаты и повторите попытку.')
+            data.pop('tcp_server_certificate_id', None)
+            error = 1
+    else:
+        data.pop('tcp_server_certificate_id', None)
+
+    new_networks = []
+    for x in data['ignore_networks']:
+        try:
+            new_networks.append(['list_id', parent.mc_data['ip_lists'][x[1]]])
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Не найден список IP-адресов "{err}" для Ignore Networks. Загрузите списки IP-адресов и повторите попытку.')
+            error = 1
+    data['ignore_networks'] = new_networks
+
+    err, result = parent.utm.set_template_useridagent_config(parent.template_id, data)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        error = 1
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек агента UserID.')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки агента UserID обновлены.')
+
+
+def import_agent_servers(parent, path):
+    """Импортируем настройки AD и свойств отправителя syslog UserID агент"""
+    json_file = os.path.join(path, 'userid_agent_servers.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+#    err, result = parent.utm.get_template_useridagent_filters_list(parent.template_id)
+#    if err:
+#        parent.stepChanged.emit(f'RED|    {result}')
+#        parent.error = 1
+#        return
+#    useridagent_filters = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_useridagent_servers(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useridagent_servers = {x['name']: x['id'] for x in result}
+
+    parent.stepChanged.emit('BLUE|Импорт Агент UserID в раздел "Пользователи и устройства/Агент UserID".')
+    error = 0
+
+    parent.stepChanged.emit(f'ORANGE|    Фильтры Агентов UserID в этой версии МС не переносятся. Необходимо добавить их руками.')
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        try:
+            item['auth_profile_id'] = parent.mc_data['auth_profiles'][item['auth_profile_id']]
+        except KeyError:
+            parent.stepChanged.emit(f'RED|    Error [UserID агент "{item["name"]}"]: не найден профиль аутентификации "{item["auth_profile_id"]}". Загрузите профили аутентификации и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль аутентификации "{item["auth_profile_id"]}".'
+            item['auth_profile_id'] = 1
+            error = 1
+        if 'filters' in item:
+            new_filters = []
+            for filter_name in item['filters']:
+                item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
+#                try:
+#                    new_filters.append(useridagent_filters[filter_name])
+#                except KeyError:
+#                    parent.stepChanged.emit(f'RED|    Error [UserID агент "{item["name"]}"]: не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
+#                    item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
+#                    error = 1
+            item['filters'] = new_filters
+
+        if item['name'] in useridagent_servers:
+            parent.stepChanged.emit(f'GRAY|    UserID агент "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_useridagent_server(parent.template_id, useridagent_servers[item['name']], item)
+            if err:
+                parent.stepChanged.emit(f'RED|       {result}  [UserID агент: {item["name"]}]')
+                error = 1
+            else:
+                parent.stepChanged.emit(f'BLACK|       UserID агент "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_useridagent_server(parent.template_id, item)
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}  [UserID агент: {item["name"]}]')
+                error = 1
+            else:
+                useridagent_servers[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    UserID агент "{item["name"]}" импортирован.')
+                parent.stepChanged.emit(f'NOTE|       Если вы используете Microsoft AD, необходимо указать пароль.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек UserID агент.')
+    else:
+        parent.stepChanged.emit('GREEN|    Настройки Агент UserID импортированы в раздел "Пользователи и устройства/Агент UserID".')
+
+#-------------------------------------- Политики сети ---------------------------------------------------------
 def import_firewall_rules(parent, path):
     """Импортировать список правил межсетевого экрана"""
     parent.stepChanged.emit('BLUE|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
@@ -3533,15 +3993,15 @@ import_funcs = {
     'GeneralSettings': import_general_settings,
 #    'DeviceManagement': pass_function,
 #    'Administrators': pass_function,
-    'AuthServers': import_auth_servers,
-    'AuthProfiles': pass_function, # import_auth_profiles,
-    'CaptiveProfiles': pass_function, # import_captive_profiles,
-    'CaptivePortal': pass_function, # import_captive_portal_rules,
     'Groups': import_local_groups,
     'Users': import_local_users,
-    'TerminalServers': pass_function, # import_terminal_servers,
-    'MFAProfiles': pass_function, # import_2fa_profiles,
-    'UserIDagent': pass_function, # import_userid_agent,
+    'MFAProfiles': import_2fa_profiles,
+    'AuthServers': import_auth_servers,
+    'AuthProfiles': import_auth_profiles,
+    'CaptiveProfiles': import_captive_profiles,
+    'CaptivePortal': import_captive_portal_rules,
+    'TerminalServers': import_terminal_servers,
+    'UserIDagent': import_userid_agent,
     'BYODPolicies': pass_function, # import_byod_policy,
     'BYODDevices': pass_function,
     'Firewall': import_firewall_rules,
@@ -3579,44 +4039,55 @@ import_funcs = {
 }
 
 ######################################### Служебные функции ################################################
-def get_ips(parent, rule_ips, rule_name):
-    """Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается."""
+def get_ips_id(parent, mode, rule_ips, rule):
+    """
+    Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается.
+    mode - принимает значения: src | dst (для формирования сообщений)
+    """
     new_rule_ips = []
     for ips in rule_ips:
         if ips[0] == 'geoip_code':
             new_rule_ips.append(ips)
         try:
             if ips[0] == 'list_id':
-                new_rule_ips.append(['list_id', parent.mc_iplists[ips[1]]])
+                new_rule_ips.append(['list_id', parent.mc_data['ip_lists'][ips[1]]])
             elif ips[0] == 'urllist_id':
-                new_rule_ips.append(['urllist_id', parent.mc_url_lists[ips[1]]])
+                new_rule_ips.append(['urllist_id', parent.mc_data['url_lists'][ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найден список IP-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule["name"]}": Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
+            rule['enabled'] = False
+            parent.error = 1
     return new_rule_ips
 
 
-def get_zones(parent, zones, rule_name):
-    """Получить UID-ы зон. Если зона не существует на MC, то она пропускается."""
+def get_zones_id(parent, mode, zones, rule):
+    """
+    Получить UID-ы зон. Если зона не существует на MC, то она пропускается.
+    mode - принимает значения: src | dst (для формирования сообщений)
+    """
     new_zones = []
     for zone in zones:
         try:
-            new_zones.append(parent.mc_zones[zone])
+            new_zones.append(parent.mc_data['zones'][zone])
         except KeyError as err:
-            error = 1
-            parent.stepChanged.emit(f'bRED|    Error! Не найдена зона {zone} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error! Не найдена {mode}-зона "{zone}" для правила {rule["name"]}.')
+            rule['description'] = f'{rule["description"]}\nError: Не найдена {mode}-зона "{zone}".'
+            rule['enabled'] = False
+            parent.error = 1
     return new_zones
 
 
-def get_guids_users_and_groups(parent, users, rule_name):
+def get_guids_users_and_groups(parent, rule):
     """
     Получить GUID-ы групп и пользователей по их именам.
     Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
     """
-    if not users:
+    if not rule['users']:
         return []
 
     new_users = []
-    for item in users:
+    for item in rule['users']:
         match item[0]:
             case 'special':
                 new_users.append(item)
@@ -3625,18 +4096,27 @@ def get_guids_users_and_groups(parent, users, rule_name):
                 try:
                     ldap_domain, _, user_name = item[1].partition("\\")
                 except IndexError:
-                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Не указано имя пользователя в {item}')
+                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule["name"]}"]: Не указано имя пользователя в {item}')
                 if user_name:
                     try:
                         ldap_id = parent.mc_data['ldap_servers'][ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}".')
+                        rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
+                        rule['enabled'] = False
+                        parent.error = 1
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
                         if err:
-                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule_name}"]')
+                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
+                            rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID пользователя "{user_name}" - {result}.'
+                            rule['enabled'] = False
+                            parent.error = 1
                         elif not result:
-                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
+                            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}".')
+                            rule['description'] = f'{rule["description"]}\nError: Нет пользователя "{user_name}" в домене "{ldap_domain}".'
+                            rule['enabled'] = False
+                            parent.error = 1
                         else:
                             new_users.append(['user', result])
             case 'group':
@@ -3644,63 +4124,81 @@ def get_guids_users_and_groups(parent, users, rule_name):
                 try:
                     ldap_domain, _, group_name = item[1].partition("\\")
                 except IndexError:
-                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Не указано имя группы в {item}')
+                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule["name"]}"]: Не указано имя группы в {item}')
                 if group_name:
                     try:
                         ldap_id = parent.mc_data['ldap_servers'][ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
+                        rule['enabled'] = False
+                        parent.error = 1
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
                         if err:
-                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule_name}"]')
+                            parent.stepChanged.emit(f'bRED|    {result}  [Правило "{rule["name"]}"]')
+                            rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID группы "{group_name}" - {result}.'
+                            rule['enabled'] = False
+                            parent.error = 1
                         elif not result:
-                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                            parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule["name"]}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                            rule['description'] = f'{rule["description"]}\nError: Нет группы "{group_name}" в домене "{ldap_domain}".'
+                            rule['enabled'] = False
+                            parent.error = 1
                         else:
                             new_users.append(['group', result])
     return new_users
 
 
-def get_services(parent, service_list, rule_name):
+def get_services(parent, service_list, rule):
     """Получаем ID сервисов по из именам. Если сервис не найден, то он пропускается."""
     new_service_list = []
     for item in service_list:
         try:
             if item[0] == 'service':
-                new_service_list.append(['service', parent.mc_services[item[1]]])
+                new_service_list.append(['service', parent.mc_data['services'][item[1]]])
             elif item[0] == 'list_id':
-                new_service_list.append(['list_id', parent.mc_servicegroups[item[1]]])
+                new_service_list.append(['list_id', parent.mc_data['service_groups'][item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найден сервис "{item[1]}".')
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден сервис "{item[1]}".')
+            rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+            rule['enabled'] = False
+            parent.error = 1
     return new_service_list
 
 
-def get_url_categories_id(parent, url_categories, rule_name):
+def get_url_categories_id(parent, rule):
     """Получаем ID категорий URL и групп категорий URL. Если список не существует на MC, то он пропускается."""
     new_categories = []
-    for item in url_categories:
+    for item in rule['url_categories']:
         try:
             if item[0] == 'list_id':
                 new_categories.append(['list_id', parent.mc_data['url_categorygroups'][item[1]]])
             if item[0] == 'category_id':
                 new_categories.append(['category_id', parent.mc_data['url categories'][item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
+            rule['enabled'] = False
+            parent.error = 1
     return new_categories
 
 
-def get_urls_id(parent, urls, rule_name):
+def get_urls_id(parent, rule):
     """Получаем ID списков URL. Если список не существует на MC, то он пропускается."""
     new_urls = []
-    for item in urls:
+    for item in rule['urls']:
         try:
-            new_urls.append(parent.mc_url_lists[item])
+            new_urls.append(parent.mc_data['url_lists'][item])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule_name}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
+            rule['enabled'] = False
+            parent.error = 1
     return new_urls
 
 
-def get_apps(parent, array_apps, rule_name):
+def get_apps(parent, array_apps, rule):
     """Определяем ID приложения или группы приложений по именам."""
     new_app_list = []
     for app in array_apps:
@@ -3711,24 +4209,33 @@ def get_apps(parent, array_apps, rule_name):
                 try:
                     new_app_list.append(['ro_group', parent.mc_data['l7_categories'][app[1]]])
                 except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найдена категория l7 "{app[1]}".')
+                    parent.stepChanged.emit(f'bRED|    Error! Правило "{rule["name"]}": Не найдена категория l7 "{app[1]}".')
                     parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и MC не получил список категорий l7. Установите лицензию и повторите попытку.')
+                    rule['description'] = f'{rule["description"]}\nError: Не найдена категория l7 "{app[1]}".'
+                    rule['enabled'] = False
+                    parent.error = 1
         elif app[0] == 'group':
             try:
                 new_app_list.append(['group', parent.mc_data['application_groups'][app[1]]])
             except KeyError as err:
-                parent.stepChanged.emit(f'bRED|    Error! Правило "{rule_name}": Не найдена группа приложений l7 "{app[1]}".')
+                parent.stepChanged.emit(f'bRED|    Error! Правило "{rule["name"]}": Не найдена группа приложений l7 "{app[1]}".')
+                rule['description'] = f'{rule["description"]}\nError: Не найдена группа приложений l7 "{app[1]}".'
+                rule['enabled'] = False
+                parent.error = 1
     return new_app_list
 
 
-def get_time_restrictions(parent, time_restrictions, rule_name):
+def get_time_restrictions(parent, rule):
     """Получаем ID календарей шаблона по их именам. Если календарь не найден в шаблоне, то он пропускается."""
     new_schedules = []
-    for name in time_restrictions:
+    for name in rule['time_restrictions']:
         try:
-            new_schedules.append(parent.mc_time_restrictions[name])
+            new_schedules.append(parent.mc_data['calendars'][name])
         except KeyError:
-            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Не найден календарь "{name}".')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]: Не найден календарь "{name}".')
+            rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{name}".'
+            rule['enabled'] = False
+            parent.error = 1
     return new_schedules
 
 
@@ -3745,7 +4252,7 @@ def get_response_pages(parent):
 def get_client_certificate_profiles(parent):
     """
     Получаем список профилей клиентских сертификатов и
-    устанавливаем значение атрибута parent.client_certificate_profiles.
+    устанавливаем значение атрибута parent.client_certificate_profiles
     """
     err, result = parent.utm.get_template_client_certificate_profiles(parent.template_id)
     if err:
@@ -3753,6 +4260,20 @@ def get_client_certificate_profiles(parent):
         parent.error = 1
         return 1
     parent.client_certificate_profiles = {x['name']: x['id'] for x in result}
+    return 0
+
+def get_notification_profiles(parent):
+    """
+    Получаем список профилей оповещения и
+    устанавливаем значение атрибута parent.notification_profiles
+    """
+    err, result = parent.utm.get_template_notification_profiles_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return 1
+    parent.notification_profiles = {x['name']: x['id'] for x in result}
+    parent.notification_profiles[-5] = -5
     return 0
 
 def add_empty_vrf(parent, vrf_name, ports):

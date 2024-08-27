@@ -1443,7 +1443,7 @@ def import_2fa_profiles(parent, path):
     if err:
         return
 
-    parent.stepChanged.emit('BLUE|Импорт списка 2FA профилей в раздел "Пользователи и устройства/Профили MFA".')
+    parent.stepChanged.emit('BLUE|Импорт профилей MFA в раздел "Пользователи и устройства/Профили MFA".')
     error = 0
 
     if not parent.notification_profiles:
@@ -1465,16 +1465,17 @@ def import_2fa_profiles(parent, path):
         else:
             if item['type'] == 'totp':
                 if item['init_notification_profile_id'] not in parent.notification_profiles:
-                    parent.stepChanged.emit(f'bRED|       Профиль MFA "{item["name"]}" не добавлен. Не найден профиль оповещения. Загрузите профили оповещения и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|    Error: Профиль MFA "{item["name"]}" не добавлен. Не найден профиль оповещения "{item["init_notification_profile_id"]}". Загрузите профили оповещения и повторите попытку.')
                     error = 1
                     continue
                 item['init_notification_profile_id'] = parent.notification_profiles[item['init_notification_profile_id']]
             else:
                 if item['auth_notification_profile_id'] not in parent.notification_profiles:
-                    parent.stepChanged.emit(f'bRED|       Профиль MFA "{item["name"]}" не добавлен. Не найден профиль оповещения. Загрузите профили оповещения и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|    Error: Профиль MFA "{item["name"]}" не добавлен. Не найден профиль оповещения "{item["auth_notification_profile_id"]}". Загрузите профили оповещения и повторите попытку.')
                     error = 1
                     continue
                 item['auth_notification_profile_id'] = parent.notification_profiles[item['auth_notification_profile_id']]
+
             err, result = parent.utm.add_2fa_profile(item)
             if err:
                 parent.stepChanged.emit(f'RED|    {result}  [Profile: item["name"]]')
@@ -1484,9 +1485,9 @@ def import_2fa_profiles(parent, path):
                 parent.stepChanged.emit(f'BLACK|    Профиль MFA "{item["name"]}" добавлен.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Ошибка импорта списка 2FA профилей!')
+        parent.stepChanged.emit('ORANGE|    Ошибка импорта профилей MFA.')
     else:
-        parent.stepChanged.emit('GREEN|    Список 2FA профилей импортирован в раздел "Пользователи и устройства/Профили MFA".')
+        parent.stepChanged.emit('GREEN|    Профили MFA импортированы в раздел "Пользователи и устройства/Профили MFA".')
 
 
 def import_auth_profiles(parent, path):

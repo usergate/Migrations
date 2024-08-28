@@ -35,6 +35,7 @@ class GetTemporaryData(QThread):
         self.utm = utm
         self.template_id = template_id
         self.mc_data = {}
+        self.mc_data['block_iplists'] = {'BOTNET_BLACK_LIST', 'BANKS_IP_LIST', 'ZAPRET_INFO_BLACK_LIST_IP'}
         self.error = 0
 
     def run(self):

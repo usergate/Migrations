@@ -2100,6 +2100,7 @@ def import_nat_rules(parent, path):
 
         if item['name'] in nat_rules:
             parent.stepChanged.emit(f'GRAY|    Правило "{item["name"]}" уже существует.')
+            item.pop('position', None)
             err, result = parent.utm.update_traffic_rule(nat_rules[item['name']], item)
             if err:
                 error = 1
@@ -2114,7 +2115,7 @@ def import_nat_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    {result}  [Правило: {item["name"]}]')
             else:
                 nat_rules[item['name']] = result
-                parent.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" добавлено.')
+                parent.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
@@ -2131,11 +2132,9 @@ def import_loadbalancing_rules(parent, path):
         parent.stepChanged.emit(f'RED|    {tcpudp}')
         parent.error = 1
         return
-
     import_loadbalancing_tcpudp(parent, path, tcpudp)
     import_loadbalancing_icap(parent, path, icap)
     import_loadbalancing_reverse(parent, path, reverse)
-#    parent.stepChanged.emit('GREEN|    Правила балансировки нагрузки импортированы в раздел "Политики сети/Балансировка нагрузки".')
 
 
 def import_loadbalancing_tcpudp(parent, path, tcpudp):
@@ -2251,7 +2250,7 @@ def import_loadbalancing_reverse(parent, path, reverse):
     reverse_rules = {func.get_restricted_name(x['name']): x['id'] for x in reverse}
     error = 0
 
-    if not parent.reverse_servers:
+    if not parent.reverseproxy_servers:
         if get_reverseproxy_servers(parent):      # Устанавливаем атрибут parent.reverseproxy_servers
             return
 

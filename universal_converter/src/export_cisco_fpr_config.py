@@ -984,7 +984,7 @@ def convert_firewall_rules(parent, path, data):
         value['position_layer'] = 'local'
         value['ips_profile'] = False
         value['l7_profile'] = False
-        value['hip_profile'] = []
+        value['hip_profiles'] = []
 
         firewall_rules.append(value)
         parent.stepChanged.emit(f'BLACK|    Создано правило межсетевого экрана "{value["name"]}".')

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.3 21.08.2024
+# Версия 2.4 26.08.2024
 #
 
 import os, sys, json, time
@@ -1687,12 +1687,12 @@ def import_firewall_rules(parent, path):
         item['position_layer'] = 'pre'
         item['ips_profile'] = False
         item['l7_profile'] = False
-        item['hip_profile'] = []
+        item['hip_profiles'] = []
         item['src_zones'] = get_zones(parent, item['src_zones'], item["name"])
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
         item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
-        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.ldap_servers else []
         item['services'] = get_services(parent, item['services'], item)
         item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
         
@@ -1781,7 +1781,7 @@ def import_nat_rules(parent, path):
         item['dest_ip'] = get_ips(parent, 'dst', item['dest_ip'], item)
         item['service'] = get_services(parent, item['service'], item)
         item['gateway'] = mc_gateways.get(item['gateway'], item['gateway'])
-        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.ldap_servers else []
         if item['scenario_rule_id']:
             try:
                 item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
@@ -1898,7 +1898,7 @@ def import_shaper_rules(parent, path):
         item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
         item['services'] = get_services(parent, item['services'], item)
-        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.ldap_servers else []
         item['apps'] = get_apps(parent, item['apps'], item['name'])
         item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
         try:
@@ -1991,7 +1991,7 @@ def import_content_rules(parent, path):
         item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
         item['src_ips'] = get_ips(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips(parent, 'dst', item['dst_ips'], item)
-        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.ldap_servers else []
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.ldap_servers else []
         item['url_categories'] = get_url_categories_id(parent, item['url_categories'], url_category_groups, url_categories, item)
         item['urls'] = get_urls_id(parent, item['urls'], item)
         item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item)
@@ -2138,9 +2138,10 @@ def get_ips(parent, mode, rule_ips, rule):
             elif ips[0] == 'urllist_id':
                 new_rule_ips.append(['urllist_id', parent.mc_url_lists[ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Правило "{rule["name"]}": Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error! Правило "{rule["name"]}": Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
             rule['enabled'] = False
+            parent.error = 1
     return new_rule_ips
 
 
@@ -2156,16 +2157,16 @@ def get_zones(parent, zones, rule_name):
     return new_zones
 
 
-def get_guids_users_and_groups(parent, users, rule_name):
+def get_guids_users_and_groups(parent, rule):
     """
     Получить GUID-ы групп и пользователей по их именам.
     Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
     """
-    if not users:
+    if not rule['users']:
         return []
 
     new_users = []
-    for item in users:
+    for item in rule['users']:
         match item[0]:
             case 'special':
                 new_users.append(item)
@@ -2174,21 +2175,27 @@ def get_guids_users_and_groups(parent, users, rule_name):
                 try:
                     ldap_domain, _, user_name = item[1].partition("\\")
                 except IndexError:
-                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Не указано имя пользователя в {item}')
+                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule["name"]}"]: Не указано имя пользователя в {item}')
                 if user_name:
                     try:
                         ldap_id = parent.ldap_servers[ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
                         parent.error = 1
+                        rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
+                        rule['enabled'] = False
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
                         if err:
-                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule_name}"]')
+                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
                             parent.error = 1
+                            rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID пользователя "{user_name}" - {result}.'
+                            rule['enabled'] = False
                         elif not result:
-                            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}"!')
+                            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}".')
                             parent.error = 1
+                            rule['description'] = f'{rule["description"]}\nError: Нет пользователя "{user_name}" в домене "{ldap_domain}".'
+                            rule['enabled'] = False
                         else:
                             new_users.append(['user', result])
             case 'group':
@@ -2196,21 +2203,27 @@ def get_guids_users_and_groups(parent, users, rule_name):
                 try:
                     ldap_domain, _, group_name = item[1].partition("\\")
                 except IndexError:
-                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule_name}"]: Не указано имя группы в {item}')
+                    parent.stepChanged.emit(f'NOTE|    Error [Правило "{rule["name"]}"]: Не указано имя группы в {item}')
                 if group_name:
                     try:
                         ldap_id = parent.ldap_servers[ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
                         parent.error = 1
+                        rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
+                        rule['enabled'] = False
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
                         if err:
-                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule_name}"]')
+                            parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
                             parent.error = 1
+                            rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID группы "{group_name}" - {result}.'
+                            rule['enabled'] = False
                         elif not result:
-                            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
+                            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет группы "{group_name}" в домене "{ldap_domain}".')
                             parent.error = 1
+                            rule['description'] = f'{rule["description"]}\nError: Нет группы "{group_name}" в домене "{ldap_domain}".'
+                            rule['enabled'] = False
                         else:
                             new_users.append(['group', result])
     return new_users
@@ -2226,9 +2239,10 @@ def get_services(parent, service_list, rule):
             elif item[0] == 'list_id':
                 new_service_list.append(['list_id', parent.mc_servicegroups[item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден сервис "{item[1]}".')
+            parent.stepChanged.emit(f'RED|    Error [Правило {rule["name"]}]: Не найден сервис "{item[1]}".')
             rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
             rule['enabled'] = False
+            parent.error = 1
     return new_service_list
 
 
@@ -2242,9 +2256,10 @@ def get_url_categories_id(parent, url_categories, mc_urlcategory_groups, mc_urlc
             if item[0] == 'category_id':
                 new_categories.append(['category_id', mc_urlcategories[item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило {rule["name"]}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
             rule['enabled'] = False
+            parent.error = 1
     return new_categories
 
 
@@ -2255,9 +2270,10 @@ def get_urls_id(parent, urls, rule):
         try:
             new_urls.append(parent.mc_url_lists[item])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило {rule["name"]}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило {rule["name"]}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
             rule['enabled'] = False
+            parent.error = 1
     return new_urls
 
 
@@ -2320,9 +2336,10 @@ def get_time_restrictions(parent, time_restrictions, rule):
         try:
             new_schedules.append(parent.mc_time_restrictions[name])
         except KeyError:
-            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]: Не найден календарь "{name}".')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден календарь "{name}".')
             rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{name}".'
             rule['enabled'] = False
+            parent.error = 1
     return new_schedules
 
 

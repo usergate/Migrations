@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 3.1 16-08-2024
+# Версия 3.2 29-08-2024
 #
 
 import os, sys, json
@@ -83,6 +83,8 @@ class ConvertFortigateConfig(QThread):
                 convert_service_groups(self, self.current_ug_path, data)
                 convert_url_lists(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data)
+                convert_virtual_ip(self, self.current_ug_path, data)
+                convert_groups_iplists(self, self.current_ug_path, data)
                 convert_shapers_list(self, self.current_ug_path, data)
                 convert_shapers_rules(self, self.current_ug_path, data)
                 convert_auth_servers(self, self.current_ug_path, data)
@@ -92,7 +94,6 @@ class ConvertFortigateConfig(QThread):
                 convert_time_sets(self, self.current_ug_path, data)
                 convert_dnat_rule(self, self.current_ug_path, data)
                 convert_loadbalancing_rule(self, self.current_ug_path, data)
-                convert_groups_iplists(self, self.current_ug_path, data)
                 convert_firewall_policy(self, self.current_ug_path, data)
                 convert_gateways_list(self, self.current_ug_path, data)
                 convert_static_routes(self, self.current_ug_path, data)
@@ -952,9 +953,9 @@ def convert_ip_lists(parent, path, data):
 
         if ip_list['content']:
             n += 1
-            parent.ip_lists.add(list_name)
+            parent.ip_lists.add(ip_list['name'])
 
-            file_name = list_name.strip().translate(trans_filename)
+            file_name = ip_list['name'].translate(trans_filename)
             if file_name in file_names:
                 file_name = f'{file_name}-2'
             else:
@@ -983,7 +984,7 @@ def convert_ip_lists(parent, path, data):
             ip_list['content'] = [{'value': f'{value["start-ip"]}-{value["end-ip"]}'}]
 
         if ip_list['content']:
-            parent.ip_lists.add(list_name)
+            parent.ip_lists.add(ip_list['name'])
             n += 1
             json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
@@ -1002,10 +1003,10 @@ def convert_ip_lists(parent, path, data):
             'attributes': {'threat_level': 3},
             'content': []
         }
-        members = value['member'].split(',')
-        for item in members:
+        for item in value['member'].split(','):
+            item = func.get_restricted_name(item)
             if item in parent.ip_lists:
-                ip_list['content'].append({'list': func.get_restricted_name(item)})
+                ip_list['content'].append({'list': item})
             elif item in parent.url_lists:
                 continue
             else:
@@ -1016,10 +1017,10 @@ def convert_ip_lists(parent, path, data):
                     parent.stepChanged.emit(f'bRED|    Для списка "{list_name}" не найден список ip-адресов "{item}". Такого списка нет в списках IP-адресов.')
 
         if ip_list['content']:
-            parent.ip_lists.add(list_name)
+            parent.ip_lists.add(ip_list['name'])
             n += 1
 
-            json_file = os.path.join(current_path, f'{list_name.translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1074,7 +1075,7 @@ def convert_url_lists(parent, path, data):
             n += 1
             parent.url_lists[url_list['name']] = url_list['content']
 
-            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1094,9 +1095,9 @@ def convert_url_lists(parent, path, data):
             }
             if url_list['content']:
                 n += 1
-                parent.url_lists[list_name] = url_list['content']
+                parent.url_lists[url_list['name']] = url_list['content']
 
-                json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1113,16 +1114,16 @@ def convert_url_lists(parent, path, data):
             'attributes': {'list_compile_type': 'case_insensitive'},
             'content': []
         }
-        members = value['member'].split(',')
-        for url in members:
+        for url in value['member'].split(','):
+            url = func.get_restricted_name(url)
             if url in parent.url_lists:
                 url_list['content'].extend(parent.url_lists[url])
 
         if url_list['content']:
             n += 1
-            parent.url_lists[list_name] = url_list['content']
+            parent.url_lists[url_list['name']] = url_list['content']
 
-            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1139,14 +1140,13 @@ def convert_url_lists(parent, path, data):
             'attributes': {'list_compile_type': 'case_insensitive'},
             'content': [{'value': value['wildcard-fqdn']}]
         }
-        if list_name in parent.url_lists:
-            list_name = f'{func.get_restricted_name(list_name)} - wildcard-fqdn'
-        url_list['name'] = list_name
+        if url_list['name'] in parent.url_lists:
+            url_list['name'] = f'{url_list["name"]} - wildcard-fqdn'
 
-        parent.url_lists[list_name] = url_list['content']
+        parent.url_lists[url_list['name']] = url_list['content']
         n += 1
 
-        json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+        json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
             json.dump(url_list, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1163,16 +1163,16 @@ def convert_url_lists(parent, path, data):
             'attributes': {'list_compile_type': 'case_insensitive'},
             'content': []
         }
-        members = value['member'].split(',')
-        for url in members:
+        for url in value['member'].split(','):
+            url = func.get_restricted_name(url)
             if url in parent.url_lists:
                 url_list['content'].extend(parent.url_lists[url])
 
         if url_list['content']:
             n += 1
-            parent.url_lists[list_name] = url_list['content']
+            parent.url_lists[url_list['name']] = url_list['content']
 
-            json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1749,8 +1749,45 @@ def convert_loadbalancing_rule(parent, path, data):
         parent.stepChanged.emit('GRAY|    Нет правил балансировки нагрузки для экспорта.')
 
 
+def convert_virtual_ip(parent, path, data):
+    """Конвертируем object 'config firewall vip' в IP-лист"""
+    if 'config firewall vip' not in data:
+        return
+    parent.stepChanged.emit('BLUE|Конвертация firewall virtual IP.')
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'IPAddresses')
+    err, msg = func.create_dir(current_path, delete='no')
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    for list_name, value in data['config firewall vip'].items():
+        ip_list = {
+            'name': func.get_restricted_name(list_name),
+            'description': value.get('comment', 'Портировано с Fortigate'),
+            'type': 'network',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'threat_level': 3},
+            'content': [{'value': value['extip']}]
+        }
+        parent.ip_lists.add(ip_list['name'])
+ 
+        json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+        with open(json_file, 'w') as fh:
+            json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
+        time.sleep(0.1)
+
+    parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
+
+
 def convert_groups_iplists(parent, path, data):
     """Конвертируем object 'config firewall vipgrp' в список ip-адресов"""
+    if 'config firewall vipgrp' not in data:
+        return
     parent.stepChanged.emit('BLUE|Конвертация списков групп ip-адресов.')
     section_path = os.path.join(path, 'Libraries')
     current_path = os.path.join(section_path, 'IPAddresses')
@@ -1760,44 +1797,38 @@ def convert_groups_iplists(parent, path, data):
         parent.error = 1
         return
 
-    ip_list = {
-        'name': '',
-        'description': '',
-        'type': 'network',
-        'url': '',
-        'list_type_update': 'static',
-        'schedule': 'disabled',
-        'attributes': {'threat_level': 3},
-        'content': []
-    }
-
-    if 'config firewall vipgrp' in data:
-        for list_name, value in data['config firewall vipgrp'].items():
-            ip_list['content'] = []
-            for item in value['member'].split(','):
-                if item in parent.ip_lists:
-                    ip_list['content'].append({'list': func.get_restricted_name(item)})
-                else:
-                    try:
-                        ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
-                        ip_list['content'].append({'value': item})
-                    except ValueError:
-                        pass
-            if ip_list['content']:
-                ip_list['name'] = func.get_restricted_name(list_name)
-                ip_list['description'] = value.get('comment', 'Портировано с Fortigate')
-
-                parent.ip_lists.add(list_name)
+    for list_name, value in data['config firewall vipgrp'].items():
+        ip_list = {
+            'name': func.get_restricted_name(list_name),
+            'description': value.get('comment', 'Портировано с Fortigate'),
+            'type': 'network',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'threat_level': 3},
+            'content': []
+        }
+        for item in value['member'].split(','):
+            item = func.get_restricted_name(item)
+            if item in parent.ip_lists:
+                ip_list['content'].append({'list': item})
+            else:
+                try:
+                    ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
+                    ip_list['content'].append({'value': item})
+                except ValueError:
+                    print('ERROR convert_groups_iplists - ', item)
+#                    pass
+        if ip_list['content']:
+            parent.ip_lists.add(ip_list['name'])
  
-                json_file = os.path.join(current_path, f'{list_name.strip().translate(trans_filename)}.json')
-                with open(json_file, 'w') as fh:
-                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-                parent.stepChanged.emit(f'BLACK|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
-                time.sleep(0.1)
+            json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Создан список групп IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
+            time.sleep(0.1)
 
-        parent.stepChanged.emit(f'GREEN|    Списки групп IP-адресов выгружены в каталог "{current_path}".')
-    else:
-        parent.stepChanged.emit('GRAY|    Нет списков групп IP-адресов для экспорта.')
+    parent.stepChanged.emit(f'GREEN|    Списки групп IP-адресов выгружены в каталог "{current_path}".')
 
 
 def convert_firewall_policy(parent, path, data):
@@ -2133,10 +2164,11 @@ def get_ips(parent, path, src_ips, dst_ips, rule):
         for item in src_ips.split(','):
             if item == 'all':
                 continue
+            item = func.get_restricted_name(item)
             if item in parent.ip_lists:
-                new_rule_ips.append(['list_id', func.get_restricted_name(item)])
+                new_rule_ips.append(['list_id', item])
             elif item in parent.url_lists:
-                new_rule_ips.append(['urllist_id', func.get_restricted_name(item)])
+                new_rule_ips.append(['urllist_id', item])
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
@@ -2151,10 +2183,11 @@ def get_ips(parent, path, src_ips, dst_ips, rule):
         for item in dst_ips.split(','):
             if item == 'all':
                 continue
+            item = func.get_restricted_name(item)
             if item in parent.ip_lists:
-                new_rule_ips.append(['list_id', func.get_restricted_name(item)])
+                new_rule_ips.append(['list_id', item])
             elif item in parent.url_lists:
-                new_rule_ips.append(['urllist_id', func.get_restricted_name(item)])
+                new_rule_ips.append(['urllist_id', item])
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError

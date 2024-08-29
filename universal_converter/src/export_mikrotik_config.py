@@ -944,7 +944,7 @@ def convert_firewall_rules(parent, path, data):
             'position_layer': 'local',
             'ips_profile': False,
             'l7_profile': False,
-            'hip_profile': []
+            'hip_profiles': []
         }
         if 'in-interface' in item:
             if item['in-interface'].startswith('!'):

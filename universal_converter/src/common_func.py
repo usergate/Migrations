@@ -127,7 +127,7 @@ def create_ip_list(parent, path, ips=[], name=None):
             'content': [{'value': ip} for ip in ips]
         }
 
-        json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
+        json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
             json.dump(ip_list, fh, indent=4, ensure_ascii=False)
         parent.ip_lists.add(iplist_name)

@@ -6095,35 +6095,35 @@ def get_guids_users_and_groups(parent, users, rule_name):
                 if i[2]:
                     err, result = parent.utm.get_ldap_user_guid(i[0], i[2])
                     if err:
-                        parent.stepChanged.emit(f'bRED|    {result}  [Rule: "{rule_name}"]')
+                        parent.stepChanged.emit(f'RED|    {result}  [Rule: "{rule_name}"]')
+                        parent.error = 1
                     elif not result:
-                        parent.stepChanged.emit(f'NOTE|    Error [Rule: "{rule_name}"]. Нет LDAP-коннектора для домена "{i[0]}"! Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
+                        parent.stepChanged.emit(f'NOTE|    Error [Rule: "{rule_name}"]: Нет LDAP-коннектора для домена "{i[0]}"! Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
                     else:
                         new_users.append(['user', result])
                 else:
                     try:
-                        result = parent.ngfw_data['local_users'][item[1]]
-                    except KeyError:
-                        parent.stepChanged.emit(f'bRED|    Не найден пользователь для правила "{rule_name}"]. Импортируйте локальных пользователей и повторите импорт.')
-                    else:
-                        new_users.append(['user', result])
+                        new_users.append(['user', parent.ngfw_data['local_users'][item[1]]])
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Rule: "{rule_name}"]: Не найден локальный пользователь "{err}". Импортируйте локальных пользователей.')
+                        parent.error = 1
             case 'group':
                 i = item[1].partition("\\")
                 if i[2]:
                     err, result = parent.utm.get_ldap_group_guid(i[0], i[2])
                     if err:
-                        parent.stepChanged.emit(f'bRED|    {result}  [Rule: "{rule_name}"]')
+                        parent.stepChanged.emit(f'RED|    {result}  [Rule: "{rule_name}"]')
+                        parent.error = 1
                     elif not result:
-                        parent.stepChanged.emit(f'NOTE|    Error [Rule: "{rule_name}"]. Нет LDAP-коннектора для домена "{i[0]}"! Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
+                        parent.stepChanged.emit(f'NOTE|    Error [Rule: "{rule_name}"]: Нет LDAP-коннектора для домена "{i[0]}"! Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
                     else:
                         new_users.append(['group', result])
                 else:
                     try:
-                        result = parent.ngfw_data['local_groups'][item[1]]
-                    except KeyError:
-                        parent.stepChanged.emit(f'bRED|    Не найдена группа для правила "{rule_name}"]. Импортируйте локальные группы и повторите импорт.')
-                    else:
-                        new_users.append(['group', result])
+                        new_users.append(['group', parent.ngfw_data['local_groups'][item[1]]])
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Rule: "{rule_name}"]: Не найдена группа пользователей "{err}". Импортируйте группы пользователей.')
+                        parent.error = 1
     return new_users
 
 def get_services(parent, service_list, rule_name):

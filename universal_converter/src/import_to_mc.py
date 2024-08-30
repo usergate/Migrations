@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.4 26.08.2024
+# Версия 2.5 30.08.2024
 #
 
 import os, sys, json, time
@@ -2162,9 +2162,6 @@ def get_guids_users_and_groups(parent, rule):
     Получить GUID-ы групп и пользователей по их именам.
     Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
     """
-    if not rule['users']:
-        return []
-
     new_users = []
     for item in rule['users']:
         match item[0]:
@@ -2181,23 +2178,31 @@ def get_guids_users_and_groups(parent, rule):
                         ldap_id = parent.ldap_servers[ldap_domain.lower()]
                     except KeyError:
                         parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
-                        parent.error = 1
                         rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
                         rule['enabled'] = False
+                        parent.error = 1
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
                         if err:
                             parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
-                            parent.error = 1
                             rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID пользователя "{user_name}" - {result}.'
                             rule['enabled'] = False
+                            parent.error = 1
                         elif not result:
                             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}".')
-                            parent.error = 1
                             rule['description'] = f'{rule["description"]}\nError: Нет пользователя "{user_name}" в домене "{ldap_domain}".'
                             rule['enabled'] = False
+                            parent.error = 1
                         else:
                             new_users.append(['user', result])
+                else:
+                    try:
+                        new_users.append(['user', parent.mc_data['local_users'][item[1]]])
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден локальный пользователь "{err}". Импортируйте локальных пользователей.')
+                        rule['description'] = f'{rule["description"]}\nError: Не найден локальный пользователь "{err}".'
+                        rule['enabled'] = False
+                        parent.error = 1
             case 'group':
                 group_name = None
                 try:
@@ -2216,16 +2221,24 @@ def get_guids_users_and_groups(parent, rule):
                         err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
                         if err:
                             parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
-                            parent.error = 1
                             rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID группы "{group_name}" - {result}.'
                             rule['enabled'] = False
+                            parent.error = 1
                         elif not result:
                             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет группы "{group_name}" в домене "{ldap_domain}".')
-                            parent.error = 1
                             rule['description'] = f'{rule["description"]}\nError: Нет группы "{group_name}" в домене "{ldap_domain}".'
                             rule['enabled'] = False
+                            parent.error = 1
                         else:
                             new_users.append(['group', result])
+                else:
+                    try:
+                        new_users.append(['group', parent.mc_data['local_groups'][item[1]]])
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена группа пользователей "{err}". Импортируйте группы пользователей.')
+                        rule['description'] = f'{rule["description"]}\nError: Не найдена группа пользователей "{err}".'
+                        rule['enabled'] = False
+                        parent.error = 1
     return new_users
 
 

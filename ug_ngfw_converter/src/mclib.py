@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 1.9
+# Версия 2.3 09.09.2024
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -1483,10 +1483,13 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_loadbalancing_rules(self, template_id, mode='rp'):
-        """Получить список правил балансировки нагрузки шаблона"""
+    def get_template_loadbalancing_rules(self, template_id, query={}):
+        """
+        Получить список правил балансировки нагрузки шаблона.
+        query: {'query': 'type = reverse'} (Тип принимает значения: 'ipvs', 'icap', 'reverse')
+        """
         try:
-            result = self._server.v1.ccloadbalancing.rules.list(self._auth_token, template_id, 0, 100, {'type': 'icap'})
+            result = self._server.v1.ccloadbalancing.rules.list(self._auth_token, template_id, 0, 100, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_loadbalancing_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1558,6 +1561,145 @@ class McXmlRpc:
             return 1, f"Error mclib.update_template_content_rule: [{err.faultCode}] — {err.faultString}"
         return 0, result     # Возвращает True
 
+    def get_template_safebrowsing_rules(self, template_id):
+        """Получить список правил веб-безопасности шаблона"""
+        try:
+            result = self._server.v1.cccontent.safe.browsing.rules.list(self._auth_token, template_id, 0, 100000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_template_safebrowsing_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_safebrowsing_rule(self, template_id, rule):
+        """Добавить новое правило веб-безопасности в шаблон"""
+        try:
+            result = self._server.v1.cccontent.safe.browsing.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_safebrowsing_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_safebrowsing_rule(self, template_id, rule_id, rule):
+        """Обновить правило веб-безопасности в шаблоне"""
+        try:
+            result = self._server.v1.cccontent.safe.browsing.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_safebrowsing_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_tunnel_inspection_rules(self, template_id):
+        """Получить список правил инспектирования туннелей шаблона"""
+        try:
+            result = self._server.v1.ccfirewall.tunnel.inspection.rules.list(self._auth_token, template_id, 0, 5000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_tunnel_inspection_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_tunnel_inspection_rule(self, template_id, rule):
+        """Добавить новое правило инспектирования туннелей в шаблон"""
+        try:
+            result = self._server.v1.ccfirewall.tunnel.inspection.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_tunnel_inspection_rule(self, template_id, rule_id, rule):
+        """Обновить правило инспектирования туннелей в шаблоне"""
+        try:
+            result = self._server.v1.ccfirewall.tunnel.inspection.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_ssldecrypt_rules(self, template_id):
+        """Получить список правил инспектирования SSL шаблона"""
+        try:
+            result = self._server.v1.cccontent.ssl.decryption.rules.list(self._auth_token, template_id, 0, 10000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_ssldecrypt_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_ssldecrypt_rule(self, template_id, rule):
+        """Добавить новое правило инспектирования SSL в шаблон"""
+        try:
+            result = self._server.v1.cccontent.ssl.decryption.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_ssldecrypt_rule(self, template_id, rule_id, rule):
+        """Обновить правило инспектирования SSL в шаблоне"""
+        try:
+            result = self._server.v1.cccontent.ssl.decryption.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_sshdecrypt_rules(self, template_id):
+        """Получить список правил инспектирования SSH шаблона"""
+        try:
+            result = self._server.v1.cccontent.ssh.decryption.rules.list(self._auth_token, template_id, 0, 10000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_sshdecrypt_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_sshdecrypt_rule(self, template_id, rule):
+        """Добавить новое правило инспектирования SSH в шаблон"""
+        try:
+            result = self._server.v1.cccontent.ssh.decryption.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_sshdecrypt_rule(self, template_id, rule_id, rule):
+        """Обновить правило инспектирования SSH в шаблоне"""
+        try:
+            result = self._server.v1.cccontent.ssh.decryption.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_mailsecurity_rules(self, template_id):
+        """Получить список правил защиты почтового трафика шаблона"""
+        try:
+            result = self._server.v1.ccmailsecurity.rules.list(self._auth_token, template_id, 0, 100000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_mailsecurity_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_mailsecurity_rule(self, template_id, rule):
+        """Добавить новое правило защиты почтового трафика в шаблон"""
+        try:
+            result = self._server.v1.ccmailsecurity.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_mailsecurity_rule: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_mailsecurity_rule(self, template_id, rule_id, rule):
+        """Обновить правило защиты почтового трафика в шаблоне"""
+        try:
+            result = self._server.v1.ccmailsecurity.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_mailsecurity_rule: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
+    def get_template_mailsecurity_antispam(self, template_id):
+        """Получить конфигурацию dnsbl и batv защиты почтового трафика шаблона"""
+        try:
+            result = self._server.v1.ccmailsecurity.antispam.fetch(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_mailsecurity_antispam: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def set_template_mailsecurity_antispam(self, template_id, config):
+        """Установить конфигурацию антиспама для почтового трафика в шаблоне"""
+        try:
+            result = self._server.v1.ccmailsecurity.antispam.update(self._auth_token, template_id, config)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.set_template_mailsecurity_antispam: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
     def get_template_icap_servers(self, template_id):
         """Получить список серверов ICAP шаблона"""
         try:
@@ -1580,6 +1722,78 @@ class McXmlRpc:
             result = self._server.v1.ccicap.profile.update(self._auth_token, template_id, server_id, server)
         except rpc.Fault as err:
             return 1, f'Error mclib.update_template_icap_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_icap_rules(self, template_id):
+        """Получить список правил ICAP шаблона"""
+        try:
+            result = self._server.v1.ccicap.rules.list(self._auth_token, template_id, 0, 100000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_icap_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_icap_rule(self, template_id, rule):
+        """Добавить новое ICAP-правило в шаблон"""
+        try:
+            result = self._server.v1.ccicap.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_icap_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_icap_rule(self, template_id, rule_id, rule):
+        """Обновить ICAP-правило в шаблоне"""
+        try:
+            result = self._server.v1.ccicap.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_icap_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_dos_profiles(self, template_id):
+        """Получить список профилей DoS шаблона"""
+        try:
+            result = self._server.v1.ccdos.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_dos_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_dos_profile(self, template_id, profile):
+        """Добавить новый профиль DoS в шаблон"""
+        try:
+            result = self._server.v1.ccdos.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_dos_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_dos_profile(self, template_id, profile_id, profile):
+        """Обновить профиль DoS в шаблоне"""
+        try:
+            result = self._server.v1.ccdos.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_dos_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_dos_rules(self, template_id):
+        """Получить список правил защиты DoS шаблона"""
+        try:
+            result = self._server.v1.ccdos.rules.list(self._auth_token, template_id, 0, 100000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_dos_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_dos_rule(self, template_id, rule):
+        """Добавить новое правило защиты DoS в шаблон"""
+        try:
+            result = self._server.v1.ccdos.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_dos_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_dos_rule(self, template_id, rule_id, rule):
+        """Обновить правило защиты DoS в шаблоне"""
+        try:
+            result = self._server.v1.ccdos.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_dos_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
 ############################# Глобальный портал #####################################################################

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.2
+# Версия 2.3 09.09.2024
 #
 
 import os, sys, json, time
@@ -400,6 +400,7 @@ def import_useragent_lists(parent, path):
 
     parent.stepChanged.emit('BLUE|Импорт списка "Useragent браузеров" в раздел "Библиотеки/Useragent браузеров".')
     error = 0
+
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'useragent')
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
@@ -3360,7 +3361,7 @@ def import_captive_portal_rules(parent, path):
         item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
         item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
-        item['urls'] = get_urls_id(parent, item)
+        item['urls'] = get_urls_id(parent, item['urls'], item)
         item['url_categories'] = get_url_categories_id(parent, item)
         item['time_restrictions'] = get_time_restrictions(parent, item)
 
@@ -3599,7 +3600,6 @@ def import_firewall_rules(parent, path):
         item.pop('apps_negate', None)
 
         item['name'] = func.get_restricted_name(item['name'])
-        item['position'] = 'last'
         item['position_layer'] = 'pre'
         if item['scenario_rule_id']:
             try:
@@ -3664,6 +3664,7 @@ def import_firewall_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило МЭ "{item["name"]}" обновлено.')
         else:
+            item['position'] = 'last'
             err, result = parent.utm.add_template_firewall_rule(parent.template_id, item)
             if err:
                 error = 1
@@ -3706,7 +3707,6 @@ def import_nat_rules(parent, path):
         item.pop('time_created', None)
         item.pop('time_updated', None)
         item['name'] = func.get_restricted_name(item['name'])
-        item['position'] = 'last'
         item['position_layer'] = 'pre'
         item['zone_in'] = get_zones_id(parent, 'src', item['zone_in'], item)
         item['zone_out'] = get_zones_id(parent, 'dst', item['zone_out'], item)
@@ -3737,6 +3737,7 @@ def import_nat_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило "{item["name"]}" updated.')
         else:
+            item['position'] = 'last'
             err, result = parent.utm.add_template_traffic_rule(parent.template_id, item)
             if err:
                 error = 1
@@ -3759,6 +3760,9 @@ def import_loadbalancing_rules(parent, path):
         parent.stepChanged.emit(f'RED|    {result}')
         parent.error = 1
         return
+    print(json.dumps(result, indent=4))
+    return
+
     import_loadbalancing_tcpudp(parent, path, result)
     import_loadbalancing_icap(parent, path, result)
     import_loadbalancing_reverse(parent, path, result)
@@ -3939,7 +3943,6 @@ def import_shaper_rules(parent, path):
 
     for item in data:
         item['name'] = func.get_restricted_name(item['name'])
-        item['position'] = 'last'
         item['position_layer'] = 'pre'
         if item['scenario_rule_id']:
             try:
@@ -3975,6 +3978,7 @@ def import_shaper_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило пропускной способности "{item["name"]}" updated.')
         else:
+            item['position'] = 'last'
             err, result = parent.utm.add_template_shaper_rule(parent.template_id, item)
             if err:
                 error = 1
@@ -3991,14 +3995,31 @@ def import_shaper_rules(parent, path):
 #-------------------------------------------- Политики безопасности --------------------------------------------------
 def import_content_rules(parent, path):
     """Импортировать список правил фильтрации контента"""
-    parent.stepChanged.emit('BLUE|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
     json_file = os.path.join(path, 'config_content_rules.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
-    if not parent.scenarios_rules:
-        set_scenarios_rules(parent)
+    parent.stepChanged.emit('BLUE|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
+    error = 0
+
+    if not parent.response_pages:
+        if get_response_pages(parent):    # Устанавливаем атрибут parent.response_pages
+            return
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'morphology')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    morphology_list = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useragent_list = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_template_content_rules(parent.template_id)
     if err:
@@ -4007,58 +4028,78 @@ def import_content_rules(parent, path):
         return
     content_rules = {x['name']: x['id'] for x in result}
 
-    if not parent.mc_zones:     # Устанавливаем атрибут parent.mc_zones
-        if set_mc_zones(parent):
-            return
-
-    if not parent.mc_iplists:
-        if set_mc_iplists(parent):     # Устанавливаем атрибут parent.mc_iplists
-            return
-
-    if not parent.mc_url_lists:
-        if set_mc_url_lists(parent):     # Устанавливаем атрибут parent.mc_url_lists
-            return
-
-    if not parent.mc_time_restrictions:
-        if set_mc_time_restrictions(parent):     # Устанавливаем атрибут parent.mc_time_restrictions
-            return
-
-    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'urlcategorygroup')
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    url_category_groups = {x['name']: x['id'] for x in result}
-
-    err, result = parent.utm.get_url_categories()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    url_categories = {x['name']: x['id'] for x in result}
-
-    error = 0
     for item in data:
         item.pop('time_created', None)
         item.pop('time_updated', None)
         item['name'] = func.get_restricted_name(item['name'])
-        item['position'] = 'last'
         item['position_layer'] = 'pre'
-        item['src_zones'] = get_zones(parent, item['src_zones'], item["name"])
-        item['dst_zones'] = get_zones(parent, item['dst_zones'], item["name"])
-        item['src_ips'] = get_ips(parent, item['src_ips'], item["name"])
-        item['dst_ips'] = get_ips(parent, item['dst_ips'], item["name"])
-        item['users'] = get_guids_users_and_groups(parent, item['users'], item['name']) if parent.mc_data['ldap_servers'] else []
-        item['url_categories'] = get_url_categories_id(parent, item['url_categories'], url_category_groups, url_categories, item["name"])
-        item['urls'] = get_urls_id(parent, item['urls'], item["name"])
-        item['time_restrictions'] = get_time_restrictions(parent, item['time_restrictions'], item['name'])
+        try:
+            item['blockpage_template_id'] = parent.response_pages[item['blockpage_template_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден шаблон страницы блокировки "{err}". Импортируйте шаблоны страниц и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден шаблон страницы блокировки "{err}".'
+            item['enabled'] = False
+            item['blockpage_template_id'] = -1
+            error = 1
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        item['url_categories'] = get_url_categories_id(parent, item)
+        item['urls'] = get_urls_id(parent, item['urls'], item)
+        item['referers'] = get_urls_id(parent, item['referers'], item)
+        item['referer_categories'] = get_url_categories_id(parent, item, referer=1)
+        item['time_restrictions'] = get_time_restrictions(parent, item)
+
         if item['scenario_rule_id']:
             try:
-                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+                item['scenario_rule_id'] = parent.mc_data['scenarios'][item['scenario_rule_id']]
             except KeyError as err:
-                parent.stepChanged.emit(f'bRED|    Правило "{item["name"]}": не найден сценарий "{err}". Загрузите сценарии и повторите попытку.')
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден сценарий "{err}". Загрузите сценарии и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден сценарий "{err}".'
+                item['enabled'] = False
                 item['scenario_rule_id'] = False
-            
+                error = 1
+
+        new_morph_categories = []
+        for x in item['morph_categories']:
+            if x in parent.mc_data['ug_morphology']:
+                new_morph_categories.append(f'id-{x}')
+            else:
+                try:
+                    new_morph_categories.append(morphology_list[x])
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден список морфологии "{err}". Загрузите списки морфологии и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден список морфологии "{err}".'
+                    item['enabled'] = False
+                    error = 1
+        item['morph_categories'] = new_morph_categories
+
+        new_user_agents = []
+        for x in item['user_agents']:
+            if x[1] in parent.mc_data['ug_useragents']:
+                new_user_agents.append(['list_id', f'id-{x[1]}'])
+            else:
+                try:
+                    new_user_agents.append(['list_id', useragent_list[x[1]]])
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден список UserAgent "{err}". Загрузите списки UserAgent браузеров и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден список UserAgent "{err}".'
+                    item['enabled'] = False
+                    error = 1
+        item['user_agents'] = new_user_agents
+
+        new_content_types = []
+        for x in item['content_types']:
+            try:
+                new_content_types.append(parent.mc_data['mime'][x])
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден список типов контента "{err}". Загрузите списки типов контента и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден список типов контента "{err}".'
+                item['enabled'] = False
+                error = 1
+        item['content_types'] = new_content_types
 
         if item['name'] in content_rules:
             parent.stepChanged.emit(f'GRAY|    Правило контентной фильтрации "{item["name"]}" уже существует.')
@@ -4070,19 +4111,360 @@ def import_content_rules(parent, path):
             else:
                 parent.stepChanged.emit(f'BLACK|       Правило контентной фильтрации "{item["name"]}" обновлено.')
         else:
+            item['position'] = 'last'
             err, result = parent.utm.add_template_content_rule(parent.template_id, item)
             if err:
                 error = 1
                 parent.stepChanged.emit(f'RED|    {result}  [Правило "{item["name"]}"]')
             else:
                 content_rules[item['name']] = result
-                parent.stepChanged.emit(f'BLACK|    Правило контентной фильтрации "{item["name"]}" добавлено.')
+                parent.stepChanged.emit(f'BLACK|    Правило контентной фильтрации "{item["name"]}" импортировано.')
 
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
     else:
         parent.stepChanged.emit('GREEN|    Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".')
+
+
+def import_safebrowsing_rules(parent, path):
+    """Импортируем список правил веб-безопасности"""
+    json_file = os.path.join(path, 'config_safebrowsing_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил веб-безопасности в раздел "Политики безопасности/Веб-безопасность".')
+    error = 0
+
+    err, result = parent.utm.get_template_safebrowsing_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    safebrowsing_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        item['time_restrictions'] = get_time_restrictions(parent, item)
+        item['url_list_exclusions'] = get_urls_id(parent, item['url_list_exclusions'], item)
+
+        if item['name'] in safebrowsing_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило веб-безопасности "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_safebrowsing_rule(parent.template_id, safebrowsing_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило веб-безопасности: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило веб-безопасности "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_safebrowsing_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило веб-безопасности: "{item["name"]}"]')
+            else:
+                safebrowsing_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило веб-безопасности "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил веб-безопасности.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила веб-безопасности импортированны в раздел "Политики безопасности/Веб-безопасность".')
+
+
+def import_tunnel_inspection_rules(parent, path):
+    """Импортируем список правил инспектирования туннелей"""
+    json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил инспектирования туннелей в раздел "Политики безопасности/Инспектирование туннелей".')
+    error = 0
+
+    err, rules = parent.utm.get_template_tunnel_inspection_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    tunnel_inspect_rules = {x['name']: x['id'] for x in rules}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+
+        if item['name'] in tunnel_inspect_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило инспектирования туннелей "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_tunnel_inspection_rule(parent.template_id, tunnel_inspect_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило инспектирования туннелей: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило инспектирования туннелей "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_tunnel_inspection_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило инспектирования туннелей: "{item["name"]}"]')
+            else:
+                tunnel_inspect_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило инспектирования туннелей "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования туннелей.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила инспектирования туннелей импортированны в раздел "Политики безопасности/Инспектирование туннелей".')
+
+
+def import_ssldecrypt_rules(parent, path):
+    """Импортируем список правил инспектирования SSL"""
+    json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил инспектирования SSL в раздел "Политики безопасности/Инспектирование SSL".')
+    error = 0
+
+    err, rules = parent.utm.get_template_ssl_forward_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    ssl_forward_profiles = {x['name']: x['id'] for x in rules}
+    ssl_forward_profiles[-1] = -1
+
+    err, rules = parent.utm.get_template_ssldecrypt_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    ssldecrypt_rules = {x['name']: x['id'] for x in rules}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['url_categories'] = get_url_categories_id(parent, item)
+        item['urls'] = get_urls_id(parent, item['urls'], item)
+        item['time_restrictions'] = get_time_restrictions(parent, item)
+        try:
+            item['ssl_profile_id'] = parent.mc_data['ssl_profiles'][item['ssl_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден профиль SSL "{err}". Загрузите профили SSL и повторите импорт.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль SSL "{err}".'
+            item['enabled'] = False
+            error = 1
+            item['ssl_profile_id'] = parent.mc_data['ssl_profiles']['Default SSL profile']
+        try:
+            item['ssl_forward_profile_id'] = ssl_forward_profiles[item['ssl_forward_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден профиль пересылки SSL "{err}". Загрузите профили пересылки SSL и повторите импорт.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль пересылки SSL "{err}".'
+            item['enabled'] = False
+            error = 1
+            item['ssl_forward_profile_id'] = -1
+
+        if item['name'] in ssldecrypt_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило инспектирования SSL "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_ssldecrypt_rule(parent.template_id, ssldecrypt_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило инспектирования SSL: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило инспектирования SSL "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_ssldecrypt_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило инспектирования SSL: "{item["name"]}"]')
+                continue
+            else:
+                ssldecrypt_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило инспектирования SSL "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSL.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила инспектирования SSL импортированны в раздел "Политики безопасности/Инспектирование SSL".')
+
+
+def import_sshdecrypt_rules(parent, path):
+    """Импортируем список правил инспектирования SSH"""
+    json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил инспектирования SSH в раздел "Политики безопасности/Инспектирование SSH".')
+    error = 0
+
+    err, rules = parent.utm.get_template_sshdecrypt_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    sshdecrypt_rules = {x['name']: x['id'] for x in rules}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['time_restrictions'] = get_time_restrictions(parent, item)
+        item['protocols'] = get_services(parent, item['protocols'], item)
+
+        if item['name'] in sshdecrypt_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило инспектирования SSH "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_sshdecrypt_rule(parent.template_id, sshdecrypt_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило инспектирования SSH: {item["name"]}]')
+                continue
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило инспектирования SSH "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_sshdecrypt_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило инспектирования SSH: "{item["name"]}"]')
+                continue
+            else:
+                sshdecrypt_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило инспектирования SSH "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSH.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила инспектирования SSH импортированны в раздел "Политики безопасности/Инспектирование SSH".')
+
+
+def import_mailsecurity(parent, path):
+    import_mailsecurity_rules(parent, path)
+    import_mailsecurity_antispam(parent, path)
+
+def import_mailsecurity_rules(parent, path):
+    """Импортируем список правил защиты почтового трафика"""
+    json_file = os.path.join(path, 'config_mailsecurity_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил защиты почтового трафика в раздел "Политики безопасности/Защита почтового трафика".')
+    error = 0
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'emailgroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    email = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_mailsecurity_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    mailsecurity_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        if not item['services']:
+            item['services'] = [['service', 'SMTP'], ['service', 'POP3'], ['service', 'SMTPS'], ['service', 'POP3S']]
+        item['services'] = get_services(parent, item['services'], item)
+
+        try:
+            item['envelope_from'] = [[x[0], email[x[1]]] for x in item['envelope_from']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error! Правило "{item["name"]}": Не найден список почтовых адресов "{err}". Загрузите список почтовых адресов и повторите попытку.')
+            item['envelope_from'] = []
+
+        try:
+            item['envelope_to'] = [[x[0], email[x[1]]] for x in item['envelope_to']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error! Правило "{item["name"]}": Не найден список почтовых адресов "{err}". Загрузите список почтовых адресов и повторите попытку.')
+            item['envelope_to'] = []
+
+        if item['name'] in mailsecurity_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_mailsecurity_rule(parent.template_id, mailsecurity_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_mailsecurity_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило: "{item["name"]}"]')
+            else:
+                mailsecurity_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты почтового трафика.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила защиты почтового трафика импортированы в раздел "Политики безопасности/Защита почтового трафика".')
+
+
+def import_mailsecurity_antispam(parent, path):
+    """Импортируем dnsbl и batv защиты почтового трафика"""
+    json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    json_file = os.path.join(path, 'config_mailsecurity_batv.json')
+    err, batv = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        data['enabled'] = False
+    else:
+        data['enabled'] = batv['enabled']
+
+    parent.stepChanged.emit('BLUE|Импорт настроек антиспама защиты почтового трафика в раздел "Политики безопасности/Защита почтового трафика".')
+
+    data['white_list'] = get_ips_id(parent, 'white_list', data['white_list'], {'name': 'antispam DNSBL'})
+    data['black_list'] = get_ips_id(parent, 'black_list', data['black_list'], {'name': 'antispam DNSBL'})
+
+    err, result = parent.utm.set_template_mailsecurity_antispam(parent.template_id, data)
+    if err:
+        parent.error = 1
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек антиспама.')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Настройки антиспама импортированы.')
 
 
 def import_icap_servers(parent, path):
@@ -4123,6 +4505,221 @@ def import_icap_servers(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов ICAP.')
     else:
         parent.stepChanged.emit('GREEN|    Серверы ICAP импортированы в раздел "Политики безопасности/ICAP-серверы".')
+
+
+def import_icap_rules(parent, path):
+    """Импортируем список правил ICAP"""
+    json_file = os.path.join(path, 'config_icap_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил ICAP в раздел "Политики безопасности/ICAP-правила".')
+    error = 0
+
+    if not parent.icap_servers:
+        if get_icap_servers(parent):      # Устанавливаем атрибут parent.icap_servers
+            return
+
+    err, result = parent.utm.get_template_loadbalancing_rules(parent.template_id, query={'query': 'type = icap'})
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    icap_loadbalancing = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_icap_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    icap_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item.pop('time_created', None)
+        item.pop('time_updated', None)
+
+        new_servers = []
+        for server in item['servers']:
+            if server[0] == 'lbrule':
+                try:
+                    new_servers.append(['lbrule', icap_loadbalancing[server[1]]])
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден балансировщик серверов ICAP "{err}". Импортируйте балансировщики ICAP и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден балансировщик серверов ICAP "{err}".'
+                    item['enabled'] = False
+                    error = 1
+            elif server[0] == 'profile':
+                try:
+                    new_servers.append(['profile', parent.icap_servers[server[1]]])
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сервер ICAP "{err}". Импортируйте сервера ICAP и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден сервер ICAP "{err}".'
+                    item['enabled'] = False
+                    error = 1
+        item['servers'] = new_servers
+
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['url_categories'] = get_url_categories_id(parent, item)
+        item['urls'] = get_urls_id(parent, item['urls'], item)
+        new_content_types = []
+        for x in item['content_types']:
+            try:
+                new_content_types.append(parent.mc_data['mime'][x])
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден список типов контента "{err}". Загрузите списки типов контента и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден список типов контента "{err}".'
+                item['enabled'] = False
+                error = 1
+        item['content_types'] = new_content_types
+
+        if item['name'] in icap_rules:
+            parent.stepChanged.emit(f'GRAY|    ICAP-правило "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_icap_rule(parent.template_id, icap_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [ICAP-правило: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       ICAP-правило "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_icap_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [ICAP-правило: "{item["name"]}"]')
+            else:
+                icap_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    ICAP-правило "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил ICAP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила ICAP импортированы в раздел "Политики безопасности/ICAP-правила".')
+
+
+def import_dos_profiles(parent, path):
+    """Импортируем список профилей DoS"""
+    json_file = os.path.join(path, 'config_dos_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт профилей DoS в раздел "Политики безопасности/Профили DoS".')
+    error = 0
+
+    err, result = parent.utm.get_template_dos_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    dos_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if item['name'] in dos_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль DoS "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_dos_profile(parent.template_id, dos_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Профиль DoS: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Профиль DoS "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_dos_profile(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль DoS: "{item["name"]}"]')
+            else:
+                dos_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль DoS "{item["name"]}" добавлен.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей DoS.')
+    else:
+        parent.stepChanged.emit('GREEN|    Профили DoS импортированы в раздел "Политики безопасности/Профили DoS".')
+
+
+def import_dos_rules(parent, path):
+    """Импортируем список правил защиты DoS"""
+    json_file = os.path.join(path, 'config_dos_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил защиты DoS в раздел "Политики безопасности/Правила защиты DoS".')
+    error = 0
+
+    err, result = parent.utm.get_template_dos_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    dos_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_dos_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    dos_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        item['services'] = get_services(parent, item['services'], item)
+        item['time_restrictions'] = get_time_restrictions(parent, item)
+        if item['dos_profile']:
+            try:
+                item['dos_profile'] = dos_profiles[item['dos_profile']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль DoS "{err}". Импортируйте профили DoS и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль DoS "{err}".'
+                item['dos_profile'] = False
+                item['enabled'] = False
+                error = 1
+        if item['scenario_rule_id']:
+            try:
+                item['scenario_rule_id'] = parent.mc_data['scenarios'][item['scenario_rule_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий "{err}". Импортируйте сценарии и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден сценарий "{err}".'
+                item['scenario_rule_id'] = False
+                item['enabled'] = False
+                error = 1
+
+        if item['name'] in dos_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило защиты DoS "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_dos_rule(parent.template_id, dos_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило защиты DoS: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило защиты DoS "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_dos_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило защиты DoS: "{item["name"]}"]')
+            else:
+                dos_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило защиты DoS "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты DoS.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила защиты DoS импортированы в раздел "Политики безопасности/Правила защиты DoS".')
+
 
 #-------------------------------------------- Глобальный портал --------------------------------------------------
 def import_reverseproxy_servers(parent, path):
@@ -4230,15 +4827,15 @@ import_funcs = {
     'LoadBalancing': import_loadbalancing_rules,
     'TrafficShaping': import_shaper_rules,
     "ContentFiltering": import_content_rules,
-    "SafeBrowsing": pass_function, # import_safebrowsing_rules,
-    "TunnelInspection": pass_function, # import_tunnel_inspection_rules,
-    "SSLInspection": pass_function, # import_ssldecrypt_rules,
-    "SSHInspection": pass_function, # import_sshdecrypt_rules,
+    "SafeBrowsing": import_safebrowsing_rules,
+    "TunnelInspection": import_tunnel_inspection_rules,
+    "SSLInspection": import_ssldecrypt_rules,
+    "SSHInspection": import_sshdecrypt_rules,
     "IntrusionPrevention": pass_function, # import_idps_rules,
-    "MailSecurity": pass_function, # import_mailsecurity,
-    "ICAPRules": pass_function, # import_icap_rules,
-    "DoSProfiles": pass_function, # import_dos_profiles,
-    "DoSRules": pass_function, # import_dos_rules,
+    "MailSecurity": import_mailsecurity,
+    "ICAPRules": import_icap_rules,
+    "DoSProfiles": import_dos_profiles,
+    "DoSRules": import_dos_rules,
     "SCADARules": pass_function, # import_scada_rules,
     "CustomWafLayers": pass_function, # import_waf_custom_layers,
     "SystemWafRules": pass_function, # pass_function,
@@ -4269,14 +4866,11 @@ def get_ips_id(parent, mode, rule_ips, rule):
             new_rule_ips.append(ips)
         try:
             if ips[0] == 'list_id':
-                if ips[1] in parent.mc_data['block_iplists']:
-                    new_rule_ips.append(['list_id', f'id-{ips[1]}'])
-                else:
-                    new_rule_ips.append(['list_id', parent.mc_data['ip_lists'][ips[1]]])
+                new_rule_ips.append(['list_id', parent.mc_data['ip_lists'][ips[1]]])
             elif ips[0] == 'urllist_id':
                 new_rule_ips.append(['urllist_id', parent.mc_data['url_lists'][ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error! Правило "{rule["name"]}": Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
             rule['enabled'] = False
             parent.error = 1
@@ -4293,7 +4887,7 @@ def get_zones_id(parent, mode, zones, rule):
         try:
             new_zones.append(parent.mc_data['zones'][zone])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error! Не найдена {mode}-зона "{zone}" для правила {rule["name"]}.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена {mode}-зона "{zone}". Импортируйте зоны и повторите попытку.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена {mode}-зона "{zone}".'
             rule['enabled'] = False
             parent.error = 1
@@ -4305,9 +4899,6 @@ def get_guids_users_and_groups(parent, rule):
     Получить GUID-ы групп и пользователей по их именам.
     Заменяет имена локальных и доменных пользователей и групп на GUID-ы.
     """
-    if not rule['users']:
-        return []
-
     new_users = []
     for item in rule['users']:
         match item[0]:
@@ -4341,6 +4932,14 @@ def get_guids_users_and_groups(parent, rule):
                             parent.error = 1
                         else:
                             new_users.append(['user', result])
+                else:
+                    try:
+                        new_users.append(['user', parent.mc_data['local_users'][item[1]]])
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден локальный пользователь "{err}". Импортируйте локальных пользователей.')
+                        rule['description'] = f'{rule["description"]}\nError: Не найден локальный пользователь "{err}".'
+                        rule['enabled'] = False
+                        parent.error = 1
             case 'group':
                 group_name = None
                 try:
@@ -4369,6 +4968,14 @@ def get_guids_users_and_groups(parent, rule):
                             parent.error = 1
                         else:
                             new_users.append(['group', result])
+                else:
+                    try:
+                        new_users.append(['group', parent.mc_data['local_groups'][item[1]]])
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена группа пользователей "{err}". Импортируйте группы пользователей.')
+                        rule['description'] = f'{rule["description"]}\nError: Не найдена группа пользователей "{err}".'
+                        rule['enabled'] = False
+                        parent.error = 1
     return new_users
 
 
@@ -4382,38 +4989,39 @@ def get_services(parent, service_list, rule):
             elif item[0] == 'list_id':
                 new_service_list.append(['list_id', parent.mc_data['service_groups'][item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило {rule["name"]}]: Не найден сервис "{item[1]}".')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден сервис "{item[1]}". Загрузите сервисы и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
             rule['enabled'] = False
             parent.error = 1
     return new_service_list
 
 
-def get_url_categories_id(parent, rule):
+def get_url_categories_id(parent, rule, referer=0):
     """Получаем ID категорий URL и групп категорий URL. Если список не существует на MC, то он пропускается."""
     new_categories = []
-    for item in rule['url_categories']:
+    rule_data = rule['referer_categories'] if referer else rule['url_categories']
+    for item in rule_data:
         try:
             if item[0] == 'list_id':
                 new_categories.append(['list_id', parent.mc_data['url_categorygroups'][item[1]]])
-            if item[0] == 'category_id':
-                new_categories.append(['category_id', parent.mc_data['url categories'][item[1]]])
+            elif item[0] == 'category_id':
+                new_categories.append(['category_id', parent.mc_data['url_categories'][item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило {rule["name"]}]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
             rule['enabled'] = False
             parent.error = 1
     return new_categories
 
 
-def get_urls_id(parent, rule):
+def get_urls_id(parent, urls, rule):
     """Получаем ID списков URL. Если список не существует на MC, то он пропускается."""
     new_urls = []
-    for item in rule['urls']:
+    for item in urls:
         try:
             new_urls.append(parent.mc_data['url_lists'][item])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило {rule["name"]}]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
             rule['enabled'] = False
             parent.error = 1
@@ -4431,7 +5039,7 @@ def get_apps(parent, rule):
                 try:
                     new_app_list.append(['ro_group', parent.mc_data['l7_categories'][app[1]]])
                 except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error! Правило "{rule["name"]}": Не найдена категория l7 "{app[1]}".')
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена категория l7 "{app[1]}".')
                     parent.stepChanged.emit(f'RED|    Возможно нет лицензии и MC не получил список категорий l7. Установите лицензию и повторите попытку.')
                     rule['description'] = f'{rule["description"]}\nError: Не найдена категория l7 "{app[1]}".'
                     rule['enabled'] = False
@@ -4440,7 +5048,7 @@ def get_apps(parent, rule):
             try:
                 new_app_list.append(['group', parent.mc_data['application_groups'][app[1]]])
             except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error! Правило "{rule["name"]}": Не найдена группа приложений l7 "{app[1]}".')
+                parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена группа приложений l7 "{app[1]}".')
                 rule['description'] = f'{rule["description"]}\nError: Не найдена группа приложений l7 "{app[1]}".'
                 rule['enabled'] = False
                 parent.error = 1
@@ -4469,6 +5077,7 @@ def get_response_pages(parent):
         parent.error = 1
         return 1
     parent.response_pages = {x['name']: x['id'] for x in result}
+    parent.response_pages[-1] = -1
     return 0
 
 def get_client_certificate_profiles(parent):

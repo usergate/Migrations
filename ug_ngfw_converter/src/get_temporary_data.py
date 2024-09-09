@@ -120,7 +120,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['url_categories'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['url_categories'] = {x['id']: x['name'] for x in result}
 
         # Получаем список календарей
         self.stepChanged.emit(f'BLACK|    Получаем список календарей')
@@ -278,7 +278,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['url_categories'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['url_categories'] = {x['name']: x['id'] for x in result}
 
         # Получаем список календарей
         self.stepChanged.emit(f'BLACK|    Получаем список календарей')

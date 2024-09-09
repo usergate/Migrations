@@ -21,7 +21,7 @@
 # Version 1.2
 #--------------------------------------------------------------------------------------------------- 
 #
-import os, sys
+import os, sys, json
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import default_urlcategorygroup
 from common_func import write_bin_file
@@ -35,7 +35,37 @@ class GetTemporaryData(QThread):
         self.utm = utm
         self.template_id = template_id
         self.mc_data = {}
-        self.mc_data['block_iplists'] = {'BOTNET_BLACK_LIST', 'BANKS_IP_LIST', 'ZAPRET_INFO_BLACK_LIST_IP'}
+        self.ug_iplists = ('BOTNET_BLACK_LIST', 'BANKS_IP_LIST', 'ZAPRET_INFO_BLACK_LIST_IP')
+        self.ug_url_lists = ('ENTENSYS_WHITE_LIST', 'BAD_SEARCH_BLACK_LIST', 'ENTENSYS_BLACK_LIST',
+            'ENTENSYS_KAZ_BLACK_LIST', 'FISHING_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST_DOMAIN')
+        self.ug_mime = ('MIME_CAT_APPLICATIONS', 'MIME_CAT_DOCUMENTS', 'MIME_CAT_IMAGES',
+            'MIME_CAT_JAVASCRIPT', 'MIME_CAT_SOUNDS', 'MIME_CAT_VIDEO')
+        self.mc_data['ug_morphology'] = ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
+            'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
+            'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
+            'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS')
+        self.mc_data['ug_useragents'] = (
+            'USERAGENT_ANDROID',
+            'USERAGENT_APPLE',
+            'USERAGENT_BLACKBERRY',
+            'USERAGENT_CHROMEGENERIC',
+            'USERAGENT_CHROMEOS',
+            'USERAGENT_CHROMIUM',
+            'USERAGENT_EDGE',
+            'USERAGENT_FFGENERIC',
+            'USERAGENT_IE',
+            'USERAGENT_IOS',
+            'USERAGENT_LINUX',
+            'USERAGENT_MACOS',
+            'USERAGENT_MOBILESAFARI',
+            'USERAGENT_OPERA',
+            'USERAGENT_SAFARIGENERIC',
+            'USERAGENT_SPIDER',
+            'USERAGENT_UCBROWSER',
+            'USERAGENT_WIN',
+            'USERAGENT_WINPHONE',
+            'USERAGENT_YABROWSER'
+        )
         self.error = 0
 
     def run(self):
@@ -90,14 +120,6 @@ class GetTemporaryData(QThread):
             self.error = 1
         self.mc_data['service_groups'] = {x['name']: x['id'] for x in result}
 
-        # Получаем список IP-листов
-        self.stepChanged.emit(f'BLACK|    Получаем список IP-листов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'network')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['ip_lists'] = {x['name']: x['id'] for x in result}
-
         # Получаем список типов контента
         self.stepChanged.emit(f'BLACK|    Получаем список типов контента.')
         err, result = self.utm.get_template_nlists_list(self.template_id, 'mime')
@@ -105,6 +127,18 @@ class GetTemporaryData(QThread):
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
         self.mc_data['mime'] = {x['name'].strip(): x['id'] for x in result}
+        for item in self.ug_mime:
+            self.mc_data['mime'][item] = f'id-{item}'
+
+        # Получаем список IP-листов
+        self.stepChanged.emit(f'BLACK|    Получаем список IP-листов.')
+        err, result = self.utm.get_template_nlists_list(self.template_id, 'network')
+        if err:
+            self.stepChanged.emit(f'RED|    {result}')
+            self.error = 1
+        self.mc_data['ip_lists'] = {x['name']: x['id'] for x in result}
+        for item in self.ug_iplists:
+            self.mc_data['ip_lists'][item] = f'id-{item}'
 
         # Получаем список URL-листов
         self.stepChanged.emit(f'BLACK|    Получаем список URL-листов.')
@@ -113,6 +147,8 @@ class GetTemporaryData(QThread):
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
         self.mc_data['url_lists'] = {x['name']: x['id'] for x in result}
+        for item in self.ug_url_lists:
+            self.mc_data['url_lists'][item] = f'id-{item}'
 
         # Получаем список календарей
         self.stepChanged.emit(f'BLACK|    Получаем список календарей.')

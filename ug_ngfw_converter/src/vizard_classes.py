@@ -227,7 +227,7 @@ class SelectMode(QWidget):
         if result == QDialog.DialogCode.Accepted:
             self.utm = dialog.utm
             self.label_node_name.setText(f'  {self.utm.node_name}')
-            self.label_version.setText(f'Версия: {self.utm.version}')
+            self.label_version.setText(f'Версия NGFW: {self.utm.version}')
             return True
         else:
             return False
@@ -371,7 +371,7 @@ class SelectImportMode(SelectMode):
     """Класс для выбора раздела конфигурации для импорта. Номер в стеке 2."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate NGFW</font></b>")
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
         self.btn3.setText("Импортировать всё")
@@ -563,7 +563,7 @@ class SelectMcImportMode(SelectMode):
         self.template_id = None
         self.template_name = None
         self.id_nodes = [f'node_{i}' for i in range(1, 100)]
-        self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для импорта в шаблон Management Center</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации в шаблон UserGate Management Center</font></b>")
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
         self.btn3.setText("Импортировать всё")

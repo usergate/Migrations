@@ -2734,39 +2734,39 @@ def export_reverseproxy_rules(parent, path):
 def export_waf_custom_layers(parent, path):
     """Экспортируем персональные WAF-слои. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт персональных слоёв WAF из раздела "WAF/Персональные WAF-слои".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
     error = 0
 
     err, data = parent.utm.get_waf_custom_layers_list()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
-        parent.error = 1
         error = 1
     else:
         for item in data:
             item.pop('id', None)
             item.pop('cc', None)
 
-        json_file = os.path.join(path, 'config_waf_custom_layers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте персональных слоёв WAF.')
+    else:
+        if data:
+            err, msg = func.create_dir(path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}')
+                parent.error = 1
+                return
 
-    out_message = f'GREEN|    Персональные WAF-слои выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте персональных слоёв WAF.' if error else out_message)
+            json_file = os.path.join(path, 'config_waf_custom_layers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Персональные WAF-слои выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет персональных WAF-слоёв для экспорта.')
 
 
 def export_waf_profiles_list(parent, path):
     """Экспортируем профили WAF. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт профилей WAF из раздела "WAF/WAF-профили".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
     error = 0
 
     err, result = parent.utm.get_waf_technology_list()
@@ -2793,8 +2793,7 @@ def export_waf_profiles_list(parent, path):
     err, data = parent.utm.get_waf_profiles_list()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
-        parent.error = 1
-        error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей WAF.')
     else:
         for item in data:
             item.pop('id', None)
@@ -2805,14 +2804,19 @@ def export_waf_profiles_list(parent, path):
                 else:
                     layer['id'] = waf_system_layers[layer['id']]
                     layer['protection_technologies'] = [waf_technology[x] for x in layer['protection_technologies']]
+        if data:
+            err, msg = func.create_dir(path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}')
+                parent.error = 1
+                return
 
-        json_file = os.path.join(path, 'config_waf_profiles.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Профили WAF выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей WAF.' if error else out_message)
-
+            json_file = os.path.join(path, 'config_waf_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Профили WAF выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет профилей WAF для экспорта.')
 
 #------------------------------------------------------- VPN ------------------------------------------------------------
 def export_vpn_security_profiles(parent, path):

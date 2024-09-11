@@ -1797,6 +1797,30 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ############################# Глобальный портал #####################################################################
+    def get_template_proxyportal_rules(self, template_id):
+        """Получить список ресурсов URL веб-портала шаблона"""
+        try:
+            result = self._server.v1.ccproxyportal.bookmarks.list(self._auth_token, template_id, 0, 10000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_proxyportal_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_proxyportal_rule(self, template_id, rule):
+        """Добавить новый URL-ресурс веб-портала в шаблон"""
+        try:
+            result = self._server.v1.ccproxyportal.bookmark.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_proxyportal_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_proxyportal_rule(self, template_id, rule_id, rule):
+        """Обновить URL-ресурс веб-портала в шаблоне"""
+        try:
+            result = self._server.v1.ccproxyportal.bookmark.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_proxyportal_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
     def get_template_reverseproxy_servers(self, template_id):
         """Получить список серверов reverse-прокси шаблона"""
         try:
@@ -1843,6 +1867,139 @@ class McXmlRpc:
             result = self._server.v1.ccreverseproxy.rule.update(self._auth_token, template_id, rule_id, rule)
         except rpc.Fault as err:
             return 1, f'Error mclib.update_template_reverseproxy_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+################################### WAF #############################################################################
+    def get_template_waf_profiles(self, template_id):
+        """Получить список профилей WAF шаблона"""
+        try:
+            result = self._server.v1.ccwaf.profiles.list(self._auth_token, template_id, 0, 100000, {}, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение профилей WAF шаблона [Error mclib.get_realms_list: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_template_waf_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+################################### VPN #############################################################################
+    def get_template_vpn_client_security_profiles(self, template_id):
+        """Получить клиентские профили безопасности VPN шаблона"""
+        try:
+            result = self._server.v1.ccvpn.client.security.profiles.list(self._auth_token, template_id, 0, 100000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_vpn_client_security_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_vpn_client_security_profile(self, template_id, profile):
+        """Добавить клиентский профиль безопасности VPN в шаблон"""
+        try:
+            result = self._server.v1.ccvpn.client.security.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add__templatevpn_client_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_vpn_client_security_profile(self, template_id, profile_id, profile):
+        """Обновить клиентский профиль безопасности VPN в шаблоне"""
+        try:
+            result = self._server.v1.ccvpn.client.security.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_vpn_client_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_vpn_server_security_profiles(self, template_id):
+        """Получить серверные профили безопасности VPN шаблона"""
+        try:
+            result = self._server.v1.ccvpn.server.security.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_vpn_server_security_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_vpn_server_security_profile(self, template_id, profile):
+        """Добавить серверный профиль безопасности VPN в шаблон"""
+        try:
+            result = self._server.v1.ccvpn.server.security.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_vpn_server_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_vpn_server_security_profile(self, template_id, profile_id, profile):
+        """Обновить серверный профиль безопасности VPN в шаблоне"""
+        try:
+            result = self._server.v1.ccvpn.server.security.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_vpn_server_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_vpn_networks(self, template_id):
+        """Получить список сетей VPN шаблона"""
+        try:
+            result = self._server.v1.ccvpn.tunnels.list(self._auth_token, template_id, 0, 1000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_vpn_networks: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_vpn_network(self, template_id, network):
+        """Добавить новую сеть VPN в шаблон"""
+        try:
+            result = self._server.v1.ccvpn.tunnel.add(self._auth_token, template_id, network)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_vpn_network: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_vpn_network(self, template_id, network_id, network):
+        """Обновить сеть VPN в шаблоне"""
+        try:
+            result = self._server.v1.ccvpn.tunnel.update(self._auth_token, template_id, network_id, network)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_vpn_network: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_vpn_server_rules(self, template_id):
+        """Получить список серверных правил VPN шаблона"""
+        try:
+            result = self._server.v1.ccvpn.server.rules.list(self._auth_token, template_id, 0, 10000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_vpn_server_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_vpn_server_rule(self, template_id, rule):
+        """Добавить новое серверное правило VPN в шаблон"""
+        try:
+            result = self._server.v1.ccvpn.server.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_vpn_server_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_vpn_server_rule(self, template_id, rule_id, rule):
+        """Обновить серверное правило VPN в шаблоне"""
+        try:
+            result = self._server.v1.ccvpn.server.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_vpn_server_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_vpn_client_rules(self, template_id):
+        """Получить список клиентских правил VPN шаблона"""
+        try:
+            result = self._server.v1.ccvpn.client.rules.list(self._auth_token, template_id, 0, 10000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_vpn_client_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_vpn_client_rule(self, template_id, rule):
+        """Добавить новое клиентское правило VPN в шаблон"""
+        try:
+            result = self._server.v1.ccvpn.client.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_vpn_client_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_vpn_client_rule(self, template_id, rule_id, rule):
+        """Обновить клиентское правило VPN в шаблоне"""
+        try:
+            result = self._server.v1.ccvpn.client.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_vpn_client_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
 ############################# Служебные методы ######################################################################

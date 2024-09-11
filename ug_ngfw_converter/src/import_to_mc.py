@@ -4722,6 +4722,69 @@ def import_dos_rules(parent, path):
 
 
 #-------------------------------------------- Глобальный портал --------------------------------------------------
+def import_proxyportal_rules(parent, path):
+    """Импортируем список URL-ресурсов веб-портала"""
+    parent.stepChanged.emit('BLUE|Импорт списка ресурсов веб-портала в раздел "Глобальный портал/Веб-портал".')
+    json_file = os.path.join(path, 'config_web_portal.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+    error = 0
+
+    err, result = parent.utm.get_template_proxyportal_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    list_proxyportal = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        try:
+            if item['mapping_url_ssl_profile_id']:
+                item['mapping_url_ssl_profile_id'] = parent.mc_data['ssl_profiles'][item['mapping_url_ssl_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль SSL "{err}".'
+            item['mapping_url_ssl_profile_id'] = 0
+            item['enabled'] = False
+            error = 1
+        try:
+            if item['mapping_url_certificate_id']:
+                item['mapping_url_certificate_id'] = parent.mc_data['certs'][item['mapping_url_certificate_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Создайте сертификат и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден сертификат "{err}".'
+            item['mapping_url_certificate_id'] = 0
+            item['enabled'] = False
+            error = 1
+
+        if item['name'] in list_proxyportal:
+            parent.stepChanged.emit(f'GRAY|    Ресурс веб-портала "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_proxyportal_rule(parent.template_id, list_proxyportal[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Ресурс веб-портала: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Ресурс веб-портала "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_proxyportal_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Ресурс веб-портала: "{item["name"]}"]')
+            else:
+                list_proxyportal[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Ресурс веб-портала "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте ресурсов веб-портала.')
+    else:
+        parent.stepChanged.emit('GREEN|    Список ресурсов веб-портала импортирован в раздел "Глобальный портал/Веб-портал".')
+
+
 def import_reverseproxy_servers(parent, path):
     """Импортируем список серверов reverse-прокси"""
     json_file = os.path.join(path, 'config_reverseproxy_servers.json')
@@ -4759,6 +4822,477 @@ def import_reverseproxy_servers(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.')
     else:
         parent.stepChanged.emit('GREEN|    Сервера reverse-прокси импортированы в раздел "Глобальный портал/Серверы reverse-прокси".')
+
+
+def import_reverseproxy_rules(parent, path):
+    """Импортируем список правил reverse-прокси"""
+    json_file = os.path.join(path, 'config_reverseproxy_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил reverse-прокси в раздел "Глобальный портал/Правила reverse-прокси".')
+    error = 0
+
+    err, result = parent.utm.get_template_loadbalancing_rules(parent.template_id, query={'query': 'type = reverse'})
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverse_loadbalancing = {x['name']: x['id'] for x in result}
+
+    if not parent.reverseproxy_servers:
+        if get_reverseproxy_servers(parent):      # Устанавливаем атрибут parent.reverseproxy_servers
+            return
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'useragent')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    useragent_list = {x['name']: x['id'] for x in result}
+
+    if not parent.client_certificate_profiles:
+        if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
+            return
+
+    err, result = parent.utm.get_template_waf_profiles(parent.template_id)
+    if err == 1:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    elif err == 2:
+        parent.stepChanged.emit('NOTE|    Нет лицензии на WAF. Профили WAF в правилах не будут перенесены.')
+        waf_profiles = {}
+    else:
+        waf_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_reverseproxy_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    reverseproxy_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+
+        if item['ssl_profile_id']:
+            try:
+                item['ssl_profile_id'] = parent.mc_data['ssl_profiles'][item['ssl_profile_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль SSL "{err}".'
+                item['ssl_profile_id'] = 0
+                item['is_https'] = False
+                item['enabled'] = False
+                error = 1
+        else:
+            item['is_https'] = False
+
+        if item['certificate_id']:
+            try:
+                item['certificate_id'] = parent.mc_data['certs'][item['certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Создайте сертификат и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден сертификат "{err}".'
+                item['certificate_id'] = -1
+                item['is_https'] = False
+                item['enabled'] = False
+                error = 1
+        else:
+            item['certificate_id'] = -1
+            item['is_https'] = False
+
+        new_user_agents = []
+        for x in item['user_agents']:
+            if x[1] in parent.mc_data['ug_useragents']:
+                new_user_agents.append(['list_id', f'id-{x[1]}'])
+            else:
+                try:
+                    new_user_agents.append(['list_id', useragent_list[x[1]]])
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список Useragent "{err}". Импортируйте списки useragent браузеров и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден список Useragent "{err}".'
+                    item['enabled'] = False
+                    error = 1
+        item['user_agents'] = new_user_agents
+
+        try:
+            for x in item['servers']:
+                x[1] = parent.reverseproxy_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик "{err}". Импортируйте reverse-прокси или балансировщик и повторите попытку.')
+            continue
+
+        if item['client_certificate_profile_id']:
+            item['client_certificate_profile_id'] = parent.client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
+            if not item['client_certificate_profile_id']:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}".'
+                item['enabled'] = False
+                error = 1
+
+        if item['waf_profile_id']:
+            try:
+                item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF "{err}". Импортируйте профили WAF и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль WAF "{err}".'
+                item['waf_profile_id'] = 0
+                item['enabled'] = False
+                error = 1
+
+        if item['name'] in reverseproxy_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_reverseproxy_rule(parent.template_id, reverseproxy_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило reverse-прокси: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило reverse-прокси "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_reverseproxy_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило reverse-прокси: "{item["name"]}"]')
+            else:
+                reverseproxy_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило reverse-прокси "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила reverse-прокси импортированы в раздел "Глобальный портал/Правила reverse-прокси".')
+    parent.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
+
+#-------------------------------------------- VPN -----------------------------------------------------------------------
+def import_vpnclient_security_profiles(parent, path):
+    """Импортируем клиентские профилей безопасности VPN"""
+    json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт клиентских профилей безопасности VPN в раздел "VPN/Клиентские профили безопасности".')
+    error = 0
+
+    err, result = parent.utm.get_template_vpn_client_security_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    security_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['certificate_id']:
+            try:
+                item['certificate_id'] = parent.mc_data['certs'][item['certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Импортируйте сертификаты и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден сертификат "{err}".'
+                item['certificate_id'] = 0
+                error = 1
+
+        if item['name'] in security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_vpn_client_security_profile(parent.template_id, security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Профиль безопасности VPN: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Профиль безопасности VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_vpn_client_security_profile(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: "{item["name"]}"]')
+            else:
+                security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских профилей безопасности VPN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Клиентские профили безопасности импортированы в раздел "VPN/Клиентские профили безопасности".')
+
+
+def import_vpnserver_security_profiles(parent, path):
+    """Импортируем серверные профилей безопасности VPN"""
+    json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт серверных профилей безопасности VPN в раздел "VPN/Серверные профили безопасности".')
+    error = 0
+
+    if not parent.client_certificate_profiles:
+        if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
+            return
+
+    err, result = parent.utm.get_template_vpn_server_security_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    security_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if item['certificate_id']:
+            try:
+                item['certificate_id'] = parent.mc_data['certs'][item['certificate_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Импортируйте сертификаты и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден сертификат "{err}".'
+                item['certificate_id'] = 0
+                error = 1
+        if item['client_certificate_profile_id']:
+            try:
+                item['client_certificate_profile_id'] = parent.client_certificate_profiles[item['client_certificate_profile_id']]
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{err}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя "{err}".'
+                item['client_certificate_profile_id'] = 0
+                error = 1
+
+        if item['name'] in security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_vpn_server_security_profile(parent.template_id, security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Профиль безопасности VPN: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Профиль безопасности VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_vpn_server_security_profile(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN: "{item["name"]}"]')
+            else:
+                security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности VPN "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных профилей безопасности VPN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Серверные профили безопасности импортированы в раздел "VPN/Серверные профили безопасности".')
+
+
+def import_vpn_networks(parent, path):
+    """Импортируем список сетей VPN"""
+    json_file = os.path.join(path, 'config_vpn_networks.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт списка сетей VPN в раздел "VPN/Сети VPN".')
+    error = 0
+
+    err, result = parent.utm.get_template_vpn_networks(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_networks = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['networks'] = get_networks(parent, item['networks'], item)
+        item['ep_routes_include'] = get_networks(parent, item['ep_routes_include'], item)
+        item['ep_routes_exclude'] = get_networks(parent, item['ep_routes_exclude'], item)
+        if 'error' in item:
+            error = 1
+            item.pop('error', None)
+
+        if item['name'] in vpn_networks:
+            parent.stepChanged.emit(f'GRAY|    Сеть VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_vpn_network(parent.template_id, vpn_networks[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Сеть VPN: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Сеть VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_vpn_network(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Сеть VPN: "{item["name"]}"]')
+            else:
+                vpn_networks[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Сеть VPN "{item["name"]}" импортирована.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сетей VPN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Список сетей VPN импортирован в раздел "VPN/Сети VPN".')
+
+
+def get_networks(parent, networks, rule):
+    new_networks = []
+    for x in networks:
+        try:
+            new_networks.append(['list_id', parent.mc_data['ip_lists'][x[1]]]  if x[0] == 'list_id' else x)
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден список IP-адресов "{err}". Импортируйте списки IP-адресов и повторите попытку.')
+            rule['description'] = f'{rule["description"]}\nError: Не найден список IP-адресов "{err}".'
+            rule['error'] = 1
+    return new_networks
+
+
+def import_vpn_client_rules(parent, path):
+    """Импортируем список клиентских правил VPN"""
+    json_file = os.path.join(path, 'config_vpn_client_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт клиентских правил VPN в раздел "VPN/Клиентские правила".')
+    error = 0
+
+    err, result = parent.utm.get_template_vpn_client_security_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_security_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_vpn_client_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_client_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item.pop('xauth_login', None)
+        item.pop('xauth_password', None)
+        item.pop('protocol', None)
+        item.pop('subnet1', None)
+        item.pop('subnet2', None)
+
+        try:
+            item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности VPN "{err}". Загрузите профили безопасности VPN и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль безопасности VPN "{err}".'
+            item['security_profile_id'] = ""
+
+        if item['name'] in vpn_client_rules:
+            parent.stepChanged.emit(f'GRAY|    Клиентское правило VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_vpn_client_rule(parent.template_id, vpn_client_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Клиентское правило VPN: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Клиентское правило VPN "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_vpn_client_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Клиентское правило VPN: "{item["name"]}"]')
+            else:
+                vpn_client_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Клиентское правило VPN "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских правил VPN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Клиентские правила VPN импортированы в раздел "VPN/Клиентские правила".')
+
+
+def import_vpn_server_rules(parent, path):
+    """Импортируем список серверных правил VPN"""
+    json_file = os.path.join(path, 'config_vpn_server_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт серверных правил VPN в раздел "VPN/Серверные правила".')
+    error = 0
+
+    err, result = parent.utm.get_template_vpn_server_security_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_security_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_vpn_networks(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_networks = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_vpn_server_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    vpn_server_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        item['position_layer'] = 'pre'
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['source_ips'] = get_ips_id(parent, 'src', item['source_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+        try:
+            item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности VPN "{err}". Загрузите профили безопасности VPN и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль безопасности VPN "{err}".'
+            item['security_profile_id'] = ""
+            item['enabled'] = False
+            error = 1
+        try:
+            item['tunnel_id'] = vpn_networks[item['tunnel_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найдена сеть VPN "{err}". Загрузите сети VPN и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найдена сеть VPN "{err}".'
+            item['tunnel_id'] = ""
+            item['enabled'] = False
+            error = 1
+        try:
+            item['auth_profile_id'] = parent.mc_data['auth_profiles'][item['auth_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль авторизации "{err}". Загрузите профили авторизации и повторите попытку.')
+            item['description'] = f'{item["description"]}\nError: Не найден профиль авторизации "{err}".'
+            item['auth_profile_id'] = ""
+            item['enabled'] = False
+            error = 1
+
+        if item['name'] in vpn_server_rules:
+            parent.stepChanged.emit(f'GRAY|    Серверное правило VPN "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_vpn_server_rule(parent.template_id, vpn_server_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Серверное правило VPN: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Серверное правило VPN "{item["name"]}" updated.')
+        else:
+            item['position'] = 'last'
+            err, result = parent.utm.add_template_vpn_server_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Серверное правило VPN: "{item["name"]}"]')
+            else:
+                vpn_server_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Серверное правило VPN "{item["name"]}" добавлено.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных правил VPN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Серверные правила VPN импортированы в раздел "VPN/Серверные правила".')
 
 
 #------------------------------------------------------------------------------------------------------------------------
@@ -4837,17 +5371,17 @@ import_funcs = {
     "DoSProfiles": import_dos_profiles,
     "DoSRules": import_dos_rules,
     "SCADARules": pass_function, # import_scada_rules,
+    "WebPortal": import_proxyportal_rules,
+    "ReverseProxyRules": import_reverseproxy_rules,
     "CustomWafLayers": pass_function, # import_waf_custom_layers,
-    "SystemWafRules": pass_function, # pass_function,
+    "SystemWafRules": pass_function,
     "WAFprofiles": pass_function, # import_waf_profiles,
-    "WebPortal": pass_function, # import_proxyportal_rules,
-    "ReverseProxyRules": pass_function, # import_reverseproxy_rules,
-    "ServerSecurityProfiles": pass_function, # import_vpnserver_security_profiles,
-    "ClientSecurityProfiles": pass_function, # import_vpnclient_security_profiles,
+    "ServerSecurityProfiles": import_vpnserver_security_profiles,
+    "ClientSecurityProfiles": import_vpnclient_security_profiles,
     "SecurityProfiles": pass_function, # import_vpn_security_profiles,
-    "VPNNetworks": pass_function, # import_vpn_networks,
-    "ServerRules": pass_function, # import_vpn_server_rules,
-    "ClientRules": pass_function, # import_vpn_client_rules,
+    "VPNNetworks": import_vpn_networks,
+    "ServerRules": import_vpn_server_rules,
+    "ClientRules": import_vpn_client_rules,
     "AlertRules": pass_function, # import_notification_alert_rules,
     "SNMPSecurityProfiles": pass_function, # import_snmp_security_profiles,
     "SNMP": pass_function, # import_snmp_rules,

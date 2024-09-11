@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.5
+# Версия 2.5
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -639,7 +639,7 @@ class SelectMcImportMode(SelectMode):
                 'iface_settings': '',
             }
             node_name = 'node_1'
-            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
+            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF', 'SNMPParameters'}.isdisjoint(self.selected_points):
                 node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
                 if not ok:
                     func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')

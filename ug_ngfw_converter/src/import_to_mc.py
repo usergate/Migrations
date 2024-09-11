@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.3 09.09.2024
+# Версия 2.5 11.09.2024
 #
 
 import os, sys, json, time
@@ -5295,6 +5295,252 @@ def import_vpn_server_rules(parent, path):
         parent.stepChanged.emit('GREEN|    Серверные правила VPN импортированы в раздел "VPN/Серверные правила".')
 
 
+#--------------------------------------------------- Оповещения ---------------------------------------------------------
+def import_notification_alert_rules(parent, path):
+    """Импортируем список правил оповещений"""
+    json_file = os.path.join(path, 'config_alert_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт правил оповещений в раздел "Диагностика и мониторинг/Правила оповещений".')
+    error = 0
+
+    if not parent.notification_profiles:
+        if get_notification_profiles(parent):      # Устанавливаем атрибут parent.notification_profiles
+            return
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'emailgroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    email_group = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'phonegroup')
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    phone_group = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_notification_alert_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    alert_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        try:
+            item['notification_profile_id'] = parent.notification_profiles[item['notification_profile_id']]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден профиль оповещений "{err}". Импортируйте профили оповещений и повторите попытку.')
+            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано.')
+            error = 1
+            continue
+
+        new_emails = []
+        for x in item['emails']:
+            try:
+                new_emails.append(['list_id', email_group[x[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найдена группа почтовых адресов "{err}". Загрузите почтовые адреса и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найдена группа почтовых адресов "{err}".'
+                item['enabled'] = False
+                error = 1
+        item['emails'] = new_emails
+
+        new_phones = []
+        for x in item['phones']:
+            try:
+                new_phones.append(['list_id', phone_group[x[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найдена группа телефонных номеров "{err}". Загрузите номера телефонов и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найдена группа телефонных номеров "{err}".'
+                item['enabled'] = False
+                error = 1
+        item['phones'] = new_phones
+
+        if item['name'] in alert_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило оповещения "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_notification_alert_rule(parent.template_id, alert_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило оповещения: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило оповещения "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_notification_alert_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило оповещения: "{item["name"]}"]')
+            else:
+                alert_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило оповещения "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил оповещений.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила оповещений импортированы в раздел "Диагностика и мониторинг/Правила оповещений".')
+
+
+def import_snmp_security_profiles(parent, path):
+    """Импортируем профили безопасности SNMP"""
+    json_file = os.path.join(path, 'config_snmp_profiles.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт профилей безопасности SNMP в раздел "Диагностика и мониторинг/Профили безопасности SNMP".')
+    error = 0
+
+    err, result = parent.utm.get_template_snmp_security_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    snmp_security_profiles = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        if not isinstance(item['auth_password'], str):
+            item['auth_password'] = ''
+        if not isinstance(item['private_password'], str):
+            item['private_password'] = ''
+
+        if item['name'] in snmp_security_profiles:
+            parent.stepChanged.emit(f'GRAY|    Профиль безопасности SNMP "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_snmp_security_profile(parent.template_id, snmp_security_profiles[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Профиль безопасности SNMP: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Профиль безопасности SNMP "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_snmp_security_profile(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности SNMP: "{item["name"]}"]')
+            else:
+                snmp_security_profiles[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Профиль безопасности SNMP "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей безопасности SNMP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Профили безопасности SNMP импортированы в раздел "Диагностика и мониторинг/Профили безопасности SNMP".')
+
+
+def import_snmp_settings(parent, path):
+    """Импортируем параметры SNMP"""
+    parent.stepChanged.emit('BLUE|Импорт параметров SNMP в раздел "Диагностика и мониторинг/Параметры SNMP".')
+    json_file = os.path.join(path, 'config_snmp_engine.json')
+    err, engine = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+    json_file = os.path.join(path, 'config_snmp_sysname.json')
+    err, sysname = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+    json_file = os.path.join(path, 'config_snmp_syslocation.json')
+    err, syslocation = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+    json_file = os.path.join(path, 'config_snmp_sysdescription.json')
+    err, sysdescription = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    data = {
+        'name': parent.node_name,
+        'engine_id': engine,
+        'sys_name': sysname,
+        'sys_location': syslocation,
+        'sys_description': sysdescription,
+        'enabled_sync': False
+    }
+    err, result = parent.utm.add_template_snmp_parameters(parent.template_id, data)
+    if err == 1:
+        parent.error = 1
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('RED|    Произошла ошибка при импорте параметров SNMP.')
+    elif err == 3:
+        parent.stepChanged.emit(f'GRAY|    {result}')
+    else:
+        parent.stepChanged.emit('GREEN|    Параметры SNMP импортированы  в раздел "Диагностика и мониторинг/Параметры SNMP".')
+
+
+def import_snmp_rules(parent, path):
+    """Импортируем список правил SNMP"""
+    json_file = os.path.join(path, 'config_snmp_rules.json')
+    err, data = func.read_json_file(parent, json_file, mode=1)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт списка правил SNMP в раздел "Диагностика и мониторинг/SNMP".')
+    error = 0
+
+    err, result = parent.utm.get_template_snmp_security_profiles(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    snmp_security_profiles = {x['name']: x['id'] for x in result}
+
+    err, result = parent.utm.get_template_snmp_rules(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.error = 1
+        return
+    snmp_rules = {x['name']: x['id'] for x in result}
+
+    for item in data:
+        item['name'] = func.get_restricted_name(item['name'])
+        if 'snmp_security_profile' in item:
+            if item['snmp_security_profile']:
+                try:
+                    item['snmp_security_profile'] = snmp_security_profiles[item['snmp_security_profile']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности SNMP "{err}". Импортируйте профили безопасности SNMP и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль безопасности SNMP "{err}".'
+                    item['snmp_security_profile'] = 0
+                    item['enabled'] = False
+                    error = 1
+        else:
+            item['snmp_security_profile'] = 0
+            item['enabled'] = False
+            item.pop('username', None)
+            item.pop('auth_type', None)
+            item.pop('auth_alg', None)
+            item.pop('auth_password', None)
+            item.pop('private_alg', None)
+            item.pop('private_password', None)
+            if item['version'] == 3:
+                item['version'] = 2
+                item['community'] = 'public'
+
+        if item['name'] in snmp_rules:
+            parent.stepChanged.emit(f'GRAY|    Правило SNMP "{item["name"]}" уже существует.')
+            err, result = parent.utm.update_template_snmp_rule(parent.template_id, snmp_rules[item['name']], item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|       {result}  [Правило SNMP: {item["name"]}]')
+            else:
+                parent.stepChanged.emit(f'BLACK|       Правило SNMP "{item["name"]}" updated.')
+        else:
+            err, result = parent.utm.add_template_snmp_rule(parent.template_id, item)
+            if err:
+                error = 1
+                parent.stepChanged.emit(f'RED|    {result}  [Правило SNMP: "{item["name"]}"]')
+            else:
+                snmp_rules[item['name']] = result
+                parent.stepChanged.emit(f'BLACK|    Правило SNMP "{item["name"]}" импортировано.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил SNMP.')
+    else:
+        parent.stepChanged.emit('GREEN|    Правила SNMP импортированы в раздел "Диагностика и мониторинг/SNMP".')
+
 #------------------------------------------------------------------------------------------------------------------------
 def pass_function(parent, path):
     """Функция заглушка"""
@@ -5382,10 +5628,10 @@ import_funcs = {
     "VPNNetworks": import_vpn_networks,
     "ServerRules": import_vpn_server_rules,
     "ClientRules": import_vpn_client_rules,
-    "AlertRules": pass_function, # import_notification_alert_rules,
-    "SNMPSecurityProfiles": pass_function, # import_snmp_security_profiles,
-    "SNMP": pass_function, # import_snmp_rules,
-    "SNMPParameters": pass_function, # import_snmp_settings,
+    "AlertRules": import_notification_alert_rules,
+    "SNMPSecurityProfiles": import_snmp_security_profiles,
+    "SNMPParameters": import_snmp_settings,
+    "SNMP": import_snmp_rules,
 }
 
 ######################################### Служебные функции ################################################

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 1.7 14.08.2024
+# Версия 2.5 11.09.2024
 #
 
 import os, sys, json
@@ -4215,12 +4215,6 @@ def export_useridagent_syslog_filters(parent, path):
 def export_snmp_rules(parent, path):
     """Экспортируем список правил SNMP"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил SNMP из раздела "Диагностика и мониторинг/Оповещения/SNMP".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
     if parent.version >= 7.1:
         err, result = parent.utm.get_snmp_security_profiles()
@@ -4234,7 +4228,7 @@ def export_snmp_rules(parent, path):
     if err:
         parent.stepChanged.emit(f'iRED|{data}')
         parent.error = 1
-        error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил SNMP.')
     else:
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
@@ -4243,23 +4237,24 @@ def export_snmp_rules(parent, path):
             if parent.version >= 7.1:
                 item['snmp_security_profile'] = snmp_security_profiles.get(item['snmp_security_profile'], 0)
 
-        json_file = os.path.join(path, 'config_snmp_rules.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
+        if data:
+            err, msg = func.create_dir(path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}')
+                parent.error = 1
+                return
 
-    out_message = f'GREEN|    Список правил SNMP выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил SNMP.' if error else out_message)
+            json_file = os.path.join(path, 'config_snmp_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Список правил SNMP выгружен в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit(f'GRAY|    Нет правил SNMP для экспорта.')
 
 
 def export_notification_alert_rules(parent, path):
     """Экспортируем список правил оповещений"""
     parent.stepChanged.emit('BLUE|Экспорт правил оповещений из раздела "Диагностика и мониторинг/Оповещения/Правила оповещений".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
     err, result = parent.utm.get_notification_profiles_list()
     if err:
@@ -4286,7 +4281,7 @@ def export_notification_alert_rules(parent, path):
     if err:
         parent.stepChanged.emit(f'iRED|{data}')
         parent.error = 1
-        error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.')
     else:
         for item in data:
             item.pop('id', None)
@@ -4295,41 +4290,49 @@ def export_notification_alert_rules(parent, path):
             item['emails'] = [[x[0], email_group[x[1]]] for x in item['emails']]
             item['phones'] = [[x[0], phone_group[x[1]]] for x in item['phones']]
 
-        json_file = os.path.join(path, 'config_alert_rules.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
+        if data:
+            err, msg = func.create_dir(path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}')
+                parent.error = 1
+                return
 
-    out_message = f'GREEN|    Правила оповещений выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.' if error else out_message)
+            json_file = os.path.join(path, 'config_alert_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Правила оповещений выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет правил оповещений для экспорта.')
 
 
 def export_snmp_security_profiles(parent, path):
     """Экспортируем профили безопасности SNMP. Для версии 7.1 и выше"""
     parent.stepChanged.emit('BLUE|Экспорт профилей безопасности SNMP из раздела "Диагностика и мониторинг/Оповещения/Профили безопасности SNMP".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
     err, data = parent.utm.get_snmp_security_profiles()
     if err:
         parent.stepChanged.emit(f'iRED|{data}')
         parent.error = 1
-        error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей безопасности SNMP.')
     else:
         for item in data:
             item.pop('id', None)
             item.pop('cc', None)
             item.pop('readonly', None)
 
-        json_file = os.path.join(path, 'config_snmp_rules.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
+        if data:
+            err, msg = func.create_dir(path)
+            if err:
+                parent.stepChanged.emit(f'RED|    {msg}')
+                parent.error = 1
+                return
 
-    out_message = f'GREEN|    Профили безопасности SNMP выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей безопасности SNMP.' if error else out_message)
+            json_file = os.path.join(path, 'config_snmp_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'GREEN|    Профили безопасности SNMP выгружены в файл "{json_file}".')
+        else:
+            parent.stepChanged.emit('GRAY|    Нет профилей безопасности SNMP для экспорта.')
 
 
 def export_snmp_settings(parent, path):

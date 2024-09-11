@@ -5819,7 +5819,7 @@ def import_notification_alert_rules(parent, path):
 
 def import_snmp_security_profiles(parent, path):
     """Импортируем профили безопасности SNMP"""
-    json_file = os.path.join(path, 'config_snmp_rules.json')
+    json_file = os.path.join(path, 'config_snmp_profiles.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
@@ -5840,9 +5840,9 @@ def import_snmp_security_profiles(parent, path):
             err, result = parent.utm.update_snmp_security_profile(snmp_security_profiles[item['name']], item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Профиль безопасности SNMP: {item["name"]}]')
+                parent.stepChanged.emit(f'RED|       {result}  [Профиль безопасности SNMP: {item["name"]}]')
             else:
-                parent.stepChanged.emit(f'BLACK|    Профиль безопасности SNMP "{item["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|       Профиль безопасности SNMP "{item["name"]}" updated.')
         else:
             err, result = parent.utm.add_snmp_security_profile(item)
             if err:

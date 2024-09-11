@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 2.3 09.09.2024
+# Версия 2.5 11.09.2024
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -2000,6 +2000,106 @@ class McXmlRpc:
             result = self._server.v1.ccvpn.client.rule.update(self._auth_token, template_id, rule_id, rule)
         except rpc.Fault as err:
             return 1, f'Error mclib.update_template_vpn_client_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+########################################### Оповещения #############################################################
+    def get_template_notification_alert_rules(self, template_id):
+        """Получить список правил оповещений шаблона"""
+        try:
+            result = self._server.v1.ccnotification.alert.rules.list(self._auth_token, template_id, 0, 100000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_notification_alert_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_notification_alert_rule(self, template_id, rule):
+        """Добавить новое правило оповещений в шаблон"""
+        try:
+            result = self._server.v1.ccnotification.alert.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_notification_alert_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_notification_alert_rule(self, template_id, rule_id, rule):
+        """Обновить правило оповещений в шаблоне"""
+        try:
+            result = self._server.v1.ccnotification.alert.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_notification_alert_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_snmp_security_profiles(self, template_id):
+        """Получить профили безопасности SNMP шаблона"""
+        try:
+            result = self._server.v1.ccsnmp.security.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_snmp_security_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_snmp_security_profile(self, template_id, profile):
+        """Добавить профиль безопасности SNMP в шаблон"""
+        try:
+            result = self._server.v1.ccsnmp.security.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_snmp_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного профиля
+
+    def update_template_snmp_security_profile(self, template_id, profile_id, profile):
+        """Обновить профиль безопасности SNMP в шаблоне"""
+        try:
+            result = self._server.v1.ccsnmp.security.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_snmp_security_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_snmp_parameters(self, template_id):
+        """Получить параметры SNMP шаблона"""
+        try:
+            result = self._server.v1.ccsnmp.parameters.list(self._auth_token, template_id, 0, 100, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.gettemplate_snmp_parameters: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def add_template_snmp_parameters(self, template_id, params):
+        """Добавить параметры SNMP в шаблон"""
+        try:
+            result = self._server.v1.ccsnmp.parameters.add(self._auth_token, template_id, params)
+        except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 3, f'Параметры SNMP для узла "{params["name"]}" уже существуют.'
+            else:
+                return 1, f'Error mclib.add_template_snmp_parameters: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID
+
+    def update_template_snmp_parameters(self, template_id, obj_id, params):
+        """Добавить параметры SNMP в шаблон"""
+        try:
+            result = self._server.v1.ccsnmp.parameters.update(self._auth_token, template_id, obj_id, params)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_snmp_parameters: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_snmp_rules(self, template_id):
+        """Получить список правил SNMP шаблона"""
+        try:
+            result = self._server.v1.ccsnmp.rules.list(self._auth_token, template_id, 0, 100000, {})
+            return 0, result['items']
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_snmp_rules: [{err.faultCode}] — {err.faultString}'
+
+    def add_template_snmp_rule(self, template_id, rule):
+        """Добавить новое правило SNMP в шаблон"""
+        try:
+            result = self._server.v1.ccsnmp.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_snmp_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного правила
+
+    def update_template_snmp_rule(self, template_id, rule_id, rule):
+        """Обновить правило SNMP в шаблоне"""
+        try:
+            result = self._server.v1.ccsnmp.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_snmp_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
 ############################# Служебные методы ######################################################################

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.8 23.08.2024
+# Версия 1.9 30.09.2024
 #
 
 import os, sys, json
@@ -420,7 +420,7 @@ def create_auth_servers(data, x, data_block):
                     auth_srv['description'] = 'radius'
                 if protocol.startswith('tacacs'):
                     auth_srv['description'] = 'tacacs'
-                auth_srv.update({k: v for k, v in data_block})
+                auth_srv.update({k: ' '.join(v) for k, *v in data_block})
                 data['auth_servers'].append(auth_srv)
 
 def create_dhcp_settings(data, dhcp_array):

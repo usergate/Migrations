@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.4
+# Версия 3.5    30.09.2024
 #
 
 import os, sys, json, uuid, time
@@ -784,43 +784,46 @@ def convert_simple_cluster(parent):
     n = 0
     for key, value in parent.objects.items():
         if value['type'] == 'simple-cluster':
-            n += 1
             content = []
-            for member in value['cluster-members']:
-                for item in member['interfaces']:
-                    ipv4 = item.get('ipv4-address', None)
-                    if ipv4:
-                        content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
-            for item in value['interfaces']['objects']:
-                ipv4 = item.get('ipv4-address', None)
-                if ipv4:
-                    content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
+            if 'cluster-members' in value:
+                for member in value['cluster-members']:
+                    for item in member['interfaces']:
+                        ipv4 = item.get('ipv4-address', None)
+                        if ipv4:
+                            content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
+            if 'interfaces' in value:
+                if 'objects' in value['interfaces']:
+                    for item in value['interfaces']['objects']:
+                        ipv4 = item.get('ipv4-address', None)
+                        if ipv4:
+                            content.append({'value': f"{ipv4}/{item['ipv4-mask-length']}"})
+            if content:
+                n += 1
+                ip_list = {
+                    'name': func.get_restricted_name(value['name']),
+                    'description': value['comments'],
+                    'type': 'network',
+                    'url': '',
+                    'list_type_update': 'static',
+                    'schedule': 'disabled',
+                    'attributes': {'threat_level': 3},
+                    'content': content
+                }
 
-            ip_list = {
-                'name': func.get_restricted_name(value['name']),
-                'description': value['comments'],
-                'type': 'network',
-                'url': '',
-                'list_type_update': 'static',
-                'schedule': 'disabled',
-                'attributes': {'threat_level': 3},
-                'content': content
-            }
+                json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
+                try:
+                    with open(json_file, 'w') as fh:
+                        json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                    parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+                except OSError as err:
+                    error = 1
+                    parent.error = 1
+                    parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
+                    parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
+                    parent.stepChanged.emit(f'RED|    {err}')
 
-            json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
-            try:
-                with open(json_file, 'w') as fh:
-                    json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-                parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
-            except OSError as err:
-                error = 1
-                parent.error = 1
-                parent.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список IP-адресов "{value["name"]}" не конвертирован.'}
-                parent.stepChanged.emit(f'RED|    Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.')
-                parent.stepChanged.emit(f'RED|    {err}')
-
-            parent.objects[key] = {'type': 'network', 'name': {'list': ip_list['name']}}
-            time.sleep(0.1)
+                parent.objects[key] = {'type': 'network', 'name': {'list': ip_list['name']}}
+                time.sleep(0.1)
 
     if error:
         parent.stepChanged.emit('ORANGE|    Списки IP-адресов выгружены с ошибками.')

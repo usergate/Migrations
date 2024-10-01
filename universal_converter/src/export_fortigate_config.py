@@ -21,10 +21,10 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 3.3 01-10-2024
+# Версия 3.4 01-10-2024
 #
 
-import os, sys, json
+import os, sys, json, uuid
 import ipaddress, chardet
 import copy, time
 import common_func as func
@@ -1242,55 +1242,54 @@ def convert_shapers_rules(parent, path, data):
     
     if 'config firewall shaping-policy' in data:
         shaping_rules = []
-        rule = {
-            'name': '',
-            'description': f'{value.get("comments", "Портировано с Fortigate.")}',
-            'scenario_rule_id': False,
-            'src_zones': [],
-            'dst_zones': [],
-            'src_ips': [],
-            'dst_ips': [],
-            'users': [],
-            'services': [],
-            'apps': [],
-            'pool': '',
-            'enabled': True,
-            'time_restrictions': [],
-            'limit': True,
-            'limit_value': '3/h',
-            'limit_bust': 5,
-            'log': False,
-            'log_session_start': False,
-            'src_zones_negate': False,
-            'dst_zones_negate': False,
-            'src_ips_negate': False,
-            'dst_ips_negate': False,
-            'services_negate': False,
-            'apps_negate': False,
-            'rule_error': 0
-        }
-
         for key, value in data['config firewall shaping-policy'].items():
-            if value.get('traffic-shaper', None):
+            rule = {
+                'name': '',
+                'description': f'{value.get("comments", "Портировано с Fortigate.")}',
+                'scenario_rule_id': False,
+                'src_zones': [],
+                'dst_zones': [],
+                'src_ips': [],
+                'dst_ips': [],
+                'users': [],
+                'services': [],
+                'apps': [],
+                'pool': '',
+                'enabled': True,
+                'time_restrictions': [],
+                'limit': True,
+                'limit_value': '3/h',
+                'limit_bust': 5,
+                'log': False,
+                'log_session_start': False,
+                'src_zones_negate': False,
+                'dst_zones_negate': False,
+                'src_ips_negate': False,
+                'dst_ips_negate': False,
+                'services_negate': False,
+                'apps_negate': False,
+                'rule_error': 0
+            }
+            if 'name' not in value or not value['name'] or value['name'].isspace():
+                rule['name'] = str(uuid.uuid4()).split('-')[4]
+            else:
                 rule['name'] = f'{key}-{value["name"]}'
+
+            if value.get('traffic-shaper', None):
                 rule['pool'] = value['traffic-shaper']
                 get_ips(parent, path, value.get('srcaddr', ''), value.get('dstaddr', ''), rule)
                 get_services(parent, value.get('service', ''), rule)
-                if rule['rule_error']:
-                    rule['name'] = f'ERROR - {rule["name"]}'
-                    rule['enabled'] = False
-                rule.pop('rule_error', None)
-                shaping_rules.append(copy.deepcopy(rule))
+
             if value.get('traffic-shaper-reverse', None):
-                rule['name'] = f'{key}-{value["name"]}-reverse'
                 rule['pool'] = value['traffic-shaper-reverse']
                 get_ips(parent, path, value.get('srcaddr', ''), value.get('dstaddr', ''), rule)
                 get_services(parent, value.get('service', ''), rule)
-                if rule['rule_error']:
-                    rule['name'] = f'ERROR - {rule["name"]}'
-                    rule['enabled'] = False
-                rule.pop('rule_error', None)
-                shaping_rules.append(copy.deepcopy(rule))
+
+            if rule['rule_error']:
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
+            rule.pop('rule_error', None)
+            shaping_rules.append(rule)
 
         if shaping_rules:
             section_path = os.path.join(path, 'NetworkPolicies')
@@ -1635,11 +1634,14 @@ def convert_dnat_rule(parent, path, data):
                 if 'service' in value:
                     services = [['service' if x in parent.services else 'list_id', x] for x in value['service'].split()]
                 elif 'mappedport' in value:
-                    port_mappings = [{
-                        'proto': value['protocol'] if 'protocol' in value else 'tcp',
-                        'src_port': int(value['extport']),
-                        'dst_port': int(value['mappedport'])
-                    }]
+                    try:
+                        port_mappings = [{
+                            'proto': value['protocol'] if 'protocol' in value else 'tcp',
+                            'src_port': int(value['extport']),
+                            'dst_port': int(value['mappedport'])
+                        }]
+                    except ValueError:
+                        port_mappings = []
                 rule = {
                     'name': f'Rule {func.get_restricted_name(key)}',
                     'description': value.get('comment', 'Портировано с Fortigate'),

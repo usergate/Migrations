@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 3.2 29-08-2024
+# Версия 3.3 01-10-2024
 #
 
 import os, sys, json
@@ -293,7 +293,6 @@ def convert_vpn_interfaces(parent, path, interfaces):
         if 'role' in ifblock:
             parent.zones.add(ifblock['role'])
         if 'vlanid' in ifblock:
-            ip, mask = ifblock['ip'].split(' ')
             iface = {
                 'name': ifname,
                 'kind': 'vlan',
@@ -303,10 +302,10 @@ def convert_vpn_interfaces(parent, path, interfaces):
                 'master': False,
                 'netflow_profile': 'undefined',
                 'lldp_profile': 'undefined',
-                'ipv4': [func.pack_ip_address(ip, mask)],
+                'ipv4': [],
                 'ifalias': ifblock.get('alias', ''),
                 'flow_control': False,
-                'mode': 'static',
+                'mode': 'manual',
                 'mtu': 1500,
                 'tap': False,
                 'dhcp_relay': {
@@ -317,6 +316,10 @@ def convert_vpn_interfaces(parent, path, interfaces):
                 'vlan_id': int(ifblock.get('vlanid', 0)),
                 'link': ifblock.get('interface', '')
             }
+            if ('ip' in ifblock and ifblock['ip']):
+                ip, mask = ifblock['ip'].split(' ')
+                iface['ipv4'] = [func.pack_ip_address(ip, mask)]
+                iface['mode'] = 'static'
             ifaces.append(iface)
 
     if ifaces:
@@ -1877,7 +1880,7 @@ def convert_firewall_policy(parent, path, data):
             'services': [],
             'apps': [],
             'users': users,
-            'enabled': True,
+            'enabled': False if ('status' in value and value['status'] == 'disable') else True,
             'limit': True,
             'limit_value': '3/h',
             'limit_burst': 5,

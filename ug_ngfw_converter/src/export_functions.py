@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.5 11.09.2024
+# Версия 2.6 04.10.2024
 #
 
 import os, sys, json
@@ -336,26 +336,35 @@ def export_certificates(parent, path):
         error = 1
     else:
         for item in result:
+            parent.stepChanged.emit(f'BLACK|    Экспорт сертификата {item["name"]}.')
             item.pop('cc', None)
             if parent.version >= 7.1:
-                item['not_before'] = dt.strptime(item['not_before'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                if item['not_before'].value:
+                    item['not_before'] = dt.strptime(item['not_before'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    item['not_before'] = ''
+                if item['not_after'].value:
+                    item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    item['not_after'] = ''
             else:
-                item['not_before'] = dt.strptime(item['not_before'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                item['not_after'] = dt.strptime(item['not_after'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                if item['not_before']:
+                    item['not_before'] = dt.strptime(item['not_before'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                if item['not_after']:
+                    item['not_after'] = dt.strptime(item['not_after'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
 
             # Для каждого сертификата создаём свой каталог.
             path_cert = os.path.join(path, item['name'])
             err, msg = func.create_dir(path_cert)
             if err:
-                parent.stepChanged.emit(f'RED|    {msg}')
+                parent.stepChanged.emit(f'RED|       {msg}')
                 parent.error = 1
                 error = 1
             else:
                 # Выгружаем сертификат в формат DER.
                 err, base64_cert = parent.utm.get_certificate_data(item['id'])
                 if err:
-                    parent.stepChanged.emit(f'RED|    {base64_cert}')
+                    parent.stepChanged.emit(f'RED|       {base64_cert}')
                     parent.error = 1
                     error = 1
                 else:
@@ -365,7 +374,7 @@ def export_certificates(parent, path):
                 # Выгружаем сертификат с цепочками в формат PEM.
                 err, base64_cert = parent.utm.get_certificate_chain_data(item['id'])
                 if err:
-                    parent.stepChanged.emit(f'RED|    {base64_cert}')
+                    parent.stepChanged.emit(f'ORANGE|       Не удалось выгрузить сертификат в формате PEM [{base64_cert}]')
                     parent.error = 1
                     error = 1
                 else:
@@ -375,13 +384,15 @@ def export_certificates(parent, path):
                 # Выгружаем детальную информацию сертификата в файл certificate_details.json.
                 err, details_info = parent.utm.get_certificate_details(item['id'])
                 if err:
-                    parent.stepChanged.emit(f'RED|    {details_info}')
+                    parent.stepChanged.emit(f'RED|       {details_info}')
                     parent.error = 1
                     error = 1
                 else:
                     if parent.version >= 7.1:
-                        details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                        details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                        if details_info['notBefore']:
+                            details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                        if details_info['notAfter']:
+                            details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                     json_file = os.path.join(path_cert, 'certificate_details.json')
                     with open(json_file, 'w') as fh:
                         json.dump(details_info, fh, indent=4, ensure_ascii=False)
@@ -391,9 +402,10 @@ def export_certificates(parent, path):
                 json_file = os.path.join(path_cert, 'certificate_list.json')
                 with open(json_file, 'w') as fh:
                     json.dump(item, fh, indent=4, ensure_ascii=False)
+                parent.stepChanged.emit(f'BLACK|       Сертификат {item["name"]} экспортирован в каталог {path_cert}.')
 
     out_message = f'GREEN|    Сертификаты выгружены в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Ошибка экспорта сертификатов!' if error else out_message)
+    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте сертификатов.' if error else out_message)
 
 
 def export_users_certificate_profiles(parent, path):
@@ -1924,9 +1936,14 @@ def export_content_rules(parent, path):
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
             else:
-                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-
+                if item['time_created'].value:
+                    item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    item['time_created'] = ''
+                if item['time_updated'].value:
+                    item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    item['time_updated'] = ''
 
         json_file = os.path.join(path, 'config_content_rules.json')
         with open(json_file, 'w') as fh:
@@ -1977,8 +1994,14 @@ def export_safebrowsing_rules(parent, path):
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
             else:
-                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                if item['time_created'].value:
+                    item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    item['time_created'] = ''
+                if item['time_updated'].value:
+                    item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    item['time_updated'] = ''
 
         json_file = os.path.join(path, 'config_safebrowsing_rules.json')
         with open(json_file, 'w') as fh:
@@ -2074,7 +2097,10 @@ def export_ssldecrypt_rules(parent, path):
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
             else:
-                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    item['time_created'] = ''
                 try:
                     item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 except ValueError:
@@ -2126,8 +2152,14 @@ def export_sshdecrypt_rules(parent, path):
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
                 item['layer'] = 'Content Rules'
             else:
-                item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    item['time_created'] = dt.strptime(item['time_created'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    item['time_created'] = ''
+                try:
+                    item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    item['time_updated'] = ''
 
         json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
         with open(json_file, 'w') as fh:
@@ -3106,7 +3138,10 @@ def export_morphology_lists(parent, path):
                     else:
                         attributes['threshold'] = attr['value']
                 item['attributes'] = attributes
-                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    item['last_update'] = ''
                 if item['url']:
                     item['list_type_update'] = 'dynamic'
                     item['schedule'] = '0 0-23/1 * * *'
@@ -3244,7 +3279,10 @@ def export_IP_lists(parent, path):
             item['name'] = item['name'].strip().translate(trans_name)
             if parent.version < 6:
                 item['attributes'] = {'threat_level': x['value'] for x in item['attributes']}
-                item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    item['last_update'] = ''
                 if item['url']:
                     item['list_type_update'] = 'dynamic'
                     item['schedule'] = '0 0-23/1 * * *'

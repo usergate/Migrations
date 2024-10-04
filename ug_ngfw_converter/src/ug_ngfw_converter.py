@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_universal_converter.py
-# Version 2.5
+# Version 2.6  04.10.2024
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 2.5)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 2.6)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
         self.stacklayout = QStackedLayout()
         self.stacklayout.addWidget(vc.SelectAction(self))
         self.stacklayout.addWidget(vc.SelectExportMode(self))
+        self.stacklayout.addWidget(vc.SelectMcExportMode(self))
         self.stacklayout.addWidget(vc.SelectImportMode(self))
         self.stacklayout.addWidget(vc.SelectMcImportMode(self))
 
@@ -80,7 +81,7 @@ class MainWindow(QMainWindow):
         """
         if os.path.isfile('temporary_data.bin'):
             os.remove('temporary_data.bin')
-        for i in (1, 2, 3):
+        for i in (1, 2, 3, 4):
             if self.stacklayout.widget(i).utm:
                 self.stacklayout.widget(i).utm.logout()
                 break

@@ -25,12 +25,13 @@ class SelectAction(QWidget):
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
-        text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации NGFW UserGate</font></b>"
+        text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации UserGate NGFW</font></b>"
         text2 = "Экспорт конфигурации из <b>UG NGFW</b> версий <b>5, 6, 7</b> и сохранение её в файлах json в каталоге \
-<b>data</b> в текущей директории. После экспорта вы можете просмотреть результат и изменить содержимое файлов в \
-соответствии с вашими потребностями."
-        text3 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> версий <b>5, 6 и 7</b>."
-        text4 = "Импорт файлов конфигурации из каталога <b>data</b> в шаблон <b>UserGate Management Center</b> версий <b>7</b>."
+<b>data</b> в текущей директории."
+        text3 = "Экспорт конфигурации из шаблона <b>UserGate Management Center</b> версии <b>7</b> и сохранение её в файлах json в каталоге \
+<b>data</b> в текущей директории."
+        text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> версий <b>5, 6 и 7</b>."
+        text5 = "Импорт файлов конфигурации из каталога <b>data</b> в шаблон <b>UserGate Management Center</b> версий <b>7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -39,15 +40,24 @@ class SelectAction(QWidget):
         label3.setWordWrap(True)
         label4 = QLabel(text4)
         label4.setWordWrap(True)
+        label5 = QLabel(text5)
+        label5.setWordWrap(True)
 
         btn_font = QFont("SansSerif", pointSize=9, weight=600)
 
-        self.btn_export = QPushButton("Экспорт конфигурации")
+        self.btn_export = QPushButton("Экспорт конфигурации из UG NGFW")
         self.btn_export.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_export.setFont(btn_font)
         self.btn_export.setFixedWidth(280)
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self.set_export_page)
+
+        self.btn_export_mc = QPushButton("Экспорт конфигурации из шаблона UG MC")
+        self.btn_export_mc.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn_export_mc.setFont(btn_font)
+        self.btn_export_mc.setFixedWidth(280)
+        self.btn_export_mc.setEnabled(False)
+        self.btn_export_mc.clicked.connect(self.set_export_mc_page)
         
         self.btn_import = QPushButton("Импорт конфигурации на UG NGFW")
         self.btn_import.setStyleSheet('color: gray; background: gainsboro;')
@@ -56,7 +66,7 @@ class SelectAction(QWidget):
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
 
-        self.btn_import_mc = QPushButton("Импорт в шаблон Management Center")
+        self.btn_import_mc = QPushButton("Импорт конфигурации в шаблон UG MC")
         self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import_mc.setFont(btn_font)
         self.btn_import_mc.setFixedWidth(280)
@@ -66,10 +76,12 @@ class SelectAction(QWidget):
         layout = QGridLayout()
         layout.addWidget(self.btn_export, 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(label2, 0, 1)
-        layout.addWidget(self.btn_import, 1, 0)
+        layout.addWidget(self.btn_export_mc, 1, 0)
         layout.addWidget(label3, 1, 1)
-        layout.addWidget(self.btn_import_mc, 2, 0)
+        layout.addWidget(self.btn_import, 2, 0)
         layout.addWidget(label4, 2, 1)
+        layout.addWidget(self.btn_import_mc, 3, 0)
+        layout.addWidget(label5, 3, 1)
         layout.setHorizontalSpacing(20)
         layout.setVerticalSpacing(20)
         layout.setColumnStretch(1, 10)
@@ -103,21 +115,27 @@ class SelectAction(QWidget):
             self.parent.resize(610, 350)
 
     def set_export_page(self):
-        """Переходим на страницу экспорта конфигурации. Номер в стеке 1."""
+        """Переходим на страницу экспорта конфигурации из NGFW. Номер в стеке 1."""
         self.parent.stacklayout.setCurrentIndex(1)
 
-    def set_import_page(self):
-        """Переходим на страницу импорта конфигурации на NGFW. Номер в стеке 2."""
+    def set_export_mc_page(self):
+        """Переходим на страницу экспорта конфигурации из шаблона MC. Номер в стеке 2."""
         self.parent.stacklayout.setCurrentIndex(2)
 
-    def set_import_mc_page(self):
-        """Переходим на страницу импорта конфигурации в шаболон МС. Номер в стеке 3."""
+    def set_import_page(self):
+        """Переходим на страницу импорта конфигурации на NGFW. Номер в стеке 3."""
         self.parent.stacklayout.setCurrentIndex(3)
+
+    def set_import_mc_page(self):
+        """Переходим на страницу импорта конфигурации в шаболон МС. Номер в стеке 4."""
+        self.parent.stacklayout.setCurrentIndex(4)
         pass
 
     def enable_buttons(self):
         self.btn_export.setStyleSheet('color: forestgreen; background: white;')
         self.btn_export.setEnabled(True)
+#        self.btn_export_mc.setStyleSheet('color: forestgreen; background: white;')
+#        self.btn_export_mc.setEnabled(True)
         self.btn_import.setStyleSheet('color: steelblue; background: white;')
         self.btn_import.setEnabled(True)
         self.btn_import_mc.setStyleSheet('color: steelblue; background: white;')
@@ -367,8 +385,83 @@ class SelectExportMode(SelectMode):
             func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
 
 
+class SelectMcExportMode(SelectMode):
+    """Класс для выбора раздела конфигурации для экспорта из MC. Номер в стеке 2."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для экспорта</font></b>")
+        self.btn2.setText("Экспорт выбранного раздела")
+        self.btn2.clicked.connect(self.export_selected_points)
+        self.btn3.setText("Экспортировать всё")
+        self.btn3.clicked.connect(self.export_all)
+        self.btn4.clicked.connect(lambda: self._save_logs('export.log'))
+        self.parent.stacklayout.currentChanged.connect(self.init_export_widget)
+
+    def init_export_widget(self, e):
+        """
+        При открытии этой вкладки выбираем/создаём каталог для экспорта/импорта конфигурации.
+        """
+        if e == 2:
+            self.parent.resize(900, 500)
+            dialog =  SelectConfigDirectoryWindow(self.parent, mode='export')
+            result = dialog.exec()
+            if result == QDialog.DialogCode.Accepted:
+                self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
+                if self.get_auth(mod='fw'):
+                    self.enable_buttons()
+                    self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                    self.tree.change_items_status_for_export()
+                    self.tree.setCurrentItem(self.tree.topLevelItem(0))
+                    self.init_temporary_data('export')
+                else:
+                    self.run_page_0()
+            else:
+                self.run_page_0()
+
+    def export_selected_points(self):
+        """
+        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
+        Затем запускаем экспорт выбранного раздела конфигурации.
+        """
+        if not func.check_auth(self):
+            self.run_page_0()
+
+        if self.selected_points:
+            self.disable_buttons()
+            if self.thread is None:
+                self.thread = ef.ExportSelectedPoints(self.utm, self.parent.get_config_path(), self.current_path, self.selected_points)
+                self.thread.stepChanged.connect(self.on_step_changed)
+                self.thread.finished.connect(self.on_finished)
+                self.thread.start()
+            else:
+                func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
+        else:
+            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для экспорта.")
+
+    def export_all(self):
+        """
+        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
+        Затем запускаем экспорт выбранного раздела конфигурации.
+        """
+        if not func.check_auth(self):
+            self.run_page_0()
+
+        all_points = self.tree.select_all_items()
+
+        self.disable_buttons()
+        if self.thread is None:
+            self.thread = ef.ExportAll(self.utm, self.parent.get_config_path(), all_points)
+            self.thread.stepChanged.connect(self.on_step_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
+        else:
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
+
+
+
+
 class SelectImportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для импорта. Номер в стеке 2."""
+    """Класс для выбора раздела конфигурации для импорта. Номер в стеке 3."""
     def __init__(self, parent):
         super().__init__(parent)
         self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate NGFW</font></b>")
@@ -383,7 +476,7 @@ class SelectImportMode(SelectMode):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
-        if e == 2:
+        if e == 3:
             self.parent.resize(900, 500)
             dialog =  SelectConfigDirectoryWindow(self.parent, mode='import')
             result = dialog.exec()
@@ -557,7 +650,7 @@ class SelectImportMode(SelectMode):
 
 
 class SelectMcImportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для импорта в шаблон МС. Номер в стеке 3."""
+    """Класс для выбора раздела конфигурации для импорта в шаблон МС. Номер в стеке 4."""
     def __init__(self, parent):
         super().__init__(parent)
         self.template_id = None
@@ -589,7 +682,7 @@ class SelectMcImportMode(SelectMode):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
-        if e == 3:
+        if e == 4:
             self.parent.resize(900, 500)
             dialog =  SelectConfigDirectoryWindow(self.parent, mode='import')
             result = dialog.exec()

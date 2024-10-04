@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 1.9 30.09.2024
+# Версия 2.0 03.10.2024
 #
 
 import os, sys, json
@@ -45,6 +45,7 @@ class ConvertCiscoASAConfig(QThread):
         self.service_groups = {}
         self.ip_lists = set()
         self.nat_rules = []
+        self.vendor = 'Cisco ASA'
         self.error = 0
 
     def run(self):
@@ -872,9 +873,10 @@ def convert_dns_static(parent, path, dns_static):
 
         records = []
         for item in dns_static:
+            msg_descr = 'Перенесено с Cisco ASA'
             records.append({
                 'name': item[1],
-                'description': 'Перенесено с Cisco ASA' if len(item) < 3 else ' '.join(item[3:]),
+                'description': msg_descr if len(item) < 3 else f"{msg_descr}\n{' '.join(item[3:])}",
                 'enabled': True,
                 'domain_name': item[1],
                 'ip_addresses': [item[0]]
@@ -906,7 +908,7 @@ def convert_vlan_interfaces(parent, path, data):
                 'name': item.get('nameif', item['ipv4']),
                 'kind': 'vlan',
                 'enabled': False,
-                'description': item['description'],
+                'description': f"Перенесено с Cisco ASA.\n{item['description']}",
                 'zone_id': item['nameif'] if item['nameif'] in data['zones'] else 0,
                 'master': False,
                 'netflow_profile': 'undefined',
@@ -954,7 +956,7 @@ def convert_gateways(parent, path, data):
             gateways.append({
                 'name': key,
                 'enabled': True,
-                'description': '',
+                'description': 'Перенесено с Cisco ASA.',
                 'ipv4': value['ipv4'],
                 'vrf': 'default',
                 'weight': value['weight'],
@@ -989,7 +991,7 @@ def convert_routes(parent, path, data):
 
         default_vrf = {
             "name": "default",
-            "descriprion": "",
+            "descriprion": "Перенесено с Cisco ASA.",
             "interfaces": [],
             "routes": [],
             "ospf": {},
@@ -1000,7 +1002,7 @@ def convert_routes(parent, path, data):
         for route in data['routes']:
             default_vrf['routes'].append({
                 'name': route['name'],
-                'description': '',
+                'description': 'Перенесено с Cisco ASA.',
                 'enabled': True,
                 'dest': route['dest'],
                 'gateway': route['gateway'],
@@ -1139,7 +1141,7 @@ def convert_time_sets(parent, path, data):
     for rule_name, content in data['time-range'].items():
         rule = {
             'name': rule_name,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA',
             'type': 'timerestrictiongroup',
             'url': '',
             'list_type_update': 'static',
@@ -1343,7 +1345,7 @@ def convert_local_groups(parent, path, data):
         for key, value in data['local-groups'].items():
             group = {
                 "name": key,
-                "description": "",
+                "description": "Перенесено с Cisco ASA.",
                 "is_ldap": False,
                 "is_transient": False,
                 "users": []
@@ -1365,7 +1367,7 @@ def convert_local_groups(parent, path, data):
                     case ['group-object', group_name]:
                         group['users'].extend(groups[group_name]['users'])
                     case ['description', *content]:
-                        group['description'] = " ".join(content)
+                        group['description'] = f"{group['description']}\n{' '.join(content)}"
             groups[key] = group
 
         for key, value in groups.items():
@@ -1423,7 +1425,7 @@ def convert_service_object(parent, path, data):
         service_name = ug_services.get(key, key)
         service = {
             'name': service_name,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'protocols': []
         }
         port = ''
@@ -1469,7 +1471,7 @@ def convert_service_object(parent, path, data):
                         case _:
                             parent.stepChanged.emit(f'rNOTE|    Сервис {key} не конвертирован. Операторы lt, gt, neq не поддерживаются в UG NGFW.')
                 case ['description', *content]:
-                    service['description'] = " ".join(content)
+                    service['description'] = f"{service['description']}\n{' '.join(content)}"
 
             if proto:
                 service['protocols'].append({
@@ -1526,7 +1528,7 @@ def convert_ip_lists(parent, path, ip_lists):
         parent.ip_lists.add(key)
         ip_list = {
             'name': key,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -1544,7 +1546,7 @@ def convert_ip_lists(parent, path, ip_lists):
                 case ['range', start_ip, end_ip]:
                     ip_list['content'].append({'value': f'{start_ip}-{end_ip}'})
                 case ['description', *content]:
-                    ip_list['description'] = " ".join(content)
+                    ip_list['description'] = f"{ip_list['description']}\n{' '.join(content)}"
 
         json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
@@ -1573,7 +1575,7 @@ def convert_url_lists(parent, path, url_lists):
     for key, value in url_lists.items():
         url_list = {
             'name': key,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'type': 'url',
             'url': '',
             'list_type_update': 'static',
@@ -1588,7 +1590,7 @@ def convert_url_lists(parent, path, url_lists):
                 case ['fqdn', 'v4', domain_name]:
                     url_list['content'].append({'value': domain_name})
                 case ['description', *content]:
-                    url_list['description'] = " ".join(content)
+                    url_list['description'] = f"{url_list['description']}\n{' '.join(content)}"
 
         json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
@@ -1624,7 +1626,7 @@ def convert_network_object_group(parent, path, data):
     for key, value in data['network-group'].items():
         ip_list = {
             'name': key,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -1634,7 +1636,7 @@ def convert_network_object_group(parent, path, data):
         }
         url_list = {
             'name': key,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'type': 'url',
             'url': '',
             'list_type_update': 'static',
@@ -1670,8 +1672,8 @@ def convert_network_object_group(parent, path, data):
                     else:
                         parent.stepChanged.emit(f'bRED|    Не найдена группа URL/IP-адресов "{group_name}" для object-group "{key}".')
                 case ['description', *content]:
-                    ip_list['description'] = ' '.join(content)
-                    url_list['description'] = ' '.join(content)
+                    ip_list['description'] = f"{ip_list['description']}\n{' '.join(content)}"
+                    url_list['description'] = f"{url_list['description']}\n{' '.join(content)}"
 
         if ip_list['content']:
             ip_groups[key] = ip_list['content']
@@ -1704,7 +1706,7 @@ def convert_service_object_group(parent, path, data):
         descr = key.split('|')
         srv_group = {
             'name': descr[0],
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'type': 'servicegroup',
             'url': '',
             'list_type_update': 'static',
@@ -1715,7 +1717,7 @@ def convert_service_object_group(parent, path, data):
         for item in value:
             service = {
                 'name': '',
-                'description': '',
+                'description': 'Перенесено с Cisco ASA.',
                 'protocols': []
             }
             proto_array = []
@@ -1865,7 +1867,7 @@ def convert_service_object_group(parent, path, data):
                     srv_group['content'].extend(parent.service_groups[group_name]['content'])
                     continue
                 case ['description', *content]:
-                    srv_group['description'] = " ".join(content)
+                    srv_group['description'] = f"{srv_group['description']}\n{' '.join(content)}"
                     continue
 
             for proto in proto_array:
@@ -1897,18 +1899,19 @@ def convert_service_object_group(parent, path, data):
 
 def save_service_groups(parent, path):
     """Сохраняем список групп сервисов в файл Libraries/ServicesGroups/config_services_groups_list.json"""
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'ServicesGroups')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.error = 1
-        parent.stepChanged.emit(f'RED|    {msg}.')
-        return
+    if parent.service_groups:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'ServicesGroups')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.error = 1
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            return
 
-    json_file = os.path.join(current_path, 'config_services_groups_list.json')
-    with open(json_file, 'w') as fh:
-        json.dump([x for x in parent.service_groups.values()], fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit(f'GREEN|    Список групп сервисов выгружен в файл "{json_file}".')
+        json_file = os.path.join(current_path, 'config_services_groups_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump([x for x in parent.service_groups.values()], fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список групп сервисов выгружен в файл "{json_file}".')
 
 
 def convert_protocol_object_group(parent, path, data):
@@ -1921,7 +1924,7 @@ def convert_protocol_object_group(parent, path, data):
     for key, value in data['protocol-group'].items():
         srv_group = {
             'name': key,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'type': 'servicegroup',
             'url': '',
             'list_type_update': 'static',
@@ -1942,7 +1945,7 @@ def convert_protocol_object_group(parent, path, data):
                     else:
                         parent.stepChanged.emit(f'rNOTE|    Сервис {item} в {key} не конвертирован. Нельзя задать протокол {protocol} в UG NGFW.')
                 case ['description', *content]:
-                    srv_group['description'] = " ".join(content)
+                    srv_group['description'] = f"{srv_group['description']}\n{' '.join(content)}"
 
         if proto:
             for protocol in proto:
@@ -1980,7 +1983,7 @@ def convert_icmp_object_group(parent, path, data):
     for key in data['icmp-group']:
         service = {
             'name': key,
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'protocols': [
                 {
                     'proto': 'icmp',
@@ -2026,7 +2029,7 @@ def convert_firewall_rules(parent, path, data):
         deq = deque(value['content'])
         rule = {
             'name': f'{key} ({value["name"]})',
-            'description': value['description'],
+            'description': f"Перенесено с Cisco ASA.\n{value.get('description', '')}",
             'action': 'drop' if deq.popleft() == 'deny' else 'accept',
             'position': 'last',
             'scenario_rule_id': False,     # При импорте заменяется на UID или "0". 
@@ -2201,7 +2204,7 @@ def convert_webtype_ace(parent, path, data):
         deq = deque(value['content'])
         rule = {
             'name': f'{key} ({value["name"]})',
-            'description': value['description'],
+            'description': f"Перенесено с Cisco ASA.\n{value.get('description', '')}",
             'position': 'last',
             'action': 'drop' if deq.popleft() == 'deny' else 'accept',
             'public_name': '',
@@ -2294,7 +2297,7 @@ def convert_dnat_rule(parent, path, data):
         data['nat_rule_number'] += 1
         rule = {
             'name': f'Rule {data["nat_rule_number"]} ({key})',
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'action': 'dnat',
             'position': 'last',
             'zone_in': [],
@@ -2394,7 +2397,7 @@ def convert_nat_rule(parent, path, data):
         zone_in, zone_out = value[1][1:-1].split(',')
         rule = {
             'name': f'Rule {data["nat_rule_number"]} NAT',
-            'description': '',
+            'description': 'Перенесено с Cisco ASA.',
             'action': 'nat',
             'position': 'last',
             'zone_in': [zone_in.translate(trans_name)] if zone_in != 'any' else [],
@@ -2445,7 +2448,7 @@ def convert_nat_rule(parent, path, data):
                 rule['dest_ip'].append(["list_id", iplist_name])
         if 'description' in value:
             i = value.index('description')
-            rule['description'] = " ".join(value[i+1:])
+            rule['description'] = f"{rule['description']}\n{' '.join(value[i+1:])}"
 
         parent.nat_rules.append(rule)
         parent.stepChanged.emit(f'BLACK|    Создано правило NAT "{rule["name"]}".')
@@ -2468,7 +2471,7 @@ def create_rule_service(parent, rule_service, mode='fw'):
 
     service = {
         'name': '',
-        'description': '',
+        'description': 'Перенесено с Cisco ASA.',
         'protocols': []
     }
     if rule_service['protocol'] in parent.service_groups:
@@ -2593,7 +2596,7 @@ def create_url_list(parent, path, url, name):
 
     url_list = {
         'name': name,
-        'description': '',
+        'description': 'Перенесено с Cisco ASA.',
         'type': 'url',
         'url': '',
         'list_type_update': 'static',

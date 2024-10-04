@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.4
+# Версия 1.5 04.10.2024
 #
 
 import os, sys, json
@@ -43,6 +43,7 @@ class ConvertHuaweiConfig(QThread):
         self.current_vendor_path = current_vendor_path
         self.current_ug_path = current_ug_path
         self.error = 0
+        self.vendor = 'Huawei'
 
         self.huawei_services = set()
         self.service_groups = set()
@@ -207,7 +208,6 @@ def make_block(parent, data):
             return 'dns_servers', value
         case ['ip', 'address-set', name, 'type', 'object']:
             value = {
-#                'name': name.translate(trans_name),
                 'name': func.get_restricted_name(name),
                 'description': '',
                 'content': []
@@ -413,7 +413,6 @@ def make_block(parent, data):
             return 'routes', routes
         case ['profile', 'type', 'dns-filter', 'name', *name]:
             value = {
-#                'name': ' '.join(name).translate(trans_name),
                 'name': func.get_restricted_name(' '.join(name)),
                 'description': '',
                 'content': []
@@ -836,7 +835,7 @@ def convert_notification_profile(parent, path, data):
     parent.stepChanged.emit('BLUE|Конвертация почтовых адресов и профиля оповещения.')
     section_path = os.path.join(path, 'Libraries')
 
-    smtp_settings = data['smtp_settings']
+    smtp_settings = data.get('smtp_settings', [])
 
     if 'smtp_server' in smtp_settings:
         current_path = os.path.join(section_path, 'NotificationProfiles')
@@ -903,6 +902,7 @@ def convert_services(parent, path, data):
     if 'services_lists' in data:
         services_proto = {'110': 'pop3', '995': 'pop3s', '25': 'smtp', '465': 'smtps'}
         for service in data['services_lists']:
+            service['description'] = f"Перенесено с Huawei.\n{service['description']}"
             for protocol in service['protocols']:
                 if 'port' not in protocol:
                     protocol['port'] = ''
@@ -939,6 +939,7 @@ def convert_ip_lists(parent, path, data):
     indicator = [1, 1, 1]
     if 'ip_lists' in data:
         for ip_list in data['ip_lists']:
+            ip_list['description'] = f"Перенесено с Huawei.\n{ip_list['description']}"
             ip_list['type'] = 'network'
             ip_list['url'] = ''
             ip_list['list_type_update'] = 'static'
@@ -961,6 +962,7 @@ def convert_ip_lists(parent, path, data):
 
     if 'ip_lists_group' in data:
         for ip_list in data['ip_lists_group']:
+            ip_list['description'] = f"Перенесено с Huawei.\n{ip_list['description']}"
             ip_list['type'] = 'network'
             ip_list['url'] = ''
             ip_list['list_type_update'] = 'static'
@@ -978,7 +980,7 @@ def convert_ip_lists(parent, path, data):
     if 'firewall' in data:
         ip_list = {
             'name': '',
-            'description': '',
+            'description': 'Перенесено с Huawei.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -1015,6 +1017,7 @@ def convert_url_lists(parent, path, data):
             return
 
         for url_list in data['url_list']:
+            url_list['description'] = f"Перенесено с Huawei.\n{url_list['description']}"
             url_list['type'] = 'url'
             url_list['url'] = ''
             url_list['list_type_update'] = 'static'
@@ -1045,7 +1048,7 @@ def convert_time_sets(parent, path, data):
             return
 
         for cal in data['calendars']:
-            cal['description'] = ''
+            cal['description'] = 'Перенесено с Huawei.'
             cal['type'] = 'timerestrictiongroup'
             cal['url'] = ''
             cal['list_type_update'] = 'static'
@@ -1087,6 +1090,7 @@ def convert_vlan_interfaces(parent, path, data):
             return
 
         for key, iface in data['ifaces'].items():
+            iface['description'] = f"Перенесено с Huawei.\n{iface['description']}"
             iface['kind'] = 'vlan'
             iface['enabled'] = False
             iface['zone_id'] = 0
@@ -1124,8 +1128,9 @@ def convert_zone(parent, path, data):
             return
 
         for zone in data['zones']:
+            zone['description'] = f"Перенесено с Huawei.\n{zone['description']}"
             if zone['interface']:
-                zone['description'] = f'{zone["description"]} - Интерфейс {zone["interface"]} на Huawei.'
+                zone['description'] = f"{zone['description']}\nИнтерфейс {zone['interface']} на Huawei."
             zone.pop('interface', None)
             zone["dos_profiles"] = [
                 {
@@ -1350,7 +1355,7 @@ def convert_static_routes(parent, path, data):
                 continue
             route['enabled'] = False
             route['name'] = f'Route for {route["dest"]}'
-            route['description'] = ''
+            route['description'] = 'Перенесено с Huawei.'
             route['ifname'] = 'undefined'
             route['kind'] = 'unicast'
             route['metric'] = 0
@@ -1394,7 +1399,7 @@ def convert_shapers_list(parent, path, data):
                 return
 
             for shaper in data['traffic_shaping']['shapers']:
-                shaper['description'] = ''
+                shaper['description'] = 'Перенесено с Huawei.'
 
             json_file = os.path.join(current_path, 'config_shaper_list.json')
             with open(json_file, 'w') as fh:
@@ -1432,6 +1437,7 @@ def convert_shaper_rules(parent, path, data):
                 else:
                     names[rule['name']] = 0
                 rule.pop('dscp', None)
+                rule['description'] = f"Перенесено с Huawei.\n{rule['description']}"
                 rule['scenario_rule_id'] = False
                 rule['src_ips'] = get_ips(parent, path, rule['src_ips'], rule['name'])
                 rule['dst_ips'] = get_ips(parent, path, rule['dst_ips'], rule['name'])
@@ -1485,6 +1491,7 @@ def convert_nat_rules(parent, path, data):
                     rule['name'] = f'{rule["name"]}-{names[rule["name"]]}'
                 else:
                     names[rule['name']] = 0
+                rule['description'] = f"Перенесено с Huawei.\n{rule['description']}"
                 rule['position'] = 'last'
                 rule['source_ip'] = get_ips(parent, path, rule['source_ip'], rule['name'])
                 rule['dest_ip'] = get_ips(parent, path, rule['dest_ip'], rule['name'])
@@ -1535,6 +1542,7 @@ def convert_firewall_rules(parent, path, data):
                 rule['name'] = f'{rule["name"]}-{names[rule["name"]]}'
             else:
                 names[rule['name']] = 0
+            rule['description'] = f"Перенесено с Huawei.\n{rule['description']}"
             rule['position'] = 'last'
             rule['scenario_rule_id'] = False     # При импорте заменяется на UID или "0". 
             rule['src_ips'] = get_ips(parent, path, rule['src_ips'], rule['name'], iplist_name=f'{rule["name"]}_src')
@@ -1565,38 +1573,6 @@ def convert_firewall_rules(parent, path, data):
         parent.stepChanged.emit(f'GREEN|    Павила межсетевого экрана выгружены в файл "{json_file}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
-
-
-#def convert_ntp_settings(parent, path, ntp_info):
-#    """Конвертируем настройки NTP"""
-#    parent.stepChanged.emit('BLUE|Конвертация настроек NTP.')
-#    section_path = os.path.join(path, 'UserGate')
-#    current_path = os.path.join(section_path, 'GeneralSettings')
-#    err, msg = func.create_dir(current_path, delete='no')
-#    if err:
-#        parent.stepChanged.emit(f'RED|    {msg}.')
-#        parent.error = 1
-#        return
-#
-#    if ntp_info and ntp_info.get('ntpserver', None):
-#        ntp_server = {
-#            'ntp_servers': [],
-#            'ntp_enabled': True,
-#            'ntp_synced': True if ntp_info['ntpsync'] == 'enable' else False
-#        }
-#        for i, value in ntp_info['ntpserver'].items():
-#            ntp_server['ntp_servers'].append(value['server'])
-#            if int(i) == 2:
-#                break
-#        if ntp_server['ntp_servers']:
-#            json_file = os.path.join(current_path, 'config_ntp.json')
-#            with open(json_file, 'w') as fh:
-#                json.dump(ntp_server, fh, indent=4, ensure_ascii=False)
-#            parent.stepChanged.emit(f'BLACK|    Настройки NTP выгружены в файл "{json_file}".')
-#        else:
-#            parent.stepChanged.emit('GRAY|    Нет серверов NTP для экспорта.')
-#    else:
-#        parent.stepChanged.emit('GRAY|    Нет серверов NTP для экспорта.')
 
 
 def convert_bgp_routes(parent, path, data):
@@ -1834,7 +1810,7 @@ def get_services(parent, rule_services, rule_type, rule_name):
                 continue
             service = {
                 'name': f'For {rule_type} rule {rule_name}-{num}',
-                'description': f'Создано для правила {rule_type} "{rule_name}"',
+                'description': f'Перенесено с Huawei.\nСоздано для правила {rule_type} "{rule_name}"',
                 'protocols': [{
                     'proto': item[1]['proto'],
                     'port': '' if item[1].get('dst', '') == '0-65535' else item[1].get('dst', ''),
@@ -1881,7 +1857,7 @@ def create_application_group(parent, apps_list, rule_name):
     """Создаём группу приложений"""
     app_group = {
         'name': f'For rule {rule_name}',
-        'description': '',
+        'description': 'Перенесено с Huawei',
         'type': 'applicationgroup',
         'url': '',
         'list_type_update': 'static',

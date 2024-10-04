@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.2 16.08.2024
+# Версия 2.3 02.10.2024
 #
 
 import os, sys, time, copy, json
@@ -1947,7 +1947,7 @@ def import_firewall_rules(parent, path):
         hip_profiles = {x['name']: x['id'] for x in result}
 
     parent.stepChanged.emit('BLUE|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
-    parent.stepChanged.emit('LBLUE|    После импорта правила МЭ будут в не активном состоянии. Необходимо проверить и включить нужные.')
+#    parent.stepChanged.emit('LBLUE|    После импорта правила МЭ будут в не активном состоянии. Необходимо проверить и включить нужные.')
     error = 0
     err, result = parent.utm.get_firewall_rules()
     if err:
@@ -2019,6 +2019,7 @@ def import_firewall_rules(parent, path):
 
         if item['name'] in firewall_rules:
             parent.stepChanged.emit(f'GRAY|    Правило МЭ "{item["name"]}" уже существует.')
+            item.pop('position', None)
             err, result = parent.utm.update_firewall_rule(firewall_rules[item['name']], item)
             if err:
                 error = 1
@@ -2099,6 +2100,7 @@ def import_nat_rules(parent, path):
 
         if item['name'] in nat_rules:
             parent.stepChanged.emit(f'GRAY|    Правило "{item["name"]}" уже существует.')
+            item.pop('position', None)
             err, result = parent.utm.update_traffic_rule(nat_rules[item['name']], item)
             if err:
                 error = 1

@@ -1574,6 +1574,10 @@ class MainTree(QTreeWidget):
         }
 
         self.restricted_items = {
+            "8.0": (
+                "Маршруты", "OSPF", "BGP",
+                "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"),
             "7.1": (
                 "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"),
@@ -1645,6 +1649,7 @@ class MainTree(QTreeWidget):
 
     def change_items_status(self, current_ug_path):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем те, для которых есть конфигурация."""
+#        print(self.version)
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
             if item.text(0) in self.restricted_items[self.version]:

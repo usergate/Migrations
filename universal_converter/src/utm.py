@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.16
+# Версия 3.17 03.10.2024
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -26,6 +26,7 @@ class UtmXmlRpc:
         self.version_midle = None
         self.version_low = None
         self.version_other = None
+        self.float_version = None
 
         rpc.MAXINT = 2**64 - 1
 
@@ -63,6 +64,7 @@ class UtmXmlRpc:
             self.version_midle = int(tmp[1])
             self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
+            self.float_version = float(f'{tmp[0]}.{tmp[1]}')
             return 0, True
 
     def get_node_status(self):
@@ -163,7 +165,7 @@ class UtmXmlRpc:
     def get_upstream_proxy_settings(self):
         """Получить настройки вышестоящего прокси"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v2.settings.upstream.proxy.config.get(self._auth_token)
                 return 0, result
             else:
@@ -174,7 +176,7 @@ class UtmXmlRpc:
     def set_upstream_proxy_settings(self, settings):
         """Обновить настройки вышестоящего прокси"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v2.settings.upstream.proxy.config.set(self._auth_token, settings)
                 return 0, result    # Возвращает True
             else:
@@ -221,7 +223,7 @@ class UtmXmlRpc:
     def get_admin_profiles_list(self):
         """Получить список профилей администраторов"""
         try:
-            if int(self.version[:1]) > 6:
+            if self.float_version >= 7.0:
                 result = self._server.v2.core.administrator.profiles.list(self._auth_token, 0, 1000, {}, [])
                 return 0, result['items']
             else:
@@ -270,7 +272,7 @@ class UtmXmlRpc:
     def get_admin_list(self):
         """Получить список администраторов"""
         try:
-            if int(self.version[:1]) > 6:
+            if self.float_version >= 7.0:
                 result = self._server.v2.core.administrator.list(self._auth_token, 0, 1000, {}, [])
                 return 0, result['items']
             else:
@@ -306,7 +308,7 @@ class UtmXmlRpc:
     def get_certificates_list(self):
         """Получить список сертификатов"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v2.settings.certificates.list(self._auth_token, 0, 100, {})
                 return 0, result['items']
             else:
@@ -354,7 +356,7 @@ class UtmXmlRpc:
             return 1, 'Error utm.get_snmp_engine: В версии 5 snmp engine не поддерживается.'
         else:
             try:
-                if self.version_hight >= 7 and self.version_midle >= 1:
+                if self.float_version >= 7.1:
                     result = self._server.v1.snmp.engine.id.get(self._auth_token, self.node_name)
                 else:
                     result = self._server.v1.snmp.engine.id.get(self._auth_token)
@@ -368,7 +370,7 @@ class UtmXmlRpc:
             return 1, 'Error utm.get_snmp_engine: В версии 5 snmp engine не поддерживается.'
         else:
             try:
-                if self.version_hight >= 7 and self.version_midle >= 1:
+                if self.float_version >= 7.1:
                     result = self._server.v1.snmp.engine.id.set(self._auth_token, self.node_name, engine)
                 else:
                     result = self._server.v1.snmp.engine.id.set(self._auth_token, engine)
@@ -379,7 +381,7 @@ class UtmXmlRpc:
     def get_client_certificate_profiles(self):
         """Получить список профилей пользовательских сертификатов"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.certificates.client.profiles.list(self._auth_token, 0, 500, {}, [])
                 return 0, result['items']
             else:
@@ -390,7 +392,7 @@ class UtmXmlRpc:
     def add_client_certificate_profile(self, profile):
         """Создать профиль сертификата пользователя"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.certificates.client.profile.add(self._auth_token, profile)
                 return 0, result    # Возвращает ID созданного профиля
             else:
@@ -489,7 +491,7 @@ class UtmXmlRpc:
     def get_interfaces_list(self):
         """Получить список сетевых интерфейсов"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.netmanager.interfaces.list(self._auth_token, self.node_name, 0, 1000, {})
                 return 0, result['items']
             else:
@@ -689,7 +691,7 @@ class UtmXmlRpc:
     def get_routes_list(self):
         """Получить список VRFs со всей конфигурацией"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.netmanager.route.list(self._auth_token, self.node_name, {})
             else:
                 result = self._server.v1.netmanager.virtualrouters.list(self._auth_token)
@@ -700,7 +702,7 @@ class UtmXmlRpc:
     def get_vrf_by_id(self, vrf_id):
         """Получить список VRFs со всей конфигурацией"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.netmanager.route.fetch(self._auth_token, self.node_name, vrf_id)
             else:
                 result = self._server.v1.netmanager.virtualrouter.fetch(self._auth_token, vrf_id)
@@ -766,7 +768,7 @@ class UtmXmlRpc:
     def get_custom_url_list(self):
         """Получить список изменённых категорий URL раздела Библиотеки"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.content.override.domains.list(self._auth_token, 0, 10000, {})
             else:
                 result = self._server.v1.content.override.domains.list(self._auth_token, 0, 10000, {}, [])
@@ -822,12 +824,11 @@ class UtmXmlRpc:
             if item['editable']:
                 item['name'] = item['name'].strip()
                 content = {}
-                utm_version = self.version.split('.')
                 try:
-                    if (list_type == 'ipspolicy' and self.version.startswith('5')) \
-                             or (self.version.startswith('6.1') and int(utm_version[2]) > 8):
+                    if (list_type == 'ipspolicy' and self.version_hight == 5) \
+                             or (self.float_version == 6.1 and self.version_low > 8):
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, {}, [])
-                    elif self.version.startswith('7'):
+                    elif self.version_hight >= 7:
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, {}, [])
                     else:
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, '', [])
@@ -838,7 +839,7 @@ class UtmXmlRpc:
                 except UnboundLocalError:
                     return 1, f'Error: Содержимое списка "{item["name"]}" не экспортировано. Ошибка программы!'
 
-                if list_type == 'timerestrictiongroup' and self.version.startswith('5'):
+                if list_type == 'timerestrictiongroup' and self.version_hight == 5:
                     item['content'] = [x['value'] for x in content['items']]
                 elif list_type == 'httpcwl':
                     array = {'id': item['id'], 'content': content['items']}
@@ -909,7 +910,7 @@ class UtmXmlRpc:
     def get_services_list(self):
         """Получить список сервисов раздела Библиотеки"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.libraries.services.list(self._auth_token, 0, 50000, '', [])
             else:
                 result = self._server.v1.libraries.services.list(self._auth_token, 0, 50000, {}, [])
@@ -984,7 +985,7 @@ class UtmXmlRpc:
     def get_scada_list(self):
         """Получить список профилей АСУ ТП раздела Библиотеки"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.scada.profiles.list(self._auth_token, 0, 1000, '', [])
             else:
                 result = self._server.v1.scada.profiles.list(self._auth_token, 0, 1000, {}, [])
@@ -1382,7 +1383,7 @@ class UtmXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error utm.get_groups_list: [{err.faultCode}] — {err.faultString}'
 
-        if not (self.version_hight >= 7 and self.version_midle >= 1):
+        if self.float_version < 7.1:
             try:
                 for group in result['items']:
                     group['id'] = group.pop('guid')
@@ -1429,7 +1430,7 @@ class UtmXmlRpc:
             result = self._server.v3.accounts.users.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error get_users_list: [{err.faultCode}] — {err.faultString}'
-        if not (self.version_hight >= 7 and self.version_midle >= 1):
+        if self.float_version < 7.1:
             try:
                 for user in result['items']:
                     user['id'] = user.pop('guid')
@@ -1451,7 +1452,7 @@ class UtmXmlRpc:
 
     def update_user(self, user):
         """Обновить локального пользователя"""
-        guid = user['id'] if (self.version_hight >= 7 and self.version_midle >= 1) else user['guid']
+        guid = user['id'] if self.float_version >= 7.1 else user['guid']
         try:
             result = self._server.v3.accounts.user.update(self._auth_token, guid, user)
         except rpc.Fault as err:
@@ -1754,7 +1755,7 @@ class UtmXmlRpc:
     def get_ldap_group_name(self, group_guid):
         """Получить имя группы LDAP по её GUID"""
         user = []
-        if self.version_hight >= 7 and self.version_midle >= 1:
+        if self.float_version >= 7.1:
             group_guid = group_guid.split(':')[1]
         try:
             result = self._server.v1.ldap.group.fetch(self._auth_token, group_guid)
@@ -2110,7 +2111,7 @@ class UtmXmlRpc:
     def get_idps_rules(self):
         """Получить список правил СОВ"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.idps.rules.list(self._auth_token, {})
                 return 0, result
             else:
@@ -2140,7 +2141,7 @@ class UtmXmlRpc:
     def get_scada_rules(self):
         """Получить список правил АСУ ТП"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.scada.rules.list(self._auth_token, {})
                 return 0, result
             else:
@@ -2271,13 +2272,13 @@ class UtmXmlRpc:
     def get_icap_rules(self):
         """Получить список правил ICAP"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.icap.rules.list(self._auth_token, {})
             else:
                 result = self._server.v1.icap.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_icap_rules: [{err.faultCode}] — {err.faultString}'
-        return 0, result if self.version.startswith('5') else result['items']
+        return 0, result if self.version_hight == 5 else result['items']
 
     def add_icap_rule(self, rule):
         """Добавить новое ICAP-правило"""
@@ -2372,7 +2373,7 @@ class UtmXmlRpc:
     def get_reverseproxy_servers(self):
         """Получить список серверов reverse-прокси"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.reverseproxy.profiles.list(self._auth_token, 0, 100000, {}, [])
                 return 0, result['items']   # Возвращает список настроек серверов reverse-прокси
             else:
@@ -2400,7 +2401,7 @@ class UtmXmlRpc:
     def get_reverseproxy_rules(self):
         """Получить список правил reverse-прокси"""
         try:
-            if self.version.startswith('5'):
+            if self.version_hight == 5:
                 result = self._server.v1.reverseproxy.rules.list(self._auth_token, {})
                 return 0, result
             else:
@@ -2538,7 +2539,7 @@ class UtmXmlRpc:
             result = self._server.v1.vpn.server.rules.list(self._auth_token, 0, 10000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_vpn_server_rules: [{err.faultCode}] — {err.faultString}'
-        return 0, result if self.version.startswith('5') else result['items']
+        return 0, result if self.version_hight == 5 else result['items']
 
     def add_vpn_server_rule(self, rule):
         """Добавить новое серверное правило VPN"""
@@ -2572,7 +2573,7 @@ class UtmXmlRpc:
     def add_vpn_client_rule(self, rule):
         """Добавить новое клиентское правило VPN"""
         try:
-            if int(self.version[:1]) > 6:
+            if self.version_hight > 6:
                 result = self._server.v1.vpn.client.rule.add(self._auth_token, rule)
             else:
                 result = self._server.v1.vpn.client.rule.add(self._auth_token, self.node_name, rule)
@@ -2583,7 +2584,7 @@ class UtmXmlRpc:
     def update_vpn_client_rule(self, rule_id, rule):
         """Обновить клиентское правило VPN"""
         try:
-            if int(self.version[:1]) > 6:
+            if self.version_hight > 6:
                 result = self._server.v1.vpn.client.rule.update(self._auth_token, rule_id, rule)
             else:
                 result = self._server.v1.vpn.client.rule.update(self._auth_token, self.node_name, rule_id, rule)
@@ -2667,7 +2668,7 @@ class UtmXmlRpc:
     def get_snmp_rules(self):
         """Получить список правил SNMP"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.snmp.rules.list(self._auth_token, 0, 100000, {})
                 return 0, result['items']
             else:
@@ -2698,7 +2699,7 @@ class UtmXmlRpc:
             result = self._server.v1.notification.alert.rules.list(self._auth_token, 0, 100000, {})
         except rpc.Fault as err:
             return 1, f'Error utm.get_notification_alert_rules: [{err.faultCode}] — {err.faultString}'
-        return 0, result if int(self.version[:1]) < 7 else result['items']
+        return 0, result if self.version_hight < 7 else result['items']
 
     def add_notification_alert_rule(self, rule):
         """Добавить новое правило оповещений"""
@@ -2784,7 +2785,7 @@ class UtmXmlRpc:
 ################################### L7 для версии 7.1 и выше #######################################
     def get_version71_apps(self, query={}):
         """Получить список пользовательских приложений l7 для версии 7.1 и выше"""
-        if self.version_hight >= 7 and self.version_midle >= 1:
+        if self.float_version >= 7.1:
             try:
                 result = self._server.v1.l7.signatures.list(self._auth_token, 0, 50000, query, [])
             except rpc.Fault as err:
@@ -2856,10 +2857,10 @@ class UtmXmlRpc:
     def get_l7_apps(self):
         """Получить список приложений l7"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.l7.signatures.list(self._auth_token, 0, 500000, {}, [])
                 return 0, {x['id']: x['name'] for x in result['items']}
-            elif self.version_hight == 6 or (self.version_hight == 7 and self.version_midle == 0):
+            elif self.version_hight == 6 or self.float_version == 7.0:
                 result = self._server.v2.core.get.l7apps(self._auth_token, 0, 500000, {}, [])
                 return 0, {x['id']: x['name'] for x in result['items']}
             elif self.version_hight == 5:
@@ -2875,7 +2876,7 @@ class UtmXmlRpc:
         В версиях начиная с 7.1 возвращает список: [{'id': category_id, 'name': category_name}, ...]
         """
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 result = self._server.v1.l7.get.categories(self._auth_token)
             else:
                 result = self._server.v2.core.get.l7categories(self._auth_token, 0, 10000, '')

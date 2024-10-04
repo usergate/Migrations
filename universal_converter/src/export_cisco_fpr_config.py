@@ -21,14 +21,14 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
-# Версия 1.4
+# Версия 1.5 03.10.2024
 #
 
 import os, sys, json, re
 import copy, time
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import network_proto, service_ports, trans_table, trans_name, trans_filename
+from services import network_proto, service_ports, trans_table, trans_filename, trans_name
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
@@ -43,6 +43,7 @@ class ConvertCiscoFPRConfig(QThread):
         super().__init__()
         self.current_fpr_path = current_fpr_path
         self.current_ug_path = current_ug_path
+        self.vendor = 'Cisco FPR'
         self.error = 0
 
     def run(self):
@@ -108,7 +109,7 @@ def convert_config_file(parent, path):
     def add_ip_list(ip, mask='255.255.255.255', obj='host'):
         ip_list = {
             'name': '',
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -132,7 +133,7 @@ def convert_config_file(parent, path):
     def convert_local_pool(x):
         ip_list = {
             'name': f'{x[3]}',
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -148,7 +149,7 @@ def convert_config_file(parent, path):
         iface = {
             'name': ifname,
             'kind': '',
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'zone_id': '',
             'ipv4': [],
             'dhcp_relay': {
@@ -168,7 +169,7 @@ def convert_config_file(parent, path):
             elif y[0] == 'ip' and y[1] == 'address':
                 iface['ipv4'].append(func.pack_ip_address(y[2], y[3]))
             elif y[0] == 'description':
-                iface['description'] = y[1]
+                iface['description'] = f"{iface['description']}\n{y[1]}"
             line = fh.readline()
         if iface['kind'] == 'vlan':
             data['ifaces'].append(iface)
@@ -183,7 +184,7 @@ def convert_config_file(parent, path):
     def convert_network_object(name, fh):
         ip_list = {
             'name': name,
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -215,7 +216,7 @@ def convert_config_file(parent, path):
     def convert_network_object_group(name, fh):
         ip_list = {
             'name': name,
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -225,7 +226,7 @@ def convert_config_file(parent, path):
         }
         url_list = {
             'name': name,
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'type': 'url',
             'url': '',
             'list_type_update': 'static',
@@ -256,8 +257,8 @@ def convert_config_file(parent, path):
                 if y[2] in data['ip_lists']:
                     ip_list['content'].append({'list': y[2]})
             elif y[1] == 'description':
-                ip_list['description'] = ' '.join(y[2:])
-                url_list['description'] = ' '.join(y[2:])
+                ip_list['description'] = f"{ip_list['description']}\n{' '.join(y[2:])}"
+                url_list['description'] = f"{url_list['description']}\n{' '.join(y[2:])}"
             line = fh.readline()
             y = line.translate(trans_table).rstrip().split(' ')
         if ip_list['content']:
@@ -269,7 +270,7 @@ def convert_config_file(parent, path):
     def convert_service_object(name, fh):
         service = {
             'name': name,
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'protocols': [],
             'group': False
         }
@@ -303,7 +304,7 @@ def convert_config_file(parent, path):
         x = line.translate(trans_table).split(' ')
         service = {
             'name': x[2],
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'protocols': [],
             'group': False
         }
@@ -353,7 +354,7 @@ def convert_config_file(parent, path):
                         parent.stepChanged.emit(f'RED|    Error: не найден group-object {err} в сервисе "{" ".join(x)}" - "{y}"')
                         error = 1
                 elif y[1] == 'description':
-                    service['description'] = ' '.join(y[2:])
+                    service['description'] = f"{service['description']}\n{' '.join(y[2:])}"
                 line = fh.readline()
                 y = line.translate(trans_table).rstrip().split(' ')
         except IndexError:
@@ -389,7 +390,7 @@ def convert_config_file(parent, path):
                         parent.stepChanged.emit(f'RED|    Error: не найден group-object {err} в сервисе "{" ".join(x)}" - {y}')
                         error = 1
                 elif y[1] == 'description':
-                    service['description'] = ' '.join(y[2:])
+                    service['description'] = f"{service['description']}\n{' '.join(y[2:])}"
 
                 line = fh.readline()
                 y = line.translate(trans_table).rstrip().split(' ')
@@ -421,8 +422,8 @@ def convert_config_file(parent, path):
 
     def convert_access_list(rule_id, rule_name, fh):
         fw_rule = {
-            'name': rule_name.translate(trans_name).strip("-").strip(),
-            'description': "",
+            'name': func.get_restricted_name(rule_name),
+            'description': 'Портировано с Cisco FPR.',
             'action': '',
             'src_zones': set(),
             'dst_zones': set(),
@@ -438,7 +439,7 @@ def convert_config_file(parent, path):
             service_name = ''
             service = {
                 'name': '',
-                'description': '',
+                'description': 'Портировано с Cisco FPR.',
                 'protocols': [
                     {
                         'proto': '',
@@ -545,7 +546,7 @@ def convert_config_file(parent, path):
     def add_remark_to_fw_rules(rule_id, remark):
         """Ремарки занести в описание правила fw"""
         if data['fw_rules'][rule_id]['description']:
-            data['fw_rules'][rule_id]['description'] += f"; {remark}"
+            data['fw_rules'][rule_id]['description'] += f"\n{remark}"
         else:
             data['fw_rules'][rule_id]['description'] += f"{remark}"
 
@@ -554,7 +555,7 @@ def convert_config_file(parent, path):
         route = {
             'enabled': True,
             'name': '',
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'dest': '',
             'gateway': '',
             'ifname': 'undefined',
@@ -564,7 +565,7 @@ def convert_config_file(parent, path):
         gateway = {
             'name': '',
             'enabled': True,
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'ipv4': '',
             'vrf': 'default',
             'weight': 1,
@@ -653,19 +654,12 @@ def convert_config_file(parent, path):
 def convert_zones(parent, path, zone_names):
     """Конвертируем зоны."""
     parent.stepChanged.emit('BLUE|Конвертация Зон.')
-    section_path = os.path.join(path, 'Network')
-    current_path = os.path.join(section_path, 'Zones')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
 
     zones = []
     for item in zone_names:
         zone = {
             'name': item,
-            'description': '',
+            'description': 'Портировано с Cisco FPR.',
             'dos_profiles': [
                 {
                     'enabled': True,
@@ -720,11 +714,19 @@ def convert_zones(parent, path, zone_names):
         zones.append(zone)
         parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" конвертирована.')
 
-    json_file = os.path.join(current_path, 'config_zones.json')
-    with open(json_file, "w") as fh:
-        json.dump(zones, fh, indent=4, ensure_ascii=False)
-
     if zones:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'Zones')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_zones.json')
+        with open(json_file, "w") as fh:
+            json.dump(zones, fh, indent=4, ensure_ascii=False)
+
         parent.stepChanged.emit(f'GREEN|    Конфигурация Зон выгружена в файл "{json_file}".')
         parent.stepChanged.emit('LBLUE|    Необходимо настроить каждую зону. Включить нужный сервис в контроле доступа, поменять по необходимости параметры защиты от DoS и настроить защиту от спуфинга.')
     else:
@@ -755,13 +757,6 @@ def convert_gateways(parent, path, gateways):
 def convert_static_routes(parent, path, static_routes):
     """Конвертируем статические маршруты"""
     parent.stepChanged.emit('BLUE|Конвертация статических маршрутов.')
-    section_path = os.path.join(path, 'Network')
-    current_path = os.path.join(section_path, 'VRF')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
 
     if static_routes:
         vrf_info = [{
@@ -774,90 +769,104 @@ def convert_static_routes(parent, path, static_routes):
             'rip': {},
             'pimsm': {},
         }]
+
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'VRF')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_vrf.json')
+        with open(json_file, "w") as fh:
+            json.dump(vrf_info, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Статические маршруты добавлены в виртуальный маршрутизатор по умолчанию в файле "{json_file}".')
     else:
-        vrf_info = []
-
-    json_file = os.path.join(current_path, 'config_vrf.json')
-    with open(json_file, "w") as fh:
-        json.dump(vrf_info, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'BLACK|    Статические маршруты добавлены в виртуальный маршрутизатор по умолчанию в файле "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.' if not vrf_info else out_message)
+        parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.')
 
 
 def convert_vlan_interfaces(parent, path, ifaces_list):
     """Конвертируем интерфейсы VLAN"""
     parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
-    section_path = os.path.join(path, 'Network')
-    current_path = os.path.join(section_path, 'Interfaces')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
 
-    for iface in ifaces_list:
-        iface['enabled'] = False
-        iface['master'] = False
-        iface['netflow_profile'] = 'undefined'
-        iface['lldp_profile'] = 'undefined'
-        iface['ifalias'] = ''
-        iface['flow_control'] = False
-        iface['mode'] = 'static'
-        iface['mtu'] = 1500
-        iface['tap'] = False
-        iface['link'] = ''
+    if ifaces_list:
+        for iface in ifaces_list:
+            iface['enabled'] = False
+            iface['master'] = False
+            iface['netflow_profile'] = 'undefined'
+            iface['lldp_profile'] = 'undefined'
+            iface['ifalias'] = ''
+            iface['flow_control'] = False
+            iface['mode'] = 'static'
+            iface['mtu'] = 1500
+            iface['tap'] = False
+            iface['link'] = ''
 
-    json_file = os.path.join(current_path, 'config_interfaces.json')
-    with open(json_file, "w") as fh:
-        json.dump(ifaces_list, fh, indent=4, ensure_ascii=False)
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'Interfaces')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
 
-    out_message = f'BLACK|    Интерфейсы VLAN выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.' if not ifaces_list else out_message)
+        json_file = os.path.join(current_path, 'config_interfaces.json')
+        with open(json_file, "w") as fh:
+            json.dump(ifaces_list, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Интерфейсы VLAN выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.')
 
 
 def convert_ip_lists(parent, path, list_ips):
     """Конвертируем списки IP-адресов"""
     parent.stepChanged.emit('BLUE|Конвертация списков IP-адресов.')
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'IPAddresses')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
 
-    for key, value in list_ips.items():
-        json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
-        with open(json_file, "w") as fh:
-            json.dump(value, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
-        time.sleep(0.1)
+    if list_ips:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'IPAddresses')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
 
-    out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
-    parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.' if not list_ips else out_message)
+        for key, value in list_ips.items():
+            json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+            with open(json_file, "w") as fh:
+                json.dump(value, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
+
+        parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.')
 
 
 def convert_url_lists(parent, path, list_urls):
     """Конвертируем списки IP-адресов"""
     parent.stepChanged.emit('BLUE|Конвертация списков URL.')
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'URLLists')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
 
-    for key, value in list_urls.items():
-        json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
-        with open(json_file, "w") as fh:
-            json.dump(value, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список URL "{key}" выгружен в файл "{json_file}".')
-        time.sleep(0.1)
+    if list_urls:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'URLLists')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
 
-    out_message = f'GREEN|    Списки URL выгружены в каталог "{current_path}".'
-    parent.stepChanged.emit('GRAY|    Нет списков URL для экспорта.' if not list_urls else out_message)
+        for key, value in list_urls.items():
+            json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+            with open(json_file, "w") as fh:
+                json.dump(value, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список URL "{key}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
+
+        parent.stepChanged.emit(f'GREEN|    Списки URL выгружены в каталог "{current_path}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет списков URL для экспорта.')
 
 
 def convert_service_groups(parent, path, services):
@@ -908,13 +917,6 @@ def convert_service_groups(parent, path, services):
 def convert_services_list(parent, path, services):
     """Конвертируем список сервисов"""
     parent.stepChanged.emit('BLUE|Конвертация списка сервисов.')
-    section_path = os.path.join(path, 'Libraries')
-    current_path = os.path.join(section_path, 'Services')
-    err, msg = func.create_dir(current_path)
-    if err:
-        parent.stepChanged.emit('RED|    {msg}.')
-        parent.error = 1
-        return
 
     services_list = []
     for key, value in services.items():
@@ -941,12 +943,21 @@ def convert_services_list(parent, path, services):
             item['alg'] =  ''
         services_list.append(service)
 
-    json_file = os.path.join(current_path, 'config_services_list.json')
-    with open(json_file, "w") as fh:
-        json.dump(services_list, fh, indent=4, ensure_ascii=False)
+    if services_list:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'Services')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
 
-    out_message = f'BLACK|    Список сервисов выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('GRAY|    Нет сервисов для экспорта.' if not services_list else out_message)
+        json_file = os.path.join(current_path, 'config_services_list.json')
+        with open(json_file, "w") as fh:
+            json.dump(services_list, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список сервисов выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет сервисов для экспорта.')
 
 
 def convert_firewall_rules(parent, path, data):

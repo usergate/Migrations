@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.5    30.09.2024
+# Версия 3.6    03.10.2024
 #
 
 import os, sys, json, uuid, time
@@ -47,6 +47,7 @@ class ConvertCheckPointConfig(QThread):
         self.objects = None
         self.access_layers = []
         self.log_tracker = {}
+        self.vendor = 'CheckPoint'
         self.error = 0
 
         self.services = {}
@@ -112,7 +113,7 @@ class ConvertCheckPointConfig(QThread):
     def create_app_group(self, group_name, app_list, comment=''):
         app_group = {
             'name': group_name,
-            'description': comment,
+            'description': f"Портировано с CheckPoint.\n{comment}",
             'type': 'applicationgroup',
             'list_type_update': 'static',
             'schedule': 'disabled',
@@ -450,7 +451,7 @@ def convert_timesets(parent):
         if value['type'] == 'time':
             time_set = {
                 'name': func.get_restricted_name(value['name']),
-                'description': value['comments'],
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'type': 'timerestrictiongroup',
                 'url': '',
                 'list_type_update': 'static',
@@ -551,7 +552,7 @@ def convert_services(parent):
                     continue
             parent.services[service_name] = {
                 'name': service_name,
-                'description': value['comments'],
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'protocols': [
                     {
                         'proto': proto,
@@ -630,7 +631,7 @@ def convert_services_groups(parent):
                     if service['type'] == 'service':
                         parent.services[service['name']] = {
                             'name': service['name'],
-                            'description': service['description'],
+                            'description': f"Портировано с CheckPoint.\n{service.get('description', '')}",
                             'protocols': [
                                 {
                                     'proto': service['proto'],
@@ -669,7 +670,7 @@ def convert_services_groups(parent):
 
             services_group = {
                 'name': value['name'],
-                'description': value['comments'],
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'type': 'servicegroup',
                 'url': '',
                 'list_type_update': 'static',
@@ -733,7 +734,7 @@ def convert_ip_lists(parent):
 
             ip_list = {
                 'name': func.get_restricted_name(value['name']),
-                'description': value['comments'],
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'type': 'network',
                 'url': '',
                 'list_type_update': 'static',
@@ -801,7 +802,7 @@ def convert_simple_cluster(parent):
                 n += 1
                 ip_list = {
                     'name': func.get_restricted_name(value['name']),
-                    'description': value['comments'],
+                    'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                     'type': 'network',
                     'url': '',
                     'list_type_update': 'static',
@@ -863,7 +864,7 @@ def convert_cluster_members(parent):
 
             ip_list = {
                 'name': func.get_restricted_name(value['name']),
-                'description': value.get('comments', ''),
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'type': 'network',
                 'url': '',
                 'list_type_update': 'static',
@@ -925,7 +926,7 @@ def convert_checkpoint_host(parent):
 
             ip_list = {
                 'name': func.get_restricted_name(value['name']),
-                'description': value.get('comments', ''),
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'type': 'network',
                 'url': '',
                 'list_type_update': 'static',
@@ -998,7 +999,7 @@ def convert_ip_lists_groups(parent):
                     parent.stepChanged.emit(f'RED|    В группе IP-аресов "{value["name"]}" присутствует ссылка на несуществующий объект: {uid}.')
             ip_list = {
                 'name': func.get_restricted_name(value['name']),
-                'description': value['comments'],
+                'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 'type': 'network',
                 'url': '',
                 'list_type_update': 'static',
@@ -1092,7 +1093,7 @@ def convert_url_lists(parent):
 
             url_list = {
                 "name": url_name,
-                "description": value['comments'],
+                "description": f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 "type": "url",
                 "url": "",
                 "attributes": {
@@ -1121,7 +1122,7 @@ def convert_url_lists(parent):
             parent.objects[key] = {'type': 'dns-domain', 'value': ['urllist_id', url_list_name]}
             url_list = {
                 "name": url_list_name,
-                "description": value['comments'],
+                "description": f"Портировано с CheckPoint.\n{value.get('comments', '')}",
                 "type": "url",
                 "url": "",
                 "attributes": {
@@ -1246,7 +1247,7 @@ def convert_application_group(parent):
                 url_list = set()
                 apps_group_tmp = {
                     'name': func.get_restricted_name(parent.objects[key]['name']),
-                    'comments': parent.objects[key]['comments'],
+                    'comments': f"Портировано с CheckPoint.\n{parent.objects[key].get('comments', '')}",
                     'type': 'apps_group',
                     'apps': [],
                     'url_categories': [],
@@ -1521,7 +1522,7 @@ def convert_access_policy_files(parent):
                 item.pop('install-on', None)
                 item.pop('custom-fields', None)
                 item.pop('user-check', None)
-                item['description'] = []
+                item['description'] = ["Портировано с CheckPoint.",]
 
                 destination = []
                 for uid in item['destination']:

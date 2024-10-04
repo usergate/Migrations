@@ -21,14 +21,14 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 1.3
+# Версия 1.4 04.10.2024
 #
 
 import os, sys, json, re
 import ipaddress, copy
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import network_proto, ug_services, service_ports, trans_table, trans_name, trans_filename
+from services import network_proto, ug_services, service_ports, trans_table, trans_filename
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
@@ -46,6 +46,7 @@ class ConvertMikrotikConfig(QThread):
         self.current_fpr_path = current_fpr_path
         self.current_ug_path = current_ug_path
         self.error = 0
+        self.vendor = 'MikroTik'
         self.ifaces = []
         self.zones = []
         self.gateways = set()
@@ -73,10 +74,6 @@ class ConvertMikrotikConfig(QThread):
             convert_services_list(self, self.current_ug_path, data)
             convert_firewall_rules(self, self.current_ug_path, data)
             convert_dnat_rules(self, self.current_ug_path, data)
-
-#            json_file = os.path.join(self.current_fpr_path, 'config_new.json')
-#            with open(json_file, "w") as fh:
-#                json.dump(data, fh, indent=4, ensure_ascii=False)
 
             self.save_interfaces()
 
@@ -287,7 +284,7 @@ def convert_zones(parent, path, data):
     for item in data['interface list']:
         zone = {
             'name': item['name'],
-            'description': '',
+            'description': 'Портировано с MikroTik.',
             'dos_profiles': [
                 {
                     'enabled': True,
@@ -367,7 +364,7 @@ def convert_ipip_interface(parent, path, data):
                 'name': 'gre',
                 'kind': 'tunnel',
                 'enabled': False,
-                'description': item['name'],
+                'description': f"Портировано с MikroTik.\n{item.get('name', '')}",
                 'zone_id': 0,
                 'master': False,
                 'netflow_profile': 'undefined',
@@ -416,7 +413,7 @@ def convert_vlan_interfaces(parent, path, data):
                 'name': item['name'],
                 'kind': 'vlan',
                 'enabled': False,
-                'description': f"{item['comment']} {item['name']}" if 'comment' in item else item['name'],
+                'description': f"Портировано с MikroTik.\n{item.get('name', '')} {item.get('comment', '')}",
                 'zone_id': 0,
                 'master': False,
                 'netflow_profile': 'undefined',
@@ -484,7 +481,7 @@ def convert_gateways_list(parent, path, data):
                     list_gateways.append({
                         'name': name.strip(),
                         'enabled': False,
-                        'description': item.get('comment', ''),
+                        'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
                         'ipv4': gateway,
                         'vrf': 'default',
                         'weight': int(item.get('distance', 1)),
@@ -538,7 +535,7 @@ def convert_static_routes(parent, path, data):
             try:
                 route = {
                     'name': f"For {item['dst-address']}",
-                    'description': item.get('comment', ''),
+                    'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
                     'enabled': True if item['disabled'] == 'no' else False,
                     'dest': item['dst-address'],
                     'gateway': gateway,
@@ -604,8 +601,10 @@ def convert_ip_lists(parent, path, data):
         error = convert_ip_lists_firewall_filter(parent, current_path, data['ip firewall nat'])
 
     if parent.ip_lists:
-        out_message = f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".'
-        parent.stepChanged.emit('ORANGE|    Некоторые списки IP-адресов не выгружены из-за ошибок.' if error else out_message)
+        if error:
+            parent.stepChanged.emit('ORANGE|    Некоторые списки IP-адресов не выгружены из-за ошибок.')
+        else:
+            parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет списков IP-адресов для экспорта.')
 
@@ -619,11 +618,11 @@ def convert_ip_lists_from_address_list(parent, current_path, address_list):
             if item['list'] in ip_list:
                 ip_list[item['list']]['content'].append({'value': item['address']})
                 if 'comment' in item:
-                    ip_list[item['list']]['description'] = item['comment']
+                    ip_list[item['list']]['description'] = f"Портировано с MikroTik.\n{item.get('comment', '')}"
             else:
                 ip_list[item['list']] = {
                     'name': func.get_restricted_name(item['list']),
-                    'description': item.get('comment', ''),
+                    'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
                     'type': 'network',
                     'url': '',
                     'list_type_update': 'static',
@@ -656,7 +655,7 @@ def convert_ip_lists_firewall_filter(parent, current_path, firewall_filter):
             if item['dst-address'] not in parent.ip_lists:
                 ip_list = {
                     'name': item['dst-address'],
-                    'description': '',
+                    'description': 'Портировано с MikroTik.',
                     'type': 'network',
                     'url': '',
                     'list_type_update': 'static',
@@ -677,7 +676,7 @@ def convert_ip_lists_firewall_filter(parent, current_path, firewall_filter):
             if item['src-address'] not in parent.ip_lists:
                 ip_list = {
                     'name': item['src-address'],
-                    'description': '',
+                    'description': 'Портировано с MikroTik.',
                     'type': 'network',
                     'url': '',
                     'list_type_update': 'static',
@@ -734,7 +733,7 @@ def convert_services_from_filter(parent, ip_firewall_filter):
                 item['services'] = 'err'
                 continue
             service_name = item['protocol']
-            description = ''
+            description = 'Портировано с MikroTik.'
             if 'dst-port' not in item and 'src-port' not in item:
                 if item['protocol'] not in parent.services:
                     if item['protocol'] in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
@@ -817,7 +816,7 @@ def convert_services_from_nat(parent, ip_firewall_nat):
                 if 'dst-port' in item and 'to-ports' in item and (item['dst-port'] != item['to-ports']):
                     continue
             service_name = item['protocol']
-            description = ''
+            description = 'Портировано с MikroTik.'
             if 'to-ports' not in item:
                 if item['protocol'] not in parent.services:
                     if item['protocol'] in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
@@ -918,7 +917,7 @@ def convert_firewall_rules(parent, path, data):
         n += 1
         fw_rule = {
             'name': f'Rule - {n}',
-            'description': item.get('comment', ''),
+            'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
             'action': action,
             'scenario_rule_id': False,
             'src_zones': [item['in-interface-list']] if item.get('in-interface-list', False) else [],
@@ -1023,7 +1022,7 @@ def convert_dnat_rules(parent, path, data):
         n += 1
         dnat_rule = {
             'name': f'Rule - {n}',
-            'description': item.get('comment', ''),
+            'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
             'action': action,
             'zone_in': [item['in-interface-list']] if item.get('in-interface-list', False) else [],
             'zone_out': [item['out-interface-list']] if item.get('out-interface-list', False) else [],

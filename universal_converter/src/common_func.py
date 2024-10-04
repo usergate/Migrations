@@ -118,7 +118,7 @@ def create_ip_list(parent, path, ips=[], name=None):
 
         ip_list = {
             'name': iplist_name,
-            'description': 'Портировано...',
+            'description': f'Портировано с {parent.vendor}.',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -210,10 +210,9 @@ def get_restricted_name(name):
     """
     if isinstance(name, str):
         new_name = name.translate(trans_name).strip()
-        if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'}
+        while new_name[0] in forbidden_values:
             new_name = new_name[1:]
-            if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
-                new_name = new_name[1:]
         return new_name
     else:
         return 'Name not valid'

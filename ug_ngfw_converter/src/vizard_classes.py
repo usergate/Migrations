@@ -260,7 +260,7 @@ class SelectMode(QWidget):
 
     def init_temporary_data(self, mode):
         """
-        Запускаем в потоке itd.GetTemporaryData() для получения часто используемых данных с NGFW.
+        Запускаем в потоке gtd.GetTemporaryData() для получения часто используемых данных с NGFW.
         """
         if self.thread is None:
             self.disable_buttons()
@@ -269,7 +269,7 @@ class SelectMode(QWidget):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения часто используемых данных с NGFW! {self.thread}')
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
@@ -316,7 +316,7 @@ class SelectExportMode(SelectMode):
     """Класс для выбора раздела конфигурации для экспорта из NGFW. Номер в стеке 1."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.title.setText("<b><font color='green' size='+2'>Выбор раздела конфигурации для экспорта</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Экспорт конфигурации из UserGate NGFW</font></b>")
         self.btn2.setText("Экспорт выбранного раздела")
         self.btn2.clicked.connect(self.export_selected_points)
         self.btn3.setText("Экспортировать всё")
@@ -336,7 +336,8 @@ class SelectExportMode(SelectMode):
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
                 if self.get_auth(mod='fw'):
                     self.enable_buttons()
-                    self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                    self.tree.version = self.utm.float_version
+                    self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_export()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
                     self.init_temporary_data('export')
@@ -409,7 +410,8 @@ class SelectMcExportMode(SelectMode):
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
                 if self.get_auth(mod='fw'):
                     self.enable_buttons()
-                    self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                    self.tree.version = self.utm.float_version
+                    self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_export()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
                     self.init_temporary_data('export')
@@ -484,7 +486,8 @@ class SelectImportMode(SelectMode):
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
                 if self.get_auth(mod='fw'):
                     self.enable_buttons()
-                    self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                    self.tree.version = self.utm.float_version
+                    self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_import(self.parent.get_config_path())
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
                     self.init_temporary_data('import')
@@ -702,7 +705,11 @@ class SelectMcImportMode(SelectMode):
                         self.template_name = template_dialog.current_template_name
                         self.template_id = template_dialog.templates[self.template_name]
                         self.label_version.setText(f'MC (версия {self.utm.version}) - шаблон: {self.template_name}')
-                        self.tree.version = f'{self.utm.version_hight}.{self.utm.version_midle}'
+                        err, result = self.utm.get_template_waf_profiles(self.template_id)
+                        if not err:
+                            self.utm.waf_license = True
+                        self.tree.version = self.utm.float_version
+                        self.tree.waf_license = self.utm.waf_license
                         self.tree.change_items_status_for_import(self.parent.get_config_path())
                         title = f'Импорт конфигурации в шаблон "{self.template_name}" на МС.'
                         self.add_item_log(f'{title:>100}', color='GREEN')
@@ -1258,6 +1265,7 @@ class MainTree(QTreeWidget):
         super().__init__()
         self.setStyleSheet(cs.Style.MainTree)
         self.version = None     # Версия NGFW
+        self.waf_license = False
 
         self.compliances = {
             "UserGate": "UserGate",
@@ -1392,10 +1400,10 @@ class MainTree(QTreeWidget):
         }
 
         self.restricted_items = {
-            "7.1": (
+            7.1: {
                 "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
-                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"),
-            "7.0": (
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+            7.0: {
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
                 "Политики BYOD",
@@ -1408,8 +1416,8 @@ class MainTree(QTreeWidget):
                 "Сигнатуры СОВ",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
-            ),
-            "6.1": (
+            },
+            6.1: {
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
                 "Инспектирование туннелей",
@@ -1422,8 +1430,8 @@ class MainTree(QTreeWidget):
                 "Профили пересылки SSL",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
-            ),
-            "5.0": (
+            },
+            5.0: {
                 "Профили пользовательских сертификатов",
                 "Виртуальные маршрутизаторы",
                 "Терминальные серверы",
@@ -1436,7 +1444,7 @@ class MainTree(QTreeWidget):
                 "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
-            ),
+            },
         }
 
         tree_head_font = QFont("Noto Sans", pointSize=10, weight=300)
@@ -1464,6 +1472,8 @@ class MainTree(QTreeWidget):
     def change_items_status_for_export(self):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем остальные."""
 #        item = self.findItems(self.compliances[name], Qt.MatchFlag.MatchRecursive)[0]
+        if not self.waf_license and self.version >= 7.1:
+            self.restricted_items[self.version].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
         for item in self.findItems('*', Qt.MatchFlag.MatchWrap|Qt.MatchFlag.MatchWildcard|Qt.MatchFlag.MatchRecursive):
             if item.text(0) in self.restricted_items[self.version]:
                 item.setHidden(True)
@@ -1473,6 +1483,8 @@ class MainTree(QTreeWidget):
 
     def change_items_status_for_import(self, current_path):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем те, для которых есть конфигурация."""
+        if not self.waf_license and self.version >= 7.1:
+            self.restricted_items[self.version].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
             if item.text(0) in self.restricted_items[self.version]:

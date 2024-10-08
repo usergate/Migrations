@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации на UserGate Management Center версии 7.
-# Версия 2.5 11.09.2024
+# Версия 2.6 08.10.2024
 #
 
 import os, sys, json, time
@@ -1652,7 +1652,7 @@ def import_zones(parent, path):
         'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
         'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
         'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
-        'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
+#        'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
         'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
         'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
         'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
@@ -1682,12 +1682,19 @@ def import_zones(parent, path):
                             try:
                                 item[1] = parent.mc_data['ip_lists'][item[1]]
                             except KeyError as err:
-                                parent.stepChanged.emit(f'bRED|    Зона "{zone["name"]}": в контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
+                                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
+                                zone['description'] = f'{zone["description"]}\nError: В контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".'
                                 error = 1
+                                continue
                         allowed_ips.append(item)
                     service['allowed_ips'] = allowed_ips
-                service['service_id'] = service_ids.get(service['service_id'], 'ffffff03-ffff-ffff-ffff-ffffff000001')
-                new_services_access.append(service)
+                try:
+                    service['service_id'] = service_ids[service['service_id']]
+                    new_services_access.append(service)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. Не корректный сервис "{service["service_id"]}" в контроле доступа.')
+                    zone['description'] = f'{zone["description"]}\nError: Не импортирован сервис "{service["service_id"]}" в контроль доступа.'
+                    error = 1
         zone['services_access'] = new_services_access
 
         zone_networks = []
@@ -1696,7 +1703,8 @@ def import_zones(parent, path):
                 try:
                     net[1] = parent.mc_data['ip_lists'][net[1]]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'ORANGE|    Зона "{zone["name"]}": В защите от IP-спуфинга не найден список IP-адресов "{err}".')
+                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов "{err}".')
+                    zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов "{err}".'
                     error = 1
                     continue
             zone_networks.append(net)
@@ -1706,18 +1714,18 @@ def import_zones(parent, path):
         for item in zone['sessions_limit_exclusions']:
             try:
                 item[1] = parent.mc_data['ip_lists'][item[1]]
+                sessions_limit_exclusions.append(item)
             except KeyError as err:
-                parent.stepChanged.emit(f'ORANGE|    Зона "{zone["name"]}": В ограничении сессий не найден список IP-адресов "{err}".')
+                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Ограничение сессий" не найден список IP-адресов "{err}".')
+                zone['description'] = f'{zone["description"]}\nError: В разделе "Ограничение сессий" не найден список IP-адресов "{err}".'
                 error = 1
-                continue
-            sessions_limit_exclusions.append(item)
         zone['sessions_limit_exclusions'] = sessions_limit_exclusions
 
         err, result = parent.utm.add_template_zone(parent.template_id, zone)
         if err == 3:
             parent.stepChanged.emit(f'GRAY|    {result}')
         elif err == 1:
-            parent.stepChanged.emit(f'RED|    {result}')
+            parent.stepChanged.emit(f'RED|    {result}. Зона "{zone["name"]}" не импортирована.')
             error = 1
         else:
             parent.mc_data['zones'][zone['name']] = result
@@ -4856,16 +4864,18 @@ def import_reverseproxy_rules(parent, path):
         if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
             return
 
-    err, result = parent.utm.get_template_waf_profiles(parent.template_id)
-    if err == 1:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    elif err == 2:
-        parent.stepChanged.emit('NOTE|    Нет лицензии на WAF. Профили WAF в правилах не будут перенесены.')
-        waf_profiles = {}
+    waf_profiles = {}
+    if parent.utm.waf_license:  # Проверяем что есть лицензия на WAF
+        # Получаем список профилей WAF. Если err=2, лицензия истекла или нет прав на API.
+        err, result = parent.utm.get_template_waf_profiles(parent.template_id)
+        if err == 1:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        elif not err:
+            waf_profiles = {x['name']: x['id'] for x in result}
     else:
-        waf_profiles = {x['name']: x['id'] for x in result}
+        parent.stepChanged.emit('NOTE|    Нет лицензии на WAF. Защита приложений WAF будет выключена в правилах.')
 
     err, result = parent.utm.get_template_reverseproxy_rules(parent.template_id)
     if err:
@@ -4881,6 +4891,17 @@ def import_reverseproxy_rules(parent, path):
         item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
         item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
+
+        if not item['src_zones']:
+            parent.stepChanged.emit(f'RED|       Правило "{item["name"]}" не импортировано.')
+            continue
+
+        try:
+            for x in item['servers']:
+                x[1] = parent.reverseproxy_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик "{err}". Импортируйте reverse-прокси или балансировщик и повторите попытку.')
+            continue
 
         if item['ssl_profile_id']:
             try:
@@ -4918,17 +4939,10 @@ def import_reverseproxy_rules(parent, path):
                     new_user_agents.append(['list_id', useragent_list[x[1]]])
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список Useragent "{err}". Импортируйте списки useragent браузеров и повторите попытку.')
-                    item['description'] = f'{item["description"]}\nError: Не найден список Useragent "{err}".'
+                    item['description'] = f'{item["description"]}\nError: Не найден Useragent "{err}".'
                     item['enabled'] = False
                     error = 1
         item['user_agents'] = new_user_agents
-
-        try:
-            for x in item['servers']:
-                x[1] = parent.reverseproxy_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
-        except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик "{err}". Импортируйте reverse-прокси или балансировщик и повторите попытку.')
-            continue
 
         if item['client_certificate_profile_id']:
             item['client_certificate_profile_id'] = parent.client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
@@ -4939,14 +4953,18 @@ def import_reverseproxy_rules(parent, path):
                 error = 1
 
         if item['waf_profile_id']:
-            try:
-                item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF "{err}". Импортируйте профили WAF и повторите попытку.')
-                item['description'] = f'{item["description"]}\nError: Не найден профиль WAF "{err}".'
+            if parent.utm.waf_license:
+                try:
+                    item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF "{err}". Импортируйте профили WAF и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль WAF "{err}".'
+                    item['waf_profile_id'] = 0
+                    item['enabled'] = False
+                    error = 1
+            else:
                 item['waf_profile_id'] = 0
-                item['enabled'] = False
-                error = 1
+                item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
 
         if item['name'] in reverseproxy_rules:
             parent.stepChanged.emit(f'GRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')

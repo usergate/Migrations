@@ -239,6 +239,7 @@ class GetTemporaryData(QThread):
             self.error = 1
         self.mc_data['l7_categories'] = {x['name']: x['id'] for x in result}
 
+
         if self.error:
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
         else:

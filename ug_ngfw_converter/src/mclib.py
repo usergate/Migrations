@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 2.5 11.09.2024
+# Версия 2.6 07.10.2024
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -30,6 +30,8 @@ class McXmlRpc:
         self.version_midle = None
         self.version_low = None
         self.version_other = None
+        self.float_version = None
+        self.waf_license = False
 
     def connect(self):
         """Подключиться к UTM"""
@@ -71,6 +73,7 @@ class McXmlRpc:
             self.version_midle = int(tmp[1])
             self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
+            self.float_version = float(f'{tmp[0]}.{tmp[1]}')
             return 0, True
 
     def get_node_status(self):
@@ -1876,7 +1879,7 @@ class McXmlRpc:
             result = self._server.v1.ccwaf.profiles.list(self._auth_token, template_id, 0, 100000, {}, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получение профилей WAF шаблона [Error mclib.get_realms_list: {err.faultString}].'
+                return 2, f'Нет лицензии на модуль WAF или прав на получение профилей WAF шаблона.'
             else:
                 return 1, f'Error mclib.get_template_waf_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']

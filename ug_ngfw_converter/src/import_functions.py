@@ -473,6 +473,7 @@ def import_zones(parent, path):
 
     for zone in zones:
         zone['name'] = func.get_restricted_name(zone['name'])
+        new_service_access = []
         for service in zone['services_access']:
             if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
                 if parent.version >= 7.1:
@@ -482,7 +483,8 @@ def import_zones(parent, path):
                             try:
                                 item[1] = parent.ngfw_data['ip_lists'][item[1]]
                             except KeyError as err:
-                                parent.stepChanged.emit(f'ORANGE|    Зона "{zone["name"]}": для сервиса "{service["service_id"]}" не найден список IP-адресов {err}. Список IP-адресов не указан.')
+                                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
+                                zone['description'] = f'{zone["description"]}\nError: В контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".'
                                 error = 1
                                 continue
                         allowed_ips.append(item)
@@ -492,8 +494,12 @@ def import_zones(parent, path):
                     parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" в контроле доступа сервиса "{service["service_id"]}" удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.')
             try:
                 service['service_id'] = service_for_zones[service['service_id']]
-            except KeyError:
-                service['service_id'] = 3
+                new_service_access.append(service)
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. Не корректный сервис "{service["service_id"]}" в контроле доступа.')
+                zone['description'] = f'{zone["description"]}\nError: Не импортирован сервис "{service["service_id"]}" в контроль доступа.'
+                error = 1
+        zone['services_access'] = new_service_access
 
         if parent.version < 7.1:
             zone.pop('sessions_limit_enabled', None)
@@ -517,11 +523,11 @@ def import_zones(parent, path):
             for item in zone['sessions_limit_exclusions']:
                 try:
                     item[1] = parent.ngfw_data['ip_lists'][item[1]]
+                    sessions_limit_exclusions.append(item)
                 except KeyError as err:
-                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не найден список IP-адресов {err}. Список IP-адресов для ограничения сессий не импортирован.')
+                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Ограничение сессий" не найден список IP-адресов "{err}".')
+                    zone['description'] = f'{zone["description"]}\nError: В разделе "Ограничение сессий" не найден список IP-адресов "{err}".'
                     error = 1
-                    continue
-                sessions_limit_exclusions.append(item)
             zone['sessions_limit_exclusions'] = sessions_limit_exclusions
 
             content = []
@@ -534,44 +540,46 @@ def import_zones(parent, path):
                         try:
                             net[1] = parent.ngfw_data['ip_lists'][net[1]]
                         except KeyError as err:
-                            parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не найден список IP-адресов {err}. Список IP-адресов в защите от IP-спуфинга не импортирован.')
+                            parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов "{err}".')
+                            zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов "{err}".'
                             error = 1
                             continue
                     zone_networks.append(net)
             zone['networks'] = zone_networks
+
             if content:
                 nlist_name = f'For zone {zone["name"]}'
                 err, list_id = add_new_nlist(parent.utm, nlist_name, 'network', content)
                 if err == 1:
                     parent.stepChanged.emit(f'RED|    {list_id}')
-                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" не создан список IP-адресов в защите от IP-спуфинга.')
+                    parent.stepChanged.emit(f'RED|       Error [Зона "{zone["name"]}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
+                    zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
                     error = 1
-                    zone['networks'] = []
                 elif err == 2:
                     parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}" уже существует.')
-                    zone['networks'] = [['list_id', parent.ngfw_data['ip_lists'][nlist_name]]]
+                    zone['networks'].append(['list_id', parent.ngfw_data['ip_lists'][nlist_name]])
                 else:
-                    zone['networks'] = [['list_id', list_id]]
+                    zone['networks'].append(['list_id', list_id])
                     parent.ngfw_data['ip_lists'][nlist_name] = list_id
                     parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}".')
 
         err, result = parent.utm.add_zone(zone)
         if err == 1:
             error = 1
-            parent.stepChanged.emit(f'RED|    {result}')
+            parent.stepChanged.emit(f'RED|    {result}. Зона "{zone["name"]}" не импортирована.')
         elif err == 2:
             parent.stepChanged.emit(f'GRAY|    {result}')
             err, result2 = parent.utm.update_zone(parent.ngfw_data['zones'][zone['name']], zone)
             if err == 1:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result2}')
+                parent.stepChanged.emit(f'RED|       {result2}')
             elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result2}')
+                parent.stepChanged.emit(f'GRAY|       {result2}')
             else:
-                parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|       Зона "{zone["name"]}" updated.')
         else:
             parent.ngfw_data['zones'][zone["name"]] = result
-            parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" добавлена.')
+            parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')
 
     if error:
         parent.error = 1
@@ -3442,12 +3450,18 @@ def import_reverseproxy_rules(parent, path):
             if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
                 return
 
-        err, result = parent.utm.get_waf_profiles()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        waf_profiles = {x['name']: x['id'] for x in result}
+        waf_profiles = {}
+        if parent.utm.waf_license:  # Проверяем что есть лицензия на WAF
+            # Получаем список профилей WAF. Если err=2, лицензия истекла или нет прав на API.
+            err, result = parent.utm.get_waf_profiles_list()
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                return
+            elif not err:
+                waf_profiles = {x['name']: x['id'] for x in result}
+        else:
+            parent.stepChanged.emit('NOTE|    Нет лицензии на модуль WAF. Защита приложений WAF будет выключена в правилах.')
 
     err, result = parent.utm.get_reverseproxy_rules()
     if err:
@@ -3463,6 +3477,14 @@ def import_reverseproxy_rules(parent, path):
         item['src_ips'] = get_ips_id(parent, item['src_ips'], item['name'])
         item['dst_ips'] = get_ips_id(parent, item['dst_ips'], item['name'])
         item['users'] = get_guids_users_and_groups(parent, item['users'], item['name'])
+
+        try:
+            for x in item['servers']:
+                x[1] = parent.reverseproxy_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
+        except KeyError as err:
+            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик "{err}". Импортируйте reverse-прокси или балансировщик и повторите попытку.')
+            continue
+
         if parent.version < 6:
             item.pop('ssl_profile_id', None)
         else:
@@ -3470,32 +3492,40 @@ def import_reverseproxy_rules(parent, path):
                 try:
                     item['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][item['ssl_profile_id']]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL "{err}". Загрузите профили SSL и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль SSL "{err}".'
                     item['ssl_profile_id'] = 0
                     item['is_https'] = False
+                    item['enabled'] = False
+                    error = 1
             else:
                 item['is_https'] = False
+
         if item['certificate_id']:
             try:
                 item['certificate_id'] = parent.ngfw_data['certs'][item['certificate_id']]
             except KeyError as err:
-                parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Создайте сертификат и повторите попытку.')
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сертификат "{err}". Создайте сертификат и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден сертификат "{err}".'
                 item['certificate_id'] = -1
                 item['is_https'] = False
+                item['enabled'] = False
+                error = 1
         else:
             item['certificate_id'] = -1
             item['is_https'] = False
-        try:
-            item['user_agents'] = [['list_id',useragent_list[x[1]]] for x in item['user_agents']]
-        except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден Useragent "{err}". Импортируйте useragent браузеров и повторите попытку.')
-            item['user_agents'] = []
-        try:
-            for x in item['servers']:
-                x[1] = parent.reverseproxy_servers[x[1]] if x[0] == 'profile' else reverse_loadbalancing[x[1]]
-        except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик "{err}". Импортируйте reverse-прокси или балансировщик и повторите попытку.')
-            continue
+
+        new_user_agents = []
+        for x in item['user_agents']:
+            try:
+                new_user_agents.append(['list_id', useragent_list[x[1]]])
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден Useragent "{err}". Импортируйте useragent браузеров и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден Useragent "{err}".'
+                item['enabled'] = False
+                error = 1
+        item['user_agents'] = new_user_agents
+
         if parent.version < 7.1:
             item.pop('user_agents_negate', None)
             item.pop('waf_profile_id', None)
@@ -3505,13 +3535,23 @@ def import_reverseproxy_rules(parent, path):
             if item['client_certificate_profile_id']:
                 item['client_certificate_profile_id'] = parent.client_certificate_profiles.get(item['client_certificate_profile_id'], 0)
                 if not item['client_certificate_profile_id']:
-                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}".'
+                    item['enabled'] = False
+                    error = 1
             if item['waf_profile_id']:
-                try:
-                    item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
-                except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF "{err}". Импортируйте профили WAF и повторите попытку.')
+                if parent.utm.waf_license:
+                    try:
+                        item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF "{err}". Импортируйте профили WAF и повторите попытку.')
+                        item['description'] = f'{item["description"]}\nError: Не найден профиль WAF "{err}".'
+                        item['waf_profile_id'] = 0
+                        item['enabled'] = False
+                        error = 1
+                else:
                     item['waf_profile_id'] = 0
+                    item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
 
         if item['name'] in reverseproxy_rules:
             parent.stepChanged.emit(f'GRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')
@@ -3539,6 +3579,8 @@ def import_reverseproxy_rules(parent, path):
 #--------------------------------------------------- WAF ----------------------------------------------------------------
 def import_waf_custom_layers(parent, path):
     """Импортируем персональные WAF-слои. Для версии 7.1 и выше"""
+    if not parent.utm.waf_license:
+        return
     json_file = os.path.join(path, 'config_waf_custom_layers.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
@@ -3580,6 +3622,8 @@ def import_waf_custom_layers(parent, path):
 
 def import_waf_profiles(parent, path):
     """Импортируем профили WAF. Для версии 7.1 и выше"""
+    if not parent.utm.waf_license:
+        return
     json_file = os.path.join(path, 'config_waf_profiles.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
@@ -3623,14 +3667,18 @@ def import_waf_profiles(parent, path):
                 try:
                     layer['id'] = waf_custom_layers[layer['id']]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Error [Профиль "{item["name"]}"]. Не найден персональный WAF-слой "{err}". Импортируйте персональные WAF-слои и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|    Error [Профиль "{item["name"]}"]. Не найден персональный WAF-слой "{err}". Импортируйте персональные WAF-слои и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден персональный WAF-слой "{err}".'
+                    error = 1
                     continue
             else:
                 try:
                     layer['id'] = waf_system_layers[layer['id']]
                     layer['protection_technologies'] = [waf_technology[x] for x in layer['protection_technologies']]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Error [Профиль "{item["name"]}"]. Произошла ошибка в системном WAF-слое "{layer["id"]}" -  "{err}".')
+                    parent.stepChanged.emit(f'RED|    Error [Профиль "{item["name"]}"]. Произошла ошибка в системном WAF-слое "{layer["id"]}" -  "{err}".')
+                    item['description'] = f'{item["description"]}\nError: Произошла ошибка в системном WAF-слое "{layer["id"]}".'
+                    error = 1
                     continue
             new_layers.append(layer)
         item['layers'] = new_layers

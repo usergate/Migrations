@@ -34,7 +34,6 @@ class GetExportTemporaryData(QThread):
         super().__init__()
         self.utm = utm
         self.ngfw_data = {}
-        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
 
     def run(self):
         """Заполняем служебные структуры данных"""
@@ -82,7 +81,7 @@ class GetExportTemporaryData(QThread):
         self.ngfw_data['local_users'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
         # Получаем список профилей SSL
-        if self.version > 5:
+        if self.utm.float_version > 5:
             self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL')
             err, result = self.utm.get_ssl_profiles_list()
             if err:
@@ -139,7 +138,7 @@ class GetExportTemporaryData(QThread):
         self.ngfw_data['services'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
         # Получаем список групп сервисов
-        if self.version >= 7:
+        if self.utm.float_version >= 7:
             self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов')
             err, result = self.utm.get_nlists_list('servicegroup')
             if err:
@@ -179,6 +178,7 @@ class GetExportTemporaryData(QThread):
             return
         self.ngfw_data['l7_apps'] = result
 
+
         if write_bin_file(self, self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации экспорта! Не удалось сохранить служебные структуры данных.')
         else:
@@ -192,7 +192,7 @@ class GetImportTemporaryData(QThread):
         super().__init__()
         self.utm = utm
         self.ngfw_data = {}
-        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
+#        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
 
     def run(self):
         """Заполняем служебные структуры данных"""
@@ -240,7 +240,7 @@ class GetImportTemporaryData(QThread):
         self.ngfw_data['local_users'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
         # Получаем список профилей SSL
-        if self.version > 5:
+        if self.utm.float_version > 5:
             self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL')
             err, result = self.utm.get_ssl_profiles_list()
             if err:
@@ -297,7 +297,7 @@ class GetImportTemporaryData(QThread):
         self.ngfw_data['services'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
         # Получаем список групп сервисов
-        if self.version >= 7:
+        if self.utm.float_version >= 7:
             self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов')
             err, result = self.utm.get_nlists_list('servicegroup')
             if err:
@@ -336,6 +336,7 @@ class GetImportTemporaryData(QThread):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.ngfw_data['l7_apps'] = {value: key for key, value in result.items()}
+
 
         if write_bin_file(self, self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Не удалось сохранить служебные структуры данных.')

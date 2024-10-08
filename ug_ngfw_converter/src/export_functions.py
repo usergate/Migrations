@@ -2690,12 +2690,17 @@ def export_reverseproxy_rules(parent, path):
             return
         client_certificate_profiles = {x['id']: x['name'] for x in result}
 
-        err, result = parent.utm.get_waf_profiles()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        waf_profiles = {x['id']: x['name'] for x in result}
+        waf_profiles = {}
+        if parent.utm.waf_license:  # Проверяем что есть лицензия на WAF
+            # Получаем список профилей WAF. Если err=2, значит лицензия истекла или нет прав на API.
+            err, data = parent.utm.get_waf_profiles_list()
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                return
+            elif not err:
+                waf_profiles = {x['id']: x['name'] for x in result}
+
 
     err, data = parent.utm.get_reverseproxy_rules()
     if err:
@@ -2765,6 +2770,8 @@ def export_reverseproxy_rules(parent, path):
 #------------------------------------------------------- WAF ------------------------------------------------------------
 def export_waf_custom_layers(parent, path):
     """Экспортируем персональные WAF-слои. Для версии 7.1 и выше"""
+    if not parent.utm.waf_license:
+        return
     parent.stepChanged.emit('BLUE|Экспорт персональных слоёв WAF из раздела "WAF/Персональные WAF-слои".')
     error = 0
 
@@ -2798,6 +2805,8 @@ def export_waf_custom_layers(parent, path):
 
 def export_waf_profiles_list(parent, path):
     """Экспортируем профили WAF. Для версии 7.1 и выше"""
+    if not parent.utm.waf_license:
+        return
     parent.stepChanged.emit('BLUE|Экспорт профилей WAF из раздела "WAF/WAF-профили".')
     error = 0
 
@@ -4662,7 +4671,7 @@ def get_apps(parent, array_apps, rule_name):
                 try:
                     new_app_list.append(['ro_group', parent.ngfw_data['l7_categories'][app[1]]])
                 except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Error! Не найдена категория l7 №{err} для правила "{rule_name}".')
+                    parent.stepChanged.emit(f'bRED|    Error! Не найдена категория l7 "{app}" для правила "{rule_name}".')
                     parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и UTM не получил список категорий l7. Установите лицензию и повторите попытку.')
         elif app[0] == 'group':
             try:

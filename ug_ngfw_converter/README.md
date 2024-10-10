@@ -1,5 +1,5 @@
 <h2 align="center">Экспорт/импорт конфигурации NGFW UserGate</h2>
-<h3 align="center">(Версия 2.7)</h3>
+<h3 align="center">(Версия 2.8)</h3>
 
 Программа предназначена для переноса конфигурации с NGFW версий 5, 6 и 7 на NGFW версий 5, 6 и 7 и МС версии 7.1 и выше.
 
@@ -142,6 +142,7 @@ ip-адрес на каждом интерфейсе.<br>
 На виртуальных машинах возможна ошибка: "libEGL.so.1: cannot open shared object file: No such file or directory"<br>
 Может помочь: apt update && apt install -y libopencv-dev && apt clean && rm -rf /var/lib/apt/lists/*
 
+10.10.2024 Исправлен экспорт сертификатов.<br>
 08.10.2024 Сделан учёт лицензии на модуль WAF.<br>
 07.10.2024 Исправлен импорт зон.<br>
 06.10.2024 Исправлен экспорт/импорт правил reverse-прокси.<br>

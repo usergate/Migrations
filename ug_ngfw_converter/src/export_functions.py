@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.6 04.10.2024
+# Версия 2.7 10.10.2024
 #
 
 import os, sys, json
@@ -339,13 +339,13 @@ def export_certificates(parent, path):
             parent.stepChanged.emit(f'BLACK|    Экспорт сертификата {item["name"]}.')
             item.pop('cc', None)
             if parent.version >= 7.1:
-                if item['not_before'].value:
+                try:
                     item['not_before'] = dt.strptime(item['not_before'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                else:
+                except ValueError:
                     item['not_before'] = ''
-                if item['not_after'].value:
+                try:
                     item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                else:
+                except ValueError:
                     item['not_after'] = ''
             else:
                 if item['not_before']:
@@ -389,10 +389,15 @@ def export_certificates(parent, path):
                     error = 1
                 else:
                     if parent.version >= 7.1:
-                        if details_info['notBefore']:
+                        try:
                             details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                        if details_info['notAfter']:
+                        except ValueError:
+                            details_info['notBefore'] = ''
+                        try:
                             details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            details_info['notAfter'] = ''
+
                     json_file = os.path.join(path_cert, 'certificate_details.json')
                     with open(json_file, 'w') as fh:
                         json.dump(details_info, fh, indent=4, ensure_ascii=False)

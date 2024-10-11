@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_universal_converter.py
-# Version 2.7  08.10.2024
+# Version 2.9  10.10.2024
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 2.7)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 2.9)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()

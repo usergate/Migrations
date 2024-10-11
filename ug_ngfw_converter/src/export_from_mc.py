@@ -84,17 +84,17 @@ class ExportSelectedPoints(QThread):
             self.stepChanged.emit('iRED|Экспорт конфигурации из шаблона UserGate Management Center прерван! Не удалось прочитать служебные данные.')
             return
 
-        try:
-            for point in self.selected_points:
-                current_path = os.path.join(self.selected_path, point)
-                if point in export_funcs:
-                    export_funcs[point](self, current_path)
-                else:
-                    self.error = 1
-                    self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
-        except Exception as err:
-            self.error = 1
-            self.stepChanged.emit('RED|Ошибка функции "{export_funcs[point].__name__}": {err}')
+#        try:
+        for point in self.selected_points:
+            current_path = os.path.join(self.selected_path, point)
+            if point in export_funcs:
+                export_funcs[point](self, current_path)
+            else:
+                self.error = 1
+                self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
+#        except Exception as err:
+#            self.error = 1
+#            self.stepChanged.emit('RED|Ошибка функции "{export_funcs[point].__name__}": {err}')
 
         if self.error:
             self.stepChanged.emit('iORANGE|Экспорт конфигурации прошёл с ошибками!\n')
@@ -104,185 +104,192 @@ class ExportSelectedPoints(QThread):
 
 def export_general_settings(parent, path):
     """Экспортируем раздел 'UserGate/Настройки'."""
-    export_ui(parent, path)
-#    export_ntp_settings(parent, path)
-#    export_proxy_port(parent, path)
-#    export_modules(parent, path)
-#    export_cache_settings(parent, path)
+    err, data = parent.utm.get_template_general_settings(parent.template_id)
+    if err:
+        parent.error = 1
+        parent.stepChanged.emit('RED|    Error: Произошла ошибка получения настроек раздела "UserGate/Настройки".')
+        parent.stepChanged.emit(f'RED|       {data}')
+    else:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.error = 1
+            parent.stepChanged.emit('RED|    Error: Произошла ошибка экспорта настроек раздела "UserGate/Настройки".')
+            parent.stepChanged.emit(f'RED|       {msg}')
+        else:
+            export_ui(parent, path, data)
+            export_ntp_settings(parent, path, data)
+            export_modules(parent, path, data)
+            export_cache_settings(parent, path, data)
 #    export_proxy_exeptions(parent, path)
-#    export_web_portal_settings(parent, path)
+#    export_web_portal_settings(parent, path, data)
 #    export_upstream_proxy_settings(parent, path)
 
 
-def export_ui(parent, path):
+def export_ui(parent, path, data):
     """Экспортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
     parent.stepChanged.emit('BLUE|Экспорт раздела "UserGate/Настройки/Настройки интерфейса".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
 
     error = 0
-    params = [
-        'ui_timezone',
-        'ui_language',
-        'web_console_ssl_profile_id',
-        'response_pages_ssl_profile_id',
-        'api_session_lifetime',
-        'endpoint_ssl_profile_id',
-        'endpoint_certificate_id'
-    ]
+    params = {}
 
-    err, data = parent.utm.get_settings_params(params)
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}')
-        error = 1
-        parent.error = 1
-    else:
-        err, result = parent.utm.get_webui_auth_mode()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
+    params['ui_timezone'] = data['ui_timezone']['value']
+    params['ui_language'] = data['ui_language']['value']
+    if data['web_console_ssl_profile_id']['value']:
+        try:
+            params['web_console_ssl_profile_id'] = parent.mc_data['ssl_profiles'][data['web_console_ssl_profile_id']['value']]
+        except KeyError:
+            parent.stepChanged.emit('RED|    Error: Не найден профиль SSL для веб-консоли. Данный параметр не экспортирован.')
             error = 1
-            parent.error = 1
-        else:
-            data['webui_auth_mode'] = result
+    if data['response_pages_ssl_profile_id']['value']:
+        try:
+            params['response_pages_ssl_profile_id'] = parent.mc_data['ssl_profiles'][data['response_pages_ssl_profile_id']['value']]
+        except KeyError:
+            parent.stepChanged.emit('RED|    Error: Не найден профиль SSL для страниц блокировки/аутентификации. Данный параметр не экспортирован.')
+            error = 1
+    if data['endpoint_ssl_profile_id']['value']:
+        try:
+            params['endpoint_ssl_profile_id'] = parent.mc_data['ssl_profiles'][data['endpoint_ssl_profile_id']['value']]
+        except KeyError:
+            parent.stepChanged.emit('RED|    Error: Не найден профиль SSL конечного устройства. Данный параметр не экспортирован.')
+            error = 1
+    if data['endpoint_certificate_id']['value']:
+        try:
+            params['endpoint_certificate_id'] = parent.mc_data['certs'][data['endpoint_certificate_id']['value']]
+        except KeyError:
+            parent.stepChanged.emit('RED|    Error: Не найден сертификат конечного устройства. Данный параметр не экспортирован.')
+            error = 1
+    params['webui_auth_mode'] = data['webui_auth_mode']['value']
 
-        if parent.version > 5:
-            if parent.ngfw_data['ssl_profiles']:
-                data['web_console_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['web_console_ssl_profile_id']]
-                data['response_pages_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['response_pages_ssl_profile_id']]
-            else:
-                data.pop('web_console_ssl_profile_id', None)
-                data.pop('response_pages_ssl_profile_id', None)
-        if parent.version >= 7.1:
-            data['endpoint_certificate_id'] = parent.ngfw_data['certs'].get(data['endpoint_certificate_id'], 0)
-            if parent.ngfw_data['ssl_profiles']:
-                data['endpoint_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'].get(data['endpoint_ssl_profile_id'], 0)
-            else:
-                data.pop('endpoint_ssl_profile_id', 0)
-
-        json_file = os.path.join(path, 'config_settings_ui.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
+    json_file = os.path.join(path, 'config_settings_ui.json')
+    with open(json_file, 'w') as fh:
+        json.dump(params, fh, indent=4, ensure_ascii=False)
 
     if error:
-        parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек интерфейса!')
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек интерфейса.')
     else:
         parent.stepChanged.emit(f'GREEN|    Настройки интерфейса выгружены в файл "{json_file}".')
 
 
+def export_ntp_settings(parent, path, data):
+    """Экспортируем настройки NTP"""
+    parent.stepChanged.emit('BLUE|Экспорт настроек NTP раздела "UserGate/Настройки/Настройка времени сервера".')
+
+    ntp_settings = {
+        'ntp_servers': [],
+        'ntp_enabled': data['ntp_enabled']['value']
+    }
+    if data['ntp_server1']['value']:
+        ntp_settings['ntp_servers'].append(data['ntp_server1']['value'])
+    if data['ntp_server2']['value']:
+        ntp_settings['ntp_servers'].append(data['ntp_server2']['value'])
+
+    if ntp_settings['ntp_servers']:
+        json_file = os.path.join(path, 'config_ntp.json')
+        with open(json_file, 'w') as fh:
+            json.dump(ntp_settings, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Настройки NTP выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет настроек NTP для экспорта.')
+
+
+def export_modules(parent, path, data):
     """Экспортируем раздел 'UserGate/Настройки/Модули'"""
     parent.stepChanged.emit('BLUE|Экспорт раздела "UserGate/Настройки/Модули".')
     error = 0
 
-    params = ["auth_captive", "logout_captive", "block_page_domain", "ftpclient_captive", "ftp_proxy_enabled"]
-    if parent.version >= 7.1:
-        params.extend(['tunnel_inspection_zone_config', 'lldp_config'])
+    proxy_port = data['proxy_server_port']['value']
+    json_file = os.path.join(path, 'config_proxy_port.json')
+    with open(json_file, 'w') as fh:
+        json.dump(proxy_port, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    HTTP(S)-прокси порт выгружен в файл "{json_file}".')
 
-    err, data = parent.utm.get_settings_params(params)
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}')
-        error = 1
-        parent.error = 1
+    saml_port = data['saml_server_port']['value']
+    json_file = os.path.join(path, 'config_saml_port.json')
+    with open(json_file, 'w') as fh:
+        json.dump(saml_port, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Порт SAML-сервера выгружен в файл "{json_file}".')
+
+    params = {
+        'auth_captive': data['auth_captive']['value'],
+        'logout_captive': data['logout_captive']['value'],
+        'block_page_domain': data['block_page_domain']['value'],
+        'ftpclient_captive': data['ftpclient_captive']['value'],
+        'ftp_proxy_enabled': data['ftp_proxy_enabled']['value'],
+        'lldp_config': data['lldp_config']['value']
+    }
+    if data['tunnel_inspection_zone_config']['value']['target_zone']:
+        try:
+            params['tunnel_inspection_zone_config'] = {
+                'target_zone': parent.mc_data['zones'][data['tunnel_inspection_zone_config']['value']['target_zone']],
+                'enabled': data['tunnel_inspection_zone_config']['value']['enabled']
+            }
+        except KeyError:
+            parent.stepChanged.emit('RED|    Error: Не найдена зона. Параметр "Зона для инспектируемых туннелей" не экспортирован.')
+            error = 1
+    
+    json_file = os.path.join(path, 'config_settings_modules.json')
+    with open(json_file, 'w') as fh:
+        json.dump(params, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Настройки модулей выгружены в файл "{json_file}".')
+
+    if error:
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорта настроек модулей.')
     else:
-        if parent.version >= 7.1:
-            zone_number = data['tunnel_inspection_zone_config']['target_zone']
-            data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_data['zones'].get(zone_number, 'Unknown')
-        json_file = os.path.join(path, 'config_settings_modules.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    err, data = parent.utm.get_proxy_port()
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}')
-        error = 1
-        parent.error = 1
-    else:
-        proxy_port_file = os.path.join(path, 'config_proxy_port.json')
-        with open(proxy_port_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Настройки модулей выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек модулей!' if error else out_message)
-
-    """Экспортируем SNMP Engine ID. Для версий 6 и 7.0"""
-    if 5 < parent.version < 7.1:
-        parent.stepChanged.emit('BLUE|Экспорт SNMP Engine ID из раздела "UserGate/Настройки/Модули/SNMP Engine ID".')
-        engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
-        err, msg = func.create_dir(engine_path)
-        if err:
-            parent.stepChanged.emit(f'RED|    {msg}')
-            parent.error = 1
-        else:
-            export_snmp_engine(parent, engine_path)
+        parent.stepChanged.emit(f'GREEN|    Раздел "UserGate/Настройки/Модули" экспортирован успешно.')
 
 
+def export_cache_settings(parent, path, data):
     """Экспортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
     parent.stepChanged.emit('BLUE|Экспорт раздела "UserGate/Настройки/Настройки кэширования HTTP".')
     error = 0
 
-    params = ['http_cache_mode', 'http_cache_docsize_max', 'http_cache_precache_size']
-    if parent.version >= 7:
-        params.extend([
-            'add_via_enabled', 'add_forwarded_enabled', 'smode_enabled', 'module_l7_enabled',
-            'module_idps_enabled', 'module_sip_enabled', 'module_h323_enabled', 'module_sunrpc_enabled', 
-            'module_ftp_alg_enabled', 'module_tftp_enabled', 'legacy_ssl_enabled', 'http_connection_timeout',
-            'http_loading_timeout', 'icap_wait_timeout'
-        ])
+    params = data['http_cache']['value']
+    params['add_via_enabled'] = data['advanced']['value']['add_via_enabled']
+    params['add_forwarded_enabled'] = data['advanced']['value']['add_forwarded_enabled']
+    params['smode_enabled'] = data['advanced']['value']['smode_enabled']
+    params['module_l7_enabled'] = data['advanced']['value']['module_l7_enabled']
+    params['http_connection_timeout'] = data['advanced']['value']['http_connection_timeout']
+    params['http_loading_timeout'] = data['advanced']['value']['http_loading_timeout']
 
-    err, data = parent.utm.get_settings_params(params)
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}')
-        error = 1
-        parent.error = 1
-    else:
-        json_file = os.path.join(path, 'config_proxy_settings.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'GREEN|    Настройки кэширования HTTP и доп.параметры выгружены в файл "{json_file}".')
-
-    err, data = parent.utm.get_nlist_list('httpcwl')
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}' if err == 1 else f'ORANGE|    {data}')
-        error = 1
-        parent.error = 1
-    else:
-        for content in data['content']:
-            content.pop('id')
-        json_file = os.path.join(path, 'config_proxy_exceptions.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data['content'], fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Исключения из кэширования HTTP выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек кэширования HTTP!' if error else out_message)
+    json_file = os.path.join(path, 'config_proxy_settings.json')
+    with open(json_file, 'w') as fh:
+        json.dump(params, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Настройки кэширования HTTP и доп.параметры выгружены в файл "{json_file}".')
 
 
-    """Экспортируем настройки NTP"""
-    parent.stepChanged.emit('BLUE|Экспорт настроек NTP раздела "UserGate/Настройки/Настройка времени сервера".')
-    error = 0
-
-    err, result = parent.utm.get_ntp_config()
+    err, result = parent.utm.get_template_nlists_list(parent.template_id, 'httpcwl')
+    print(result)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
-        parent.error = 1
     else:
-        result.pop('local_time', None)
-        result.pop('timezone', None)
-        if parent.version >= 7.1:
-            result['utc_time'] = dt.strptime(result['utc_time'].value, "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
+        if result:
+            err, data = parent.utm.get_template_nlist_items(parent.template_id, result[0]['id'])
+            if err:
+                parent.stepChanged.emit(f'RED|    {data}')
+                error = 1
+            else:
+                if data:
+                    for item in data:
+                        item.pop('id')
+                    json_file = os.path.join(path, 'config_proxy_exceptions.json')
+                    with open(json_file, 'w') as fh:
+                        json.dump(data, fh, indent=4, ensure_ascii=False)
+                    parent.stepChanged.emit(f'BLACK|    Исключения из кэширования HTTP выгружены в файл "{json_file}".')
+                else:
+                    parent.stepChanged.emit(f'GRAY|    Нет исключений кэширования HTTP.')
         else:
-            result['utc_time'] = dt.strptime(result['utc_time'].value, "%Y%m%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
+            parent.stepChanged.emit(f'GRAY|    Нет исключений кэширования HTTP.')
 
-        json_file = os.path.join(path, 'config_ntp.json')
-        with open(json_file, 'w') as fh:
-            json.dump(result, fh, indent=4, ensure_ascii=False)
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек кэширования HTTP.')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Раздел "UserGate/Настройки/Настройки кэширования HTTP" экспортирован успешно.')
 
-    out_message = f'GREEN|    Настройки NTP выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек NTP!' if error else out_message)
 
-
+def export_web_portal_settings(parent, path, data):
     """Экспортируем настройки веб-портала"""
     parent.stepChanged.emit('BLUE|Выгружаются настройки Веб-портала раздела "UserGate/Настройки/Веб-портал":')
     error = 0
@@ -4423,6 +4430,18 @@ def export_snmp_settings(parent, path):
     parent.stepChanged.emit(f'GREEN|    Параметры SNMP выгружены в каталог "{path}".')
 
 def export_snmp_engine(parent, path):
+    """Экспортируем SNMP Engine ID. Для версий 6 и 7.0"""
+    if 5 < parent.version < 7.1:
+        parent.stepChanged.emit('BLUE|Экспорт SNMP Engine ID из раздела "UserGate/Настройки/Модули/SNMP Engine ID".')
+        engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
+        err, msg = func.create_dir(engine_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+        else:
+            export_snmp_engine(parent, engine_path)
+
+
     err, data = parent.utm.get_snmp_engine()
     if err:
         parent.stepChanged.emit(f'iRED|{data}')

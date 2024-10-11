@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.7 10.10.2024
+# Версия 2.8 11.10.2024
 #
 
 import os, sys, json
@@ -39,7 +39,6 @@ class ExportAll(QThread):
         self.config_path = config_path      # Путь к каталогу с конфигурацией данного узла
         self.all_points = all_points
         self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
-        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
 
     def run(self):
@@ -73,7 +72,6 @@ class ExportSelectedPoints(QThread):
         self.selected_path = selected_path
         self.selected_points = selected_points
         self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
-        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
 
     def run(self):
@@ -104,9 +102,9 @@ def export_general_settings(parent, path):
 
     error = 0
     params = ['ui_timezone', 'ui_language']
-    if parent.version > 5:
+    if parent.utm.float_version > 5:
         params.extend(['web_console_ssl_profile_id', 'response_pages_ssl_profile_id'])
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         params.append('api_session_lifetime')
         params.append('endpoint_ssl_profile_id')
         params.append('endpoint_certificate_id')
@@ -125,14 +123,14 @@ def export_general_settings(parent, path):
         else:
             data['webui_auth_mode'] = result
 
-        if parent.version > 5:
+        if parent.utm.float_version > 5:
             if parent.ngfw_data['ssl_profiles']:
                 data['web_console_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['web_console_ssl_profile_id']]
                 data['response_pages_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['response_pages_ssl_profile_id']]
             else:
                 data.pop('web_console_ssl_profile_id', None)
                 data.pop('response_pages_ssl_profile_id', None)
-        if parent.version >= 7.1:
+        if parent.utm.float_version >= 7.1:
             data['endpoint_certificate_id'] = parent.ngfw_data['certs'].get(data['endpoint_certificate_id'], 0)
             if parent.ngfw_data['ssl_profiles']:
                 data['endpoint_ssl_profile_id'] = parent.ngfw_data['ssl_profiles'].get(data['endpoint_ssl_profile_id'], 0)
@@ -152,7 +150,7 @@ def export_general_settings(parent, path):
     error = 0
 
     params = ["auth_captive", "logout_captive", "block_page_domain", "ftpclient_captive", "ftp_proxy_enabled"]
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         params.extend(['tunnel_inspection_zone_config', 'lldp_config'])
 
     err, data = parent.utm.get_settings_params(params)
@@ -161,7 +159,7 @@ def export_general_settings(parent, path):
         error = 1
         parent.error = 1
     else:
-        if parent.version >= 7.1:
+        if parent.utm.float_version >= 7.1:
             zone_number = data['tunnel_inspection_zone_config']['target_zone']
             data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_data['zones'].get(zone_number, 'Unknown')
         json_file = os.path.join(path, 'config_settings_modules.json')
@@ -182,7 +180,7 @@ def export_general_settings(parent, path):
     parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек модулей!' if error else out_message)
 
     """Экспортируем SNMP Engine ID. Для версий 6 и 7.0"""
-    if 5 < parent.version < 7.1:
+    if 5 < parent.utm.float_version < 7.1:
         parent.stepChanged.emit('BLUE|Экспорт SNMP Engine ID из раздела "UserGate/Настройки/Модули/SNMP Engine ID".')
         engine_path = os.path.join(parent.config_path, 'Notifications/SNMPParameters')
         err, msg = func.create_dir(engine_path)
@@ -198,7 +196,7 @@ def export_general_settings(parent, path):
     error = 0
 
     params = ['http_cache_mode', 'http_cache_docsize_max', 'http_cache_precache_size']
-    if parent.version >= 7:
+    if parent.utm.float_version >= 7:
         params.extend([
             'add_via_enabled', 'add_forwarded_enabled', 'smode_enabled', 'module_l7_enabled',
             'module_idps_enabled', 'module_sip_enabled', 'module_h323_enabled', 'module_sunrpc_enabled', 
@@ -245,7 +243,7 @@ def export_general_settings(parent, path):
     else:
         result.pop('local_time', None)
         result.pop('timezone', None)
-        if parent.version >= 7.1:
+        if parent.utm.float_version >= 7.1:
             result['utc_time'] = dt.strptime(result['utc_time'].value, "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
         else:
             result['utc_time'] = dt.strptime(result['utc_time'].value, "%Y%m%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
@@ -269,7 +267,7 @@ def export_general_settings(parent, path):
         return
     list_templates = {x['id']: x['name'] for x in result}
 
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_client_certificate_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -283,11 +281,11 @@ def export_general_settings(parent, path):
         parent.error = 1
         error = 1
     else:
-        if parent.version > 5:
+        if parent.utm.float_version > 5:
             data['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['ssl_profile_id']]
         else:
             data['ssl_profile_id'] = "Default SSL profile"
-        if parent.version >= 7.1:
+        if parent.utm.float_version >= 7.1:
             data['client_certificate_profile_id'] = client_certificate_profiles.get(data['client_certificate_profile_id'], 0)
         else:
             data['client_certificate_profile_id'] = 0
@@ -306,7 +304,7 @@ def export_general_settings(parent, path):
 
 
     """Экспортируем настройки вышестоящего прокси"""
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         parent.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
         error = 0
 
@@ -338,14 +336,14 @@ def export_certificates(parent, path):
         for item in result:
             parent.stepChanged.emit(f'BLACK|    Экспорт сертификата {item["name"]}.')
             item.pop('cc', None)
-            if parent.version >= 7.1:
+            if parent.utm.float_version >= 7.1:
                 try:
                     item['not_before'] = dt.strptime(item['not_before'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                except ValueError:
+                except Exception:
                     item['not_before'] = ''
                 try:
                     item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                except ValueError:
+                except Exception:
                     item['not_after'] = ''
             else:
                 if item['not_before']:
@@ -388,14 +386,14 @@ def export_certificates(parent, path):
                     parent.error = 1
                     error = 1
                 else:
-                    if parent.version >= 7.1:
+                    if parent.utm.float_version >= 7.1:
                         try:
                             details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                        except ValueError:
+                        except Exception:
                             details_info['notBefore'] = ''
                         try:
                             details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                        except ValueError:
+                        except Exception:
                             details_info['notAfter'] = ''
 
                     json_file = os.path.join(path_cert, 'certificate_details.json')
@@ -465,13 +463,13 @@ def export_zones(parent, path):
             zone['name'] = zone['name'].strip().translate(trans_name)
             zone.pop('id', None)
             zone.pop('cc', None)
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 zone['sessions_limit_enabled'] = False
                 zone['sessions_limit_threshold'] = 0
                 zone['sessions_limit_exclusions'] = []
-            elif parent.version == 7.0 and zone['sessions_limit_threshold'] == -1:
+            elif parent.utm.float_version == 7.0 and zone['sessions_limit_threshold'] == -1:
                 zone['sessions_limit_threshold'] = 0
-            elif parent.version >= 7.1:
+            elif parent.utm.float_version >= 7.1:
                 for net in zone['networks']:
                     if net[0] == 'list_id':
                         net[1] = parent.ngfw_data['ip_lists'][net[1]]
@@ -515,7 +513,7 @@ def export_interfaces_list(parent, path):
     list_netflow = {x['id']: x['name'] for x in result}
 
     list_lldp = {}
-    if parent.version >= 7.0:    
+    if parent.utm.float_version >= 7.0:    
         err, result = parent.utm.get_lldp_profiles_list()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -529,7 +527,7 @@ def export_interfaces_list(parent, path):
         parent.error = 1
         error = 1
     else:
-        iface_name = translate_iface_name(parent.version, path, data)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        iface_name = translate_iface_name(parent.utm.float_version, path, data)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
         for item in data:
             item['id'], _ = item['id'].split(':')
@@ -543,12 +541,12 @@ def export_interfaces_list(parent, path):
             item['netflow_profile'] = list_netflow.get(item['netflow_profile'], 'undefined')
             lldp_profile = item.get('lldp_profile', 'undefined')
             item['lldp_profile'] = list_lldp.get(lldp_profile, 'undefined')
-            if parent.version < 7.1:
+            if parent.utm.float_version < 7.1:
                 item['ifalias'] = ''
                 item['flow_control'] = False
                 if item['mode'] == 'dhcp':
                     item['dhcp_default_gateway'] = True
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item.pop('iface_id', None)
                 item.pop('qlen', None)
                 item.pop('nameservers', None)
@@ -618,7 +616,7 @@ def export_gateways_list(parent, path):
         parent.error = 1
         return
     else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        iface_names = translate_iface_name(parent.utm.float_version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
         iface_names['undefined'] = 'undefined'
 
     err, result = parent.utm.get_gateways_list()
@@ -640,7 +638,7 @@ def export_gateways_list(parent, path):
             if not 'name' in item or not item['name']:
                 item['name'] = item['ipv4']
             item['iface'] = iface_names[item['iface']] if item['iface'] else 'undefined'
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['is_automatic'] = False
                 item['vrf'] = 'default'
 
@@ -686,7 +684,7 @@ def export_dhcp_subnets(parent, path):
         parent.error = 1
         return
     else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        iface_names = translate_iface_name(parent.utm.float_version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
     err, result = parent.utm.get_dhcp_list()
     if err:
@@ -793,7 +791,7 @@ def export_vrf_list(parent, path):
         return
     error = 0
 
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_bfd_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -819,7 +817,7 @@ def export_vrf_list(parent, path):
             item['bgp'].pop('id', None)
             if item['bgp']['as_number'] == "null":
                 item['bgp']['as_number'] = 0
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['bgp']['as_number'] = int(item['bgp']['as_number'])
             for x in item['bgp']['routemaps']:
                 route_maps[x['id']] = x['name']
@@ -839,10 +837,10 @@ def export_vrf_list(parent, path):
                     x['routemap_in'][i] = route_maps[rmap]
                 for i, rmap in enumerate(x['routemap_out']):
                     x['routemap_out'][i] = route_maps[rmap]
-                x['bfd_profile'] = -1 if parent.version < 7.1 else bfd_profiles[x['bfd_profile']]
+                x['bfd_profile'] = -1 if parent.utm.float_version < 7.1 else bfd_profiles[x['bfd_profile']]
             item['ospf'].pop('id', None)
             for x in item['ospf']['interfaces']:
-                x['bfd_profile'] = -1 if parent.version < 7.1 else bfd_profiles[x['bfd_profile']]
+                x['bfd_profile'] = -1 if parent.utm.float_version < 7.1 else bfd_profiles[x['bfd_profile']]
             for x in item['ospf']['areas']:
                 x.pop('id', None)
             item['rip'].pop('id', None)
@@ -874,7 +872,7 @@ def export_routes(parent, path):
         parent.error = 1
         return
     else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        iface_names = translate_iface_name(parent.utm.float_version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
     routes = []
     err, data = parent.utm.get_routes_list()
@@ -952,7 +950,7 @@ def export_ospf_config(parent, path):
         parent.error = 1
         return
     else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        iface_names = translate_iface_name(parent.utm.float_version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
     err, ospf, ifaces, areas = parent.utm.get_ospf_config()
     if err:
@@ -1130,7 +1128,7 @@ def export_local_groups(parent, path):
                 error = 1
                 item['users'] = []
             else:
-                if parent.version < 6:
+                if parent.utm.float_version < 6:
                     item['users'] = [x['name'] for x in users]
                 else:
                     item['users'] = [x[1] for x in users]
@@ -1346,11 +1344,11 @@ def export_captive_profiles(parent, path):
         return
     list_notifications = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
-    if (6 <= parent.version < 7.1):
+    if (6 <= parent.utm.float_version < 7.1):
         result = parent.utm._server.v3.accounts.groups.list(parent.utm._auth_token, 0, 1000, {}, [])['items']
         list_groups = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_client_certificate_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -1375,16 +1373,16 @@ def export_captive_profiles(parent, path):
                 item['user_auth_profile_id'] = 'Example user auth profile'
 #                for k, v in parent.ngfw_data['auth_profiles'].items():
 #                    print(k, '-', v)
-            if (6 <= parent.version < 7.1):
+            if (6 <= parent.utm.float_version < 7.1):
                 item['ta_groups'] = [list_groups[guid] for guid in item['ta_groups']]
             else:
                 item['ta_groups'] = [parent.ngfw_data['local_groups'][guid] for guid in item['ta_groups']]
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['ta_expiration_date'] = ''
             else:
                 if item['ta_expiration_date']:
                     item['ta_expiration_date'] = dt.strptime(item['ta_expiration_date'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-            if parent.version >= 7.1:
+            if parent.utm.float_version >= 7.1:
                 item['use_https_auth'] = True
                 item['client_certificate_profile_id'] = client_cert_profiles.get(item['client_certificate_profile_id'], 0)
             else:
@@ -1583,7 +1581,7 @@ def export_firewall_rules(parent, path):
             parent.error = 1
             return
 
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_idps_profiles_list()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -1695,7 +1693,7 @@ def export_nat_rules(parent, path):
             item['dest_ip'] = get_ips_name(parent, item['dest_ip'], item['name'])
             item['service'] = get_services(parent, item['service'], item['name'])
             item['gateway'] = ngfw_gateways.get(item['gateway'], item['gateway'])
-            if parent.version >= 6:
+            if parent.utm.float_version >= 6:
                 item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
             else:
                 item['users'] = []
@@ -1746,7 +1744,7 @@ def export_loadbalancing_rules(parent, path):
             item.pop('guid', None)
             item.pop('cc', None)
             item['name'] = item['name'].strip().translate(trans_name)
-            if parent.version < 7.1:
+            if parent.utm.float_version < 7.1:
                 item['src_zones'] = []
                 item['src_zones_negate'] = False
                 item['src_ips'] = []
@@ -1830,7 +1828,7 @@ def export_shaper_rules(parent, path):
             item['apps'] = get_apps(parent, item['apps'], item['name'])
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
             item['pool'] = shaper_list[item['pool']]
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
                 item['limit'] = True
                 item['limit_value'] = '3/h'
@@ -1934,10 +1932,10 @@ def export_content_rules(parent, path):
             item['content_types'] = [parent.ngfw_data['mime'][x] for x in item['content_types']]
             if item['scenario_rule_id']:
                 item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['time_created'] = ''
                 item['time_updated'] = ''
-            elif parent.version < 7.1:
+            elif parent.utm.float_version < 7.1:
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
             else:
@@ -1986,16 +1984,16 @@ def export_safebrowsing_rules(parent, path):
             item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
             item['url_list_exclusions'] = get_urls_name(parent, item['url_list_exclusions'], item['name'])
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item.pop('dst_zones', None)
                 item.pop('dst_ips', None)
                 item.pop('dst_zones_negate', None)
                 item.pop('dst_ips_negate', None)
                 item['position_layer'] = 'local'
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['time_created'] = ''
                 item['time_updated'] = ''
-            elif parent.version < 7.1:
+            elif parent.utm.float_version < 7.1:
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
             else:
@@ -2060,7 +2058,7 @@ def export_ssldecrypt_rules(parent, path):
     error = 0
 
     ssl_forward_profiles = {}
-    if parent.version >= 7:
+    if parent.utm.float_version >= 7:
         err, result = parent.utm.get_ssl_forward_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -2093,12 +2091,12 @@ def export_ssldecrypt_rules(parent, path):
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
             item['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][item['ssl_profile_id']] if 'ssl_profile_id' in item else 'Default SSL profile'
             item['ssl_forward_profile_id'] = ssl_forward_profiles[item['ssl_forward_profile_id']] if 'ssl_forward_profile_id' in item else -1
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['time_created'] = ''
                 item['time_updated'] = ''
-            elif parent.version < 7.1:
+            elif parent.utm.float_version < 7.1:
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
             else:
@@ -2148,11 +2146,11 @@ def export_sshdecrypt_rules(parent, path):
             item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
             item['protocols'] = get_services(parent, item['protocols'], item['name'])
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['time_created'] = ''
                 item['time_updated'] = ''
                 item['layer'] = 'Content Rules'
-            elif parent.version < 7.1:
+            elif parent.utm.float_version < 7.1:
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
                 item['layer'] = 'Content Rules'
@@ -2216,7 +2214,7 @@ def export_idps_rules(parent, path):
             except KeyError as err:
                 parent.stepChanged.emit('bRED|    Error [Правило "{item["name"]}"]: Не найден профиль СОВ "{err}". Проверьте профиль СОВ этого правила.')
                 item['idps_profiles'] = []
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
                 item['idps_profiles_exclusions'] = []
             else:
@@ -2261,7 +2259,7 @@ def export_scada_rules(parent, path):
             item.pop('id', None)
             item.pop('guid', None)
             item.pop('cc', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
             item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
@@ -2346,7 +2344,7 @@ def export_mailsecurity_rules(parent, path):
             item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
             item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
             item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['services'] = [['service', "POP3" if x == 'pop' else x.upper()] for x in item.pop('protocol')]
                 if not item['services']:
                     item['services'] = [['service', 'SMTP'], ['service', 'POP3'], ['service', 'SMTPS'], ['service', 'POP3S']]
@@ -2359,7 +2357,7 @@ def export_mailsecurity_rules(parent, path):
                 item['dst_zones_negate'] = False
             item['envelope_from'] = [[x[0], email[x[1]]] for x in item['envelope_from']]
             item['envelope_to'] = [[x[0], email[x[1]]] for x in item['envelope_to']]
-            if parent.version < 7.1:
+            if parent.utm.float_version < 7.1:
                 item['rule_log'] = False
 
         json_file = os.path.join(path, 'config_mailsecurity_rules.json')
@@ -2448,9 +2446,9 @@ def export_icap_rules(parent, path):
             item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
             item['urls'] = get_urls_name(parent, item['urls'], item['name'])
             item['content_types'] = [parent.ngfw_data['mime'][x] for x in item['content_types']]
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['time_created'] = ''
                 item['time_updated'] = ''
             else:
@@ -2572,7 +2570,7 @@ def export_dos_rules(parent, path):
                 item['dos_profile'] = dos_profiles[item['dos_profile']]
             if item['scenario_rule_id']:
                 item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
 
         json_file = os.path.join(path, 'config_dos_rules.json')
@@ -2606,9 +2604,9 @@ def export_proxyportal_rules(parent, path):
             item.pop('guid', None)
             item.pop('rownumber', None)
             item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
-            if parent.version < 7:
+            if parent.utm.float_version < 7:
                 item['transparent_auth'] = False
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['mapping_url_ssl_profile_id'] = 0
                 item['mapping_url_certificate_id'] = 0
                 item['position_layer'] = 'local'
@@ -2687,7 +2685,7 @@ def export_reverseproxy_rules(parent, path):
         return
     reverse_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_client_certificate_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
@@ -2721,7 +2719,7 @@ def export_reverseproxy_rules(parent, path):
             item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
             item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
             item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item.pop('from', None)
                 item.pop('to', None)
                 item['ssl_profile_id'] = 0
@@ -2757,7 +2755,7 @@ def export_reverseproxy_rules(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'bRED|    Error [Правило "{item["name"]}"]. Указан несуществующий сервер reverse-прокси или балансировщик.')
                     x = ['profile', 'Example reverse proxy server']
-            if parent.version < 7.1:
+            if parent.utm.float_version < 7.1:
                 item['user_agents_negate'] = False
                 item['waf_profile_id'] = 0
                 item['client_certificate_profile_id'] = 0
@@ -2885,7 +2883,7 @@ def export_vpn_security_profiles(parent, path):
             item['name'] = item['name'].strip().translate(trans_name)
             item.pop('id', None)
             item.pop('cc', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['peer_auth'] = 'psk'
                 item['ike_mode'] = 'main'
                 item['ike_version'] = 1
@@ -2995,7 +2993,7 @@ def export_vpn_networks(parent, path):
             for x in item['networks']:
                 if x[0] == 'list_id':
                     x[1] = parent.ngfw_data['ip_lists'][x[1]]
-            if parent.version < 7.1:
+            if parent.utm.float_version < 7.1:
                 item['ep_tunnel_all_routes'] = False
                 item['ep_disable_lan_access'] = False
                 item['ep_routes_include'] = []
@@ -3026,7 +3024,7 @@ def export_vpn_client_rules(parent, path):
         return
     error = 0
 
-    if parent.version < 7.1:
+    if parent.utm.float_version < 7.1:
         err, result = parent.utm.get_vpn_security_profiles()
     else:
         err, result = parent.utm.get_vpn_client_security_profiles()
@@ -3050,7 +3048,7 @@ def export_vpn_client_rules(parent, path):
             item.pop('status', None)
             item.pop('cc', None)
             item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['protocol'] = 'l2tp'
                 item['subnet1'] = ''
                 item['subnet2'] = ''
@@ -3073,7 +3071,7 @@ def export_vpn_server_rules(parent, path):
         return
     error = 0
 
-    if parent.version < 7.1:
+    if parent.utm.float_version < 7.1:
         err, result = parent.utm.get_vpn_security_profiles()
     else:
         err, result = parent.utm.get_vpn_server_security_profiles()
@@ -3104,7 +3102,7 @@ def export_vpn_server_rules(parent, path):
             item.pop('cc', None)
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
             item['source_ips'] = get_ips_name(parent, item['source_ips'], item['name'])
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['dst_ips'] = []
                 item['position_layer'] = 'local'
             else:
@@ -3114,7 +3112,7 @@ def export_vpn_server_rules(parent, path):
             item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
             item['tunnel_id'] = vpn_networks[item['tunnel_id']]
             item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
-            if parent.version >= 7.1:
+            if parent.utm.float_version >= 7.1:
                 item.pop('allowed_auth_methods', None)
 
         json_file = os.path.join(path, 'config_vpn_server_rules.json')
@@ -3144,7 +3142,7 @@ def export_morphology_lists(parent, path):
     else:
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 attributes = {}
                 for attr in item['attributes']:
                     if attr['name'] == 'threat_level':
@@ -3207,7 +3205,7 @@ def export_services_list(parent, path):
             for value in item['protocols']:
                 if 'alg' not in value:
                     value['alg'] = ''
-                if parent.version < 6:
+                if parent.utm.float_version < 6:
                     match value['port']:
                         case '110':
                             value['proto'] = 'pop3'
@@ -3291,7 +3289,7 @@ def export_IP_lists(parent, path):
             item.pop('version', None)
             file_name = item['name'].strip().translate(trans_filename)
             item['name'] = item['name'].strip().translate(trans_name)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['attributes'] = {'threat_level': x['value'] for x in item['attributes']}
                 try:
                     item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
@@ -3341,7 +3339,7 @@ def export_useragent_lists(parent, path):
     else:
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
                 if item['url']:
@@ -3394,7 +3392,7 @@ def export_mime_lists(parent, path):
             item.pop('enabled', None)
             item.pop('global', None)
             item.pop('version', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
                 if item['url']:
@@ -3442,7 +3440,7 @@ def export_url_lists(parent, path):
             item.pop('enabled', None)
             item.pop('global', None)
             item.pop('version', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {'threat_level': x['value'] for x in item['attributes']}
                 if item['url']:
@@ -3490,7 +3488,7 @@ def export_time_restricted_lists(parent, path):
             item.pop('enabled', None)
             item.pop('global', None)
             item.pop('version', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
                 if item['url']:
@@ -3504,7 +3502,7 @@ def export_time_restricted_lists(parent, path):
                 item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
             for content in item['content']:
                 content.pop('id', None)
-                if parent.version < 6:
+                if parent.utm.float_version < 6:
                     content.pop('fixed_date_from', None)
                     content.pop('fixed_date_to', None)
                     content.pop('fixed_date', None)
@@ -3639,7 +3637,7 @@ def export_url_categories(parent, path):
             item.pop('enabled', None)
             item.pop('global', None)
             item.pop('version', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['guid'] = revert_urlcategorygroup.get(item['name'], item['guid'])
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
@@ -3648,7 +3646,7 @@ def export_url_categories(parent, path):
             else:
                 item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
             for content in item['content']:
-                if parent.version < 6:
+                if parent.utm.float_version < 6:
                     content['category_id'] = content.pop('value')
                     content['name'] = parent.ngfw_data['url_categories'][int(content['category_id'])]
                 content.pop('id', None)
@@ -3777,7 +3775,7 @@ def export_application_groups(parent, path):
             item.pop('version', None)
             item.pop('global', None)
             item['name'] = item['name'].strip().translate(trans_name)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
                 item['list_type_update'] = 'static'
@@ -3790,9 +3788,9 @@ def export_application_groups(parent, path):
                 content.pop('attributes', None)
                 content.pop('cc', None)
                 content.pop('description', None)
-                if parent.version < 6:
+                if parent.utm.float_version < 6:
                     content['name'] = parent.ngfw_data['l7_apps'][content['value']]
-                elif parent.version < 7.1:
+                elif parent.utm.float_version < 7.1:
                     content['category'] = [parent.ngfw_data['l7_categories'][x] for x in content['category']]
                 else:
                     try:
@@ -3832,7 +3830,7 @@ def export_email_groups(parent, path):
             item.pop('enabled', None)
             item.pop('global', None)
             item.pop('version', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
                 if item['url']:
@@ -3879,7 +3877,7 @@ def export_phone_groups(parent, path):
             item.pop('enabled', None)
             item.pop('global', None)
             item.pop('version', None)
-            if parent.version < 6:
+            if parent.utm.float_version < 6:
                 item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 item['attributes'] = {}
                 if item['url']:
@@ -3943,7 +3941,7 @@ def export_idps_profiles(parent, path):
     error = 0
     data = []
 
-    if parent.version < 7.1:
+    if parent.utm.float_version < 7.1:
         err, data = parent.utm.get_nlist_list('ipspolicy')
         if err:
             parent.stepChanged.emit(f'iRED|{data}')
@@ -3958,7 +3956,7 @@ def export_idps_profiles(parent, path):
                 item.pop('global', None)
                 item.pop('version', None)
                 item['name'] = item['name'].strip().translate(trans_name)
-                if parent.version < 6:
+                if parent.utm.float_version < 6:
                     item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                     item.pop('attributes', None)
                 else:
@@ -4268,7 +4266,7 @@ def export_snmp_rules(parent, path):
     """Экспортируем список правил SNMP"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил SNMP из раздела "Диагностика и мониторинг/Оповещения/SNMP".')
 
-    if parent.version >= 7.1:
+    if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_snmp_security_profiles()
         if err:
             parent.stepChanged.emit(f'iRED|{result}')
@@ -4286,7 +4284,7 @@ def export_snmp_rules(parent, path):
             item['name'] = item['name'].strip().translate(trans_name)
             item.pop('id', None)
             item.pop('cc', None)
-            if parent.version >= 7.1:
+            if parent.utm.float_version >= 7.1:
                 item['snmp_security_profile'] = snmp_security_profiles.get(item['snmp_security_profile'], 0)
 
         if data:
@@ -4649,7 +4647,7 @@ def get_names_users_and_groups(parent, users, rule_name):
 def get_services(parent, service_list, rule_name):
     """Получаем имена сервисов по их ID. Если сервис не найден, то он пропускается."""
     new_service_list = []
-    if parent.version < 7:
+    if parent.utm.float_version < 7:
         for item in service_list:
             try:
                 new_service_list.append(['service', parent.ngfw_data['services'][item]])

@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 1.4 04.10.2024
+# Версия 1.5 15.10.2024
 #
 
 import os, sys, json, re
@@ -51,6 +51,7 @@ class ConvertMikrotikConfig(QThread):
         self.zones = []
         self.gateways = set()
         self.ip_lists = set()
+        self.url_lists = set()
         self.services = {}
 
     def run(self):
@@ -68,9 +69,13 @@ class ConvertMikrotikConfig(QThread):
             convert_zones(self, self.current_ug_path, data)
             convert_ipip_interface(self, self.current_ug_path, data)
             convert_vlan_interfaces(self, self.current_ug_path, data)
+            convert_dhcp(self, self.current_ug_path, data)
+            convert_system_dns(self, self.current_ug_path, data)
+            convert_dns_static(self, self.current_ug_path, data)
             convert_gateways_list(self, self.current_ug_path, data)
             convert_static_routes(self, self.current_ug_path, data)
             convert_ip_lists(self, self.current_ug_path, data)
+            convert_url_lists(self, self.current_ug_path, data)
             convert_services_list(self, self.current_ug_path, data)
             convert_firewall_rules(self, self.current_ug_path, data)
             convert_dnat_rules(self, self.current_ug_path, data)
@@ -188,7 +193,8 @@ def convert_config_file(parent, path):
         
     ifaces = {}
     for item in data['ip address']:
-        ifaces[item['interface']] = item['address']
+        if 'interface' in item:
+            ifaces[item['interface']] = item['address']
     data['ip address'] = ifaces
 
     if 'interface list member' in data:
@@ -196,6 +202,8 @@ def convert_config_file(parent, path):
         for member in data['interface list member']:
             new_members[member['interface']] = member['list']
         data['interface list member'] = new_members
+    else:
+        data['interface list member'] = {}
 
     json_file = os.path.join(path, 'config.json')
     with open(json_file, "w") as fh:
@@ -454,6 +462,141 @@ def convert_vlan_interfaces(parent, path, data):
         parent.stepChanged.emit('GREEN|    Интервейсы VLAN конвертированы.')
 
 
+def convert_dhcp(parent, path, data):
+    """Конвертируем настройки DHCP"""
+    if 'ip pool' not in data or 'ip dhcp-server' not in data:
+        return
+
+    parent.stepChanged.emit('BLUE|Конвертация настроек DHCP.')
+    dhcp_subnets = []
+
+    for dhcp_server in data['ip dhcp-server']:
+        dhcp_subnet = {
+            'name': dhcp_server['name'],
+            'enabled': False,
+            'description': f'Портировано с MikroTik.',
+            'start_ip': '',
+            'end_ip': '',
+            'lease_time': 3600,
+            'domain': 'example.ru',
+            'gateway': '',
+            'boot_filename': '',
+            'boot_server_ip': '',
+            'iface_id': dhcp_server['interface'],
+            'netmask': '',
+            'nameservers': [],
+            'ignored_masc': [],
+            'hosts': [],
+            'options': []
+        }
+        for pool in data['ip pool']:
+            if pool['name'] == dhcp_server['address-pool']:
+                dhcp_subnet['start_ip'], dhcp_subnet['end_ip'] = pool['ranges'].split('-')
+        for net in data['ip dhcp-server network']:
+            interface = ipaddress.ip_interface(net['address'])
+            if ipaddress.ip_address(dhcp_subnet['start_ip']) in interface.network:
+                dhcp_subnet['netmask'] = str(interface.netmask)
+                dhcp_subnet['gateway'] = net['gateway']
+                if 'dns-server' in net:
+                    dhcp_subnet['nameservers'].append(net['dns-server'])
+                if 'ntp-server' in net:
+                    dhcp_subnet['options'].append([42, net['ntp-server']])
+        if 'ip dhcp-server lease' in data:
+            n = 1
+            for item in data['ip dhcp-server lease']:
+                if item['server'] == dhcp_server['name']:
+                    dhcp_subnet['hosts'].append({
+                        'mac': item['mac-address'],
+                        'ipv4': item['address'],
+                        'hostname': f'Host-{n}'
+                    })
+                    n += 1
+        dhcp_subnets.append(dhcp_subnet)
+
+    if dhcp_subnets:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DHCP')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_dhcp_subnets.json')
+        with open(json_file, "w") as fh:
+            json.dump(dhcp_subnets, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Настройки DHCP выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет настроек DHCP для экспорта.')
+
+
+def convert_system_dns(parent, path, data):
+    """Конвертируем системные DNS серверы"""
+    if 'ip dns' not in data:
+        return
+
+    parent.stepChanged.emit('BLUE|Конвертация системных DNS-серверов.')
+
+    dns_servers = []
+    for item in data['ip dns']:
+        ips = item['servers'].split(',')
+        for ip in ips:
+            dns_servers.append({
+                'dns': ip,
+                'is_bad': False if item['allow-remote-requests'] == 'yes' else True
+            })
+
+    if dns_servers:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DNS')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_dns_servers.json')
+        with open(json_file, "w") as fh:
+            json.dump(dns_servers, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Системные DNS-сервера выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет системных DNS-серверов для экспорта.')
+
+
+def convert_dns_static(parent, path, data):
+    """Конвертируем статические записи DNS"""
+    if 'ip dns static' not in data:
+        return
+
+    parent.stepChanged.emit('BLUE|Конвертация статических записей DNS.')
+
+    records = []
+    for item in data['ip dns static']:
+        records.append({
+            'name': item['name'],
+            'description': '',
+            'enabled': True if item.get('disabled', 'no') == 'no' else False,
+            'domain_name': item['name'],
+            'ip_address': [item['address']]
+        })
+
+    if records:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DNS')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(current_path, 'config_dns_static.json')
+        with open(json_file, "w") as fh:
+            json.dump(records, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Статические записи DNS выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет статических записей DNS для экспорта.')
+
+
 def convert_gateways_list(parent, path, data):
     """Конвертируем список шлюзов"""
     if 'ip route' not in data:
@@ -532,11 +675,20 @@ def convert_static_routes(parent, path, data):
                 err, gateway = func.get_netroute(data['ip address'][gateway])
                 if err:
                     continue
+            else:
+                err, result = func.unpack_ip_address(gateway)   # Проверяем что gateway это IP-адрес а не строка символов.
+                if err:
+                    err, gateway = func.get_netroute(item['dst-address'])
+                    if err:
+                        ip = item['dst-address'].split('/')[0]
+                        err, gateway = func.get_netroute(f'{ip}/24')
+                        if err:
+                            continue
             try:
                 route = {
                     'name': f"For {item['dst-address']}",
                     'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
-                    'enabled': True if item['disabled'] == 'no' else False,
+                    'enabled': True if item.get('disabled', 'yes') == 'no' else False,
                     'dest': item['dst-address'],
                     'gateway': gateway,
                     'ifname': 'undefined',
@@ -614,11 +766,14 @@ def convert_ip_lists_from_address_list(parent, current_path, address_list):
     error = 0
     ip_list = {}
     for item in address_list:
+        err, result = func.unpack_ip_address(item['address'])   # Проверяем что это IP-адрес а не строка символов.
+        if err:
+            continue
         try:
             if item['list'] in ip_list:
                 ip_list[item['list']]['content'].append({'value': item['address']})
                 if 'comment' in item:
-                    ip_list[item['list']]['description'] = f"Портировано с MikroTik.\n{item.get('comment', '')}"
+                    ip_list[item['list']]['description'] = f'{ip_list[item["list"]]["description"]}\n{item.get("comment", "")}'
             else:
                 ip_list[item['list']] = {
                     'name': func.get_restricted_name(item['list']),
@@ -642,7 +797,6 @@ def convert_ip_lists_from_address_list(parent, current_path, address_list):
             with open(json_file, "w") as fh:
                 json.dump(value, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
-
     return error
 
 
@@ -691,8 +845,64 @@ def convert_ip_lists_firewall_filter(parent, current_path, firewall_filter):
                 with open(json_file, "w") as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
-
     return error
+
+
+def convert_url_lists(parent, path, data):
+    """Конвертируем списки URL из ip firewall address-list"""
+    if 'ip firewall address-list' not in data:
+        return
+
+    parent.stepChanged.emit('BLUE|Конвертация списков URL.')
+    error = 0
+    url_list = {}
+
+    for item in data['ip firewall address-list']:
+        err, result = func.unpack_ip_address(item['address'])   # Проверяем что это строка символов а не IP-адрес.
+        if err:
+            try:
+                if item['list'] in url_list:
+                    url_list[item['list']]['content'].append({'value': item['address']})
+                    if 'comment' in item:
+                        url_list[item['list']]['description'] = f'{url_list[item["list"]]["description"]}\n{item.get("comment", "")}'
+                else:
+                    url_list[item['list']] = {
+                        'name': func.get_restricted_name(item['list']),
+                        'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
+                        'type': 'url',
+                        'url': '',
+                        'list_type_update': 'static',
+                        'schedule': 'disabled',
+                        'attributes': {
+                            'list_complile_type': 'case_insensitive'
+                        },
+                        'content': [{'value': item['address']}]
+                    }
+            except KeyError as err:
+                parent.stepChanged.emit(f'RED|    Error: {err}. URL-лист "{item.get("list", item.get("address", ''))}" не конвертирован.')
+                error = 1
+
+    if url_list:
+        section_path = os.path.join(path, 'Libraries')
+        current_path = os.path.join(section_path, 'URLLists')
+        err, msg = func.create_dir(current_path)
+        if err:
+            parent.stepChanged.emit('RED|    {msg}.')
+            parent.error = 1
+            return
+
+        for key, value in url_list.items():
+            parent.url_lists.add(value['name'])
+            json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+            with open(json_file, "w") as fh:
+                json.dump(value, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список URL "{key}" выгружен в файл "{json_file}".')
+        if error:
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков URL.')
+        else:
+            parent.stepChanged.emit(f'GREEN|    Списки URL экспортированы.')
+    else:
+        parent.stepChanged.emit(f'GRAY|    Нет списков URL для экспорта.')
 
 
 def convert_services_list(parent, path, data):
@@ -892,9 +1102,9 @@ def convert_firewall_rules(parent, path, data):
     firewall_rules = []
     n = 0
     for item in data['ip firewall filter']:
-        if item.get('disabled', False) == 'yes':
-            parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как имеет статус "disabled".')
-            continue
+#        if item.get('disabled', False) == 'yes':
+#            parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как имеет статус "disabled".')
+#            continue
         if item.get('connection-state', False):
             parent.stepChanged.emit(f'bRED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит "connection-state".')
             continue
@@ -926,7 +1136,7 @@ def convert_firewall_rules(parent, path, data):
             'dst_ips': [item['dst_ips']] if item.get('dst_ips', False) else [],
             'services': item['services'],
             'users': [],
-            'enabled': False,
+            'enabled': False if item.get('disabled', False) == 'yes' else True,
             'limit': False,
             'limit_value': '3/h',
             'limit_burst': 5,
@@ -961,10 +1171,16 @@ def convert_firewall_rules(parent, path, data):
                 ifname = item['out-interface']
             if ifname in data['interface list member']:
                 fw_rule['dst_zones'].append(data['interface list member'][ifname])
-        if 'dst-address-list' in item and item['dst-address-list'] in parent.ip_lists:
-            fw_rule['dst_ips'].append(['list_id', item['dst-address-list']])
-        if 'src-address-list' in item and item['src-address-list'] in parent.ip_lists:
-            fw_rule['src_ips'].append(['list_id', item['src-address-list']])
+        if 'dst-address-list' in item:
+            if item['dst-address-list'] in parent.ip_lists:
+                fw_rule['dst_ips'].append(['list_id', item['dst-address-list']])
+            elif item['dst-address-list'] in parent.url_lists:
+                fw_rule['dst_ips'].append(['urllist_id', item['dst-address-list']])
+        if 'src-address-list' in item:
+            if item['src-address-list'] in parent.ip_lists:
+                fw_rule['src_ips'].append(['list_id', item['src-address-list']])
+            elif item['src-address-list'] in parent.url_lists:
+                fw_rule['src_ips'].append(['urllist_id', item['src-address-list']])
 
         if not fw_rule['services'] and not fw_rule['dst_ips'] and not fw_rule['src_ips'] and not fw_rule['src_zones'] and not fw_rule['dst_zones']:
             n -= 1
@@ -994,9 +1210,9 @@ def convert_dnat_rules(parent, path, data):
     dnat_rules = []
     n = 0
     for item in data['ip firewall nat']:
-        if item.get('disabled', False) == 'yes':
-            parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как имеет статус "disabled".')
-            continue
+#        if item.get('disabled', False) == 'yes':
+#            parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как имеет статус "disabled".')
+#            continue
         if isinstance(item['services'], str):
             parent.stepChanged.emit(f'bRED|    Правило DNAT "{item}" не конвертировано так как содержит не поддерживаемый сервис.')
             continue
@@ -1031,7 +1247,7 @@ def convert_dnat_rules(parent, path, data):
             'service': item['services'],
             'target_ip': item.get('to-addresses', ''),
             'gateway': '',
-            'enabled': False,
+            'enabled': False if item.get('disabled', False) == 'yes' else True,
             'log': True if item.get('log', False) == 'yes' else False,
             'log_session_start': False,
             'log_limit': False,

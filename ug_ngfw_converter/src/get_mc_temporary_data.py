@@ -98,7 +98,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список зон
         self.stepChanged.emit(f'BLACK|    Получаем список зон.')
-        err, result = self.utm.get_template_zones_list(self.template_id)
+        err, result = self.utm.get_realm_zones_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -174,16 +174,16 @@ class GetExportTemporaryData(QThread):
             self.error = 1
         self.mc_data['url_categories'] = {x['id']: x['name'] for x in result}
 
-        # Получаем список профилей SSL
-        self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL.')
-        err, result = self.utm.get_template_ssl_profiles_list(self.template_id)
+        # Получаем список профилей SSL области
+        self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL области.')
+        err, result = self.utm.get_realm_ssl_profiles_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
         self.mc_data['ssl_profiles'] = {x['id']: x['name'] for x in result}
 
         # Получаем список сценариев шаблона
-        self.stepChanged.emit(f'BLACK|    Получаем список сценаиев.')
+        self.stepChanged.emit(f'BLACK|    Получаем список сценариев.')
         err, result = self.utm.get_template_scenarios_rules(self.template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}')
@@ -191,13 +191,12 @@ class GetExportTemporaryData(QThread):
         self.mc_data['scenarios'] = {x['id']: x['name'] for x in result}
 
         # Получаем список сертификатов
-        self.stepChanged.emit(f'BLACK|    Получаем список сертификатов')
-        err, result = self.utm.get_template_certificates_list(self.template_id)
+        self.stepChanged.emit(f'BLACK|    Получаем список сертификатов области')
+        err, result = self.utm.get_realm_certificates_list()
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.mc_data['certs'] = {x['id']: x['name'] for x in result}
-        self.mc_data['certs'][-1] = 0
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')

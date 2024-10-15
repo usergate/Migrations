@@ -120,9 +120,8 @@ def export_general_settings(parent, path):
             export_ntp_settings(parent, path, data)
             export_modules(parent, path, data)
             export_cache_settings(parent, path, data)
-#    export_proxy_exeptions(parent, path)
-#    export_web_portal_settings(parent, path, data)
-#    export_upstream_proxy_settings(parent, path)
+            export_web_portal_settings(parent, path, data)
+            export_upstream_proxy_settings(parent, path, data)
 
 
 def export_ui(parent, path, data):
@@ -259,7 +258,6 @@ def export_cache_settings(parent, path, data):
 
 
     err, result = parent.utm.get_template_nlists_list(parent.template_id, 'httpcwl')
-    print(result)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
@@ -294,66 +292,52 @@ def export_web_portal_settings(parent, path, data):
     parent.stepChanged.emit('BLUE|Выгружаются настройки Веб-портала раздела "UserGate/Настройки/Веб-портал":')
     error = 0
 
-    err, result = parent.utm.get_templates_list()
+    err, result = parent.utm.get_realm_responsepages_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    list_templates = {x['id']: x['name'] for x in result}
-
-    if parent.version >= 7.1:
-        err, result = parent.utm.get_client_certificate_profiles()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        client_certificate_profiles = {x['id']: x['name'] for x in result}
-
-    err, data = parent.utm.get_proxyportal_config()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
         error = 1
     else:
-        if parent.version > 5:
-            data['ssl_profile_id'] = parent.ngfw_data['ssl_profiles'][data['ssl_profile_id']]
-        else:
-            data['ssl_profile_id'] = "Default SSL profile"
-        if parent.version >= 7.1:
-            data['client_certificate_profile_id'] = client_certificate_profiles.get(data['client_certificate_profile_id'], 0)
-        else:
-            data['client_certificate_profile_id'] = 0
+        list_templates = {x['id']: x['name'] for x in result}
 
-        data['user_auth_profile_id'] = parent.ngfw_data['auth_profiles'].get(data['user_auth_profile_id'], 1)
-        data['proxy_portal_template_id'] = list_templates.get(data['proxy_portal_template_id'], -1)
-        data['proxy_portal_login_template_id'] = list_templates.get(data['proxy_portal_login_template_id'], -1)
-        data['certificate_id'] = parent.ngfw_data['certs'].get(data['certificate_id'], -1)
-
-        json_file = os.path.join(path, 'config_web_portal.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Настройки Веб-портала выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек Веб-портала!' if error else out_message)
-
-
-    """Экспортируем настройки вышестоящего прокси"""
-    if parent.version >= 7.1:
-        parent.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
-        error = 0
-
-        err, result = parent.utm.get_upstream_proxy_settings()
+        err, result = parent.utm.get_realm_client_certificate_profiles()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
             error = 1
-            parent.error = 1
         else:
-            json_file = os.path.join(path, 'upstream_proxy_settings.json')
-            with open(json_file, 'w') as fh:
-                json.dump(result, fh, indent=4, ensure_ascii=False)
+            client_certificate_profiles = {x['id']: x['name'] for x in result}
 
-        out_message = f'GREEN|    Настройки вышестоящего прокси выгружены в файл "{json_file}".'
-        parent.stepChanged.emit('ORANGE|    Ошибка экспорта настроек вышестоящего прокси!' if error else out_message)
+            params = data['proxy_portal']['value']
+            params['user_auth_profile_id'] = parent.mc_data['auth_profiles'].get(params['user_auth_profile_id'], -1)
+            params['proxy_portal_template_id'] = list_templates.get(params['proxy_portal_template_id'], -1)
+            params['proxy_portal_login_template_id'] = list_templates.get(params['proxy_portal_login_template_id'], -1)
+            params['certificate_id'] = parent.mc_data['certs'].get(params['certificate_id'], -1)
+            params['ssl_profile_id'] = parent.mc_data['ssl_profiles'].get(params['ssl_profile_id'], -1)
+            if params['client_certificate_profile_id']:
+                try:
+                    params['client_certificate_profile_id'] = client_certificate_profiles[params['client_certificate_profile_id']]
+                except KeyError:
+                    parent.stepChanged.emit('bRED|    Warning: Не найден профиль клиентского сертификата.')
+                    params['client_certificate_profile_id'] = 0
+                    params['cert_auth_enabled'] = False
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек Веб-портала!')
+    else:
+        json_file = os.path.join(path, 'config_web_portal.json')
+        with open(json_file, 'w') as fh:
+            json.dump(params, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Настройки Веб-портала выгружены в файл "{json_file}".')
+
+
+def export_upstream_proxy_settings(parent, path, data):
+    """Экспортируем настройки вышестоящего прокси"""
+    parent.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
+
+    json_file = os.path.join(path, 'upstream_proxy_settings.json')
+    with open(json_file, 'w') as fh:
+        json.dump(data['upstream_proxy']['value'], fh, indent=4, ensure_ascii=False)
+
+    parent.stepChanged.emit(f'GREEN|    Настройки вышестоящего прокси выгружены в файл "{json_file}".')
 
 
 def export_certificates(parent, path):

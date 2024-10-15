@@ -74,6 +74,7 @@ class McXmlRpc:
             self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
             self.float_version = float(f'{tmp[0]}.{tmp[1]}')
+            self.waf_license = False    # При новом логине сбрасываем значение
             return 0, True
 
     def get_node_status(self):
@@ -214,6 +215,46 @@ class McXmlRpc:
             else:
                 return 1, f'Error mclib.add_device_template: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного шаблона.
+
+    def get_realm_ssl_profiles_list(self):
+        """Получить список профилей SSL области"""
+        try:
+            result = self._server.v1.cccontent.realm.ssl.profiles.list(self._auth_token, 0, 1000, {})
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_ssl_profiles_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_realm_certificates_list(self):
+        """Получить список сертификатов области"""
+        try:
+            result = self._server.v1.cccertificates.realm.certificates.list(self._auth_token, 0, 100, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_certificates_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']  # Возвращает список
+
+    def get_realm_zones_list(self):
+        """Получить список зон области (со всех шаблонов)"""
+        try:
+            result = self._server.v1.ccnetmanager.realm.zones.list(self._auth_token, 0, 200, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_zones_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']    # Возвращает список зон области.
+
+    def get_realm_responsepages_list(self):
+        """Получить список шаблонов страниц области (со всех шаблонов)"""
+        try:
+            result = self._server.v1.ccresponsepages.realm.templates.list(self._auth_token, 0, 500, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_responsepages_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_realm_client_certificate_profiles(self):
+        """Получить список профилей пользовательских сертификатов области"""
+        try:
+            result = self._server.v1.cccertificates.realm.client.profiles.list(self._auth_token, 0, 500, {}, [])
+            return 0, result['items']
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_realm_client_certificate_profiles: [{err.faultCode}] — {err.faultString}'
 
 ######## Settings ###########################################################################################
     def get_template_general_settings(self, template_id):
@@ -658,7 +699,7 @@ class McXmlRpc:
         try:
             result = self._server.v1.ccnlists.items.list(self._auth_token, template_id, named_list_id, 0, 100000, {}, [])
         except rpc.Fault as err:
-            return 1, f'Error mclib.get_template_nlists_items: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.get_template_nlist_items: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
 
     def add_template_nlist_item(self, template_id, named_list_id, item):

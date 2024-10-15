@@ -66,6 +66,7 @@ class UtmXmlRpc:
             self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
             self.float_version = float(f'{tmp[0]}.{tmp[1]}')
+            self.waf_license = False    # При новом логине сбрасываем значение
             try:
                 result = self._server.v2.core.license.info(self._auth_token)
                 for item in result['modules']:

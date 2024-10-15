@@ -19,12 +19,13 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации CheckPoint на NGFW UserGate версии 7.
-# Версия 2.8 11.10.2024
+# Версия 2.9 15.10.2024
 #
 
 import os, sys, json
 import common_func as func
 from datetime import datetime as dt
+from xmlrpc.client import DateTime as class_DateTime
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import zone_services, trans_filename, trans_name, default_urlcategorygroup
 
@@ -386,15 +387,30 @@ def export_certificates(parent, path):
                     parent.error = 1
                     error = 1
                 else:
-                    if parent.utm.float_version >= 7.1:
+#                    if parent.utm.float_version >= 7.1:
+                    if isinstance(details_info['notBefore'], class_DateTime):
                         try:
                             details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                         except Exception:
                             details_info['notBefore'] = ''
+                    if isinstance(details_info['notAfter'], class_DateTime):
                         try:
                             details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                         except Exception:
                             details_info['notAfter'] = ''
+
+                    if 'chain' in details_info:
+                        for chain_item in details_info['chain']:
+                            if isinstance(chain_item['notBefore'], class_DateTime):
+                                try:
+                                    details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                                except Exception:
+                                    details_info['notBefore'] = ''
+                            if isinstance(chain_item['notAfter'], class_DateTime):
+                                try:
+                                    details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                                except Exception:
+                                    details_info['notAfter'] = ''
 
                     json_file = os.path.join(path_cert, 'certificate_details.json')
                     with open(json_file, 'w') as fh:

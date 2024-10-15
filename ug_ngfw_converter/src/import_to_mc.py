@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
-# Классы импорта разделов конфигурации на UserGate Management Center версии 7.
+# Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
 # Версия 2.6 08.10.2024
 #
 
@@ -2418,6 +2418,7 @@ def import_general_settings(parent, path):
     import_web_portal_settings(parent, path)
     import_upstream_proxy_settings(parent, path)
 
+
 def import_ui(parent, path):
     """Импортируем раздел UserGate/Настройки/Настройки интерфейса"""
     json_file = os.path.join(path, 'config_settings_ui.json')
@@ -2688,7 +2689,7 @@ def import_web_portal_settings(parent, path):
     try:
         data['ssl_profile_id'] = parent.mc_data['ssl_profiles'][data['ssl_profile_id']]
     except KeyError as err:
-        parent.stepChanged.emit(f'RED|    Не найден профиль SSL {err}". Загрузите профили SSL и повторите попытку.')
+        parent.stepChanged.emit(f'RED|    Error: Не найден профиль SSL {err}". Загрузите профили SSL и повторите попытку.')
         parent.stepChanged.emit(error_message)
         parent.error = 1
         return
@@ -2696,7 +2697,7 @@ def import_web_portal_settings(parent, path):
     try:
         data['user_auth_profile_id'] = parent.mc_data['auth_profiles'][data['user_auth_profile_id']]
     except KeyError as err:
-        parent.stepChanged.emit(f'RED|    Не найден профиль аутентификации {err}". Загрузите профили аутентификации и повторите попытку.')
+        parent.stepChanged.emit(f'RED|    Error: Не найден профиль аутентификации {err}". Загрузите профили аутентификации и повторите попытку.')
         parent.stepChanged.emit(error_message)
         parent.error = 1
         return

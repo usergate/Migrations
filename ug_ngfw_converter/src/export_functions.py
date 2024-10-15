@@ -403,14 +403,14 @@ def export_certificates(parent, path):
                         for chain_item in details_info['chain']:
                             if isinstance(chain_item['notBefore'], class_DateTime):
                                 try:
-                                    details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                                    chain_item['notBefore'] = dt.strptime(chain_item['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                                 except Exception:
-                                    details_info['notBefore'] = ''
+                                    chain_item['notBefore'] = ''
                             if isinstance(chain_item['notAfter'], class_DateTime):
                                 try:
-                                    details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                                    chain_item['notAfter'] = dt.strptime(chain_item['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                                 except Exception:
-                                    details_info['notAfter'] = ''
+                                    chain_item['notAfter'] = ''
 
                     json_file = os.path.join(path_cert, 'certificate_details.json')
                     with open(json_file, 'w') as fh:

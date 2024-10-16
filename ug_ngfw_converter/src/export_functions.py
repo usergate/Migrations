@@ -331,24 +331,25 @@ def export_certificates(parent, path):
     err, result = parent.utm.get_certificates_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
         error = 1
     else:
         for item in result:
             parent.stepChanged.emit(f'BLACK|    Экспорт сертификата {item["name"]}.')
             item.pop('cc', None)
-            if parent.utm.float_version >= 7.1:
+            if isinstance(item['not_before'], class_DateTime):
                 try:
                     item['not_before'] = dt.strptime(item['not_before'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
                     item['not_before'] = ''
+            else:
+                if item['not_before']:
+                    item['not_before'] = dt.strptime(item['not_before'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(item['not_after'], class_DateTime):
                 try:
                     item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
                     item['not_after'] = ''
             else:
-                if item['not_before']:
-                    item['not_before'] = dt.strptime(item['not_before'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 if item['not_after']:
                     item['not_after'] = dt.strptime(item['not_after'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
 
@@ -357,14 +358,12 @@ def export_certificates(parent, path):
             err, msg = func.create_dir(path_cert)
             if err:
                 parent.stepChanged.emit(f'RED|       {msg}')
-                parent.error = 1
                 error = 1
             else:
                 # Выгружаем сертификат в формат DER.
                 err, base64_cert = parent.utm.get_certificate_data(item['id'])
                 if err:
                     parent.stepChanged.emit(f'RED|       {base64_cert}')
-                    parent.error = 1
                     error = 1
                 else:
                     with open(os.path.join(path_cert, 'cert.der'), 'wb') as fh:
@@ -374,7 +373,6 @@ def export_certificates(parent, path):
                 err, base64_cert = parent.utm.get_certificate_chain_data(item['id'])
                 if err:
                     parent.stepChanged.emit(f'ORANGE|       Не удалось выгрузить сертификат в формате PEM [{base64_cert}]')
-                    parent.error = 1
                     error = 1
                 else:
                     with open(os.path.join(path_cert, 'cert.pem'), 'wb') as fh:
@@ -384,20 +382,24 @@ def export_certificates(parent, path):
                 err, details_info = parent.utm.get_certificate_details(item['id'])
                 if err:
                     parent.stepChanged.emit(f'RED|       {details_info}')
-                    parent.error = 1
                     error = 1
                 else:
-#                    if parent.utm.float_version >= 7.1:
                     if isinstance(details_info['notBefore'], class_DateTime):
                         try:
                             details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                         except Exception:
                             details_info['notBefore'] = ''
+                    else:
+                        if details_info['notBefore']:
+                            details_info['notBefore'] = dt.strptime(details_info['notBefore'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                     if isinstance(details_info['notAfter'], class_DateTime):
                         try:
                             details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                         except Exception:
                             details_info['notAfter'] = ''
+                    else:
+                        if details_info['notAfter']:
+                            details_info['notAfter'] = dt.strptime(details_info['notAfter'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
 
                     if 'chain' in details_info:
                         for chain_item in details_info['chain']:
@@ -406,11 +408,17 @@ def export_certificates(parent, path):
                                     chain_item['notBefore'] = dt.strptime(chain_item['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                                 except Exception:
                                     chain_item['notBefore'] = ''
+                            else:
+                                if chain_item['notBefore']:
+                                    chain_item['notBefore'] = dt.strptime(chain_item['notBefore'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                             if isinstance(chain_item['notAfter'], class_DateTime):
                                 try:
                                     chain_item['notAfter'] = dt.strptime(chain_item['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                                 except Exception:
                                     chain_item['notAfter'] = ''
+                            else:
+                                if chain_item['notAfter']:
+                                    chain_item['notAfter'] = dt.strptime(chain_item['notAfter'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
 
                     json_file = os.path.join(path_cert, 'certificate_details.json')
                     with open(json_file, 'w') as fh:
@@ -422,9 +430,11 @@ def export_certificates(parent, path):
                 with open(json_file, 'w') as fh:
                     json.dump(item, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|       Сертификат {item["name"]} экспортирован в каталог {path_cert}.')
-
-    out_message = f'GREEN|    Сертификаты выгружены в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте сертификатов.' if error else out_message)
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте сертификатов.')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Сертификаты выгружены в каталог "{path}".')
 
 
 def export_users_certificate_profiles(parent, path):

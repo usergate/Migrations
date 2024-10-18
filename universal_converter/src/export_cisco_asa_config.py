@@ -487,7 +487,6 @@ def create_access_group(data, x):
 
 def create_ace(data, acs_name, rule_block, remark):
     """Подгатавливаем access-list к конвертации. Формируем имя правила и описание."""
-    print('    ', acs_name, '-', rule_block)
     data['fw_rule_number'] += 1
     name = f'Rule {data["fw_rule_number"]}'
     data['fw_access-list'][name] = {
@@ -2175,7 +2174,6 @@ def convert_firewall_rules(parent, path, data):
 #                   if zone in zones:
 #                        rule['dst_zones'].append(zone)
                 case 'rule-id':
-#                    print(deq.popleft())
                     rule['description'] = f'rule-id: {deq.popleft()}\n{rule["description"]}'
                 case _:
                     ips_mode = 'dst_ips'

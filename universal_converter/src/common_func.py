@@ -289,7 +289,7 @@ def create_ug_services():
         {'name': 'Rsync', 'description': '', 'protocols': [
             {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
     ]
-    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp', 'gre', 'ipip'}:
         ug_services.append({
             'name': f'Any {item.upper()}',
             'description': f'Any {item.upper()} packet',

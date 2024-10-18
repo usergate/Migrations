@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 2.0 03.10.2024
+# Версия 2.1 18.10.2024
 #
 
 import os, sys, json
@@ -293,8 +293,11 @@ def convert_config_file(parent, path):
                         line = config_data[num+1]
                         y = line.translate(trans_table).rstrip().split(' ')
                         if y[1] == x[1]:
-                            remark.append(' '.join(x[3:]))
+                            remark.append(f'{" ".join(x[3:])}\n')
                     case 'extended':
+                        create_ace(data, x[1], x[3:], remark)
+                        remark.clear()
+                    case 'advanced':
                         create_ace(data, x[1], x[3:], remark)
                         remark.clear()
                     case 'line':
@@ -307,6 +310,8 @@ def convert_config_file(parent, path):
                     case _:
                         string = line.rstrip('\n')
                         parent.stepChanged.emit(f'rNOTE|    Access-list "{string}" - не обработан.')
+                        remark.clear()
+                        time.sleep(0.1)
             case 'nat':
                 data['nat_rule_number'] += 1
                 data['nat_rules'][data['nat_rule_number']] = x
@@ -482,6 +487,7 @@ def create_access_group(data, x):
 
 def create_ace(data, acs_name, rule_block, remark):
     """Подгатавливаем access-list к конвертации. Формируем имя правила и описание."""
+    print('    ', acs_name, '-', rule_block)
     data['fw_rule_number'] += 1
     name = f'Rule {data["fw_rule_number"]}'
     data['fw_access-list'][name] = {
@@ -2056,9 +2062,7 @@ def convert_firewall_rules(parent, path, data):
             'time_restrictions': [],
             'send_host_icmp': '',
         }
-        if value['name'] not in data['direction']:
-            parent.stepChanged.emit(f'LBLUE|    Для правила "{rule["name"]}": после импорта на UG NGFW создайте зону зону "{value["name"]}" и укажите её как источник или назначение в этом правиле.')
-        else:
+        if value['name'] in data['direction']:
             rule['src_zones'].extend(data['direction'][value['name']]['src_zones'])
             rule['dst_zones'].extend(data['direction'][value['name']]['dst_zones'])
 
@@ -2074,12 +2078,18 @@ def convert_firewall_rules(parent, path, data):
                 rule['services'].append(['list_id', object_group])
             case 'ip':
                 pass
-            case 'icmp'|'tcp'|'udp'|'sctp'|'ipv6-icmp':
+            case 'icmp'|'tcp'|'udp'|'sctp'|'ipv6-icmp'|'gre':
                 rule_service['protocol'] = protocol if protocol in ('tcp', 'udp', 'sctp') else ''
                 rule['services'].append(['service', f'Any {protocol.upper()}'])
+            case 'ipinip':
+                rule['services'].append(['service', 'Any IPIP'])
 
         argument = deq.popleft()
         match argument:
+            case 'ifc':
+                src_zone = deq.popleft()
+                if src_zone in data['zones'] and src_zone not in rule['src_zones']:
+                    rule['src_zones'].append(src_zone)
             case 'object-group-user':
                 rule['users'].append(['group', deq.popleft()])
             case 'user':
@@ -2111,6 +2121,10 @@ def convert_firewall_rules(parent, path, data):
         while deq:
             argument = deq.popleft()
             match argument:
+                case 'ifc':
+                    dst_zone = deq.popleft()
+                    if dst_zone in data['zones'] and dst_zone not in rule['dst_zones']:
+                        rule['dst_zones'].append(dst_zone)
                 case 'neq':
                     port = deq.popleft()
                     parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{rule["name"]}"]: Сервис "neq {port}" не добавлен в правило так как оператор "neq" не поддерживается.')
@@ -2160,6 +2174,9 @@ def convert_firewall_rules(parent, path, data):
 #                    zone = deq.popleft()
 #                   if zone in zones:
 #                        rule['dst_zones'].append(zone)
+                case 'rule-id':
+#                    print(deq.popleft())
+                    rule['description'] = f'rule-id: {deq.popleft()}\n{rule["description"]}'
                 case _:
                     ips_mode = 'dst_ips'
                     get_ips(parent, path, data, ips_mode, argument, rule, deq)

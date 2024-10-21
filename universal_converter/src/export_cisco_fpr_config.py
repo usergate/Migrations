@@ -21,14 +21,14 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
-# Версия 1.5 03.10.2024
+# Версия 1.6 21.10.2024
 #
 
 import os, sys, json, re
 import copy, time
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import network_proto, service_ports, trans_table, trans_filename, trans_name
+from services import network_proto, service_ports, trans_table, trans_filename, trans_name, MONTHS
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
@@ -50,20 +50,24 @@ class ConvertCiscoFPRConfig(QThread):
         self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco FPR в формат UserGate NGFW.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         convert_config_file(self, self.current_fpr_path)
+#        return
         
         json_file = os.path.join(self.current_fpr_path, 'cisco_fpr.json')
         err, data = func.read_json_file(self, json_file)
         if err:
             self.error = 1
         else:
-            convert_zones(self, self.current_ug_path, data['zones'])
+            convert_zones(self, self.current_ug_path, data)
+            convert_dns_servers(self, self.current_ug_path, data['dns']['system_dns'])
+            convert_dns_rules(self, self.current_ug_path, data['dns']['dns_rules'])
             convert_gateways(self, self.current_ug_path, data['gateways'])
             convert_static_routes(self, self.current_ug_path, data['routes'])
-            convert_vlan_interfaces(self, self.current_ug_path, data['ifaces'])
+            convert_vlan_interfaces(self, self.current_ug_path, data)
             convert_ip_lists(self, self.current_ug_path, data['ip_lists'])
             convert_url_lists(self, self.current_ug_path, data['url_lists'])
             convert_service_groups(self, self.current_ug_path, data['services'])
             convert_services_list(self, self.current_ug_path, data['services'])
+            convert_time_sets(self, self.current_ug_path, data)
             convert_firewall_rules(self, self.current_ug_path, data)
 
         if self.error:
@@ -99,11 +103,19 @@ def convert_config_file(parent, path):
                 'group': False
             }
         },
-        'ifaces': [],
         'zones': [],
+        'dns': {
+            'domain-lookup': [],
+            'dns_rules': [],
+            'system_dns': [],
+            'dns_static': []
+        },
+        'dhcp_relay': {},
+        'ifaces': [],
         'fw_rules': {},
         'gateways': [],
-        'routes': []
+        'routes': [],
+        'time-range': {}
     }
 
     def add_ip_list(ip, mask='255.255.255.255', obj='host'):
@@ -175,12 +187,6 @@ def convert_config_file(parent, path):
             data['ifaces'].append(iface)
         return line
 
-    def convert_dhcprelay(server_ip, zone_name):
-        for iface in data['ifaces']:
-            if iface['zone_id'] == zone_name.replace('_', ' '):
-                iface['dhcp_relay']['enabled'] = True
-                iface['dhcp_relay']['servers'].append(server_ip)
-
     def convert_network_object(name, fh):
         ip_list = {
             'name': name,
@@ -237,28 +243,34 @@ def convert_config_file(parent, path):
         line = fh.readline()
         y = line.translate(trans_table).rstrip().split(' ')
         while y[0] == '':
-            if y[1] == 'network-object':
-                if y[2] == 'object':
-                    if y[3] in data['url_lists']:
-                        url_list['content'].extend(data['url_lists'][y[3]]['content'])
+            match y[1]:
+                case 'network-object':
+                    if y[2] == 'object':
+                        if y[3] in data['url_lists']:
+                            url_list['content'].extend(data['url_lists'][y[3]]['content'])
+                        else:
+                            ip_list['content'].append({'list': y[3]})
+                    elif y[2] == 'host':
+                        ip_list['content'].append({'value': f'{y[3]}'})
                     else:
-                        ip_list['content'].append({'list': y[3]})
-                elif y[2] == 'host':
-                    ip_list['content'].append({'value': f'{y[3]}'})
-                else:
-                    try:
-                        ip_list['content'].append({'value': func.pack_ip_address(y[1], y[2])})
-                    except IndexError:
-                        parent.stepChanged.emit(f"RED|    Error: строка '{' '.join(y)}' не может быть обработана.")
-                        error = 1
-            elif y[1] == 'group-object':
-                if y[2] in data['url_lists']:
-                    url_list['content'].extend(data['url_lists'][y[2]]['content'])
-                if y[2] in data['ip_lists']:
-                    ip_list['content'].append({'list': y[2]})
-            elif y[1] == 'description':
-                ip_list['description'] = f"{ip_list['description']}\n{' '.join(y[2:])}"
-                url_list['description'] = f"{url_list['description']}\n{' '.join(y[2:])}"
+                        try:
+                            error, ip = func.pack_ip_addr(y[2], y[3])
+                            if error:
+                                parent.stepChanged.emit(f"RED|    Error: строка '{' '.join(y)}' не может быть обработана [{ip}].")
+                                error = 1
+                            else:
+                                ip_list['content'].append({'value': ip})
+                        except IndexError as err:
+                            parent.stepChanged.emit(f"RED|    Error: строка '{' '.join(y)}' не может быть обработана [{err}].")
+                            error = 1
+                case 'group-object':
+                    if y[2] in data['url_lists']:
+                        url_list['content'].extend(data['url_lists'][y[2]]['content'])
+                    if y[2] in data['ip_lists']:
+                        ip_list['content'].append({'list': y[2]})
+                case 'description':
+                    ip_list['description'] = f"{ip_list['description']}\n{' '.join(y[2:])}"
+                    url_list['description'] = f"{url_list['description']}\n{' '.join(y[2:])}"
             line = fh.readline()
             y = line.translate(trans_table).rstrip().split(' ')
         if ip_list['content']:
@@ -430,7 +442,7 @@ def convert_config_file(parent, path):
             'src_ips': set(),
             'dst_ips': set(),
             'services': set(),
-            'enabled': False,
+            'enabled': True,
         }
 
         line = fh.readline()
@@ -575,20 +587,24 @@ def convert_config_file(parent, path):
             'is_automatic': False
         }
         try:
-            interface = func.pack_ip_address(route_line[2], route_line[3])
-            if interface == '0.0.0.0/0':
-                gateway['name'] = route_line[1]
-                gateway['ipv4'] = route_line[4]
-                if len(route_line) >= 6:
-                    gateway['weight'] = int(route_line[5])
-                data['gateways'].append(gateway)
+            error, interface = func.pack_ip_addr(route_line[2], route_line[3])
+            if error:
+                parent.stepChanged.emit(f'RED|    Error: {interface}. Маршрут "{" ".join(route_line)}" не конвертирован.')
+                error = 1
             else:
-                route['dest'] = interface
-                route['name'] = f'{route_line[1]} - {route["dest"]}'
-                route['gateway'] = route_line[4]
-                if len(route_line) == 6:
-                    route['metric'] = int(route_line[5])
-                data['routes'].append(route)
+                if interface == '0.0.0.0/0':
+                    gateway['name'] = route_line[1]
+                    gateway['ipv4'] = route_line[4]
+                    if len(route_line) >= 6:
+                        gateway['weight'] = int(route_line[5])
+                    data['gateways'].append(gateway)
+                else:
+                    route['dest'] = interface
+                    route['name'] = f'{route_line[1]} - {route["dest"]}'
+                    route['gateway'] = route_line[4]
+                    if len(route_line) == 6:
+                        route['metric'] = int(route_line[5])
+                    data['routes'].append(route)
         except IndexError as err:
             parent.stepChanged.emit(f'RED|    Error: {err}. Маршрут "{" ".join(route_line)}" не конвертирован.')
             error = 1
@@ -600,36 +616,57 @@ def convert_config_file(parent, path):
                 line = fh.readline()
                 continue
             x = line.translate(trans_table).rsplit(' ')
-            if x[0] == 'interface':
-                line = convert_interface(x[1], line, fh)
-            elif x[0] == 'ip' and x[1] == 'local' and x[2] == 'pool':
-                convert_local_pool(x)
-            elif x[0] == 'object':
-                if x[1] == 'network':
-                    line = convert_network_object(x[2], fh)
-                if x[1] == 'service':
-                    line = convert_service_object(x[2], fh)
-            elif x[0] == 'object-group':
-                if x[1] == 'network':
-                    line = convert_network_object_group(x[2], fh)
+            match x[0]:
+                case 'dns':
+                    match x[1:]:
+                        case ['domain-lookup', zone_name]:
+                            data['dns']['domain-lookup'].append(zone_name)
+                        case ['server-group', servergroup_name]:
+                            line, tmp_block = get_block(fh)
+                            create_dns_rules(data, servergroup_name, tmp_block)
+                            continue
+                        case 'forwarder':
+                            pass
+                case 'interface':
+                    line = convert_interface(x[1], line, fh)
+                case 'ip':
+                     if x[1] == 'local' and x[2] == 'pool':
+                        convert_local_pool(x)
+                case 'object':
+                    if x[1] == 'network':
+                        line = convert_network_object(x[2], fh)
+                    if x[1] == 'service':
+                        line = convert_service_object(x[2], fh)
+                case 'object-group':
+                    if x[1] == 'network':
+                        line = convert_network_object_group(x[2], fh)
+                        continue
+                    if x[1] == 'service':
+                        line = convert_service_object_group(line, fh)
+                        continue
+                    if x[1] == 'icmp-type':
+                        line = convert_icmp_object_group(x[2], fh)
+                        continue
+                case 'access-list':
+                     if x[1] == 'CSM_FW_ACL_' and x[2] == 'remark' and x[5] in ('RULE:', 'L7', 'L4'):
+                        line = convert_access_list(int(x[4][:-1]), ' '.join(x[6:]), fh)
+                        continue
+                case 'mtu':
+                    if x[1].lower() != 'management':
+                        data['zones'].append(x[1].replace('_', ' ').translate(trans_name))
+                case 'dhcprelay':
+                    if x[1] == 'server':
+                        zone_name = x[3].replace('_', ' ')
+                        if zone_name in data['dhcp_relay']:
+                            data['dhcp_relay'][zone_name].append(x[2])
+                        else:
+                            data['dhcp_relay'][zone_name] = [x[2]]
+                case 'route':
+                    convert_routes_list(x)
+                case 'time-range':
+                    line, tmp_block = get_block(fh)
+                    data['time-range'][x[1].translate(trans_name)] = tmp_block
                     continue
-                if x[1] == 'service':
-                    line = convert_service_object_group(line, fh)
-                    continue
-                if x[1] == 'icmp-type':
-                    line = convert_icmp_object_group(x[2], fh)
-                    continue
-            elif x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'remark' and x[5] in ('RULE:', 'L7', 'L4'):
-                line = convert_access_list(int(x[4][:-1]), ' '.join(x[6:]), fh)
-                continue
-            elif x[0] == 'mtu':
-                if x[1].lower() != 'management':
-                    data['zones'].append(x[1].replace('_', ' ').translate(trans_name))
-            elif x[0] == 'dhcprelay':
-                if x[1] == 'server':
-                    convert_dhcprelay(x[2], x[3])
-            elif x[0] == 'route':
-                convert_routes_list(x)
             line = fh.readline()
 
     with open(fpr_config_file, "r") as fh:
@@ -650,13 +687,46 @@ def convert_config_file(parent, path):
     out_message = f'BLACK|    Конфигурация Cisco FPR в формате json выгружена в файл "{json_file}".'
     parent.stepChanged.emit('ORANGE|    Ошибка экспорта конфигурации Cisco FPR в формат json.' if error else out_message)
 
+
+def get_block(fh):
+    """Читаем файл и создаём блок записей для раздела конфигурации"""
+    block = []
+    line = fh.readline()
+    while line.startswith(' '):
+        block.append(line.translate(trans_table).strip().split(' '))
+        line = fh.readline()
+    return line, block
+
+
+def create_dns_rules(data, rule_name, data_block):
+    """
+    Если в data_block нет domain-name, создаём системные DNS-сервера.
+    Если есть, создаём правило DNS прокси "Сеть/DNS/DNS-прокси/Правила DNS".
+    """
+    dns_rule = {
+        'name': rule_name,
+        'domains': [],
+        'dns_servers': []
+    }
+    for item in data_block:
+        match item[0]:
+            case 'name-server':
+                dns_rule['dns_servers'].append(item[1])
+            case 'domain-name':
+                dns_rule['domains'].append(f'*.{item[1]}')
+    if dns_rule['domains']:
+        data['dns']['dns_rules'].append(dns_rule)
+    else:
+        for x in dns_rule['dns_servers']:
+            data['dns']['system_dns'].append(x)
+
 #------------------------------------------- Конвертация -----------------------------------------------
-def convert_zones(parent, path, zone_names):
+def convert_zones(parent, path, data):
     """Конвертируем зоны."""
     parent.stepChanged.emit('BLUE|Конвертация Зон.')
 
     zones = []
-    for item in zone_names:
+    for item in data['zones']:
         zone = {
             'name': item,
             'description': 'Портировано с Cisco FPR.',
@@ -701,6 +771,11 @@ def convert_zones(parent, path, zone_names):
                 'enabled': True,
                 'service_id': 'POP(S)-прокси',
                 'allowed_ips': []
+                },
+                {
+                'enabled': False,
+                'service_id': 'DNS',
+                'allowed_ips': []
                 }
             ],
             'readonly': False,
@@ -711,6 +786,14 @@ def convert_zones(parent, path, zone_names):
             'sessions_limit_threshold': 0,
             'sessions_limit_exclusions': []
         }
+        if data['dns']['domain-lookup']:
+            for zone_name in data['dns']['domain-lookup']:
+                if item == zone_name:
+                    for service in zone['services_access']:
+                        if service['service_id'] == 'DNS':
+                            service['enabled'] = True
+                            break
+
         zones.append(zone)
         parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" конвертирована.')
 
@@ -731,6 +814,64 @@ def convert_zones(parent, path, zone_names):
         parent.stepChanged.emit('LBLUE|    Необходимо настроить каждую зону. Включить нужный сервис в контроле доступа, поменять по необходимости параметры защиты от DoS и настроить защиту от спуфинга.')
     else:
         parent.stepChanged.emit('GRAY|    Нет зон для экспорта.')
+
+
+def convert_dns_servers(parent, path, system_dns):
+    """Заполняем список системных DNS"""
+    parent.stepChanged.emit('BLUE|Конвертация системных DNS-серверов.')
+    if system_dns:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DNS')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.error = 1
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            return
+
+        dns_servers = []
+        for ip in system_dns:
+            dns_servers.append({
+                'dns': ip,
+                'is_bad': False
+            })
+
+        json_file = os.path.join(current_path, 'config_dns_servers.json')
+        with open(json_file, 'w') as fh:
+            json.dump(dns_servers, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Системные DNS-сервера выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit(f'GRAY|    Нет системных DNS-серверов для экспорта.')
+
+
+def convert_dns_rules(parent, path, dns_rules):
+    """Создаём правило DNS прокси Сеть/DNS/DNS-прокси/Правила DNS"""
+    parent.stepChanged.emit('BLUE|Конвертация правил DNS в DNS-прокси.')
+    if dns_rules:
+        section_path = os.path.join(path, 'Network')
+        current_path = os.path.join(section_path, 'DNS')
+        err, msg = func.create_dir(current_path, delete='no')
+        if err:
+            parent.error = 1
+            parent.stepChanged.emit(f'RED|    {msg}.')
+            return
+
+        rules = []
+        for item in dns_rules:
+            rules.append({
+                'name': item['name'],
+                'description': 'Перенесено с Cisco FPR',
+                'enabled': True,
+                'position': 'last',
+                'domains': item['domains'],
+                'dns_servers': item['dns_servers']
+            })
+
+        json_file = os.path.join(current_path, 'config_dns_rules.json')
+        with open(json_file, 'w') as fh:
+            json.dump(rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Правила DNS выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit(f'GRAY|    Нет правил DNS для экспорта.')
 
 
 def convert_gateways(parent, path, gateways):
@@ -786,12 +927,12 @@ def convert_static_routes(parent, path, static_routes):
         parent.stepChanged.emit('GRAY|    Нет статических маршрутов для экспорта.')
 
 
-def convert_vlan_interfaces(parent, path, ifaces_list):
+def convert_vlan_interfaces(parent, path, data):
     """Конвертируем интерфейсы VLAN"""
     parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
 
-    if ifaces_list:
-        for iface in ifaces_list:
+    if data['ifaces']:
+        for iface in data['ifaces']:
             iface['enabled'] = False
             iface['master'] = False
             iface['netflow_profile'] = 'undefined'
@@ -803,6 +944,10 @@ def convert_vlan_interfaces(parent, path, ifaces_list):
             iface['tap'] = False
             iface['link'] = ''
 
+            if iface['zone_id'] in data['dhcp_relay']:
+                iface['dhcp_relay']['enabled'] = True
+                iface['dhcp_relay']['servers'] = data['dhcp_relay'][iface['zone_id']]
+
         section_path = os.path.join(path, 'Network')
         current_path = os.path.join(section_path, 'Interfaces')
         err, msg = func.create_dir(current_path)
@@ -813,7 +958,7 @@ def convert_vlan_interfaces(parent, path, ifaces_list):
 
         json_file = os.path.join(current_path, 'config_interfaces.json')
         with open(json_file, "w") as fh:
-            json.dump(ifaces_list, fh, indent=4, ensure_ascii=False)
+            json.dump(data['ifaces'], fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Интерфейсы VLAN выгружены в файл "{json_file}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.')
@@ -958,6 +1103,109 @@ def convert_services_list(parent, path, services):
         parent.stepChanged.emit(f'BLACK|    Список сервисов выгружен в файл "{json_file}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет сервисов для экспорта.')
+
+
+def convert_time_sets(parent, path, data):
+    """Конвертируем time set (календари)"""
+    parent.stepChanged.emit('BLUE|Конвертация календарей.')
+    if not data['time-range']:
+        parent.stepChanged.emit(f'GRAY|    Нет календарей для экспорта.')
+        return
+
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'TimeSets')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.error = 1
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        return
+
+    week = {
+        'Monday': 1,
+        'Tuesday': 2,
+        'Wednesday': 3,
+        'Thursday': 4,
+        'Friday': 5,
+        'Saturday': 6,
+        'Sunday': 7
+    }
+    time_rules = []
+
+    for rule_name, content in data['time-range'].items():
+        rule = {
+            'name': rule_name,
+            'description': 'Перенесено с Cisco FPR',
+            'type': 'timerestrictiongroup',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {},
+            'content': []
+        }
+        i = 0
+        for item in content:
+            i += 1
+            time_set = {
+                'name': f'{rule_name} {i}',
+                'type': 'span' if item[0] == 'absolute' else 'weekly'
+            }
+            match item:
+                case ['absolute', 'start' | 'end', time, day, month, year]:
+                    if item[1] == 'start':
+                        time_set['time_from'] = time
+                        time_set['fixed_date_from'] = f'{year}-{MONTHS[month]}-{day}T00:00:00'
+                    elif item[1] == 'end':
+                        time_set['time_to'] = time
+                        time_set['fixed_date_to'] = f'{year}-{MONTHS[month]}-{day}T00:00:00'
+                case ['absolute', 'start', start_time, start_day, start_month, start_year, 'end', end_time, end_day, end_month, end_year]:
+                    time_set['time_from'] = start_time
+                    time_set['fixed_date_from'] = f'{start_year}-{MONTHS[start_month]}-{start_day}T00:00:00'
+                    time_set['time_to'] = end_time
+                    time_set['fixed_date_to'] = f'{end_year}-{MONTHS[end_month]}-{end_day}T00:00:00'
+                case ['absolute', 'end', end_time, end_day, end_month, end_year, 'start', start_time, start_day, start_month, start_year]:
+                    time_set['time_from'] = start_time
+                    time_set['fixed_date_from'] = f'{start_year}-{MONTHS[start_month]}-{start_day}T00:00:00'
+                    time_set['time_to'] = end_time
+                    time_set['fixed_date_to'] = f'{end_year}-{MONTHS[end_month]}-{end_day}T00:00:00'
+                case ['periodic', *other]:
+                    if other[0] in ('weekend', 'weekdays', 'daily'):
+                        time_set['time_from'] = other[1] if other[1] != 'to' else '00:00'
+                        time_set['time_to'] = other[len(other)-1]
+                        if other[0] == 'daily':
+                            time_set['type'] = 'daily'
+                        else:
+                            time_set['days'] = [6, 7] if other[0] == 'weekend' else [1, 2, 3, 4, 5]
+                    else:
+                        start, end = other[:other.index('to')], other[other.index('to')+1:]
+                        days = set()
+                        for x in start:
+                            if week.get(x, None):
+                                days.add(week[x])
+                            else:
+                                time_set['time_from'] = x
+                        for x in end:
+                            if week.get(x, None):
+                                days = {y for y in range(min(days), week[x]+1)}
+                            else:
+                                time_set['time_to'] = x
+                        if not time_set.get('time_from', None):
+                            time_set['time_from'] = "00:00"
+                        if not time_set.get('time_to', None):
+                            time_set['time_to'] = "23:59"
+                        if days:
+                            time_set['days'] = sorted(list(days))
+                        else:
+                            time_set['type'] = 'daily'
+            rule['content'].append(time_set)
+        time_rules.append(rule)
+
+    if time_rules:
+        json_file = os.path.join(current_path, 'config_calendars.json')
+        with open(json_file, 'w') as fh:
+            json.dump(time_rules, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список календарей выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit(f'GRAY|    Нет календарей для экспорта.')
 
 
 def convert_firewall_rules(parent, path, data):

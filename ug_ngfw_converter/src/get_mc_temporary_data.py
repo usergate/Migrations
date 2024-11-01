@@ -34,38 +34,42 @@ class GetExportTemporaryData(QThread):
         super().__init__()
         self.utm = utm
         self.template_id = template_id
-        self.mc_data = {}
+        self.mc_data = {
+            'ldap_servers': {},
+            'ug_morphology': (
+                'MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
+                'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
+                'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
+                'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS'
+            ),
+            'ug_useragents': (
+                'USERAGENT_ANDROID',
+                'USERAGENT_APPLE',
+                'USERAGENT_BLACKBERRY',
+                'USERAGENT_CHROMEGENERIC',
+                'USERAGENT_CHROMEOS',
+                'USERAGENT_CHROMIUM',
+                'USERAGENT_EDGE',
+                'USERAGENT_FFGENERIC',
+                'USERAGENT_IE',
+                'USERAGENT_IOS',
+                'USERAGENT_LINUX',
+                'USERAGENT_MACOS',
+                'USERAGENT_MOBILESAFARI',
+                'USERAGENT_OPERA',
+                'USERAGENT_SAFARIGENERIC',
+                'USERAGENT_SPIDER',
+                'USERAGENT_UCBROWSER',
+                'USERAGENT_WIN',
+                'USERAGENT_WINPHONE',
+                'USERAGENT_YABROWSER'
+            )
+        }
         self.ug_iplists = ('BOTNET_BLACK_LIST', 'BANKS_IP_LIST', 'ZAPRET_INFO_BLACK_LIST_IP')
         self.ug_url_lists = ('ENTENSYS_WHITE_LIST', 'BAD_SEARCH_BLACK_LIST', 'ENTENSYS_BLACK_LIST',
             'ENTENSYS_KAZ_BLACK_LIST', 'FISHING_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST_DOMAIN')
         self.ug_mime = ('MIME_CAT_APPLICATIONS', 'MIME_CAT_DOCUMENTS', 'MIME_CAT_IMAGES',
             'MIME_CAT_JAVASCRIPT', 'MIME_CAT_SOUNDS', 'MIME_CAT_VIDEO')
-        self.mc_data['ug_morphology'] = ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
-            'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
-            'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
-            'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS')
-        self.mc_data['ug_useragents'] = (
-            'USERAGENT_ANDROID',
-            'USERAGENT_APPLE',
-            'USERAGENT_BLACKBERRY',
-            'USERAGENT_CHROMEGENERIC',
-            'USERAGENT_CHROMEOS',
-            'USERAGENT_CHROMIUM',
-            'USERAGENT_EDGE',
-            'USERAGENT_FFGENERIC',
-            'USERAGENT_IE',
-            'USERAGENT_IOS',
-            'USERAGENT_LINUX',
-            'USERAGENT_MACOS',
-            'USERAGENT_MOBILESAFARI',
-            'USERAGENT_OPERA',
-            'USERAGENT_SAFARIGENERIC',
-            'USERAGENT_SPIDER',
-            'USERAGENT_UCBROWSER',
-            'USERAGENT_WIN',
-            'USERAGENT_WINPHONE',
-            'USERAGENT_YABROWSER'
-        )
         self.error = 0
 
     def run(self):
@@ -78,7 +82,8 @@ class GetExportTemporaryData(QThread):
         err, result = self.utm.get_usercatalog_ldap_servers()
         if err:
             self.stepChanged.emit(f'RED|       {result}')
-            self.error = 1
+            self.stepChanged.emit(f'iRED|Произошла ошибка инициализации экспорта! Устраните ошибки и повторите экспорт.')
+            return
         elif result:
             err, result2 = self.utm.get_usercatalog_servers_status()
             if err:
@@ -106,7 +111,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список сервисов.')
-        err, result = self.utm.get_template_services_list(self.template_id)
+        err, result = self.utm.get_realm_services_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -114,7 +119,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список групп сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'servicegroup')
+        err, result = self.utm.get_realm_nlists_list('servicegroup')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -122,7 +127,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список типов контента
         self.stepChanged.emit(f'BLACK|    Получаем список типов контента.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'mime')
+        err, result = self.utm.get_realm_nlists_list('mime')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -132,7 +137,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'network')
+        err, result = self.utm.get_realm_nlists_list('network')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -142,7 +147,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список URL-листов
         self.stepChanged.emit(f'BLACK|    Получаем список URL-листов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'url')
+        err, result = self.utm.get_realm_nlists_list('url')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -152,7 +157,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список календарей
         self.stepChanged.emit(f'BLACK|    Получаем список календарей.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'timerestrictiongroup')
+        err, result = self.utm.get_realm_nlists_list('timerestrictiongroup')
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             self.error = 1
@@ -160,7 +165,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список групп категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'urlcategorygroup')
+        err, result = self.utm.get_realm_nlists_list('urlcategorygroup')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -200,7 +205,7 @@ class GetExportTemporaryData(QThread):
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
-        err, result = self.utm.get_template_auth_profiles(self.template_id)
+        err, result = self.utm.get_realm_auth_profiles()
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
@@ -250,42 +255,46 @@ class GetExportTemporaryData(QThread):
 class GetImportTemporaryData(QThread):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
-    def __init__(self, utm, template_id):
+    def __init__(self, utm, template_id, templates):
         super().__init__()
         self.utm = utm
         self.template_id = template_id
-        self.mc_data = {}
+        self.templates = templates    # структура {template_id: template_name}
+        self.mc_data = {
+            'auth_profiles': {},
+            'ldap_servers': {},
+            'ug_morphology': ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
+                'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
+                'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
+                'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS'),
+            'ug_useragents': (
+                'USERAGENT_ANDROID',
+                'USERAGENT_APPLE',
+                'USERAGENT_BLACKBERRY',
+                'USERAGENT_CHROMEGENERIC',
+                'USERAGENT_CHROMEOS',
+                'USERAGENT_CHROMIUM',
+                'USERAGENT_EDGE',
+                'USERAGENT_FFGENERIC',
+                'USERAGENT_IE',
+                'USERAGENT_IOS',
+                'USERAGENT_LINUX',
+                'USERAGENT_MACOS',
+                'USERAGENT_MOBILESAFARI',
+                'USERAGENT_OPERA',
+                'USERAGENT_SAFARIGENERIC',
+                'USERAGENT_SPIDER',
+                'USERAGENT_UCBROWSER',
+                'USERAGENT_WIN',
+                'USERAGENT_WINPHONE',
+                'USERAGENT_YABROWSER'
+            )
+        }
         self.ug_iplists = ('BOTNET_BLACK_LIST', 'BANKS_IP_LIST', 'ZAPRET_INFO_BLACK_LIST_IP')
         self.ug_url_lists = ('ENTENSYS_WHITE_LIST', 'BAD_SEARCH_BLACK_LIST', 'ENTENSYS_BLACK_LIST',
             'ENTENSYS_KAZ_BLACK_LIST', 'FISHING_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST_DOMAIN')
         self.ug_mime = ('MIME_CAT_APPLICATIONS', 'MIME_CAT_DOCUMENTS', 'MIME_CAT_IMAGES',
             'MIME_CAT_JAVASCRIPT', 'MIME_CAT_SOUNDS', 'MIME_CAT_VIDEO')
-        self.mc_data['ug_morphology'] = ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
-            'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
-            'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
-            'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS')
-        self.mc_data['ug_useragents'] = (
-            'USERAGENT_ANDROID',
-            'USERAGENT_APPLE',
-            'USERAGENT_BLACKBERRY',
-            'USERAGENT_CHROMEGENERIC',
-            'USERAGENT_CHROMEOS',
-            'USERAGENT_CHROMIUM',
-            'USERAGENT_EDGE',
-            'USERAGENT_FFGENERIC',
-            'USERAGENT_IE',
-            'USERAGENT_IOS',
-            'USERAGENT_LINUX',
-            'USERAGENT_MACOS',
-            'USERAGENT_MOBILESAFARI',
-            'USERAGENT_OPERA',
-            'USERAGENT_SAFARIGENERIC',
-            'USERAGENT_SPIDER',
-            'USERAGENT_UCBROWSER',
-            'USERAGENT_WIN',
-            'USERAGENT_WINPHONE',
-            'USERAGENT_YABROWSER'
-        )
         self.error = 0
 
     def run(self):
@@ -298,7 +307,8 @@ class GetImportTemporaryData(QThread):
         err, result = self.utm.get_usercatalog_ldap_servers()
         if err:
             self.stepChanged.emit(f'RED|       {result}')
-            self.error = 1
+            self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
+            return
         elif result:
             err, result2 = self.utm.get_usercatalog_servers_status()
             if err:
@@ -318,7 +328,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список зон
         self.stepChanged.emit(f'BLACK|    Получаем список зон.')
-        err, result = self.utm.get_template_zones_list(self.template_id)
+        err, result = self.utm.get_realm_zones_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -326,7 +336,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список сервисов.')
-        err, result = self.utm.get_template_services_list(self.template_id)
+        err, result = self.utm.get_realm_services_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -334,7 +344,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список групп сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'servicegroup')
+        err, result = self.utm.get_realm_nlists_list('servicegroup')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -342,7 +352,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список типов контента
         self.stepChanged.emit(f'BLACK|    Получаем список типов контента.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'mime')
+        err, result = self.utm.get_realm_nlists_list('mime')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -352,7 +362,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'network')
+        err, result = self.utm.get_realm_nlists_list('network')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -362,7 +372,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список URL-листов
         self.stepChanged.emit(f'BLACK|    Получаем список URL-листов.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'url')
+        err, result = self.utm.get_realm_nlists_list('url')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -372,7 +382,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список календарей
         self.stepChanged.emit(f'BLACK|    Получаем список календарей.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'timerestrictiongroup')
+        err, result = self.utm.get_realm_nlists_list('timerestrictiongroup')
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             self.error = 1
@@ -380,7 +390,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список групп категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'urlcategorygroup')
+        err, result = self.utm.get_realm_nlists_list('urlcategorygroup')
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -396,7 +406,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список профилей SSL
         self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL.')
-        err, result = self.utm.get_template_ssl_profiles_list(self.template_id)
+        err, result = self.utm.get_realm_ssl_profiles_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -412,7 +422,7 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список сертификатов
         self.stepChanged.emit(f'BLACK|    Получаем список сертификатов')
-        err, result = self.utm.get_template_certificates_list(self.template_id)
+        err, result = self.utm.get_realm_certificates_list()
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
@@ -421,11 +431,19 @@ class GetImportTemporaryData(QThread):
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
-        err, result = self.utm.get_template_auth_profiles(self.template_id)
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.mc_data['auth_profiles'] = {x['name']: x['id'] for x in result}
+#        err, result = self.utm.get_realm_auth_profiles()
+#        if err:
+#            self.stepChanged.emit(f'iRED|{result}')
+#            return
+#        self.mc_data['auth_profiles'] = {x['name']: x['id'] for x in result}
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_auth_profiles(uid)
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.mc_data['auth_profiles'].update({x['name']: {'id': x['id'], 'template_name': name, 'template_id': uid} for x in result})
+#        print(json.dumps(self.mc_data['auth_profiles'], indent=4))
+            
 
         # Получаем список локальных групп
         self.stepChanged.emit(f'BLACK|    Получаем список локальных групп')

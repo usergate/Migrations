@@ -25,8 +25,9 @@
 import os, sys, json
 import common_func as func
 from datetime import datetime as dt
+from xmlrpc.client import DateTime as class_DateTime
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import zone_services, trans_filename, default_urlcategorygroup
+from services import trans_filename, default_urlcategorygroup
 
 
 class ExportAll(QThread):
@@ -38,8 +39,8 @@ class ExportAll(QThread):
         self.utm = utm
         self.config_path = config_path      # Путь к каталогу с конфигурацией данного узла
         self.all_points = all_points
-        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
-        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
+#        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
+#        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
         self.error = 0
 
     def run(self):
@@ -73,6 +74,7 @@ class ExportSelectedPoints(QThread):
         self.selected_path = selected_path
         self.selected_points = selected_points
         self.template_id = template_id
+
 #        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
         self.error = 0
 
@@ -336,8 +338,14 @@ def export_upstream_proxy_settings(parent, path, data):
     json_file = os.path.join(path, 'upstream_proxy_settings.json')
     with open(json_file, 'w') as fh:
         json.dump(data['upstream_proxy']['value'], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Настройки вышестоящего прокси выгружены в файл "{json_file}".')
 
-    parent.stepChanged.emit(f'GREEN|    Настройки вышестоящего прокси выгружены в файл "{json_file}".')
+    json_file = os.path.join(path, 'upstream_proxy_check_update.json')
+    with open(json_file, 'w') as fh:
+        json.dump(data['upstream_update_proxy']['value'], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Настройки вышестоящего прокси для проверки лицензии и обновлений выгружены в файл "{json_file}".')
+
+    parent.stepChanged.emit('GREEN|    Настройки вышестоящего прокси экспортированы.')
 
 
 def export_certificates(parent, path):
@@ -345,27 +353,28 @@ def export_certificates(parent, path):
     parent.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Сертификаты".')
     error = 0
 
-    err, result = parent.utm.get_certificates_list()
+    err, result = parent.utm.get_template_certificates_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
         error = 1
     else:
         for item in result:
             parent.stepChanged.emit(f'BLACK|    Экспорт сертификата {item["name"]}.')
             item.pop('cc', None)
-            if parent.version >= 7.1:
-                if item['not_before'].value:
+            if isinstance(item['not_before'], class_DateTime):
+                try:
                     item['not_before'] = dt.strptime(item['not_before'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                else:
+                except Exception:
                     item['not_before'] = ''
-                if item['not_after'].value:
-                    item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                else:
-                    item['not_after'] = ''
             else:
                 if item['not_before']:
                     item['not_before'] = dt.strptime(item['not_before'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(item['not_after'], class_DateTime):
+                try:
+                    item['not_after'] = dt.strptime(item['not_after'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    item['not_after'] = ''
+            else:
                 if item['not_after']:
                     item['not_after'] = dt.strptime(item['not_after'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
 
@@ -374,64 +383,93 @@ def export_certificates(parent, path):
             err, msg = func.create_dir(path_cert)
             if err:
                 parent.stepChanged.emit(f'RED|       {msg}')
-                parent.error = 1
                 error = 1
             else:
                 # Выгружаем сертификат в формат DER.
-                err, base64_cert = parent.utm.get_certificate_data(item['id'])
+                err, base64_cert = parent.utm.get_template_certificate_data(parent.template_id, item['id'])
                 if err:
                     parent.stepChanged.emit(f'RED|       {base64_cert}')
-                    parent.error = 1
                     error = 1
                 else:
                     with open(os.path.join(path_cert, 'cert.der'), 'wb') as fh:
                         fh.write(base64_cert.data)
 
                 # Выгружаем сертификат с цепочками в формат PEM.
-                err, base64_cert = parent.utm.get_certificate_chain_data(item['id'])
+                err, base64_cert = parent.utm.get_template_certificate_chain_data(parent.template_id, item['id'])
                 if err:
                     parent.stepChanged.emit(f'ORANGE|       Не удалось выгрузить сертификат в формате PEM [{base64_cert}]')
-                    parent.error = 1
                     error = 1
                 else:
                     with open(os.path.join(path_cert, 'cert.pem'), 'wb') as fh:
                         fh.write(base64_cert.data)
 
                 # Выгружаем детальную информацию сертификата в файл certificate_details.json.
-                err, details_info = parent.utm.get_certificate_details(item['id'])
+                err, details_info = parent.utm.get_template_certificate_details(parent.template_id, item['id'])
                 if err:
                     parent.stepChanged.emit(f'RED|       {details_info}')
-                    parent.error = 1
                     error = 1
                 else:
-                    if parent.version >= 7.1:
-                        if details_info['notBefore']:
+                    if isinstance(details_info['notBefore'], class_DateTime):
+                        try:
                             details_info['notBefore'] = dt.strptime(details_info['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                        if details_info['notAfter']:
+                        except Exception:
+                            details_info['notBefore'] = ''
+                    else:
+                        if details_info['notBefore']:
+                            details_info['notBefore'] = dt.strptime(details_info['notBefore'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                    if isinstance(details_info['notAfter'], class_DateTime):
+                        try:
                             details_info['notAfter'] = dt.strptime(details_info['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            details_info['notAfter'] = ''
+                    else:
+                        if details_info['notAfter']:
+                            details_info['notAfter'] = dt.strptime(details_info['notAfter'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+
+                    if 'chain' in details_info:
+                        for chain_item in details_info['chain']:
+                            if isinstance(chain_item['notBefore'], class_DateTime):
+                                try:
+                                    chain_item['notBefore'] = dt.strptime(chain_item['notBefore'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                                except Exception:
+                                    chain_item['notBefore'] = ''
+                            else:
+                                if chain_item['notBefore']:
+                                    chain_item['notBefore'] = dt.strptime(chain_item['notBefore'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                            if isinstance(chain_item['notAfter'], class_DateTime):
+                                try:
+                                    chain_item['notAfter'] = dt.strptime(chain_item['notAfter'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+                                except Exception:
+                                    chain_item['notAfter'] = ''
+                            else:
+                                if chain_item['notAfter']:
+                                    chain_item['notAfter'] = dt.strptime(chain_item['notAfter'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+
                     json_file = os.path.join(path_cert, 'certificate_details.json')
                     with open(json_file, 'w') as fh:
                         json.dump(details_info, fh, indent=4, ensure_ascii=False)
 
-                # Выгружаем общую информацию сертификата в файл certificate_list.json.
-                item.pop('id', None)
-                json_file = os.path.join(path_cert, 'certificate_list.json')
-                with open(json_file, 'w') as fh:
-                    json.dump(item, fh, indent=4, ensure_ascii=False)
-                parent.stepChanged.emit(f'BLACK|       Сертификат {item["name"]} экспортирован в каталог {path_cert}.')
-
-    out_message = f'GREEN|    Сертификаты выгружены в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте сертификатов.' if error else out_message)
+            # Выгружаем общую информацию сертификата в файл certificate_list.json.
+            item.pop('id', None)
+            json_file = os.path.join(path_cert, 'certificate_list.json')
+            with open(json_file, 'w') as fh:
+                json.dump(item, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|       Сертификат {item["name"]} экспортирован в каталог {path_cert}.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте сертификатов.')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Сертификаты выгружены в каталог "{path}".')
 
 
 def export_users_certificate_profiles(parent, path):
-    """Экспортируем профили пользовательских сертификатов. Только для версии 7.1 и выше."""
+    """Экспортируем профили пользовательских сертификатов."""
     parent.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Профили пользовательских сертификатов".')
 
-    err, result = parent.utm.get_client_certificate_profiles()
+    err, result = parent.utm.get_template_client_certificate_profiles(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        parent.stepChanged.emit('ORANGE|    Ошибка экспорта профилей пользовательских сертификатов!')
+        parent.stepChanged.emit('ORANGE|    Произошла оОшибка при экспорте профилей пользовательских сертификатов.')
         parent.error = 1
         return
 
@@ -439,14 +477,15 @@ def export_users_certificate_profiles(parent, path):
         err, msg = func.create_dir(path)
         if err:
             parent.stepChanged.emit(f'RED|    {msg}')
-            parent.stepChanged.emit('ORANGE|    Ошибка экспорта профилей пользовательских сертификатов!')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей пользовательских сертификатов.')
             parent.error = 1
             return
 
         for item in result:
             item.pop('id', None)
-            item.pop('cc', None)
-            item['ca_certificates'] = [parent.ngfw_data['certs'][x] for x in item['ca_certificates']]
+            item.pop('template_id', None)
+
+            item['ca_certificates'] = [parent.mc_data['certs'][x] for x in item['ca_certificates']]
 
         json_file = os.path.join(path, 'users_certificate_profiles.json')
         with open(json_file, 'w') as fh:
@@ -459,88 +498,126 @@ def export_users_certificate_profiles(parent, path):
 def export_zones(parent, path):
     """Экспортируем список зон."""
     parent.stepChanged.emit('BLUE|Экспорт настроек раздела "Сеть/Зоны".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, data = parent.utm.get_zones_list()
+    err, data = parent.utm.get_template_zones_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте зон.')
         parent.error = 1
-        error = 1
-    else:
-        for zone in data:
-            zone['name'] = zone['name'].strip().translate(trans_name)
-            zone.pop('id', None)
-            zone.pop('cc', None)
-            if parent.version < 7:
-                zone['sessions_limit_enabled'] = False
-                zone['sessions_limit_threshold'] = 0
-                zone['sessions_limit_exclusions'] = []
-            elif parent.version == 7.0 and zone['sessions_limit_threshold'] == -1:
-                zone['sessions_limit_threshold'] = 0
-            elif parent.version >= 7.1:
-                for net in zone['networks']:
-                    if net[0] == 'list_id':
-                        net[1] = parent.ngfw_data['ip_lists'][net[1]]
-                for item in zone['sessions_limit_exclusions']:
-                    item[1] = parent.ngfw_data['ip_lists'][item[1]]
+        return
 
-            # Удаляем неиспользуемые в настоящий момент сервисы зон: 3, 16, 20, 21 (в zone_services = false).
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте зон.')
+            parent.error = 1
+            return
+
+        service_ids = {
+            'ffffff03-ffff-ffff-ffff-ffffff000001': 'Ping',
+            'ffffff03-ffff-ffff-ffff-ffffff000002': 'SNMP',
+            'ffffff03-ffff-ffff-ffff-ffffff000004': 'Captive-портал и страница блокировки',
+            'ffffff03-ffff-ffff-ffff-ffffff000005': 'XML-RPC для управления',
+            'ffffff03-ffff-ffff-ffff-ffffff000006': 'Кластер',
+            'ffffff03-ffff-ffff-ffff-ffffff000007': 'VRRP',
+            'ffffff03-ffff-ffff-ffff-ffffff000008': 'Консоль администрирования',
+            'ffffff03-ffff-ffff-ffff-ffffff000009': 'DNS',
+            'ffffff03-ffff-ffff-ffff-ffffff000010': 'HTTP(S)-прокси',
+            'ffffff03-ffff-ffff-ffff-ffffff000011': 'Агент аутентификации',
+            'ffffff03-ffff-ffff-ffff-ffffff000012': 'SMTP(S)-прокси',
+            'ffffff03-ffff-ffff-ffff-ffffff000013': 'POP(S)-прокси',
+            'ffffff03-ffff-ffff-ffff-ffffff000014': 'CLI по SSH',
+            'ffffff03-ffff-ffff-ffff-ffffff000015': 'VPN',
+            'ffffff03-ffff-ffff-ffff-ffffff000017': 'SCADA',
+            'ffffff03-ffff-ffff-ffff-ffffff000018': 'Reverse-прокси',
+            'ffffff03-ffff-ffff-ffff-ffffff000019': 'Веб-портал',
+            'ffffff03-ffff-ffff-ffff-ffffff000022': 'SAML сервер',
+            'ffffff03-ffff-ffff-ffff-ffffff000023': 'Log analyzer',
+            'ffffff03-ffff-ffff-ffff-ffffff000024': 'OSPF',
+            'ffffff03-ffff-ffff-ffff-ffffff000025': 'BGP',
+            'ffffff03-ffff-ffff-ffff-ffffff000030': 'RIP',
+            'ffffff03-ffff-ffff-ffff-ffffff000026': 'SNMP-прокси',
+            'ffffff03-ffff-ffff-ffff-ffffff000027': 'SSH-прокси',
+            'ffffff03-ffff-ffff-ffff-ffffff000028': 'Multicast',
+            'ffffff03-ffff-ffff-ffff-ffffff000029': 'NTP сервис',
+            'ffffff03-ffff-ffff-ffff-ffffff000031': 'UserID syslog collector',
+            'ffffff03-ffff-ffff-ffff-ffffff000032': 'BFD',
+            'ffffff03-ffff-ffff-ffff-ffffff000033': 'Endpoints connect'
+        }
+        error = 0
+
+        for zone in data:
+            zone['name'] = zone['name']
+            zone.pop('id', None)
+            zone.pop('template_id', None)
+            for net in zone['networks']:
+                if net[0] == 'list_id':
+                    net[1] = parent.mc_data['ip_lists'][net[1]]
+            for item in zone['sessions_limit_exclusions']:
+                item[1] = parent.mc_data['ip_lists'][item[1]]
+
             new_services_access = []
             for service in zone['services_access']:
-                service['service_id'] = zone_services[service['service_id']]
                 for item in service['allowed_ips']:
                     if item[0] == 'list_id':
-                        item[1] = parent.ngfw_data['ip_lists'][item[1]]
-                if service['service_id']:
+                        item[1] = parent.mc_data['ip_lists'][item[1]]
+                try:
+                    service['service_id'] = service_ids[service['service_id']]
                     new_services_access.append(service)
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|       Error [Зона "{zone["name"]}"]. Не экспортирован сервис с ID "{err}" в контроль доступа.')
+                    zone['description'] = f'{zone["description"]}\nError: Не экспортирован сервис с ID "{err}" в контроль доступа.'
+                    error = 1
             zone['services_access'] = new_services_access
 
         json_file = os.path.join(path, 'config_zones.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
 
-    out_message = f'GREEN|    Настройки зон выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте зон!' if error else out_message)
+        if error:
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте зон.')
+            parent.error = 1
+        parent.stepChanged.emit(f'GREEN|    Настройки зон выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет зон для экспорта.')
 
 
 def export_interfaces_list(parent, path):
     """Экспортируем список интерфейсов"""
     parent.stepChanged.emit('BLUE|Экспорт интерфейсов из раздела "Сеть/Интерфейсы".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, result = parent.utm.get_netflow_profiles_list()
+    err, result = parent.utm.get_template_netflow_profiles_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте интерфейсов.')
         parent.error = 1
         return
     list_netflow = {x['id']: x['name'] for x in result}
 
-    list_lldp = {}
-    if parent.version >= 7.0:    
-        err, result = parent.utm.get_lldp_profiles_list()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        list_lldp = {x['id']: x['name'] for x in result}
+    err, result = parent.utm.get_template_lldp_profiles_list(parent.template_id)
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте интерфейсов.')
+        parent.error = 1
+        return
+    list_lldp = {x['id']: x['name'] for x in result}
 
-    err, data = parent.utm.get_interfaces_list()
+    err, data = parent.utm.get_template_interfaces_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте интерфейсов.')
         parent.error = 1
-        error = 1
-    else:
-        iface_name = translate_iface_name(parent.version, path, data)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте интерфейсов.')
+            parent.error = 1
+            return
+        error = 0
 
         for item in data:
             item['id'], _ = item['id'].split(':')
@@ -548,175 +625,115 @@ def export_interfaces_list(parent, path):
             item.pop('speed', None)
             item.pop('errors', None)
             item.pop('running', None)
-            item.pop('node_name', None)
+            item.pop('template_id', None)
+            item.pop('_cc_node_name', None)
             if item['zone_id']:
-                item['zone_id'] = parent.ngfw_data['zones'].get(item['zone_id'], 0)
+                item['zone_id'] = parent.mc_data['zones'].get(item['zone_id'], 0)
             item['netflow_profile'] = list_netflow.get(item['netflow_profile'], 'undefined')
-            lldp_profile = item.get('lldp_profile', 'undefined')
-            item['lldp_profile'] = list_lldp.get(lldp_profile, 'undefined')
-            if parent.version < 7.1:
-                item['ifalias'] = ''
-                item['flow_control'] = False
-                if item['mode'] == 'dhcp':
-                    item['dhcp_default_gateway'] = True
-            if parent.version < 6:
-                item.pop('iface_id', None)
-                item.pop('qlen', None)
-                item.pop('nameservers', None)
-                item.pop('ifindex', None)
-                item['id'] = iface_name[item['id']]
-                item['name'] = iface_name[item['name']]
-                if item['kind'] == 'vlan':
-                    item['link'] = iface_name[item['link']]
-                elif item['kind'] == 'bridge':
-                    ports = item['bridging']['ports']
-                    ports = [iface_name[x] for x in ports]
-                    item['bridging']['ports'] = ports
-                elif item['kind'] == 'bond':
-                    ports = item['bonding']['slaves']
-                    ports = [iface_name[x] for x in ports]
-                    item['bonding']['slaves'] = ports
-                if item['kind'] == 'ppp':
-                    item.pop('dhcp_relay', None)
-                    item['pppoe'].pop('index', None)
-                    item['pppoe'].pop('name', None)
-                    item['pppoe'].pop('iface_id', None)
-                    item['pppoe'].pop('id', None)
-                    if item['pppoe']['peer'] is None:
-                        item['pppoe']['peer'] = ""
-                    item['pppoe']['ifname'] = iface_name[item['pppoe']['ifname']]
-                if item['kind'] == 'tunnel':
-                    item.pop('dhcp_relay', None)
-                    item['tunnel'].pop('name', None)
-                    item['tunnel'].pop('ttl', None)
-                    item['tunnel'].pop('id', None)
-                    if 'vni' not in item['tunnel'].keys():
-                        item['tunnel']['vni'] = 0
-                if item['kind'] not in ('vpn', 'ppp', 'tunnel'):
-                    if not item['dhcp_relay']:
-                        item['dhcp_relay'] = {
-                            'enabled': False,
-                            'host_ipv4': '',
-                            'servers': []
-                        }
-                    else:
-                        item['dhcp_relay'].pop('id', None)
-                        item['dhcp_relay'].pop('iface_id', None)
+            item['lldp_profile'] = list_lldp.get(item['lldp_profile'], 'undefined')
+
+            new_ipv4 = []
+            for ips in item['ipv4']:
+                err, result = func.pack_ip_addr(ips['ip'], ips['mask'])
+                if err:
+                    parent.stepChanged.emit(f'RED|    Не удалось преобразовать IP: "{ips}" для интерфейса "{item["name"]}".')
+                    item['description'] = f'{item["description"]}\nError: Не удалось преобразовать IP: "{ips}".'
+                    error = 1
+                else:
+                    new_ipv4.append(result)
+            item['ipv4'] = new_ipv4
 
         data.sort(key=lambda x: x['name'])
 
         json_file = os.path.join(path, 'config_interfaces.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Настройки интерфейсов выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте интерфейсов!' if error else out_message)
+        if error:
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте интерфейсов.')
+        parent.stepChanged.emit(f'GREEN|    Настройки интерфейсов выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет интерфейсов для экспорта.')
 
 
 def export_gateways_list(parent, path):
     """Экспортируем список шлюзов"""
-    parent.stepChanged.emit('BLUE|Экспорт шлюзов раздела "Сеть/Шлюзы".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
+    parent.stepChanged.emit('BLUE|Экспорт раздела "Сеть/Шлюзы".')
 
-    err, result = parent.utm.get_interfaces_list()
+    err, result = parent.utm.get_template_gateways_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте шлюзов.')
         parent.error = 1
         return
-    else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
-        iface_names['undefined'] = 'undefined'
 
-    err, result = parent.utm.get_gateways_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        error = 1
-    else:
+    if result:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте шлюзов.')
+            parent.error = 1
+            return
+
         for item in result:
             item.pop('id', None)
-            item.pop('node_name', None)
-            item.pop('active', None)
-            item.pop('mac', None)
-            item.pop('protocol', None)
-            item.pop('_appliance_iface', None)
-            item.pop('index', None)
-            item.pop('uid', None)
-            item.pop('cc', None)
-            if not 'name' in item or not item['name']:
+            item.pop('_cc_node_name', None)
+            item.pop('template_id', None)
+            if not item.get('name', False):
                 item['name'] = item['ipv4']
-            item['iface'] = iface_names[item['iface']] if item['iface'] else 'undefined'
-            if parent.version < 6:
-                item['is_automatic'] = False
-                item['vrf'] = 'default'
-
+ 
         json_file = os.path.join(path, 'config_gateways.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Настройки шлюзов выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте шлюзов!' if error else out_message)
-
+        parent.stepChanged.emit(f'BLACK|    Настройки шлюзов выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет шлюзов для экспорта.')
 
     """Экспортируем настройки проверки сети шлюзов"""
-    parent.stepChanged.emit('BLUE|Экспорт проверки сети раздела "Сеть/Шлюзы".')
-    error = 0
-
-    err, result = parent.utm.get_gateway_failover()
+    err, result = parent.utm.get_template_gateway_failover(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек проверки сети.')
         parent.error = 1
-        error = 1
     else:
+        result.pop('cc_enabled', None)
         json_file = os.path.join(path, 'config_gateway_failover.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Настройки "Проверка сети" выгружены в файл "{json_file}".')
 
-    out_message = f'GREEN|    Настройки "Проверка сети" выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек проверки сети!' if error else out_message)
+    parent.stepChanged.emit('GREEN|    Экспорт раздела "Сеть/Шлюзы" завершён.')
 
 
 def export_dhcp_subnets(parent, path):
     """Экспортируем настройки DHCP"""
     parent.stepChanged.emit('BLUE|Экспорт настроек DHCP раздела "Сеть/DHCP".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, result = parent.utm.get_interfaces_list()
+    err, result = parent.utm.get_template_dhcp_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DHCP.')
         parent.error = 1
         return
-    else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
-    err, result = parent.utm.get_dhcp_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        error = 1
-    else:
+    if result:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DHCP.')
+            parent.error = 1
+            return
+
         for item in result:
-            item['iface_id'] = iface_names[item['iface_id']]
             item.pop('id', None)
-            item.pop('node_name', None)
-            item.pop('cc', None)
+            item.pop('template_id', None)
+            item.pop('_cc_node_name', None)
 
         json_file = os.path.join(path, 'config_dhcp_subnets.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Настройки DHCP выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DHCP!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Настройки DHCP выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет настроек DHCP для экспорта.')
 
 
 def export_dns_config(parent, path):
@@ -729,100 +746,100 @@ def export_dns_config(parent, path):
         return
 
     error = 0
-    params = (
-        'use_cache_enabled',
-        'enable_dns_filtering',
-        'recursive_enabled',
-        'dns_max_ttl',
-        'dns_max_queries_per_user',
-        'only_a_for_unknown',
-        'dns_receive_timeout',
-        'dns_max_attempts'
-    )
-    err, result = parent.utm.get_settings_params(params)
+    err, result = parent.utm.get_template_dns_settings(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DNS-прокси шаблона. Данные настройки не экспортированы.')
         error = 1
-        parent.error = 1
     else:
+        params = {}
+        for item in result:
+            params[item['code']] = item['value']
+
         json_file = os.path.join(path, 'config_dns_proxy.json')
         with open(json_file, 'w') as fh:
-            json.dump(result, fh, indent=4, ensure_ascii=False)
+            json.dump(params, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Настройки DNS-прокси выгружены в файл "{json_file}".')
 
-    err, result = parent.utm.get_dns_servers()
+    err, result = parent.utm.get_template_dns_servers(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте системных DNS-серверов шаблона. Данные настройки не экспортированы.')
         error = 1
-        parent.error = 1
     else:
         json_file = os.path.join(path, 'config_dns_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список системных DNS серверов выгружен в файл "{json_file}".')
     
-    err, result = parent.utm.get_dns_rules()
+    err, result = parent.utm.get_template_dns_rules(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил DNS прокси шаблона. Данные настройки не экспортированы.')
         error = 1
-        parent.error = 1
     else:
         for item in result:
             item.pop('id', None)
-            item.pop('cc', None)
-            item.pop('position_layer', None)
+            item.pop('template_id', None)
+            item.pop('grid_position', None)
         json_file = os.path.join(path, 'config_dns_rules.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список правил DNS прокси выгружен в файл "{json_file}".')
     
-    err, result = parent.utm.get_dns_static_records()
+    err, result = parent.utm.get_template_dns_static_records(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте статических записей DNS шаблона. Данные настройки не экспортированы.')
         error = 1
-        parent.error = 1
     else:
         for item in result:
             item.pop('id', None)
-            item.pop('cc', None)
+            item.pop('template_id', None)
         json_file = os.path.join(path, 'config_dns_static.json')
         with open(json_file, 'w') as fh:
             json.dump(result, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Статические записи DNS прокси выгружены в файл "{json_file}".')
 
-    out_message = f'GREEN|    Настройки DNS экспортированы в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DNS!' if error else out_message)
+    if error:
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DNS.')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Настройки DNS экспортированы в каталог "{path}".')
 
 
 def export_vrf_list(parent, path):
     """Экспортируем настройки VRF"""
     parent.stepChanged.emit('BLUE|Экспорт настроек VRF раздела "Сеть/Виртуальные маршрутизаторы".')
-    err, msg = func.create_dir(path)
+
+    err, result = parent.utm.get_template_bfd_profiles_list(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек VRF.')
         parent.error = 1
         return
-    error = 0
+    bfd_profiles = {x['id']: x['name'] for x in result}
+    bfd_profiles[-1] = -1
 
-    if parent.version >= 7.1:
-        err, result = parent.utm.get_bfd_profiles()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        bfd_profiles = {x['id']: x['name'] for x in result}
-        bfd_profiles[-1] = -1
-
-    err, data = parent.utm.get_routes_list()
+    err, data = parent.utm.get_template_vrf_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек VRF.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек VRF.')
+            parent.error = 1
+            return
+
         for item in data:
             item.pop('id', None)
-            item.pop('node_name', None)
-            item.pop('cc', None)
+            item.pop('template_id', None)
+            item.pop('_cc_node_name', None)
+
             for x in item['routes']:
                 x.pop('id', None)
             route_maps = {}
@@ -830,8 +847,6 @@ def export_vrf_list(parent, path):
             item['bgp'].pop('id', None)
             if item['bgp']['as_number'] == "null":
                 item['bgp']['as_number'] = 0
-            if parent.version < 7:
-                item['bgp']['as_number'] = int(item['bgp']['as_number'])
             for x in item['bgp']['routemaps']:
                 route_maps[x['id']] = x['name']
                 x.pop('id', None)
@@ -840,7 +855,6 @@ def export_vrf_list(parent, path):
                 x.pop('id', None)
             for x in item['bgp']['neighbors']:
                 x.pop('id', None)
-                x.pop('state', None)
                 x['remote_asn'] = int(x['remote_asn'])
                 for i, rmap in enumerate(x['filter_in']):
                     x['filter_in'][i] = filters[rmap]
@@ -850,10 +864,10 @@ def export_vrf_list(parent, path):
                     x['routemap_in'][i] = route_maps[rmap]
                 for i, rmap in enumerate(x['routemap_out']):
                     x['routemap_out'][i] = route_maps[rmap]
-                x['bfd_profile'] = -1 if parent.version < 7.1 else bfd_profiles[x['bfd_profile']]
+                x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
             item['ospf'].pop('id', None)
             for x in item['ospf']['interfaces']:
-                x['bfd_profile'] = -1 if parent.version < 7.1 else bfd_profiles[x['bfd_profile']]
+                x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
             for x in item['ospf']['areas']:
                 x.pop('id', None)
             item['rip'].pop('id', None)
@@ -864,392 +878,216 @@ def export_vrf_list(parent, path):
         json_file = os.path.join(path, 'config_vrf.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-        out_message = f'GREEN|    Настройки VRF выгружены в файл "{json_file}".'
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек VRF!' if error else out_message)
-
-def export_routes(parent, path):
-    """Экспортируем список маршрутов. Только версия 5."""
-    parent.stepChanged.emit('BLUE|Экспорт списка маршрутов раздела "Сеть/Маршруты".')
-    path = path.replace('Routes', 'VRF', 1)
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
-
-    err, result = parent.utm.get_interfaces_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
+        parent.stepChanged.emit(f'GREEN|    Настройки VRF выгружены в файл "{json_file}".')
     else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
-
-    routes = []
-    err, data = parent.utm.get_routes_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        error = 1
-    else:
-        for item in data:
-            item.pop('id', None)
-            item.pop('node_name', None)
-            if 'name' not in item.keys() or not item['name']:
-                item['name'] = item['dest']
-            item.pop('multihop', None)
-            item.pop('vrf', None)
-            item.pop('active', None)
-            item['ifname'] = iface_names[item['iface_id']] if item['iface_id'] else 'undefined'
-            item.pop('iface_id', None)
-            item['kind'] = 'unicast'
-
-        routes.append({
-            'name': 'default',
-            'description': '',
-#            'interfaces': [],
-            'routes': data,
-            'ospf': {},
-            'bgp': {},
-            'rip': {},
-            'pimsm': {},
-        })
-
-        json_file = os.path.join(path, 'config_vrf.json')
-        with open(json_file, 'w') as fh:
-            json.dump(routes, fh, indent=4, ensure_ascii=False)
-
-        out_message = f'GREEN|    Список маршрутов выгружен в файл "{json_file}".'
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка маршрутов!' if error else out_message)
-
-
-def export_ospf_config(parent, path):
-    """Экспортируем конфигурацию OSPF (только для v.5)"""
-    parent.stepChanged.emit('BLUE|Экспорт конфигурации OSPF раздела "Сеть/OSPF".')
-    path = path.replace('OSPF', 'VRF', 1)
-    json_file = os.path.join(path, 'config_vrf.json')
-    error = 0
-
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-
-    if os.path.exists(json_file):
-        try:
-            with open(json_file, 'r') as fh:
-                data = json.load(fh)
-        except Exception as err:
-            parent.stepChanged.emit(f'RED|    {err}')
-            parent.error = 1
-            return
-    else:
-        data = [{
-            'name': 'default',
-            'description': '',
-            'routes': [],
-            'ospf': {},
-            'bgp': {},
-            'rip': {},
-            'pimsm': {},
-        },]
-
-    err, result = parent.utm.get_interfaces_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    else:
-        iface_names = translate_iface_name(parent.version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
-
-    err, ospf, ifaces, areas = parent.utm.get_ospf_config()
-    if err:
-        parent.stepChanged.emit(f'RED|    {ospf}')
-        parent.error = 1
-        error = 1
-    else:
-        ospf['enabled'] = False
-        for item in ifaces:
-            item['iface_id'], _ = item['iface_id'].split(':')
-            item['iface_id'] = iface_names[item['iface_id']]
-            item['auth_params'].pop('md5_key', None)
-            item['auth_params'].pop('plain_key', None)
-            item['bfd_profile'] = -1
-        for item in areas:
-            item.pop('id', None)
-            item.pop('area_range', None)
-
-        ospf['interfaces'] = ifaces
-        ospf['areas'] = areas
-        for item in data:
-            if item['name'] == 'default':
-                item['ospf'] = ospf
-                with open(json_file, 'w') as fh:
-                    json.dump(data, fh, indent=4, ensure_ascii=False)
-                break
-
-    out_message = f'GREEN|    Конфигурация OSPF выгружена в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте конфигурации OSPF!' if error else out_message)
-
-
-def export_bgp_config(parent, path):
-    """Экспортируем конфигурацию BGP (только для v.5)"""
-    parent.stepChanged.emit('BLUE|Экспорт конфигурации BGP раздела "Сеть/BGP".')
-    path = path.replace('BGP', 'VRF', 1)
-    json_file = os.path.join(path, 'config_vrf.json')
-    error = 0
-
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-
-    if os.path.exists(json_file):
-        try:
-            with open(json_file, 'r') as fh:
-                data = json.load(fh)
-        except Exception as err:
-            parent.stepChanged.emit(f'RED|    {err}')
-            parent.error = 1
-            return
-    else:
-        data = [{
-            'name': 'default',
-            'description': '',
-            'routes': [],
-            'ospf': {},
-            'bgp': {},
-            'rip': {},
-            'pimsm': {},
-        },]
-
-    err, bgp, neigh, rmaps, filters = parent.utm.get_bgp_config()
-    if err:
-        parent.stepChanged.emit(f'RED|    {bgp}')
-        parent.error = 1
-        error = 1
-    else:
-        route_maps = {}
-        bgp_filters = {}
-        if bgp['as_number'] == 'null':
-            bgp['as_number'] = 0
-        else:
-            bgp['as_number'] = int(bgp['as_number'])
-        bgp.pop('id', None)
-        bgp.pop('strict_ip', None)
-        bgp.pop('multiple_asn', None)
-        for item in rmaps:
-            route_maps[item['id']] = item['name']
-            item.pop('id', None)
-            item.pop('position', None)
-            item['match_items'] = [x[:-4] for x in item['match_items']]
-        for item in filters:
-            bgp_filters[item['id']] = item['name']
-            item.pop('id', None)
-            item.pop('position', None)
-            item['filter_items'] = [x[:-4] for x in item['filter_items']]
-        for item in neigh:
-            item.pop('id', None)
-            item.pop('iface_id', None)
-            item.pop('state', None)
-            item['remote_asn'] = int(item['remote_asn'])
-            for i, fmap in enumerate(item['filter_in']):
-                item['filter_in'][i] = bgp_filters[fmap]
-            for i, fmap in enumerate(item['filter_out']):
-                item['filter_out'][i] = bgp_filters[fmap]
-            for i, fmap in enumerate(item['routemap_in']):
-                item['routemap_in'][i] = route_maps[fmap]
-            for i, fmap in enumerate(item['routemap_out']):
-                item['routemap_out'][i] = route_maps[fmap]
-            item['bfd_profile'] = -1
-        bgp['routemaps'] = rmaps
-        bgp['filters'] = filters
-        bgp['neighbors'] = neigh
-        for item in data:
-            if item['name'] == 'default':
-                item['bgp'] = bgp
-                with open(json_file, 'w') as fh:
-                    json.dump(data, fh, indent=4, ensure_ascii=False)
-                break
-
-    out_message = f'GREEN|    Конфигурация BGP выгружена в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте конфигурации BGP!' if error else out_message)
+        parent.stepChanged.emit('GRAY|    Нет VRF для экспорта.')
 
 
 def export_wccp(parent, path):
     """Экспортируем список правил WCCP"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил WCCP из раздела "Сеть/WCCP".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    json_file = os.path.join(path, 'config_wccp.json')
-    error = 0
 
-    err, data = parent.utm.get_wccp_list()
+    err, data = parent.utm.get_template_wccp_rules(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил WCCP.')
         parent.error = 1
-        error = 1
-    else:
-        for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
-            item['ports'] = [int(x) for x in item['ports']]
-            item.pop('id', None)
-            item.pop('cc', None)
-            if item['routers']:
-                for x in item['routers']:
-                    x[1] = parent.ngfw_data['ip_lists'][x[1]] if x[0] == 'list_id' else x[1]
+        return
 
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил WCCP.')
+            parent.error = 1
+            return
+
+        for item in data:
+            item.pop('id', None)
+            item.pop('template_id', None)
+            for x in item['routers']:
+                x[1] = parent.mc_data['ip_lists'][x[1]] if x[0] == 'list_id' else x[1]
+
+        json_file = os.path.join(path, 'config_wccp.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    if error:
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил WCCP!')
-    else:
         parent.stepChanged.emit(f'GREEN|    Список правил WCCP выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил WCCP для экспорта.')
 
 
 def export_local_groups(parent, path):
     """Экспортируем список локальных групп пользователей"""
     parent.stepChanged.emit('BLUE|Экспорт списка локальных групп из раздела "Пользователи и устройства/Группы".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, data = parent.utm.get_groups_list()
+    err, data = parent.utm.get_template_groups_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка локальных групп.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
         for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('cc', None)
-            err, users = parent.utm.get_group_users(item['id'])
+            item['users'] = []
+            err, users = parent.utm.get_template_group_users(parent.template_id, item['id'])
             if err:
                 parent.stepChanged.emit(f'RED|    {users}')
+                parent.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте членов группы "{item["name"]}".')
                 parent.error = 1
-                error = 1
-                item['users'] = []
             else:
-                if parent.version < 6:
-                    item['users'] = [x['name'] for x in users]
-                else:
-                    item['users'] = [x[1] for x in users]
+                for x in users:
+                    user = x[1].split(f' {chr(8212)} ')[0]  # Убираем длинное тире.
+                    if not '\\' in user:
+                        user = user.split()[0]  # Убираем логин, оставляем имя.
+                    item['users'].append(user)
             item.pop('id', None)
+            item.pop('template_id', None)
+            item.pop('group_type', None)
+            item.pop('all_users', None)
+
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка локальных групп.')
+            parent.error = 1
+            return
 
         json_file = os.path.join(path, 'config_groups.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список локальных групп выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка локальных групп!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Список локальных групп выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет локальных групп для экспорта.')
 
 
 def export_local_users(parent, path):
     """Экспортируем список локальных пользователей"""
     parent.stepChanged.emit('BLUE|Экспорт списка локальных пользователей из раздела "Пользователи и устройства/Пользователи".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, data = parent.utm.get_users_list()
+    err, data = parent.utm.get_template_users_list(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка локальных пользователей.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
         for item in data:
-            item.pop('icap_clients', None)
             item.pop('creation_date', None)
             item.pop('expiration_date', None)
-            item.pop('cc', None)
-            if not item['first_name']:
-                item['first_name'] = ""
-            if not item['last_name']:
-                item['last_name'] = ""
-            item['groups'] = [parent.ngfw_data['local_groups'][guid] for guid in item['groups']]
+            item.pop('template_id', None)
+            item.pop('user_type', None)
+            err, groups = parent.utm.get_template_user_groups(parent.template_id, item['id'])
+            if err:
+                parent.stepChanged.emit(f'RED|    {groups}')
+                parent.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте групп пользователя "{item["name"]}".')
+                parent.error = 1
+                item['groups'] = []
+            else:
+                item['groups'] = [x['name'].split(f' {chr(8212)} ')[0] for x in groups]
+            item.pop('id', None)
+
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка локальных пользователей.')
+            parent.error = 1
+            return
 
         json_file = os.path.join(path, 'config_users.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список локальных пользователей выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка локальных пользователей!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Список локальных пользователей выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет локальных пользователей для экспорта.')
 
 
 def export_auth_servers(parent, path):
     """Экспортируем список серверов аутентификации"""
     parent.stepChanged.emit('BLUE|Экспорт списка серверов аутентификации из раздела "Пользователи и устройства/Серверы аутентификации".')
-    err, msg = func.create_dir(path)
+
+    err, result = parent.utm.get_template_auth_servers(parent.template_id)
     if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов аутентификации.')
         parent.error = 1
         return
-    error = 0
 
-    err, ldap, radius, tacacs, ntlm, saml = parent.utm.get_auth_servers()
-    if err:
-        parent.stepChanged.emit(f'RED|    {ldap}')
-        parent.error = 1
-        error = 1
+    if result:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов аутентификации.')
+            parent.error = 1
+            return
+
+        ldap = []
+        radius = []
+        tacacs = []
+        ntlm = []
+        saml = []
+        for item in result:
+            item.pop('id', None)
+            item.pop('template_id', None)
+            if item['type'] == 'ldap':
+                ldap.append(item)
+            if item['type'] == 'radius':
+                radius.append(item)
+            if item['type'] == 'tacacs_plus':
+                tacacs.append(item)
+            if item['type'] == 'ntlm':
+                ntlm.append(item)
+            if item['type'] == 'saml_idp':
+                saml.append(item)
+            item.pop('type', None)
+
+        if ldap:
+            json_file = os.path.join(path, 'config_ldap_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ldap, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список серверов LDAP выгружен в файл "{json_file}".')
+        if radius:
+            json_file = os.path.join(path, 'config_radius_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(radius, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список серверов RADIUS выгружен в файл "{json_file}".')
+        if tacacs:
+            json_file = os.path.join(path, 'config_tacacs_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(tacacs, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список серверов TACACS выгружен в файл "{json_file}".')
+        if ntlm:
+            json_file = os.path.join(path, 'config_ntlm_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ntlm, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список серверов NTLM выгружен в файл "{json_file}".')
+        if saml:
+            for item in saml:
+                item['certificate_id'] = parent.mc_data['certs'].get(item['certificate_id'], 0)
+            json_file = os.path.join(path, 'config_saml_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(saml, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список серверов SAML выгружен в файл "{json_file}".')
+
+        parent.stepChanged.emit(f'GREEN|    Список серверов аутентификации экспортирован.')
     else:
-        json_file = os.path.join(path, 'config_ldap_servers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(ldap, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список серверов LDAP выгружен в файл "{json_file}".')
-
-        json_file = os.path.join(path, 'config_radius_servers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(radius, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список серверов RADIUS выгружен в файл "{json_file}".')
-
-        json_file = os.path.join(path, 'config_tacacs_servers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(tacacs, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список серверов TACACS выгружен в файл "{json_file}".')
-
-        json_file = os.path.join(path, 'config_ntlm_servers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(ntlm, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список серверов NTLM выгружен в файл "{json_file}".')
-
-        for item in saml:
-            item['certificate_id'] = parent.ngfw_data['certs'].get(item['certificate_id'], 0)
-        json_file = os.path.join(path, 'config_saml_servers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(saml, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список серверов SAML выгружен в файл "{json_file}".')
-
-    out_message = f'GREEN|    Список серверов аутентификации экспортирован успешно.'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов аутентификации!' if error else out_message)
+        parent.stepChanged.emit('GRAY|    Нет серверов аутентификации для экспорта.')
 
 
 def export_2fa_profiles(parent, path):
     """Экспортируем список MFA профилей"""
     parent.stepChanged.emit('BLUE|Экспорт списка MFA профилей из раздела "Пользователи и устройства/Профили MFA".')
 
-    err, result = parent.utm.get_notification_profiles_list()
+    err, result = parent.utm.get_realm_notification_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка MFA профилей!')
         parent.error = 1
         return
-    list_notifications = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+    list_notifications = {x['id']: x['name'] for x in result}
 
-    err, data = parent.utm.get_2fa_profiles()
+    err, data = parent.utm.get_template_2fa_profiles(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка MFA профилей!')
@@ -1260,18 +1098,19 @@ def export_2fa_profiles(parent, path):
         err, msg = func.create_dir(path)
         if err:
             parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка MFA профилей!')
             parent.error = 1
             return
 
         for item in data:
             item.pop('id', None)
-            item.pop('cc', None)
-            item['name'] = item['name'].strip().translate(trans_name)
+            item.pop('template_id', None)
             if item['type'] == 'totp':
                 item['init_notification_profile_id'] = list_notifications.get(item['init_notification_profile_id'], item['init_notification_profile_id'])
                 item.pop('auth_notification_profile_id', None)
             else:
                 item['auth_notification_profile_id'] = list_notifications.get(item['auth_notification_profile_id'], item['auth_notification_profile_id'])
+                item.pop('totp_show_qr_code', None)
                 item.pop('init_notification_profile_id', None)
 
         json_file = os.path.join(path, 'config_2fa_profiles.json')
@@ -1285,165 +1124,175 @@ def export_2fa_profiles(parent, path):
 def export_auth_profiles(parent, path):
     """Экспортируем список профилей аутентификации"""
     parent.stepChanged.emit('BLUE|Экспорт списка профилей авторизации из раздела "Пользователи и устройства/Профили аутентификации".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, ldap, radius, tacacs, ntlm, saml = parent.utm.get_auth_servers()
-    if err:
-        parent.stepChanged.emit(f'RED|    {ldap}')
-        parent.error = 1
-        return
-    auth_servers = {x['id']: x['name'].strip().translate(trans_name) for x in [*ldap, *radius, *tacacs, *ntlm, *saml]}
-
-    err, result = parent.utm.get_2fa_profiles()
+    err, result = parent.utm.get_realm_auth_servers()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации.')
         parent.error = 1
         return
-    profiles_2fa = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+    auth_servers = {x['id']: x['name'] for x in result}
 
-    err, data = parent.utm.get_auth_profiles()
+    err, result = parent.utm.get_realm_2fa_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации.')
+        parent.error = 1
+        return
+    profiles_2fa = {x['id']: x['name'] for x in result}
+
+    err, data = parent.utm.get_template_auth_profiles(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации.')
+            parent.error = 1
+            return
+
         for item in data:
             item.pop('id', None)
-            item.pop('cc', None)
-            item['name'] = item['name'].strip().translate(trans_name)
-            item['2fa_profile_id'] = profiles_2fa.get(item['2fa_profile_id'], False)
+            item.pop('template_id', None)
+            if item['2fa_profile_id']:
+                try:
+                    item['2fa_profile_id'] = profiles_2fa[item['2fa_profile_id']]
+                except KeyError:
+                    parent.stepChanged.emit(f'RED|    Error [Профиль "{item["name"]}"]. Не найден профиль MFA.')
+                    item['2fa_profile_id'] = False
+
             for auth_method in item['allowed_auth_methods']:
-                if len(auth_method) == 2:
-                    if 'saml_idp_server' in auth_method:
-                        auth_method['saml_idp_server_id'] = auth_method.pop('saml_idp_server', False)
-                    for key, value in auth_method.items():
-                        if isinstance(value, int):
+                if 'saml_idp_server' in auth_method:
+                    auth_method['saml_idp_server_id'] = auth_method.pop('saml_idp_server', False)
+                for key, value in auth_method.items():
+                    if key in {'ldap_server_id', 'radius_server_id', 'tacacs_plus_server_id', 'ntlm_server_id', 'saml_idp_server_id'}:
+                        if auth_method[key]:
                             auth_method[key] = auth_servers[value]
 
         json_file = os.path.join(path, 'config_auth_profiles.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список профилей аутентификации выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Список профилей аутентификации выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет профилей аутентификации для экспорта.')
 
 
 def export_captive_profiles(parent, path):
     """Экспортируем список Captive-профилей"""
     parent.stepChanged.emit('BLUE|Экспорт списка Captive-профилей из раздела "Пользователи и устройства/Captive-профили".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, result = parent.utm.get_templates_list()
+    err, result = parent.utm.get_realm_responsepages_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте Captive-профилей.')
         parent.error = 1
         return
     list_templates = {x['id']: x['name'] for x in result}
 
-    err, result = parent.utm.get_notification_profiles_list()
+    err, result = parent.utm.get_realm_client_certificate_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте Captive-профилей.')
         parent.error = 1
         return
-    list_notifications = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+    client_cert_profiles = {x['id']: x['name'] for x in result}
 
-    if (6 <= parent.version < 7.1):
-        result = parent.utm._server.v3.accounts.groups.list(parent.utm._auth_token, 0, 1000, {}, [])['items']
-        list_groups = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+    err, result = parent.utm.get_realm_notification_profiles()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте Captive-профилей.')
+        parent.error = 1
+        return
+    list_notifications = {x['id']: x['name'] for x in result}
 
-    if parent.version >= 7.1:
-        err, result = parent.utm.get_client_certificate_profiles()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        client_cert_profiles = {x['id']: x['name'] for x in result}
-
-    err, data = parent.utm.get_captive_profiles()
+    err, data = parent.utm.get_template_captive_profiles(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте Captive-профилей.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте Captive-профилей.')
+            parent.error = 1
+            return
+
         for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
-            item['captive_template_id'] = list_templates.get(item['captive_template_id'], -1)
-            item['notification_profile_id'] = list_notifications.get(item['notification_profile_id'], -1)
+            item.pop('id', None)
+            item.pop('template_id', None)
             try:
-                item['user_auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['user_auth_profile_id']]
+                item['captive_template_id'] = list_templates[item['captive_template_id']]
             except KeyError:
-                parent.stepChanged.emit('bRED|    Не найден профиль аутентификации для Captive-профиля "{item["name"]}". Профиль установлен в дефолтное значение.')
+                parent.stepChanged.emit(f'RED|    Error [Captive-профиль "{item["name"]}"]. Не найден шаблон страницы аутентификации.')
+                item['captive_template_id'] = -1
+            try:
+                item['notification_profile_id'] = list_notifications[item['notification_profile_id']]
+            except KeyError:
+                parent.stepChanged.emit(f'RED|    Error [Captive-профиль "{item["name"]}"]. Не найден профиль оповещения гостевых пользователей.')
+                item['notification_profile_id'] = -1
+            try:
+                item['user_auth_profile_id'] = parent.mc_data['auth_profiles'][item['user_auth_profile_id']]
+            except KeyError:
+                parent.stepChanged.emit('RED|    Error [Captive-профиль "{item["name"]}"]. Не найден профиль аутентификации. Профиль установлен в дефолтное значение.')
                 item['user_auth_profile_id'] = 'Example user auth profile'
-#                for k, v in parent.ngfw_data['auth_profiles'].items():
-#                    print(k, '-', v)
-            if (6 <= parent.version < 7.1):
-                item['ta_groups'] = [list_groups[guid] for guid in item['ta_groups']]
-            else:
-                item['ta_groups'] = [parent.ngfw_data['local_groups'][guid] for guid in item['ta_groups']]
-            if parent.version < 6:
-                item['ta_expiration_date'] = ''
-            else:
-                if item['ta_expiration_date']:
-                    item['ta_expiration_date'] = dt.strptime(item['ta_expiration_date'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-            if parent.version >= 7.1:
-                item['use_https_auth'] = True
+
+            item['ta_groups'] = [parent.mc_data['local_groups'][guid] for guid in item['ta_groups']]
+            if item['ta_expiration_date']:
+                item['ta_expiration_date'] = dt.strptime(item['ta_expiration_date'], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
+            try:
                 item['client_certificate_profile_id'] = client_cert_profiles.get(item['client_certificate_profile_id'], 0)
-            else:
-                item['captive_auth_mode'] = 'aaa'
+            except KeyError:
+                parent.stepChanged.emit(f'RED|    Error [Captive-профиль "{item["name"]}"]. Не найден профиль клиентского сертификата.')
                 item['client_certificate_profile_id'] = 0
-            item.pop('id', None)  # это есть в версии 5
-            item.pop('guid', None)  # это есть в версии 6 и выше
-            item.pop('cc', None)
 
         json_file = os.path.join(path, 'config_captive_profiles.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список Captive-профилей выгружен в файл "{json_file}".')
 
-    out_message = f'GREEN|    Список Captive-профилей выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте Captive-профилей.' if error else out_message)
+    else:
+        parent.stepChanged.emit('GRAY|    Нет профилей аутентификации для экспорта.')
 
 
 def export_captive_portal_rules(parent, path):
     """Экспортируем список правил Captive-портала"""
     parent.stepChanged.emit('BLUE|Экспорт списка правил Captive-портала из раздела "Пользователи и устройства/Captive-портал".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, result = parent.utm.get_captive_profiles()
+    err, result = parent.utm.get_realm_captive_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил Captive-портала.')
         parent.error = 1
         return
-    captive_profiles = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+    captive_profiles = {x['id']: x['name'] for x in result}
 
-    err, data = parent.utm.get_captive_portal_rules()
+    err, data = parent.utm.get_template_captive_portal_rules(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил Captive-портала.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил Captive-портала.')
+            parent.error = 1
+            return
+
         for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
             item.pop('id', None)
-            item.pop('guid', None)
-            item.pop('rownumber', None)
-            item.pop('position_layer', None),
-            item.pop('time_created', None)
-            item.pop('time_updated', None)
+            item.pop('template_id', None)
+            item.pop('grid_position', None)
             item['profile_id'] = captive_profiles.get(item['profile_id'], 0)
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
             item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
@@ -1452,74 +1301,48 @@ def export_captive_portal_rules(parent, path):
             item['urls'] = get_urls_name(parent, item['urls'], item['name'])
             item['url_categories'] = get_url_categories_name(parent, item['url_categories'], item['name'])
             item['time_restrictions'] = get_time_restrictions_name(parent, item['time_restrictions'], item['name'])
+            item['time_created'] = item['time_created'].replace('T', ' ').replace('Z', '')
+            item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
 
         json_file = os.path.join(path, 'config_captive_portal_rules.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список правил Captive-портала выгружен в файл "{json_file}".')
 
-    out_message = f'GREEN|    Список правил Captive-портала выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил Captive-портала.' if error else out_message)
+    else:
+        parent.stepChanged.emit('GRAY|    Нет правил Captive-портала для экспорта.')
 
 
 def export_terminal_servers(parent, path):
     """Экспортируем список терминальных серверов"""
     parent.stepChanged.emit('BLUE|Экспорт списка терминальных серверов из раздела "Пользователи и устройства/Терминальные серверы".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
-    err, data = parent.utm.get_terminal_servers()
+    err, data = parent.utm.get_template_terminal_servers(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка терминальных серверов.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка терминальных серверов.')
+            parent.error = 1
+            return
+
         for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
             item.pop('id', None)
-            item.pop('guid', None)
-            item.pop('cc', None)
+            item.pop('template_id', None)
 
         json_file = os.path.join(path, 'config_terminal_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Список терминальных серверов выгружен в файл "{json_file}".')
 
-    out_message = f'GREEN|    Список терминальных серверов выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка терминальных серверов.' if error else out_message)
-
-
-def export_byod_policy(parent, path):
-    """Экспортируем список Политики BYOD"""
-    parent.stepChanged.emit('BLUE|Экспорт списка Политики BYOD из раздела "Пользователи и устройства/Политики BYOD".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
-
-    err, data = parent.utm.get_byod_policy()
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}')
-        parent.error = 1
-        error = 1
     else:
-        for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
-            item.pop('position_layer', None)
-            item.pop('deleted_users', None)
-            item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
-
-        json_file = os.path.join(path, 'config_byod_policy.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список "Политики BYOD" выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка "Политики BYOD".' if error else out_message)
+        parent.stepChanged.emit('GRAY|    Нет терминальных серверов для экспорта.')
 
 
 def export_userid_agent(parent, path):
@@ -1532,50 +1355,61 @@ def export_userid_agent(parent, path):
         return
     error = 0
 
-    err, result = parent.utm.get_useridagent_filters()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    useridagent_filters = {x['id']: x['name'] for x in result}
+# В версии 7.1 это не работает!!!!
+#    err, result = parent.utm.get_template_useridagent_filters_list(parent.template_id)
+#    if err:
+#        parent.stepChanged.emit(f'RED|    {result}')
+#        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек UserID агент.')
+#        parent.error = 1
+#        return
+#    useridagent_filters = {x['id']: x['name'] for x in result}
 
-    err, data = parent.utm.get_useridagent_servers()
+    err, data = parent.utm.get_template_useridagent_servers(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте агентов UserID.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
         for item in data:
             item.pop('id', None)
-            item.pop('status', None)
-            item.pop('cc', None)
-            item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
+            item.pop('template_id', None)
+            item['auth_profile_id'] = parent.mc_data['auth_profiles'][item['auth_profile_id']]
             if 'filters' in item:
-                item['filters'] = [useridagent_filters[x] for x in item['filters']]
+                parent.stepChanged.emit(f'ORANGE|    Error [Агент UserID "{item["name"]}"]. Не экспортированы фильтры. В вашей версии МС экспорт фильтров не работает.')
+#                item['filters'] = [useridagent_filters[x] for x in item['filters']]
 
         json_file = os.path.join(path, 'userid_agent_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Список агентов UserID выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет агентов UserID для экспорта.')
 
-    err, data = parent.utm.get_useridagent_config()
+    err, data = parent.utm.get_template_useridagent_config(parent.template_id)
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте свойств агента UserID.')
         parent.error = 1
-        error = 1
-    else:
-        data.pop('cc', None)
+        return
+
+    if data:
+        item.pop('template_id', None)
         if data['tcp_ca_certificate_id']:
-            data['tcp_ca_certificate_id'] = parent.ngfw_data['certs'][data['tcp_ca_certificate_id']]
+            data['tcp_ca_certificate_id'] = parent.mc_data['certs'][data['tcp_ca_certificate_id']]
         if data['tcp_server_certificate_id']:
-            data['tcp_server_certificate_id'] = parent.ngfw_data['certs'][data['tcp_server_certificate_id']]
-        data['ignore_networks'] = [['list_id', parent.ngfw_data['ip_lists'][x[1]]] for x in data['ignore_networks']]
+            data['tcp_server_certificate_id'] = parent.mc_data['certs'][data['tcp_server_certificate_id']]
+        data['ignore_networks'] = [['list_id', parent.mc_data['ip_lists'][x[1]]] for x in data['ignore_networks']]
 
         json_file = os.path.join(path, 'userid_agent_config.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'BLACK|    Свойства агента UserID выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет свойств агента UserID для экспорта.')
 
-    out_message = f'GREEN|    Настройки UserID агент выгружены в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек UserID агент.' if error else out_message)
+    parent.stepChanged.emit(f'GREEN|    Настройки UserID агент выгружены в каталог "{path}".')
 
 
 def export_firewall_rules(parent, path):
@@ -4492,9 +4326,6 @@ export_funcs = {
     'DNS': export_dns_config,
     'VRF': export_vrf_list,
     'WCCP': export_wccp,
-    'Routes': export_routes,
-    'OSPF': export_ospf_config,
-    'BGP': export_bgp_config,
     'Groups': export_local_groups,
     'Users': export_local_users,
     'AuthServers': export_auth_servers,
@@ -4504,8 +4335,8 @@ export_funcs = {
     'TerminalServers': export_terminal_servers,
     'MFAProfiles': export_2fa_profiles,
     'UserIDagent': export_userid_agent,
-    'BYODPolicies': export_byod_policy,
-    'BYODDevices': pass_function,
+#    'BYODPolicies': export_byod_policy,
+#    'BYODDevices': pass_function,
     'Firewall': export_firewall_rules,
     'NATandRouting': export_nat_rules,
     'LoadBalancing': export_loadbalancing_rules,
@@ -4572,63 +4403,61 @@ export_funcs = {
 
 ###################################### Служебные функции ##########################################
 def get_ips_name(parent, rule_ips, rule_name):
-    """Получаем имена списков IP-адресов, URL-листов и GeoIP. Если списки не существует на NGFW, то они пропускаются."""
+    """Получаем имена списков IP-адресов, URL-листов и GeoIP. Если списки не существует на MC, то они пропускаются."""
     new_rule_ips = []
     for ips in rule_ips:
         if ips[0] == 'geoip_code':
             new_rule_ips.append(ips)
-        if ips[0] == 'mac':
-            new_rule_ips.append(ips)
         try:
             if ips[0] == 'list_id':
-                new_rule_ips.append(['list_id', parent.ngfw_data['ip_lists'][ips[1]]])
+                new_rule_ips.append(['list_id', parent.mc_data['ip_lists'][ips[1]]])
             elif ips[0] == 'urllist_id':
-                new_rule_ips.append(['urllist_id', parent.ngfw_data['url_lists'][ips[1]]])
+                new_rule_ips.append(['urllist_id', parent.mc_data['url_lists'][ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден список {ips[0]} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Не найден список {ips[0]}.')
     return new_rule_ips
 
 def get_zones_name(parent, zones, rule_name):
-    """Получаем имена зон. Если зона не существует на NGFW, то она пропускается."""
+    """Получаем имена зон. Если зона не существует на MC, то она пропускается."""
     new_zones = []
     for zone_id in zones:
         try:
-            new_zones.append(parent.ngfw_data['zones'][zone_id])
+            new_zones.append(parent.mc_data['zones'][zone_id])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Не найдена зона c ID: {zone_id} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Не найдена зона c ID: {zone_id}.')
     return new_zones
 
 def get_urls_name(parent, urls, rule_name):
-    """Получаем имена списков URL. Если список не существует на NGFW, то он пропускается."""
+    """Получаем имена списков URL. Если список не существует на MC, то он пропускается."""
     new_urls = []
     for url_id in urls:
         try:
-            new_urls.append(parent.ngfw_data['url_lists'][url_id])
+            new_urls.append(parent.mc_data['url_lists'][url_id])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден список URL c ID: {url_id} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Не найден список URL c ID: {url_id}.')
     return new_urls
 
 def get_url_categories_name(parent, url_categories, rule_name):
-    """Получаем имена категорий URL и групп категорий URL. Если список не существует на NGFW, то он пропускается."""
+    """Получаем имена категорий URL и групп категорий URL. Если список не существует на MC, то он пропускается."""
     new_urls = []
     for arr in url_categories:
         try:
             if arr[0] == 'list_id':
-                new_urls.append(['list_id', parent.ngfw_data['url_categorygroups'][arr[1]]])
+                new_urls.append(['list_id', parent.mc_data['url_categorygroups'][arr[1]]])
             elif arr[0] == 'category_id':
-                new_urls.append(['category_id', parent.ngfw_data['url_categories'][arr[1]]])
+                new_urls.append(['category_id', parent.mc_data['url_categories'][arr[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Не найдена категория URL {arr} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Не найдена категория URL {err}.')
     return new_urls
 
 def get_time_restrictions_name(parent, times, rule_name):
-    """Получаем имена календарей. Если не существуют на NGFW, то пропускаются."""
+    """Получаем имена календарей. Если не существуют на MC, то пропускаются."""
     new_times = []
     for cal_id in times:
         try:
-            new_times.append(parent.ngfw_data['calendars'][cal_id])
+            new_times.append(parent.mc_data['calendars'][cal_id])
         except KeyError as err:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден календарь c ID: {cal_id} для правила {rule_name}.')
+            parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Не найден календарь c ID: {cal_id}.')
     return new_times
 
 def get_names_users_and_groups(parent, users, rule_name):

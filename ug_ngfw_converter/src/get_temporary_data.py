@@ -247,8 +247,8 @@ class GetImportTemporaryData(QThread):
                 self.stepChanged.emit(f'iRED|{result}')
                 return
             self.ngfw_data['ssl_profiles'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
-        # Получаем список IP-листов
 
+        # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов')
         err, result = self.utm.get_nlists_list('network')
         if err:

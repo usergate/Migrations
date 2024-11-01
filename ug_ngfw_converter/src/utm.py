@@ -566,7 +566,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.netmanager.interface.add.tunnel(self._auth_token, self.node_name, tunnel['name'], tunnel)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_interface_tunnel: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 1205:
+                return 2, f'Интерфейс с таким IP-адресом {tunnel["ipv4"]} уже существует [{err.faultString}].'
+            else:
+                return 1, f"Error utm.add_interface_tunnel: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает имя добавленного интерфейса
 

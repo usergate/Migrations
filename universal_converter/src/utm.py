@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.17 03.10.2024
+# Версия 3.18 07.10.2024
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -27,6 +27,7 @@ class UtmXmlRpc:
         self.version_low = None
         self.version_other = None
         self.float_version = None
+        self.waf_license = False
 
         rpc.MAXINT = 2**64 - 1
 
@@ -65,6 +66,13 @@ class UtmXmlRpc:
             self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
             self.float_version = float(f'{tmp[0]}.{tmp[1]}')
+            self.waf_license = False    # При новом логине сбрасываем значение
+            try:
+                result = self._server.v2.core.license.info(self._auth_token)
+                for item in result['modules']:
+                    if item['name'] == 'waf': self.waf_license = True
+            except rpc.Fault as err:
+                return 1, f"Error utm.login: Не удалось получить список лицезированных модулей. [{err.faultCode}] — {err.faultString}"
             return 0, True
 
     def get_node_status(self):
@@ -558,7 +566,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.netmanager.interface.add.tunnel(self._auth_token, self.node_name, tunnel['name'], tunnel)
         except rpc.Fault as err:
-            return 1, f"Error utm.add_interface_tunnel: [{err.faultCode}] — {err.faultString}"
+            if err.faultCode == 1205:
+                return 2, f'Интерфейс с таким IP-адресом {tunnel["ipv4"]} уже существует [{err.faultString}].'
+            else:
+                return 1, f"Error utm.add_interface_tunnel: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result     # Возвращает имя добавленного интерфейса
 
@@ -2426,14 +2437,6 @@ class UtmXmlRpc:
             return 1, f'Error utm.update_reverseproxy_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_waf_profiles(self):
-        """Получить список профилей WAF"""
-        try:
-            result = self._server.v1.waf.profiles.list(self._auth_token, 0, 100000, {}, [])
-        except rpc.Fault as err:
-            return 1, f'Error utm.get_waf_profiles: [{err.faultCode}] — {err.faultString}'
-        return 0, result['items']
-
     def get_vpn_security_profiles(self):
         """Получить список профилей безопасности VPN"""
         try:
@@ -2763,7 +2766,10 @@ class UtmXmlRpc:
         try:
             result = self._server.v1.waf.profiles.list(self._auth_token, 0, 10000, {}, [])
         except rpc.Fault as err:
-            return 1, f'Error utm.get_waf_profiles_list: [{err.faultCode}] — {err.faultString}'
+            if err.faultCode == 102:
+                return 2, 'Нет лицензии на модуль WAF или нет разрешения для API WAF в профиле администратора.'
+            else:
+                return 1, f'Error utm.get_waf_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей
 
     def add_waf_profile(self, profile):

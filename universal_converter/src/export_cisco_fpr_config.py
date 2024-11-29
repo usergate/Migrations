@@ -443,6 +443,7 @@ def convert_config_file(parent, path):
             'dst_ips': set(),
             'services': set(),
             'enabled': True,
+            'time_restrictions': []
         }
 
         line = fh.readline()
@@ -538,6 +539,8 @@ def convert_config_file(parent, path):
                         fw_rule['dst_ips'].add(add_ip_list(y[2], mask=y[3], obj='subnet'))
                     elif i == 4:
                         fw_rule['dst_ips'].add(add_ip_list(y[4], mask=y[5], obj='subnet'))
+                elif y[i] == 'time-range':
+                    fw_rule['time_restrictions'].append(y[i+1])
             if service_name:
                 fw_rule['services'].add(service_name)
                 if service_name not in data['services']:
@@ -1238,7 +1241,6 @@ def convert_firewall_rules(parent, path, data):
         value['dst_ips_nagate'] = False
         value['services_nagate'] = False
         value['fragmented'] = 'ignore'
-        value['time_restrictions'] = []
         value['send_host_icmp'] = ''
         value['position_layer'] = 'local'
         value['ips_profile'] = False

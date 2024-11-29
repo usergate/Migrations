@@ -34,7 +34,6 @@ class GetTemporaryData(QThread):
         super().__init__()
         self.utm = utm
         self.ngfw_data = {}
-        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
 
     def run(self):
         """Заполняем служебные структуры данных"""
@@ -82,7 +81,7 @@ class GetTemporaryData(QThread):
         self.ngfw_data['local_users'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
         # Получаем список профилей SSL
-        if self.version > 5:
+        if self.utm.float_version > 5:
             self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL')
             err, result = self.utm.get_ssl_profiles_list()
             if err:
@@ -139,7 +138,7 @@ class GetTemporaryData(QThread):
         self.ngfw_data['services'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
         # Получаем список групп сервисов
-        if self.version >= 7:
+        if self.utm.float_version >= 7:
             self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов')
             err, result = self.utm.get_nlists_list('servicegroup')
             if err:

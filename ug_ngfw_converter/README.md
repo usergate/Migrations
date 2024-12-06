@@ -158,12 +158,12 @@ ip-адрес на каждом интерфейсе.<br>
 14. Если вы обнаружили ошибку в програме или у вас что то не получается, пожалуйста, откройте тикет в тех.поддержку компании UserGate.<br>
 
 <b>Errors:</b>
-На ПК с видеокартами NVIDIA возможна ошибка: "libEGL warning: failed to create dri2 screen"<br>
+1. На ПК с видеокартами NVIDIA возможна ошибка: "libEGL warning: failed to create dri2 screen"<br>
 В этом случае необходимо:
-1. sudo apt-get install libnvidia-egl-wayland1<br>
-2. Перезагрузить компьютер.<br>
+    1. sudo apt-get install libnvidia-egl-wayland1<br>
+    2. Перезагрузить компьютер.<br>
 
-На виртуальных машинах возможна ошибка: "libEGL.so.1: cannot open shared object file: No such file or directory"<br>
+2. На виртуальных машинах возможна ошибка: "libEGL.so.1: cannot open shared object file: No such file or directory"<br>
 Может помочь: apt update && apt install -y libopencv-dev && apt clean && rm -rf /var/lib/apt/lists/*
 
 03.12.2024 Сделана поддержка импорта в группу шаблонов МС.<br>

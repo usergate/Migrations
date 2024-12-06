@@ -837,7 +837,8 @@ class UtmXmlRpc:
                 content = {}
                 try:
                     if (list_type == 'ipspolicy' and self.version_hight == 5) \
-                             or (self.float_version == 6.1 and self.version_low > 8):
+                             or (self.float_version == 6.1 and self.version_low >= 8):
+#                             or (self.float_version == 6.1 and self.version_low > 8):
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, {}, [])
                     elif self.version_hight >= 7:
                         content = self._server.v2.nlists.list.list(self._auth_token, item['id'], 0, 100000, {}, [])

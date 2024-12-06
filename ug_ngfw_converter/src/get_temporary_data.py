@@ -192,7 +192,6 @@ class GetImportTemporaryData(QThread):
         super().__init__()
         self.utm = utm
         self.ngfw_data = {}
-#        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
 
     def run(self):
         """Заполняем служебные структуры данных"""

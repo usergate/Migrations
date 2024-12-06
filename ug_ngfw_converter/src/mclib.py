@@ -92,6 +92,8 @@ class McXmlRpc:
         """Ping сессии"""
         try:
             result = self._server.v1.core.session.ping(self._auth_token)
+        except OSError as err:
+            return 2, f'{err} (Node: {self.server_ip}).'
         except rpc.Fault as err:
             if err.faultCode == 4:
                 return 2, f'Сессия завершилась по таймауту.'
@@ -157,7 +159,7 @@ class McXmlRpc:
     def get_usercatalog_ldap_user_guid(self, ldap_id, user_name):
         """Получить GUID пользователя LDAP по его имени"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 users = self._server.v1.usercatalogs.ldap.users.list(self._auth_token, ldap_id, user_name)
             else:
                 users = self._server.v1.usercatalogs.realm.ldap.users.list(self._auth_token, ldap_id, user_name)
@@ -168,7 +170,7 @@ class McXmlRpc:
     def get_usercatalog_ldap_group_guid(self, ldap_id, group_name):
         """Получить GUID группы LDAP по её имени"""
         try:
-            if self.version_hight >= 7 and self.version_midle >= 1:
+            if self.float_version >= 7.1:
                 groups = self._server.v1.usercatalogs.ldap.groups.list(self._auth_token, ldap_id, group_name)
             else:
                 groups = self._server.v1.usercatalogs.realm.ldap.groups.list(self._auth_token, ldap_id, group_name)
@@ -393,8 +395,10 @@ class McXmlRpc:
         try:
             result = self._server.v1.cccertificates.certificate.generate.ca(self._auth_token, template_id, cert_info)
         except rpc.Fault as err:
+            if err.faultCode == 2:
+                return 1, f'Error: Не заполнены все поля сертификата. Сертификат "{cert_info["name"]}" не создан.'
             if err.faultCode == 9:
-                return 3, f'Сертификат "{cert_info["name"]}" уже существует.'
+                return 3, f'Сертификат "{cert_info["name"]}" уже существует в текущем шаблоне.'
             return 1, f'Error mclib.new_template_certificate: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает ID добавленого сертификата
 
@@ -466,10 +470,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Interfaces #######################################################################
-    def get_template_interfaces_list(self, template_id, node_name=''):
+    def get_template_interfaces_list(self, template_id):
         """Получить список сетевых интерфейсов шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {'node_name': node_name})
+            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {})
             return 0, result['items']    # Возвращает список интерфейсов.
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_interfaces_list: [{err.faultCode}] — {err.faultString}'
@@ -483,7 +487,7 @@ class McXmlRpc:
         return 0, result     # Возвращает ID созданного интерфейса.
 
 ################################ Gateways ################################################################
-    def get_template_gateways_list(self, template_id):
+    def get_template_gateways(self, template_id):
         """Получить список шлюзов шаблона"""
         try:
             result = self._server.v1.ccnetmanager.gateways.list(self._auth_token, template_id, 0, 100,  {}, [])
@@ -658,7 +662,10 @@ class McXmlRpc:
         try:
             result = self._server.v1.ccnetmanager.virtualrouter.add(self._auth_token, template_id, vrf_info)
         except rpc.Fault as err:
-            return 1, f'Error mclib.add_template_vrf: [{err.faultCode}] — {err.faultString}'
+            if err.faultCode == 24003:
+                return 3, f'Error: Один из интерфейсов VRF "{vrf_info["interfaces"]}" используется в другом VRF.'
+            else:
+                return 1, f'Error mclib.add_template_vrf: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID добавленного VRF
 
     def update_template_vrf(self, template_id, vrf_id, vrf_info):
@@ -783,7 +790,9 @@ class McXmlRpc:
         except TypeError as err:
             return 1, err
         except rpc.Fault as err:
-            if err.faultCode == 22001:
+            if err.faultCode == 7:
+                return 7, err.faultString
+            elif err.faultCode == 22001:
                 return 3, f'Содержимое {item} не добавлено, так как уже существует.'
             else:
                 return 1, f'Error mclib.add_template_nlist_item: [{err.faultCode}] — {err.faultString}'
@@ -930,9 +939,10 @@ class McXmlRpc:
         try:
             result = self._server.v1.ccl7.signature.add(self._auth_token, template_id, apps_info)
         except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 1, f'Error: Приложение "{apps_info["name"]}" уже существует в шаблоне, отсутствующем в данной группе шаблонов. Баг будет исправлен в следующих версиях МС.'
             return 1, f"Error mclib.add_template_app_signature: [{err.faultCode}] — {err.faultString}"
-        else:
-            return 0, result     # Возвращает ID добавленной сигнатуры
+        return 0, result     # Возвращает ID добавленной сигнатуры
 
     def update_template_app_signature(self, template_id, apps_id, apps_info):
         """Обновить пользовательское приложение l7 в шаблоне"""
@@ -967,7 +977,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_l7_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
-    def get_template_notification_profiles_list(self, template_id):
+    def get_template_notification_profiles(self, template_id):
         """Получить список профилей оповещения шаблона"""
         try:
             result = self._server.v1.ccnotification.notification.profiles.list(self._auth_token, template_id, 0, 100, {}, [])
@@ -1010,6 +1020,8 @@ class McXmlRpc:
         try:
             result = self._server.v2.ccidps.signature.add(self._auth_token, template_id, signature)
         except rpc.Fault as err:
+            if err.faultCode == 9:
+                return 1, f'Error: Сигнатура СОВ "{signature["msg"]}" уже существует в шаблоне, отсутствующем в данной группе шаблонов. Баг будет исправлен в следующих версиях МС.'
             return 1, f'Error mclib.add_template_idps_signature: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает ID сигнатуры
 
@@ -1053,7 +1065,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_idps_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
-    def get_template_netflow_profiles_list(self, template_id):
+    def get_template_netflow_profiles(self, template_id):
         """Получить список профилей netflow из Библиотеки шаблона"""
         try:
             result = self._server.v1.ccnetmanager.netflow.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
@@ -1083,7 +1095,7 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_lldp_profiles_list(self, template_id):
+    def get_template_lldp_profiles(self, template_id):
         """Получить список профилей LLDP раздела Библиотеки шаблона."""
         try:
             result = self._server.v1.ccnetmanager.lldp.profiles.list(self._auth_token, template_id, 0, 1000, {}, '')
@@ -1113,7 +1125,7 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_ssl_profiles_list(self, template_id):
+    def get_template_ssl_profiles(self, template_id):
         """Получить список профилей SSL шаблона"""
         try:
             result = self._server.v1.cccontent.ssl.profiles.list(self._auth_token, template_id, 0, 1000, {})
@@ -1170,7 +1182,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_ssl_forward_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID добавленного профиля
 
-    def get_template_hip_objects_list(self, template_id):
+    def get_template_hip_objects(self, template_id):
         """Получить список объектов HIP шаблона"""
         try:
             result = self._server.v1.cchip.objects.list(self._auth_token, template_id, 0, 5000, {}, [])
@@ -1194,7 +1206,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_hip_object: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_hip_profiles_list(self, template_id):
+    def get_template_hip_profiles(self, template_id):
         """Получить список профилей HIP шаблона"""
         try:
             result = self._server.v1.cchip.profiles.list(self._auth_token, template_id, 0, 5000, {}, [])
@@ -1218,7 +1230,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_hip_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_bfd_profiles_list(self, template_id):
+    def get_template_bfd_profiles(self, template_id):
         """Получить список профилей BFD шаблона"""
         try:
             result = self._server.v1.ccnetmanager.bfd.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
@@ -1242,7 +1254,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_bfd_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_useridagent_filters_list(self, template_id):
+    def get_template_useridagent_filters(self, template_id):
         """Получить Syslog фильтры UserID агента шаблона"""
         try:
             result = self._server.v1.ссuseridagent.filters.list(self._auth_token, template_id, 0, 100, {}, [])
@@ -1545,18 +1557,33 @@ class McXmlRpc:
     def get_template_useridagent_config(self, template_id):
         """Получить список параметров UserID шаблона"""
         try:
-            result = self._server.v1.ccuseridagent.get.agent.config(self._auth_token, template_id)
+            if self.float_version in (7.1, 8.0):
+                result = self._server.v1.ccuseridagent.get.agent.config(self._auth_token, template_id)
+                return 0, result    # Возвращает dict
+            else:
+                result = self._server.v1.ccuseridagent.agent.config.list(self._auth_token, template_id, 0, 100, {})
+                return 0, result['items']    # Возвращает dict
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_useridagent_config: [{err.faultCode}] — {err.faultString}'
-        return 0, result    # Возвращает dict
 
     def set_template_useridagent_config(self, template_id, config_info):
         """Установить параметры UserID агента шаблона"""
         try:
-            result = self._server.v1.ccuseridagent.set.agent.config(self._auth_token, template_id, config_info)
+            if self.float_version in (7.1, 8.0):
+                result = self._server.v1.ccuseridagent.set.agent.config(self._auth_token, template_id, config_info)
+            else:
+                result = self._server.v1.ccuseridagent.agent.config.add(self._auth_token, template_id, config_info)
         except rpc.Fault as err:
             return 1, f'Error mclib.set_template_useridagent_config: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID
+
+    def update_template_useridagent_config(self, template_id, uid, config_info):
+        """Обновить свойства агента UserID шаблона"""
+        try:
+            result = self._server.v1.ccuseridagent.agent.config.update(self._auth_token, template_id, uid, config_info)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.update_template_useridagent_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
 
 ########################## Политики сети ####################################################################
     def get_template_firewall_rules(self, template_id):
@@ -1996,6 +2023,28 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ################################### WAF #############################################################################
+    def get_waf_technology_list(self):
+        """Получить список технологий WAF"""
+        try:
+            result = self._server.v1.ccwaf.system.rules.technologies.list(self._auth_token, 0, 100000, {}, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на получение параметров WAF.'
+            else:
+                return 1, f'Error mclib.get_waf_technology_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей: {'id': <int>, 'name': <str>}
+
+    def get_template_waf_system_layers(self, template_id):
+        """Получить список системных слоёв WAF"""
+        try:
+            result = self._server.v1.ccwaf.system.layers.list(self._auth_token, template_id, 0, 100000, {}, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на получение системных слоёв WAF.'
+            else:
+                return 1, f'Error mclib.get_waf_system_layers: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список
+
     def get_template_waf_profiles(self, template_id):
         """Получить список профилей WAF шаблона"""
         try:
@@ -2006,6 +2055,61 @@ class McXmlRpc:
             else:
                 return 1, f'Error mclib.get_template_waf_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
+
+    def add_template_waf_profile(self, template_id, profile):
+        """Добавить профиль WAF в шаблон"""
+        try:
+            result = self._server.v1.ccwaf.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на добавление профилей WAF.'
+            else:
+                return 1, f'Error mclib.add_template_waf_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID
+
+    def update_template_waf_profile(self, template_id, profile_id, profile):
+        """Добавить профиль WAF в шаблон"""
+        try:
+            result = self._server.v1.ccwaf.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на изменение профилей WAF.'
+            else:
+                return 1, f'Error mclib.update_template_waf_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_waf_custom_layers(self, template_id):
+        """Получить список персональных слоёв WAF шаблона"""
+        try:
+            result = self._server.v1.ccwaf.custom.layers.list(self._auth_token, template_id, 0, 100000, {}, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на получение персональных слоёв WAF шаблона.'
+            else:
+                return 1, f'Error mclib.get_template_waf_custom_layers: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_waf_custom_layer(self, template_id, layer):
+        """Добавить новый персональных слой WAF в шаблон"""
+        try:
+            result = self._server.v1.ccwaf.custom.layer.add(self._auth_token, template_id, layer)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на добавление персональных слоёв WAF шаблона.'
+            else:
+                return 1, f'Error mclib.add_template_waf_custom_layer: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного слоя
+
+    def update_template_waf_custom_layer(self, template_id, layer_id, layer):
+        """Добавить новый персональных слой WAF в шаблон"""
+        try:
+            result = self._server.v1.ccwaf.custom.layer.update(self._auth_token, template_id, layer_id, layer)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет лицензии на модуль WAF или прав на изменение персональных слоёв WAF шаблона.'
+            else:
+                return 1, f'Error mclib.update_template_waf_custom_layer: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
 
 ################################### VPN #############################################################################
     def get_template_vpn_client_security_profiles(self, template_id):

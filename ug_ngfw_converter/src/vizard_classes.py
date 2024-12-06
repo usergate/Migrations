@@ -32,7 +32,7 @@ class SelectAction(QWidget):
         text3 = "Экспорт конфигурации из шаблона <b>UserGate Management Center</b> версии <b>7, 8</b> и сохранение её в файлах json в каталоге \
 <b>data</b> в текущей директории."
         text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> версий <b>5, 6, 7, 8</b>."
-        text5 = "Импорт файлов конфигурации из каталога <b>data</b> в шаблон <b>UserGate Management Center</b> версий <b>7 и 8</b>."
+        text5 = "Импорт файлов конфигурации из каталога <b>data</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -128,7 +128,7 @@ class SelectAction(QWidget):
         self.parent.stacklayout.setCurrentIndex(3)
 
     def set_import_mc_page(self):
-        """Переходим на страницу импорта конфигурации в шаболон МС. Номер в стеке 4."""
+        """Переходим на страницу импорта конфигурации в шаблон МС. Номер в стеке 4."""
         self.parent.stacklayout.setCurrentIndex(4)
         pass
 
@@ -325,12 +325,13 @@ class SelectExportMode(SelectMode):
         self.btn4.clicked.connect(lambda: self._save_logs('export.log'))
         self.parent.stacklayout.currentChanged.connect(self.init_export_widget)
 
+
     def init_export_widget(self, e):
         """
         При открытии этой вкладки выбираем/создаём каталог для экспорта/импорта конфигурации.
         """
         if e == 1:
-            self.parent.resize(900, 500)
+            self.parent.resize(980, 750)
             dialog =  SelectConfigDirectoryWindow(self.parent, mode='export')
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
@@ -341,6 +342,11 @@ class SelectExportMode(SelectMode):
                     self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_export()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
+                    title = f'Экспорт конфигурации из NGFW версии {self.utm.version} в каталог "{self.parent.get_config_path()}".'
+                    self.add_item_log(f'{title:>100}', color='GREEN')
+                    self.add_item_log(f'{"="*100}', color='ORANGE')
+                    with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'w') as fh:
+                        json.dump({'device': 'NGFW', 'version': self.utm.version, 'float_version': self.utm.float_version}, fh, indent=4)
                     self.init_temporary_data('export')
                 else:
                     self.run_page_0()
@@ -444,7 +450,7 @@ class SelectMcExportMode(SelectMode):
                             self.tree.change_items_status_for_export()
                             self.tree.setCurrentItem(self.tree.topLevelItem(0))
                             with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'w') as fh:
-                                json.dump({'device': 'MC', 'version': self.utm.version, 'template': self.template_name}, fh, indent=4)
+                                json.dump({'device': 'MC', 'version': self.utm.version, 'float_version': self.utm.float_version, 'template': self.template_name}, fh, indent=4)
                             self.init_temporary_data()
                         else:
                             self.run_page_0()
@@ -500,7 +506,7 @@ class SelectMcExportMode(SelectMode):
 
 
 class SelectImportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для импорта на NGFW. Номер в стеке 3."""
+    """Класс для импорта конфигурации на NGFW. Номер в стеке 3."""
     def __init__(self, parent):
         super().__init__(parent)
         self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate NGFW</font></b>")
@@ -516,7 +522,7 @@ class SelectImportMode(SelectMode):
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
         if e == 3:
-            self.parent.resize(900, 500)
+            self.parent.resize(980, 750)
             dialog =  SelectConfigDirectoryWindow(self.parent, mode='import')
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
@@ -527,6 +533,9 @@ class SelectImportMode(SelectMode):
                     self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_import(self.parent.get_config_path())
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
+                    title = f'Импорт конфигурации из "{self.parent.get_config_path()}" на NGFW {self.utm.version}.'
+                    self.add_item_log(f'{title:>100}', color='GREEN')
+                    self.add_item_log(f'{"="*100}', color='ORANGE')
                     self.init_temporary_data('import')
                 else:
                     self.run_page_0()
@@ -553,11 +562,13 @@ class SelectImportMode(SelectMode):
                 }
                 self.set_arguments(arguments)
 
-                self.thread = tf.ImportSelectedPoints(self.utm,
-                                            self.parent.get_config_path(),
-                                            self.current_path,
-                                            self.selected_points,
-                                            arguments)
+                self.thread = tf.ImportSelectedPoints(
+                    self.utm,
+                    self.parent.get_config_path(),
+                    self.current_path,
+                    self.selected_points,
+                    arguments
+                )
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -690,7 +701,7 @@ class SelectImportMode(SelectMode):
 
 
 class SelectMcImportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для импорта в шаблон МС. Номер в стеке 4."""
+    """Класс для импорта конфигурации в шаблон МС. Номер в стеке 4."""
     def __init__(self, parent):
         super().__init__(parent)
         self.templates_group_name = None
@@ -718,14 +729,14 @@ class SelectMcImportMode(SelectMode):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с МС! {self.thread}')
 
     def init_import_widget(self, e):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
         if e == 4:
-            self.parent.resize(900, 500)
+            self.parent.resize(980, 750)
             dialog =  SelectConfigDirectoryWindow(self.parent, mode='import')
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
@@ -788,12 +799,13 @@ class SelectMcImportMode(SelectMode):
                 'iface_settings': '',
             }
             node_name = 'node_1'
-            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF', 'SNMPParameters'}.isdisjoint(self.selected_points):
+            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF', 'UserIDagent', 'SNMPParameters'}.isdisjoint(self.selected_points):
                 node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
                 if not ok:
                     func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
                     return
-                self.set_arguments(node_name, arguments)
+                if 'DHCP' in self.selected_points:
+                    self.set_arguments(node_name, arguments)
             if self.thread is None:
                 self.disable_buttons()
                 self.thread = mc.ImportSelectedPoints(self.utm,
@@ -821,9 +833,9 @@ class SelectMcImportMode(SelectMode):
         if not func.check_auth(self):
             self.run_page_0()
 
-        message = 'Перед тем как импортировать всё, убедитесь, что на Management Center существуют интерфейсы и зоны. Это необходимо для создания '
-        message1 = 'интерфейсов VLAN, подсетей DHCP, Gateways и VRF. Если нет интерфейсов, VLAN, подсети DHCP, Gateways и VRF не будут созданы.'
-        func.message_inform(self, 'Внимание!', f'{message}{message1}')
+#        message = 'Перед тем как импортировать всё, убедитесь, что на Management Center существуют интерфейсы и зоны. Это необходимо для создания '
+#        message1 = 'интерфейсов VLAN, подсетей DHCP и VRF. Если нет интерфейсов, VLAN и подсети DHCP не будут созданы, в VRF настройки OSPF и RIP будут усечены.'
+#        func.message_inform(self, 'Внимание!', f'{message}{message1}')
 
         node_name = 'node_1'
         node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
@@ -833,17 +845,18 @@ class SelectMcImportMode(SelectMode):
 
         all_points = self.tree.select_all_items()
         arguments = {
-            'ngfw_ports': '',
-            'dhcp_settings': '',
+            'ngfw_ports': [],
+            'dhcp_settings': [],
             'ngfw_vlans': '',
             'new_vlans': '',
             'iface_settings': '',
         }
-        for item in all_points:
-            self.current_path = os.path.join(self.parent.get_config_path(), item['path'])
-            self.selected_points = item['points']
-            if not {'Interfaces', 'Gateways', 'DHCP', 'VRF'}.isdisjoint(self.selected_points):
-                self.set_arguments(node_name, arguments)
+#        for item in all_points:
+#            self.current_path = os.path.join(self.parent.get_config_path(), item['path'])
+#            self.selected_points = item['points']
+#            if 'DHCP' in self.selected_points:
+#                arguments['ngfw_ports'] = []
+#                arguments['dhcp_settings'] = []
         self.tree.set_current_item()
 
         if self.thread is None:
@@ -863,72 +876,28 @@ class SelectMcImportMode(SelectMode):
 
     def set_arguments(self, node, arguments):
         """Заполняем структуру параметров для импорта."""
-        err, mc_interfaces = self.utm.get_template_interfaces_list(self.template_id, node_name=node)
-        if err:
-            return err, f'RED|    {mc_interfaces}'
-        mc_interfaces = [item for item in mc_interfaces if item['node_name'] == node]
+        mc_interfaces = []
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_interfaces_list(uid)
+            if err:
+                return err, f'RED|    {result}'
+            for item in result:
+                if item['kind'] not in ('bridge', 'bond', 'adapter', 'vlan') or item['master']:
+                    continue
+                if item['node_name'] == node:   # Только для нужного уза кластера.
+                    mc_interfaces.append({'name': item['name'], 'kind': item['kind'], 'vlan_id': item.get('vlan_id', 0)})
+
         if not mc_interfaces:
-            msg = f'Для "{node}" отсутствуют интерфейсы.\nVLAN и subnet DHCP не будут импортированы.'
+            msg = f'Для "{node}" отсутствуют интерфейсы.\nSubnets DHCP не будут импортированы.'
             func.message_inform(self, 'Внимание!', msg)
             arguments['ngfw_ports'] = 3
-            arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле {node} шаблона.'
-            arguments['ngfw_vlans'] = 3
-            arguments['new_vlans'] = f'ORANGE|    Импорт настроек VLAN отменён из-за отсутствия портов на узле {node} шаблона.'
+            arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле "{node}" шаблона.'
             return
  
         if 'DHCP' in self.selected_points:
             err, result = self.import_dhcp(mc_interfaces)
             arguments['ngfw_ports'] = err
             arguments['dhcp_settings'] = result
-        if 'Interfaces' in self.selected_points:
-            err, result = self.create_vlans(mc_interfaces)
-            if err:
-                arguments['ngfw_vlans'] = err
-                arguments['new_vlans'] = result
-            else:
-                arguments['iface_settings'] = result[0]
-                arguments['ngfw_vlans'] = result[1]
-                arguments['new_vlans'] = result[2]
-
-    def create_vlans(self, mc_interfaces):
-        """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
-        iface_path = os.path.join(self.current_path, 'Interfaces')
-        json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
-        if err:
-            return err, data
-
-        vlans = sorted([item['vlan_id'] for item in data if item['kind'] == 'vlan'])
-        if not vlans:
-            return 3, 'LBLUE|    Нет VLAN для импорта.'
-
-        err, result = self.utm.get_template_zones_list(self.template_id)
-        if err:
-            return err, f'RED|    {result}'
-        zones = sorted([x['name'] for x in result])
-        zones.insert(0, "Undefined")
-
-        # Составляем список легитимных интерфейсов (interfaces_list).
-        ngfw_vlans = {}
-        interfaces_list = ['Undefined']
-
-        for item in mc_interfaces:
-            if item['kind'] == 'vlan':
-                ngfw_vlans[item['vlan_id']] = item['name']
-                continue
-            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
-                continue
-            interfaces_list.append(item['name'])
-
-        dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones)
-        result = dialog.exec()
-        if result == QDialog.DialogCode.Accepted:
-            new_vlans = {}
-            for key, value in dialog.vlans.items():
-                new_vlans[key] = {'port': value['port'].currentText(), 'zone': value['zone'].currentText()}
-            return 0, [data, ngfw_vlans, new_vlans]
-        else:
-            return 3, 'LBLUE|    Импорт настроек VLAN отменён пользователем.'
 
     def import_dhcp(self, mc_interfaces):
         dhcp_path = os.path.join(self.current_path, 'DHCP')
@@ -937,7 +906,7 @@ class SelectMcImportMode(SelectMode):
         if err:
             return err, data
 
-        ngfw_ports = [x['name'] for x in mc_interfaces if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+        ngfw_ports = [x['name'] for x in mc_interfaces]
         ngfw_ports.insert(0, 'Undefined')
 
         dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
@@ -1095,8 +1064,8 @@ class SelectMcDestinationTemplate(SelectMcTemplate):
     def __init__(self, parent, main_window, templates=None):
         self.group_templates = templates
         super().__init__(parent, main_window)
-        self.setWindowTitle("Выбор шаблона для импорта")
-        self.label.setText("<b><font color='green'>Выберите шаблон для импорта конфигурации.</font></b><br>")
+        self.setWindowTitle("Выбор шаблона MC для импорта")
+        self.label.setText("<b><font color='green'>Выберите шаблон МС для импорта конфигурации.</font></b><br>")
 
 #        self.btn3 = QPushButton("Создать новый шаблон")
 #        self.btn3.setStyleSheet('color: sienna; background: white;')

@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.3 01.11.2024
+# Версия 2.4 05.12.2024
 #
 
 import os, sys, time, copy, json
@@ -1996,12 +1996,27 @@ def import_userid_agent(parent, path):
 def import_agent_config(parent, path):
     """Импортируем настройки UserID агент"""
     json_file = os.path.join(path, 'userid_agent_config.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, result = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
     error = 0
     parent.stepChanged.emit('BLUE|Импорт свойств агента UserID в раздел "Пользователи и устройства/UserID агент".')
+
+    # В случае версий 7.2 и выше - берём только первую конфигурацию свойств, так как при экспорте с кластера могут быть
+    # конфигурации со всех узлов кластера и не понятно свойства с какого узла импортировать.
+    try:
+        data = result[0]
+    except Exception:       # Будет ошибка если экспортировали конвертером версии 3.1 и ниже.
+        parent.stepChanged.emit(f'RED|    Error: Произошла ошибка при импорте свойства агента UserID. Ошибка файла конфигурации.')
+        parent.error = 1
+        return
+
+    data.pop('name', None)
+    if parent.utm.float_version != 7.2:
+        data['expiration_time'] = 2700
+        data.pop('radius_monitoring_interval', None)
+
     if data['tcp_ca_certificate_id']:
         try:
             data['tcp_ca_certificate_id'] = parent.ngfw_data['certs'][data['tcp_ca_certificate_id']]
@@ -2027,7 +2042,7 @@ def import_agent_config(parent, path):
         try:
             new_networks.append(['list_id', parent.ngfw_data['ip_lists'][x[1]]])
         except KeyError as err:
-            parent.stepChanged.emit('RED|    Error: Не найден список IP-адресов "{err}" для Ignore Networks. Загрузите списки IP-адресов и повторите попытку.')
+            parent.stepChanged.emit(f'RED|    Error: Не найден список IP-адресов {err} для Ignore Networks. Загрузите списки IP-адресов и повторите попытку.')
             error = 1
     data['ignore_networks'] = new_networks
 
@@ -2069,9 +2084,14 @@ def import_agent_servers(parent, path):
         return
     useridagent_servers = {x['name']: x['id'] for x in result}
 
+
     for item in data:
         item['name'] = func.get_restricted_name(item['name'])
-#        item['enabled'] = False
+        if parent.utm.float_version != 7.2:
+            if item['type'] == 'radius':
+                parent.stepChanged.emit(f'NOTE|    Коннектор UserID агент "{item["name"]}" не импортирован так как ваша версия NGFW меньше 7.2.')
+                continue
+            item.pop('exporation_time', None)
         try:
             item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
         except KeyError:
@@ -2106,7 +2126,10 @@ def import_agent_servers(parent, path):
             else:
                 useridagent_servers[item['name']] = result
                 parent.stepChanged.emit(f'BLACK|    UserID агент "{item["name"]}" импортирован.')
-                parent.stepChanged.emit(f'NOTE|       Если вы используете Microsoft AD, необходимо указать пароль.')
+        if item['type'] == 'ad':
+            parent.stepChanged.emit(f'LBLUE|       Необходимо указать пароль для этого коннетора Microsoft AD.')
+        elif item['type'] == 'radius':
+            parent.stepChanged.emit(f'LBLUE|       Необходимо указать секретный код для этого коннетора RADIUS.')
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек UserID агент.')

@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
+#   Для универсального конвертера v.1.0  06.12.2024
 
 import os, json, pickle
 import ipaddress
@@ -127,7 +128,7 @@ def create_ip_list(parent, path, ips=[], name=None):
             'content': [{'value': ip} for ip in ips]
         }
 
-        json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+        json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
         with open(json_file, 'w') as fh:
             json.dump(ip_list, fh, indent=4, ensure_ascii=False)
         parent.ip_lists.add(iplist_name)

@@ -40,6 +40,7 @@ class ServicePorts:
         '143': 'IMAP',
         '161': 'SNMP-tcp',
         '162': 'SNMPTRAP-tcp',
+        '163': '',
         '443': 'HTTPS',
         '445': 'SMB',
         '465': 'SMTPS',

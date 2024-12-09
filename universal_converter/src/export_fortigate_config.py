@@ -2366,7 +2366,7 @@ def get_services(parent, rule_services, rule):
     new_service_list = []
     if rule_services:
         for service in rule_services.split(','):
-            if service.upper() == 'ALL':
+            if service.upper() in ('ALL', 'ANY'):
                 continue
             if service in parent.services:
                 new_service_list.append(['service', ug_services.get(service, service)])

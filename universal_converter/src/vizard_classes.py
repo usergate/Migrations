@@ -19,7 +19,7 @@ import export_checkpoint_config as cp
 import export_mikrotik_config as mikrotik
 import import_functions as tf
 import import_to_mc
-import init_temporary_data as itd
+import get_temporary_data as gtd
 import get_mc_temporary_data as mctd
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
@@ -35,7 +35,7 @@ class SelectAction(QWidget):
 <b>Fortigate</b>, <b>Huawei</b>, <b>MikroTik</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
 После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
         text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> версий <b>5, 6, 7, 8</b>."
-        text4 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> в шаблон <b>UserGate Management Center</b> версий <b>7 и 8</b>."
+        text4 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -61,7 +61,7 @@ class SelectAction(QWidget):
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
 
-        self.btn_import_mc = QPushButton("Импорт конфигурации в шаблон UG МС")
+        self.btn_import_mc = QPushButton("Импорт конфигурации в группу шаблонов\nUG Мanagement Center")
         self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import_mc.setFont(btn_font)
         self.btn_import_mc.setFixedWidth(280)
@@ -539,11 +539,11 @@ class SelectImportMode(SelectMode):
 
     def init_temporary_data(self):
         """
-        Запускаем в потоке itd.GetTemporaryData() для получения часто используемых данных с NGFW.
+        Запускаем в потоке gtd.GetTemporaryData() для получения часто используемых данных с NGFW.
         """
         if self.thread is None:
             self.disable_buttons()
-            self.thread = itd.GetTemporaryData(self.utm)
+            self.thread = gtd.GetImportTemporaryData(self.utm)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
@@ -731,10 +731,10 @@ class SelectImportMode(SelectMode):
 
 
 class SelectMcImportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для импорта в шаблон МС. Номер в стеке 3."""
+    """Класс для импорта конфигурации в шаблон МС. Номер в стеке 3."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.template_group_name = None
+        self.templates_group_name = None
         self.template_id = None
         self.template_name = None
         self.templates = None
@@ -750,7 +750,7 @@ class SelectMcImportMode(SelectMode):
 
     def init_temporary_data(self):
         """
-        Запускаем в потоке mctd.GetTemporaryData() для получения часто используемых данных с MC.
+        Запускаем в потоке mctd.GetImportTemporaryData() для получения часто используемых данных с MC.
         """
         if self.thread is None:
             self.disable_buttons()
@@ -759,21 +759,21 @@ class SelectMcImportMode(SelectMode):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с MC! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с МС! {self.thread}')
 
     def init_import_widget(self, e):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
         if e == 3:
-            self.parent.resize(900, 500)
+            self.parent.resize(900, 750)
             dialog =  SelectImportConfigDirectory(self.parent)
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_ug_config_path()}  ')
                 if self.get_auth(mod='mc'):
                     if self.utm.float_version < 7.1:
-                        message = 'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
+                        message = f'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
                         self.add_item_log(message, color='RED')
                         func.message_inform(self, 'Внимание!', message)
                         self.run_page_0()
@@ -860,7 +860,7 @@ class SelectMcImportMode(SelectMode):
             self.run_page_0()
 
         message = 'Перед тем как импортировать всё, убедитесь, что на Management Center существуют интерфейсы и зоны. Это необходимо для создания '
-        message1 = 'интерфейсов VLAN, подсетей DHCP, Gateways и VRF. Если нет интерфейсов, VLAN, подсети DHCP, Gateways и VRF не будут созданы.'
+        message1 = 'интерфейсов VLAN, подсетей DHCP, Gateways и VRF. Если нет интерфейсов, VLAN и подсети DHCP не будут созданы, в VRF настройки OSPF и RIP будут не полными.'
         func.message_inform(self, 'Внимание!', f'{message}{message1}')
 
         node_name = 'node_1'
@@ -901,10 +901,17 @@ class SelectMcImportMode(SelectMode):
 
     def set_arguments(self, node, arguments):
         """Заполняем структуру параметров для импорта."""
-        err, mc_interfaces = self.utm.get_template_interfaces_list(self.template_id, node_name=node)
-        if err:
-            return err, f'RED|    {mc_interfaces}'
-        mc_interfaces = [item for item in mc_interfaces if item['node_name'] == node]
+        mc_interfaces = []
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_interfaces_list(uid)
+            if err:
+                return err, f'RED|    {result}'
+            for item in result:
+                if item['kind'] not in ('bridge', 'bond', 'adapter', 'vlan') or item['master']:
+                    continue
+                if item['node_name'] == node:
+                    mc_interfaces.append({'name': item['name'], 'kind': item['kind'], 'vlan_id': item.get('vlan_id', 0)})
+
         if not mc_interfaces:
             msg = f'Для "{node}" отсутствуют интерфейсы.\nVLAN и subnet DHCP не будут импортированы.'
             func.message_inform(self, 'Внимание!', msg)
@@ -940,10 +947,15 @@ class SelectMcImportMode(SelectMode):
         if not vlans:
             return 3, 'LBLUE|    Нет VLAN для импорта.'
 
-        err, result = self.utm.get_template_zones_list(self.template_id)
-        if err:
-            return err, f'RED|    {result}'
-        zones = sorted([x['name'] for x in result])
+        tmp_zones = set()
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_zones_list(uid)
+            if err:
+                return err, f'RED|    {result}'
+            for x in result:
+                tmp_zones.add(x['name'])
+
+        zones = sorted([x for x in tmp_zones])
         zones.insert(0, "Undefined")
 
         # Составляем список легитимных интерфейсов (interfaces_list).
@@ -954,11 +966,9 @@ class SelectMcImportMode(SelectMode):
             if item['kind'] == 'vlan':
                 ngfw_vlans[item['vlan_id']] = item['name']
                 continue
-            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
-                continue
             interfaces_list.append(item['name'])
 
-        dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones)
+        dialog = VlanWindow(self, vlans=vlans, ports=sorted(interfaces_list), zones=zones)
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
             new_vlans = {}
@@ -975,7 +985,7 @@ class SelectMcImportMode(SelectMode):
         if err:
             return err, data
 
-        ngfw_ports = [x['name'] for x in mc_interfaces if  x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
+        ngfw_ports = sorted([x['name'] for x in mc_interfaces])
         ngfw_ports.insert(0, 'Undefined')
 
         dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)

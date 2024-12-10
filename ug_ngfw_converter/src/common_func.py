@@ -212,10 +212,9 @@ def get_restricted_name(name):
     """
     if isinstance(name, str):
         new_name = name.translate(trans_name).strip()
-        if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
+        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'}
+        while new_name[0] in forbidden_values:
             new_name = new_name[1:]
-            if new_name[0] in ('_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'):
-                new_name = new_name[1:]
         return new_name
     else:
         return 'Name not valid'
@@ -292,7 +291,7 @@ def create_ug_services():
         {'name': 'Rsync', 'description': '', 'protocols': [
             {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
     ]
-    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp'}:
+    for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp', 'gre', 'ipip'}:
         ug_services.append({
             'name': f'Any {item.upper()}',
             'description': f'Any {item.upper()} packet',

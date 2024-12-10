@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # get_mc_temporary_data.py
-# Version 1.2
+# Version 1.3  10.12.2024
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -645,4 +645,4 @@ class GetImportTemporaryData(QThread):
             if write_bin_file(self, self.mc_data):
                 self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Не удалось сохранить служебные структуры данных.')
             else:
-                self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.')
+                self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')

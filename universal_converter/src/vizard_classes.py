@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.5 01.11.2024
+# Версия 1.6 10.12.2024
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -173,7 +173,6 @@ class SelectMode(QWidget):
 
         self.btn1 = QPushButton("Назад")
         self.btn1.setFixedWidth(100)
-        self.btn1.clicked.connect(self.run_page_0)
         self.btn2 = QPushButton()
         self.btn2.setFixedWidth(230)
         self.btn3 = QPushButton()
@@ -265,6 +264,8 @@ class SelectMode(QWidget):
         self.selected_points = []
         self.current_ug_path = None
         self.tree.version = None
+        if os.path.isfile('temporary_data.bin'):
+            os.remove('temporary_data.bin')
         self.parent.stacklayout.setCurrentIndex(0)
 
     def add_item_log(self, message, color='BLACK'):
@@ -530,6 +531,7 @@ class SelectImportMode(SelectMode):
     def __init__(self, parent):
         super().__init__(parent)
         self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate NGFW</font></b>")
+        self.btn1.clicked.connect(self.run_page_0)
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
         self.btn3.setText("Импортировать всё")
@@ -735,11 +737,13 @@ class SelectMcImportMode(SelectMode):
     def __init__(self, parent):
         super().__init__(parent)
         self.templates_group_name = None
+        self.templates_ids = None
         self.template_id = None
         self.template_name = None
         self.templates = None
         self.id_nodes = [f'node_{i}' for i in range(1, 100)]
         self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации в шаблон UserGate Management Center</font></b>")
+        self.btn1.clicked.connect(self.select_template)
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
         self.btn3.setText("Импортировать всё")
@@ -747,6 +751,7 @@ class SelectMcImportMode(SelectMode):
         self.btn4.clicked.connect(lambda: self._save_logs('import.log'))
         
         self.parent.stacklayout.currentChanged.connect(self.init_import_widget)
+
 
     def init_temporary_data(self):
         """
@@ -761,12 +766,13 @@ class SelectMcImportMode(SelectMode):
         else:
             func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с МС! {self.thread}')
 
+
     def init_import_widget(self, e):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
         if e == 3:
-            self.parent.resize(900, 750)
+            self.parent.resize(980, 750)
             dialog =  SelectImportConfigDirectory(self.parent)
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
@@ -783,31 +789,36 @@ class SelectMcImportMode(SelectMode):
                     groups_result = groups_dialog.exec()
                     if groups_result == QDialog.DialogCode.Accepted:
                         self.templates_group_name = groups_dialog.current_group_name
-                        self.templates = groups_dialog.templates
+                        self.templates_ids = groups_dialog.templates
                     else:
                         self.run_page_0()
                         return
-
-                    template_dialog = SelectMcDestinationTemplate(self, self.parent, templates=self.templates)
-                    template_result = template_dialog.exec()
-                    if template_result == QDialog.DialogCode.Accepted:
-                        self.template_name = template_dialog.current_template_name
-                        self.template_id = template_dialog.templates[self.template_name]
-                        self.templates = {uid: name for name, uid in template_dialog.templates.items()}
-                        self.label_version.setText(f'MC (версия {self.utm.version})  Группа шаблонов: {self.templates_group_name}  Шаблон: {self.template_name}')
-                        self.enable_buttons()
-                        self.tree.version = self.utm.float_version
-                        self.tree.change_items_status(self.parent.get_ug_config_path())
-                        title = f'Импорт конфигурации в шаблон "{self.templates_group_name}/{self.template_name}" на МС.'
-                        self.add_item_log(f'{title:>100}', color='GREEN')
-                        self.add_item_log(f'{"="*100}', color='ORANGE')
-                        self.init_temporary_data()
-                    else:
-                        self.run_page_0()
+                    self.select_template(init=True)
                 else:
                     self.run_page_0()
             else:
                 self.run_page_0()
+
+
+    def select_template(self, init=False):
+        template_dialog = SelectMcDestinationTemplate(self.utm, self.parent, self.templates_group_name, templates=self.templates_ids)
+        template_result = template_dialog.exec()
+        if template_result == QDialog.DialogCode.Accepted:
+            self.template_name = template_dialog.current_template_name
+            self.template_id = template_dialog.templates[self.template_name]
+            self.templates = {uid: name for name, uid in template_dialog.templates.items()}
+            self.label_version.setText(f'MC (версия {self.utm.version})  Группа шаблонов: {self.templates_group_name}  Шаблон: {self.template_name}')
+            self.enable_buttons()
+            self.tree.version = self.utm.float_version
+            self.tree.change_items_status(self.parent.get_ug_config_path())
+            title = f'Импорт конфигурации в шаблон "{self.templates_group_name}/{self.template_name}" на МС.'
+            self.add_item_log(f'{title:>100}', color='GREEN')
+            self.add_item_log(f'{"="*100}', color='ORANGE')
+            if init:
+                self.init_temporary_data()
+        else:
+            self.run_page_0()
+
 
     def import_selected_points(self):
         """
@@ -1073,18 +1084,18 @@ class SelectMcGroupTemplates(QDialog):
 
 class SelectMcDestinationTemplate(QDialog):
     """Для МС. Диалоговое окно для выбора шаблона MC для импорта."""
-    def __init__(self, parent, main_window, templates=None):
+    def __init__(self, utm, main_window, group_name, templates=None):
         super().__init__(main_window)
         self.main_window = main_window
-        self.parent = parent
+        self.utm = utm
+        self.name_group_templates = group_name
         self.group_templates = templates
         self.templates = {}
         self.current_template_name = None
-        self.setWindowTitle("Выбор шаблона MC для импорта")
+        self.setWindowTitle(f'Выбор шаблона MC для импорта')
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
-#        self.setFixedHeight(200)
 
-        label = QLabel("<b><font color='green'>Выберите шаблон MC для импорта конфигурации.</font></b><br>")
+        label = QLabel(f'<b><font color="green">Выберите шаблон для импорта конфигурации.</font></b><br>Шаблоны группы: <font color="blue">"{self.name_group_templates}"</font>')
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.device_templates_list = QListWidget()
 
@@ -1125,7 +1136,7 @@ class SelectMcDestinationTemplate(QDialog):
         """При открытии этого диалога получаем с МС список шаблонов устройств и заполняем список выбора шаблонов."""
         self.device_templates_list.clear()
         for template_id in self.group_templates:
-            err, result = self.parent.utm.fetch_device_template(template_id)
+            err, result = self.utm.fetch_device_template(template_id)
             if err:
                 func.message_alert(self, 'Не удалось получить список шаблонов группы.', result)
             else:

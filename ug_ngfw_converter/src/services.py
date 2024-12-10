@@ -99,6 +99,7 @@ class ServicePorts:
         '161': 'SNMP-udp',
         '162': 'SNMPTRAP-udp',
         '443': 'Quick UDP Internet Connections (port 443)',
+        '750': 'kerberos-udp',
         '1194': 'OpenVPN-udp',
         '1645-1646': 'Radius-udp',
         '3690': 'SVN-udp',

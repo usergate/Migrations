@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 7.6 10.12.2024
+# Version 7.7 10.12.2024
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,11 +32,12 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 7.6)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UG NGFW (version 7.7)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
         self._base_ug_path = 'data_usergate'
+        self._base_bluecoat_path = 'data_blue_coat'
         self._base_asa_path = 'data_cisco_asa'
         self._base_fpr_path = 'data_cisco_fpr'
         self._base_cp_path = 'data_checkpoint'
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         if err:
             func.message_alert(self, msg, '')
         else:
+            func.create_dir(self._base_bluecoat_path, delete='no')
             func.create_dir(self._base_asa_path, delete='no')
             func.create_dir(self._base_fpr_path, delete='no')
             func.create_dir(self._base_cp_path, delete='no')
@@ -71,6 +73,8 @@ class MainWindow(QMainWindow):
     def get_vendor_base_path(self, vendor):
         """Получаем имя базового каталога конфигураций выбранного вендора"""
         match vendor:
+            case 'Blue Coat':
+                return self._base_bluecoat_path
             case 'Cisco ASA':
                 return self._base_asa_path
             case 'Cisco FPR':

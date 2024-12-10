@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.4 05.12.2024
+# Версия 2.5 10.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -6535,7 +6535,7 @@ def get_ips_id(parent, mode, rule_ips, rule):
                 new_rule_ips.append(['list_id', parent.ngfw_data['ip_lists'][ips[1]]])
             elif ips[0] == 'urllist_id':
                 if parent.version < 6:
-                    parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Список доменов "{ips[1]}" не добавлен в источник/назначение. Версия 5 не поддерживает данный функционал.')
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]. Список доменов "{ips[1]}" не добавлен в источник/назначение. Версия 5 не поддерживает данный функционал.')
                 else:
                     new_rule_ips.append(['urllist_id', parent.ngfw_data['url_lists'][ips[1]]])
         except KeyError as err:
@@ -6568,7 +6568,7 @@ def get_urls_id(parent, urls, rule):
         try:
             new_urls.append(parent.ngfw_data['url_lists'][item])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден список URL "{item}". Загрузите списки URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
             rule['enabled'] = False
             parent.error = 1
@@ -6585,7 +6585,7 @@ def get_url_categories_id(parent, rule, referer=0):
             elif item[0] == 'category_id':
                 new_categories.append(['category_id', parent.ngfw_data['url_categories'][item[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена категория URL "{item[1]}". Загрузите категории URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
             rule['enabled'] = False
             parent.error = 1
@@ -6638,12 +6638,12 @@ def get_guids_users_and_groups(parent, rule):
                 if group_name:
                     err, result = parent.utm.get_ldap_group_guid(ldap_domain, group_name)
                     if err:
-                        parent.stepChanged.emit(f'RED|    {result}  [Rule "{rule_name}"]')
+                        parent.stepChanged.emit(f'RED|    {result}  [Rule "{rule["name"]}"]')
                         rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID группы "{group_name}" - {result}.'
                         rule['enabled'] = False
                         parent.error = 1
                     elif not result:
-                        parent.stepChanged.emit(f'RED|    Error [Rule "{rule_name}"]. Нет LDAP-коннектора для домена "{ldap_domain}". Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
+                        parent.stepChanged.emit(f'RED|    Error [Rule "{rule["name"]}"]. Нет LDAP-коннектора для домена "{ldap_domain}". Импортируйте и настройте LDAP-коннектор. Затем повторите импорт.')
                         rule['description'] = f'{rule["description"]}\nError: Нет группы "{group_name}" в домене или LDAP-коннектора для домена "{ldap_domain}".'
                         rule['enabled'] = False
                         parent.error = 1
@@ -6653,7 +6653,7 @@ def get_guids_users_and_groups(parent, rule):
                     try:
                         new_users.append(['group', parent.ngfw_data['local_groups'][item[1]]])
                     except KeyError as err:
-                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]: Не найдена группа пользователей "{err}"]. Импортируйте группы пользователей.')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена группа пользователей "{err}"]. Импортируйте группы пользователей.')
                         rule['description'] = f'{rule["description"]}\nError: Не найдена группа пользователей "{err}".'
                         rule['enabled'] = False
                         parent.error = 1
@@ -6665,12 +6665,12 @@ def get_services(parent, service_list, rule):
     if parent.version < 7:
         for item in service_list:
             if item[0] == 'list_id':
-                parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Группа сервисов "{item[1]}" не добавлена. В версии 6 группы сервисов не поддерживаются.')
+                parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]. Группа сервисов "{item[1]}" не добавлена. В версии 6 группы сервисов не поддерживаются.')
             else:
                 try:
                     new_service_list.append(parent.ngfw_data['services'][item[1]])
                 except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найден сервис "{item[1]}". Импортируйте сервисы и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден сервис "{item[1]}". Импортируйте сервисы и повторите попытку.')
                     rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
                     rule['enabled'] = False
                     parent.error = 1
@@ -6682,7 +6682,7 @@ def get_services(parent, service_list, rule):
                 elif item[0] == 'list_id':
                     new_service_list.append(['list_id', parent.ngfw_data['service_groups'][item[1]]])
             except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найден сервис "{item[1]}". Загрузите сервисы и повторите импорт.')
+                parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден сервис "{item[1]}". Загрузите сервисы и повторите импорт.')
                 rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
                 rule['enabled'] = False
                 parent.error = 1
@@ -6695,7 +6695,7 @@ def get_time_restrictions_id(parent, rule):
         try:
             new_schedules.append(parent.ngfw_data['calendars'][cal_name])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найден календарь "{cal_name}".')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден календарь "{cal_name}".')
             rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{cal_name}".'
             rule['enabled'] = False
             parent.error = 1
@@ -6710,12 +6710,12 @@ def get_apps(parent, rule):
                 if parent.version >= 6:
                     new_app_list.append(['ro_group', 0])
                 else:
-                    parent.stepChanged.emit(f'bRED|    Error [Правило "{rule_name}"]. Категорию "All" нельзя добавить в версии 5.')
+                    parent.stepChanged.emit(f'bRED|    Error [Правило "{rule["name"]}"]. Категорию "All" нельзя добавить в версии 5.')
             else:
                 try:
                     new_app_list.append(['ro_group', parent.ngfw_data['l7_categories'][app[1]]])
                 except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найдена категория l7 "{app[1]}".')
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена категория l7 "{app[1]}".')
                     parent.stepChanged.emit('RED|    Возможно нет лицензии и UTM не получил список категорий l7. Установите лицензию и повторите попытку.')
                     rule['description'] = f'{rule["description"]}\nError: Не найдена категория l7 "{app[1]}".'
                     rule['enabled'] = False
@@ -6724,7 +6724,7 @@ def get_apps(parent, rule):
             try:
                 new_app_list.append(['group', parent.ngfw_data['application_groups'][app[1]]])
             except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найдена группа приложений l7 "{app[1]}".')
+                parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена группа приложений l7 "{app[1]}".')
                 rule['description'] = f'{rule["description"]}\nError: Не найдена группа приложений l7 "{app[1]}".'
                 rule['enabled'] = False
                 parent.error = 1
@@ -6733,13 +6733,13 @@ def get_apps(parent, rule):
                 try:
                     new_app_list.append(['app', parent.ngfw_data['l7_apps'][app[1]]])
                 except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule_name}"]. Не найдено приложение "{app[1]}".')
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдено приложение "{app[1]}".')
                     parent.stepChanged.emit('RED|    Возможно нет лицензии и UTM не получил список приложений l7. Установите лицензию и повторите попытку.')
                     rule['description'] = f'{rule["description"]}\nError: Не найдено приложение "{app[1]}".'
                     rule['enabled'] = False
                     parent.error = 1
             else:
-                parent.stepChanged.emit(f'NOTE|    Правило "{rule_name}": приложение {app[1]} не добавлено, так как в версии 7.0 отдельное приложение добавить нельзя.')
+                parent.stepChanged.emit(f'NOTE|    Правило "{rule["name"]}": приложение {app[1]} не добавлено, так как в версии 7.0 отдельное приложение добавить нельзя.')
 
     return new_app_list
 

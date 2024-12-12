@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 2.9 06.12.2024
+# Версия 3.2 12.12.2024  (только для ug_ngfw_converter)
 #
 
 import os, sys, json, time
@@ -2246,10 +2246,17 @@ def import_ipip_interfaces(parent, path, data):
 
     parent.stepChanged.emit('BLUE|    Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
     mc_ifaces = parent.mc_data['interfaces']
+#    mc_gre = [int(x[3:].split(':')[0]) for x in mc_ifaces if x.startswith('gre') and x.split(':')[1] == parent.node_name]
+    mc_gre = [int(aa[0][3:]) for x in mc_ifaces if (aa := x.split(':'))[0].startswith('gre') and aa[1] == parent.node_name]
+    gre_num = max(mc_gre) if mc_gre else 0
+    if gre_num:
+        parent.stepChanged.emit(f'uGRAY|       Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как меньшие номера уже существует в этой группе шаблонов для узла кластера "{parent.node_name}".')
     error = 0
 
     for item in data:
         if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
+            gre_num += 1
+            item['name'] = f'gre{gre_num}'
             item.pop('id', None)          # удаляем readonly поле
             item.pop('master', None)      # удаляем readonly поле
             item.pop('mac', None)
@@ -2273,6 +2280,7 @@ def import_ipip_interfaces(parent, path, data):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|       Error [Интерфейс "{item["name"]}"]. Не найдена зона {err}. Импортируйте зоны и повторите попытку.')
                     item['zone_id'] = 0
+                    error = 1
 
             new_ipv4 = []
             for ip in item['ipv4']:
@@ -2348,11 +2356,13 @@ def import_vpn_interfaces(parent, path, data):
             except KeyError:
                 parent.stepChanged.emit(f'RED|       Error [Интерфейс "{item["name"]}"]. Не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили LLDP и повторите попытку.')
                 item['lldp_profile'] = 'undefined'
+                error = 1
             try:
                 item['netflow_profile'] = netflow_profiles[item['netflow_profile']].id
             except KeyError:
                 parent.stepChanged.emit(f'RED|       Error [Интерфейс "{item["name"]}"]. Не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow и повторите попытку.')
                 item['netflow_profile'] = 'undefined'
+                error = 1
 
             err, result = parent.utm.add_template_interface(parent.template_id, item)
             if err:
@@ -2418,6 +2428,7 @@ def import_vlan_interfaces(parent, path, data):
                 err, result = func.unpack_ip_address(ip)
                 if err:
                     parent.stepChanged.emit(f'RED|       Error [Интерфейс "{item["name"]}"]. Не удалось преобразовать IP: "{ip}". IP-адрес использован не будет. {result}')
+                    error = 1
                 else:
                     new_ipv4.append(result)
             if not new_ipv4:
@@ -2862,7 +2873,14 @@ def import_vrf(parent, path):
     bfd_profiles = parent.mc_data['bfd_profiles']
     bfd_profiles[-1] = BaseObject(id=-1, template_id='', template_name='')
 
+    vrfnames = []
     for item in data:
+        if item['name'] in vrfnames:
+            parent.stepChanged.emit(f'rNOTE|    VRF "{item["name"]}" не импортирован так как VRF с таким именем уже был импортирован выше.')
+            continue
+        else:
+            vrfnames.append(item['name'])
+
         if 'node_name' in item:
             if item['node_name'] != parent.node_name:
                 parent.stepChanged.emit(f'rNOTE|    VRF "{item["name"]}" не импортирован так как имя узла в настройках не совпало с указанным.')
@@ -2887,10 +2905,12 @@ def import_vrf(parent, path):
 
         for x in item['routes']:
             x['name'] = func.get_restricted_name(x['name'])
-            if x['ifname'] != 'undefined' and f'{x["ifname"]}:{parent.node_name}' not in mc_ifaces:
-                parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на узле кластера "{parent.node_name}".')
-                x['ifname'] = 'undefined'
-                error = 1
+            if x['ifname'] != 'undefined':
+                if f'{x["ifname"]}:{parent.node_name}' not in mc_ifaces:
+                    if f'{x["ifname"]}:cluster' not in mc_ifaces:
+                        parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на узле кластера "{parent.node_name}".')
+                        x['ifname'] = 'undefined'
+                        error = 1
 
         if item['ospf']:
             ids = set()
@@ -2898,15 +2918,15 @@ def import_vrf(parent, path):
             for iface in item['ospf']['interfaces']:
                 iface['network_type'] = iface.get('network_type', '')   # Добавляем поле, отсутствующее с старых версиях
                 iface['is_passive'] = iface.get('is_passive', False)    # Добавляем поле, отсутствующее с старых версиях
-                if iface['iface_id'] not in item['interfaces']:
-                    parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс OSPF "{iface["iface_id"]}" удалён из настроек OSPF так как он отсутствует в этом VRF.')
+                if item['name'] != 'default' and iface['iface_id'] not in item['interfaces']:
+                    parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс OSPF "{iface["iface_id"]}" удалён из настроек OSPF так как отсутствует в этом VRF.')
                     ids.add(iface['id'])
                     error = 1
                 else:
                     try:
                         iface['bfd_profile'] = bfd_profiles[iface['bfd_profile']].id
                     except KeyError as err:
-                        parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Для OSPF не найден профиль BFD {err}. Установлено значение по умолчанию. [vrf: "{item["name"]}"]')
+                        parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Для OSPF не найден профиль BFD {err}. Установлено значение по умолчанию.')
                         iface['bfd_profile'] = -1
                         error = 1
                     new_interfaces.append(iface)
@@ -6527,21 +6547,22 @@ def import_vpn_server_rules(parent, path):
         item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
         item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
         if f'{item["iface_id"]}:cluster' not in parent.mc_data['interfaces']:
-            parent.stepChanged.emit(f'ORANGE|    Warning [Правило "{item["name"]}"]. Не найден интерфейс VPN "{item["iface_id"]}" в группе шаблонов.')
+            parent.stepChanged.emit(f'RED|    Eror [Правило "{item["name"]}"]. Не найден интерфейс VPN "{item["iface_id"]}" в группе шаблонов.')
+            parent.stepChanged.emit(f'RED|       Error: Правило "{item["name"]}" не импортировано.')
+            continue
         try:
             item['security_profile_id'] = security_profiles[item['security_profile_id']].id
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности VPN {err}. Загрузите профили безопасности VPN и повторите попытку.')
-            item['description'] = f'{item["description"]}\nError: Не найден профиль безопасности VPN {err}.'
-            item['security_profile_id'] = ""
-            item['enabled'] = False
+            parent.stepChanged.emit(f'RED|       Error: Правило "{item["name"]}" не импортировано.')
             error = 1
+            continue
         try:
             item['tunnel_id'] = vpn_networks[item['tunnel_id']].id
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найдена сеть VPN "{err}". Загрузите сети VPN и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найдена сеть VPN "{err}".'
-            item['tunnel_id'] = ""
+            item['tunnel_id'] = False
             item['enabled'] = False
             error = 1
         try:
@@ -6549,7 +6570,7 @@ def import_vpn_server_rules(parent, path):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль авторизации {err}. Загрузите профили авторизации и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найден профиль авторизации {err}.'
-            item['auth_profile_id'] = ""
+            item['auth_profile_id'] = False
             item['enabled'] = False
             error = 1
 
@@ -7630,6 +7651,7 @@ def get_vpn_networks(parent):
                 parent.stepChanged.emit(f'ORANGE|    Сеть VPN "{x["name"]}" обнаружена в нескольких шаблонах группы шаблонов. Сеть VPN из шаблона "{name}" не будет использована.')
             else:
                 parent.mc_data['vpn_networks'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+    parent.mc_data['vpn_networks'][False] = BaseObject(id=False, template_id=uid, template_name=name)
     return 0
 
 def get_snmp_security_profiles(parent):

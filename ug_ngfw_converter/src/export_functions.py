@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.1 --  04.12.2024
+# Версия 3.2  10.12.2024
 #
 
 import os, sys, json
@@ -3169,8 +3169,8 @@ def export_vpn_server_rules(parent, path):
             item['users'] = get_names_users_and_groups(parent, item['users'], item['name'])
 
             item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
-            item['tunnel_id'] = vpn_networks[item['tunnel_id']]
-            item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
+            item['tunnel_id'] = vpn_networks.get(item['tunnel_id'], False)
+            item['auth_profile_id'] = parent.ngfw_data['auth_profiles'].get(item['auth_profile_id'], False)
             if parent.utm.float_version >= 7.1:
                 item.pop('allowed_auth_methods', None)
 

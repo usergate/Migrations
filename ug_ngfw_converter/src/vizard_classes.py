@@ -670,11 +670,9 @@ class SelectImportMode(SelectMode):
             for ip in item['ipv4']:
                 if ip.startswith(self.utm.server_ip):
                     management_port = item["name"]
-                    self.on_step_changed(f'NOTE|    Интерфейс {item["name"]} - {self.utm.server_ip} используется для текущей сессии.')
-                    self.on_step_changed('NOTE|    Он не будет использоваться для создания интерфейсов VLAN.')
-            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
-                continue
             if item["name"] == management_port:
+                continue
+            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
                 continue
             interfaces_list.append(item['name'])
 
@@ -775,6 +773,9 @@ class SelectMcImportMode(SelectMode):
 
 
     def select_template(self, init=False):
+        if not func.check_auth(self):
+            self.run_page_0()
+
         template_dialog = SelectMcDestinationTemplate(self.utm, self.parent, self.templates_group_name, templates=self.templates_ids)
         template_result = template_dialog.exec()
         if template_result == QDialog.DialogCode.Accepted:

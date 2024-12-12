@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 3.7 29.11.2024
+# Версия 3.9 12.12.2024
 #
 
 import os, sys, json, uuid
@@ -77,7 +77,7 @@ class ConvertFortigateConfig(QThread):
             else:
                 convert_ntp_settings(self, self.current_ug_path, data)
                 convert_dns_servers(self, self.current_ug_path, data)
-                convert_vpn_interfaces(self, self.current_ug_path, data['config system interface'])
+                convert_vpn_interfaces(self, self.current_ug_path, data)
                 convert_zone_settings(self, self.current_ug_path, data)
                 convert_dhcp_settings(self, self.current_ug_path, data)
                 convert_notification_profile(self, self.current_ug_path, data)
@@ -502,12 +502,15 @@ def convert_dns_servers(parent, path, data):
         parent.stepChanged.emit(f'GRAY|    Нет настроек DNS для экспорта.')
 
 
-def convert_vpn_interfaces(parent, path, interfaces):
+def convert_vpn_interfaces(parent, path, data):
     """Конвертируем интерфейсы VLAN."""
     parent.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
+    if 'config system interface' not in data:
+        parent.stepChanged.emit(f'GRAY|    Нет интерфейсов VLAN для экспорта.')
+        return
 
     ifaces = []
-    for ifname, ifblock in interfaces.items():
+    for ifname, ifblock in data['config system interface'].items():
         if 'role' in ifblock:
             parent.zones.add(ifblock['role'])
         if 'vlanid' in ifblock:
@@ -1480,32 +1483,39 @@ def convert_time_sets(parent, path, data):
                 time_set['content'].append(content)
 
                 timerestrictiongroup.append(time_set)
-                parent.time_restrictions.add(key)
+                parent.time_restrictions.add(time_set['name'])
 
     if 'config firewall schedule recurring' in data:
         for key, value in data['config firewall schedule recurring'].items():
             if value:
                 schedule = {
-                    'name': func.get_restricted_name(key.strip()),
+                    'name': func.get_restricted_name(key),
                     'description': 'Портировано с Fortigate',
                     'type': 'timerestrictiongroup',
                     'url': '',
                     'list_type_update': 'static',
                     'schedule': 'disabled',
                     'attributes': {},
-                    'content': [
-                        {
-                            'name': func.get_restricted_name(key.strip()),
-                            'type': 'weekly',
-                            'days': [week[day] for day in value['day'].split()]
-                        }
-                    ]
+                    'content': []
                 }
+                if 'day' in value and value['day'] != 'none':
+                    content = {
+                        'type': 'weekly',
+                        'name': func.get_restricted_name(key),
+                        'days': [week[day] for day in value['day'].split()]
+                    }
+                else:
+                    content = {
+                        'type': 'daily',
+                        'name': func.get_restricted_name(key.strip()),
+                    }
                 if 'start' in value:
-                    schedule['content'][0]['time_from'] = value['start']
-                    schedule['content'][0]['time_to'] = value['end']
+                    content['time_from'] = value['start']
+                    content['time_to'] = value['end']
+                schedule['content'].append(content)
+
                 timerestrictiongroup.append(schedule)
-                parent.time_restrictions.add(key)
+                parent.time_restrictions.add(schedule['name'])
 
     if timerestrictiongroup:
         section_path = os.path.join(path, 'Libraries')
@@ -2408,13 +2418,14 @@ def get_time_restrictions(parent, time_restrictions, rule):
     """Получить значение календаря."""
     new_schedule = []
     for item in time_restrictions.split(','):
-        if item == 'always':
+        schedule_name = func.get_restricted_name(item)
+        if schedule_name == 'always':
             continue
-        if item in parent.time_restrictions:
-            new_schedule.append(item)
+        if schedule_name in parent.time_restrictions:
+            new_schedule.append(schedule_name)
         else:
             parent.stepChanged.emit(f'bRED|    Error! Не найден календарь "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
-            rule['description'] = f'{rule["description"]}\nError! Не найден календарь "{item}".'
+            rule['description'] = f'{rule["description"]}\nError! Не найден календарь "{schedule_name}".'
             rule['rule_error'] = 1
     rule['time_restrictions'] = new_schedule
 

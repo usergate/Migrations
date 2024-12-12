@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog)
 import common_func as func
 import config_style as cs
+import export_blue_coat_config as bluecoat
 import export_cisco_asa_config as asa
 import export_cisco_fpr_config as fpr
 import export_fortigate_config as fg
@@ -327,7 +328,7 @@ class SelectExportMode(QWidget):
         frame_nodeinfo.setLayout(hbox_nodeinfo)
 
         list_item_font = QFont("Serif", pointSize=14, weight=600)
-        vendors = ['Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate', 'Huawei', 'MikroTik']
+        vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate', 'Huawei', 'MikroTik']
         self.vendor_list = QListWidget()
         self.vendor_list.setMaximumWidth(150)
         for vendor in vendors:
@@ -421,6 +422,8 @@ class SelectExportMode(QWidget):
             self.disable_buttons()
             if self.thread is None:
                 match self.selected_point:
+                    case 'Blue Coat':
+                        self.thread = bluecoat.ConvertBlueCoatConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Cisco ASA':
                         self.thread = asa.ConvertCiscoASAConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Cisco FPR':

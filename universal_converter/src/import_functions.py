@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.5 10.12.2024   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.8 12.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -689,21 +689,51 @@ def import_zones(parent, path):
 
 
 def import_interfaces(parent, path):
-    if isinstance(parent.ngfw_vlans, int):
-        parent.stepChanged.emit(parent.new_vlans)
+    err, result = parent.utm.get_interfaces_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создании интерфейсов GRE/IPIP/VXLAN.')
+        parent.error = 1
         return
+    ngfw_ifaces = {x['name']: x['kind'] for x in result}
 
-    import_vlans(parent, path)
-    import_ipip_interface(parent, path)
+    err, result = parent.utm.get_netflow_profiles_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
+        parent.error = 1
+        return
+    list_netflow = {x['name']: x['id'] for x in result}
+    list_netflow['undefined'] = 'undefined'
 
+    list_lldp = {}
+    if parent.version >= 7:
+        err, result = parent.utm.get_lldp_profiles_list()
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
+            parent.error = 1
+            return
+        list_lldp = {x['name']: x['id'] for x in result}
+        list_lldp['undefined'] = 'undefined'
 
-def import_ipip_interface(parent, path):
-    """Импортируем интерфесы IP-IP."""
     json_file = os.path.join(path, 'config_interfaces.json')
     err, data = func.read_json_file(parent, json_file, mode=1)
     if err:
         return
 
+    kinds = {item['kind'] for item in data}
+
+    if 'tunnel' in kinds:
+        import_ipip_interfaces(parent, path, data, ngfw_ifaces)
+    if 'vlan' in kinds:
+        import_vlans(parent, path, list_netflow, list_lldp)
+    if 'vpn' in kinds:
+        import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifaces)
+
+
+def import_ipip_interfaces(parent, path, data, ngfw_ifaces):
+    """Импортируем интерфесы IP-IP."""
     # Проверяем что есть интерфейсы IP-IP для импорта.
     is_gre = False
     for item in data:
@@ -713,27 +743,23 @@ def import_ipip_interface(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
-    err, result = parent.utm.get_interfaces_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов GRE/IPIP/VXLAN.')
-        parent.error = 1
-        return
-    mc_gre = [int(x['name'][3:]) for x in result if x['kind'] == 'tunnel' and x['name'].startswith('gre')]
+    mc_gre = [int(name[3:]) for name, kind in ngfw_ifaces.items() if kind == 'tunnel' and name.startswith('gre')]
     gre_num = max(mc_gre) if mc_gre else 0
+    if gre_num:
+        parent.stepChanged.emit(f'rNOTE|    Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как младшие номера уже существуют на NGFW.')
     error = 0
 
     for item in data:
         if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
             gre_num += 1
-            item.pop('id', None)      # удаляем readonly поле
-            item.pop('master', None)      # удаляем readonly поле
+            item['name'] = f"gre{gre_num}"
+            item.pop('id', None)
+            item.pop('master', None)
             item.pop('mac', None)
+            item.pop('node_name', None)              # удаляем если конфиг получен из МС
             if item.get('config_on_device', False):  # не импортируем если конфиг получен из МС и параметр True.
                 continue
-            item.pop('node_name', None)         # удаляем если конфиг получен из МС
 
-            item['name'] = f"gre{gre_num}"
             if item['zone_id']:
                 try:
                     item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
@@ -751,12 +777,12 @@ def import_ipip_interface(parent, path):
                 parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создания интерфейсов GRE/IPIP/VXLAN.')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов GRE/IPIP/VXLAN.')
     else:
         parent.stepChanged.emit('GREEN|    Интерфейсы GRE/IPIP/VXLAN импортированы в раздел "Сеть/Интерфейсы".')
 
 
-def import_vlans(parent, path):
+def import_vlans(parent, path, list_netflow, list_lldp):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
     parent.stepChanged.emit('BLUE|Импорт VLAN в раздел "Сеть/Интерфейсы".')
     error = 0
@@ -765,25 +791,6 @@ def import_vlans(parent, path):
         if parent.ngfw_vlans == 1:
             parent.error = 1
         return
-
-    err, result = parent.utm.get_netflow_profiles_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
-        parent.error = 1
-        return
-    list_netflow = {x['name']: x['id'] for x in result}
-    list_netflow['undefined'] = 'undefined'
-
-    if parent.version >= 7:
-        err, result = parent.utm.get_lldp_profiles_list()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
-            parent.error = 1
-            return
-        list_lldp = {x['name']: x['id'] for x in result}
-        list_lldp['undefined'] = 'undefined'
 
     for item in parent.iface_settings:
         if 'kind' in item and item['kind'] == 'vlan':
@@ -818,12 +825,7 @@ def import_vlans(parent, path):
                     item['zone_id'] = 0
                     error = 1
             else:
-                try:
-                    item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error: Не найдена зона "{err}" для VLAN "{item["name"]}". Импортируйте зоны и повторите попытку.')
-                    item['zone_id'] = 0
-                    error = 1
+                item['zone_id'] = 0
 
             if parent.version < 7.1:
                 item.pop('ifalias', None)
@@ -849,12 +851,72 @@ def import_vlans(parent, path):
                 error = 1
             else:
                 parent.ngfw_vlans[item['vlan_id']] = item['name']
-                parent.stepChanged.emit(f'BLACK|    Добавлен VLAN {item["vlan_id"]}, name: {item["name"]}, zone: {current_zone}, ip: {", ".join(item["ipv4"])}.')
+                parent.stepChanged.emit(f'BLACK|    Интерфейс VLAN "{item["name"]}" импортирован.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейса VLAN.')
     else:
         parent.stepChanged.emit('GREEN|    Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".')
+
+
+def import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifaces):
+    """Импортируем интерфейсы VPN"""
+    parent.stepChanged.emit('BLUE|Импорт интерфейсов VPN в раздел "Сеть/Интерфейсы".')
+    error = 0
+    
+    for item in data:
+        if 'kind' in item and item['kind'] == 'vpn':
+            if item['name'] in ngfw_ifaces:
+                parent.stepChanged.emit(f'GRAY|    Интерфейс VPN {item["name"]} уже существует на NGFW.')
+                continue
+
+            item['node_name'] = 'cluster'
+            item.pop('id', None)
+            item.pop('mac', None)
+            item.pop('master', None)
+            item.pop('running', None)
+
+            if item['zone_id']:
+                try:
+                    item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error: Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    item['zone_id'] = 0
+                    error = 1
+
+            if parent.version < 7.1:
+                item.pop('ifalias', None)
+                item.pop('flow_control', None)
+            if parent.version < 7.0:
+                item.pop('lldp_profile', None)
+            else:
+                try:
+                    item['lldp_profile'] = list_lldp[item['lldp_profile']]
+                except KeyError:
+                    parent.stepChanged.emit(f'RED|    Error: Для интерфейса "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
+                    item['lldp_profile'] = 'undefined'
+                    error = 1
+            try:
+                item['netflow_profile'] = list_netflow[item['netflow_profile']]
+            except KeyError:
+                parent.stepChanged.emit(f'RED|    Error: Для интерфейса "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
+                item['netflow_profile'] = 'undefined'
+                error = 1
+
+            err, result = parent.utm.add_interface_vpn(item)
+            if err == 1:
+                parent.stepChanged.emit(f'RED|    {result} [Интерфейс "{item["name"]}" не импортирован]')
+                error = 1
+            elif err == 2:
+                parent.stepChanged.emit(f'rNOTE|    {result} [Интерфейс "{item["name"]}" не импортирован]')
+            else:
+                ngfw_ifaces[item['name']] = item['kind']
+                parent.stepChanged.emit(f'BLACK|    Интерфейс VPN "{item["name"]}" импортирован.')
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейса VPN.')
+    else:
+        parent.stepChanged.emit('GREEN|    Интерфейсы VPN импортированы в раздел "Сеть/Интерфейсы".')
 
 
 def import_gateways(parent, path):
@@ -1130,6 +1192,14 @@ def import_vrf(parent, path):
     parent.stepChanged.emit('LBLUE|    Если вы используете BGP, по окончании импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
     error = 0
 
+    err, result = parent.utm.get_interfaces_list()
+    if err:
+        parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте виртуальных маршрутизаторов.')
+        parent.error = 1
+        return
+    ngfw_ifaces = {func.get_restricted_name(x['name']) for x in result}
+
     err, result = parent.utm.get_routes_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
@@ -1148,21 +1218,72 @@ def import_vrf(parent, path):
         bfd_profiles = {x['name']: x['id'] for x in result}
         bfd_profiles[-1] = -1
 
+    vrfnames = []
     for item in data:
+        if item['name'] in vrfnames:
+            parent.stepChanged.emit(f'rNOTE|    VRF "{item["name"]}" не импортирован так как VRF с таким именем уже был импортирован выше.')
+            continue
+        else:
+            vrfnames.append(item['name'])
+        
         for x in item['routes']:
             x['enabled'] = False
             x['name'] = func.get_restricted_name(x['name'])
+            if x['ifname'] != 'undefined':
+                if x['ifname'] not in ngfw_ifaces:
+                    parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на NGFW.')
+                    x['ifname'] = 'undefined'
+                    error = 1
+
         if item['ospf']:
             item['ospf']['enabled'] = False
+            ids = set()
+            new_interfaces = []
             for x in item['ospf']['interfaces']:
-                if parent.version < 7.1:
-                    x.pop('bfd_profile', None) 
+                if x['iface_id'] not in ngfw_ifaces:
+                    parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс OSPF "{x["iface_id"]}" удалён из настроек OSPF так как отсутствует на NGFW.')
+                    ids.add(x['id'])
+                    error = 1
+                    continue
+                if item['name'] != 'default' and x['iface_id'] not in item['interfaces']:
+                    parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Интерфейс OSPF "{x["iface_id"]}" удалён из настроек OSPF так как отсутствует в этом VRF.')
+                    ids.add(x['id'])
+                    error = 1
                 else:
+                    if parent.version < 7.1:
+                        x.pop('bfd_profile', None)
+                        x.pop('network_type', None)
+                        x.pop('is_passive', None)
+                    else:
+                        x['network_type'] = x.get('network_type', '')
+                        x['is_passive'] = x.get('is_passive', False)
+                        try:
+                            x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
+                        except KeyError as err:
+                            parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Для OSPF не найден профиль BFD {err}. Установлено значение по умолчанию.')
+                            x['bfd_profile'] = -1
+                            error = 1
+                    new_interfaces.append(x)
+            item['ospf']['interfaces'] = new_interfaces
+
+            new_areas = []
+            for area in item['ospf']['areas']:
+                err, result = func.unpack_ip_address(area['area_id'])
+                if err:
                     try:
-                        x['bfd_profile'] = bfd_profiles[x['bfd_profile']]
-                    except KeyError:
-                        x['bfd_profile'] = -1
-                        parent.stepChanged.emit(f'rNOTE|    Не найден профиль BFD для VRF "{item["name"]}". Установлено значение по умолчанию.')
+                        area['area_id'] = int(area['area_id'])
+                    except ValueError:
+                        parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Область OSPF "{area["name"]}" удалёна из настроек OSPF так как у неё не валидный идентификатор области.')
+                        error = 1
+                        continue
+                tmp = set(area['interfaces'])
+                if not (tmp - ids):
+                    parent.stepChanged.emit(f'RED|    Error [VRF "{item["name"]}"]. Область OSPF "{area["name"]}" удалёна из настроек OSPF так как у неё отсутствуют интерфейсы.')
+                    error = 1
+                else:
+                    new_areas.append(area)
+            item['ospf']['areas'] = new_areas
+
         if item['rip']:
             item['rip']['enabled'] = False
         if item['pimsm']:
@@ -4359,6 +4480,7 @@ def import_vpn_server_rules(parent, path):
         parent.error = 1
         return
     vpn_networks = {func.get_restricted_name(x['name']): x['id'] for x in result}
+    vpn_networks[False] = False
 
     err, result = parent.utm.get_vpn_server_rules()
     if err:
@@ -4382,24 +4504,23 @@ def import_vpn_server_rules(parent, path):
             item['security_profile_id'] = vpn_security_profiles[item['security_profile_id']]
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль безопасности VPN {err}. Загрузите профили безопасности VPN и повторите попытку.')
-            item['description'] = f'{item["description"]}\nError: Не найден профиль безопасности VPN {err}.'
-            item['security_profile_id'] = ""
-            item['enabled'] = False
+            parent.stepChanged.emit(f'RED|       Error: Правило "{item["name"]}" не импортировано.')
             error = 1
+            continue
         try:
             item['tunnel_id'] = vpn_networks[item['tunnel_id']]
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найдена сеть VPN {err}. Загрузите сети VPN и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найдена сеть VPN {err}.'
-            item['tunnel_id'] = ""
+            item['tunnel_id'] = False
             item['enabled'] = False
             error = 1
         try:
             item['auth_profile_id'] = parent.ngfw_data['auth_profiles'][item['auth_profile_id']]
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль авторизации {err}. Загрузите профили авторизации и повторите попытку.')
+            parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль аутентификации {err}. Загрузите профили аутентификации и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найден профиль авторизации {err}.'
-            item['auth_profile_id'] = ""
+            item['auth_profile_id'] = False
             item['enabled'] = False
             error = 1
 

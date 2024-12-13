@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.8 12.12.2024   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.9 13.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -559,6 +559,154 @@ def import_users_certificate_profiles(parent, path):
 
 
 #----------------------------------------------- Сеть --------------------------------------------------------
+class Zone:
+    def __init__(self, parent, zone):
+        self.parent = parent
+        self.name = zone['name']
+        self.description = zone['description']
+        self.services_access = zone['services_access']
+        self.enable_antispoof = zone['enable_antispoof']
+        self.antispoof_invert = zone['antispoof_invert']
+        self.networks = zone['networks']
+        self.sessions_limit_enabled = zone['sessions_limit_enabled']
+        self.sessions_limit_exclusions = zone['sessions_limit_exclusions']
+        self.ngfw_version = parent.utm.float_version
+        self.ngfw_zone_services = {v: k for k, v in zone_services.items()}
+        self.error = 0
+        self.check_services_access()
+        self.check_sessions_limit()
+        self.check_networks()
+
+
+    def check_services_access(self):
+        """Обрабатываем сервисы из контроля доступа."""
+        new_service_access = []
+        for service in self.services_access:
+            service_name = service['service_id']
+            # Проверяем что такой сервис существует в этой версии NGFW и получаем его ID.
+            try:
+                service['service_id'] = self.ngfw_zone_services[service['service_id']]
+            except KeyError as err:
+                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа.')
+                self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'
+                self.error = 1
+                continue
+            # Приводим список разрешённых адресов сервиса в соответствие с версией NGFW.
+            if service['allowed_ips']:
+                if self.ngfw_version < 7.1:
+                    if isinstance(service['allowed_ips'][0], list):
+                        service['allowed_ips'] = []
+                        self.parent.stepChanged.emit(f'ORANGE|    Для зоны "{self.name}" в контроле доступа сервиса "{service_name}" удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.')
+                        self.description = f'{self.description}\nError: В контроле доступа сервиса "{service_name}" удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.'
+                else:
+                    if isinstance(service['allowed_ips'][0], list):
+                        allowed_ips = []
+                        for item in service['allowed_ips']:
+                            if item[0] == 'list_id':
+                                try:
+                                    item[1] = self.parent.ngfw_data['ip_lists'][item[1]]
+                                except KeyError as err:
+                                    self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В контроле доступа сервиса "{service_name}" не найден список IP-адресов {err}.')
+                                    self.description = f'{self.description}\nError: В контроле доступа сервиса "{service_name}" не найден список IP-адресов {err}.'
+                                    self.error = 1
+                                    continue
+                            allowed_ips.append(item)
+                        service['allowed_ips'] = allowed_ips
+                    else:
+                        nlist_name = f'Zone {self.name} (service access: {service_name})'
+                        if nlist_name in self.parent.ngfw_data['ip_lists']:
+                            service['allowed_ips'] = [['list_id', self.parent.ngfw_data['ip_lists'][nlist_name]]]
+                        else:
+                            content = [{'value': ip} for ip in service['allowed_ips']]
+                            err, list_id = add_new_nlist(self.parent.utm, nlist_name, 'network', content)
+                            if err == 1:
+                                self.parent.stepChanged.emit(f'RED|    {list_id}')
+                                self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в контроле доступа сервиса "{service_name}".')
+                                self.description = f'{self.description}\nError: В контроле доступа сервиса "{service_name}" не создан список IP-адресов.'
+                                self.error = 1
+                                continue
+                            elif err == 2:
+                                self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}" уже существует.')
+                                self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                                continue
+                            else:
+                                self.parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}".')
+                                service['allowed_ips'] = [['list_id', list_id]]
+                                self.parent.ngfw_data['ip_lists'][nlist_name] = list_id
+            # Удаляем сервисы зон версии 7.1 которых нет в более старых версиях.
+            if self.ngfw_version < 7.1:
+                for service in zone['services_access']:
+                    if service['service_id'] in (31, 32, 33):
+                        continue
+
+            new_service_access.append(service)
+        self.services_access = new_service_access
+
+
+    def check_networks(self):
+        """Обрабатываем защиту от IP-спуфинга"""
+        if self.networks:
+            if self.ngfw_version < 7.1:
+                if isinstance(self.networks[0], list):
+                    self.networks = []
+                    self.enable_antispoof = False
+                    self.antispoof_invert = False
+                    self.parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" удалены списки IP-адресов в защите от IP-спуфинга. Списки поддерживаются только в версии 7.1 и выше.')
+                    self.description = f'{self.description}\nError: В защите от IP-спуфинга удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.'
+            else:
+                if isinstance(self.networks[0], list):
+                    new_networks = []
+                    for item in self.networks:
+                        if item[0] == 'list_id':
+                            try:
+                                item[1] = self.parent.ngfw_data['ip_lists'][item[1]]
+                            except KeyError as err:
+                                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
+                                self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
+                                self.error = 1
+                                continue
+                        new_networks.append(item)
+                    self.networks = new_networks
+                else:
+                    nlist_name = f'Zone {self.name} (IP-spufing)'
+                    if nlist_name in self.parent.ngfw_data['ip_lists']:
+                        self.networks = [['list_id', self.parent.ngfw_data['ip_lists'][nlist_name]]]
+                    else:
+                        content = [{'value': ip} for ip in self.networks]
+                        err, list_id = add_new_nlist(self.parent.utm, nlist_name, 'network', content)
+                        if err == 1:
+                            self.parent.stepChanged.emit(f'RED|    {list_id}')
+                            self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
+                            self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
+                            self.networks = []
+                            self.error = 1
+                        elif err == 2:
+                            self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{self.name}" уже существует.')
+                            self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                            self.networks = []
+                        else:
+                            self.parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{self.name}".')
+                            self.networks = [['list_id', list_id]]
+                            self.parent.ngfw_data['ip_lists'][nlist_name] = list_id
+
+
+    def check_sessions_limit(self):
+        """Обрабатываем ограничение сессий"""
+        new_sessions_limit_exclusions = []
+        if self.ngfw_version >= 7.1:
+            for item in self.sessions_limit_exclusions:
+                try:
+                    item[1] = self.parent.ngfw_data['ip_lists'][item[1]]
+                    new_sessions_limit_exclusions.append(item)
+                except KeyError as err:
+                    self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Ограничение сессий" не найден список IP-адресов {err}.')
+                    self.description = f'{self.description}\nError: В разделе "Ограничение сессий" не найден список IP-адресов {err}.'
+                    self.error = 1
+            self.sessions_limit_exclusions = new_sessions_limit_exclusions
+            if not self.sessions_limit_exclusions:
+                self.sessions_limit_enabled = False
+
+
 def import_zones(parent, path):
     """Импортируем зоны на NGFW, если они есть."""
     json_file = os.path.join(path, 'config_zones.json')
@@ -569,114 +717,40 @@ def import_zones(parent, path):
     parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
     error = 0
 
-    service_for_zones = {v: k for k, v in zone_services.items()}
-
     for zone in zones:
         zone['name'] = func.get_restricted_name(zone['name'])
-        new_service_access = []
-        for service in zone['services_access']:
-            if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
-                if parent.version >= 7.1:
-                    allowed_ips = []
-                    for item in service['allowed_ips']:
-                        if item[0] == 'list_id':
-                            try:
-                                item[1] = parent.ngfw_data['ip_lists'][item[1]]
-                            except KeyError as err:
-                                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".')
-                                zone['description'] = f'{zone["description"]}\nError: В контроле доступа "{service["service_id"]}" не найден список IP-адресов "{err}".'
-                                error = 1
-                                continue
-                        allowed_ips.append(item)
-                    service['allowed_ips'] = allowed_ips
-                else:
-                    service['allowed_ips'] = []
-                    parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" в контроле доступа сервиса "{service["service_id"]}" удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.')
-            try:
-                service['service_id'] = service_for_zones[service['service_id']]
-                new_service_access.append(service)
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. Не корректный сервис "{service["service_id"]}" в контроле доступа.')
-                zone['description'] = f'{zone["description"]}\nError: Не импортирован сервис "{service["service_id"]}" в контроль доступа.'
-                error = 1
-        zone['services_access'] = new_service_access
 
-        if parent.version < 7.1:
+        current_zone = Zone(parent, zone)
+        zone['services_access'] = current_zone.services_access
+        zone['enable_antispoof'] = current_zone.enable_antispoof
+        zone['antispoof_invert'] = current_zone.antispoof_invert
+        zone['networks'] = current_zone.networks
+
+        if parent.utm.float_version < 7.1:
             zone.pop('sessions_limit_enabled', None)
             zone.pop('sessions_limit_threshold', None)
             zone.pop('sessions_limit_exclusions', None)
-            if zone['networks'] and isinstance(zone['networks'][0], list):
-                zone['networks'] = []
-                zone['enable_antispoof'] = False
-                zone['antispoof_invert'] = False
-                parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" удалены списки IP-адресов в защите от IP-спуфинга. Списки поддерживаются только в версии 7.1 и выше.')
+        else:
+            zone['sessions_limit_enabled'] = current_zone.sessions_limit_enabled
+            zone['sessions_limit_exclusions'] = current_zone.sessions_limit_exclusions
 
-            # Удаляем сервисы зон версии 7.1 которых нет в более старых версиях.
-            new_services_access = []
-            for service in zone['services_access']:
-                if service['service_id'] not in (31, 32, 33):
-                    new_services_access.append(service)
-            zone['services_access'] = new_services_access
-
-        elif parent.version >= 7.1:
-            sessions_limit_exclusions = []
-            for item in zone['sessions_limit_exclusions']:
-                try:
-                    item[1] = parent.ngfw_data['ip_lists'][item[1]]
-                    sessions_limit_exclusions.append(item)
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Ограничение сессий" не найден список IP-адресов "{err}".')
-                    zone['description'] = f'{zone["description"]}\nError: В разделе "Ограничение сессий" не найден список IP-адресов "{err}".'
-                    error = 1
-            zone['sessions_limit_exclusions'] = sessions_limit_exclusions
-
-            content = []
-            zone_networks = []
-            for net in zone['networks']:
-                if isinstance(net, str):
-                    content.append({'value': net})
-                else:
-                    if net[0] == 'list_id':
-                        try:
-                            net[1] = parent.ngfw_data['ip_lists'][net[1]]
-                        except KeyError as err:
-                            parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов "{err}".')
-                            zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов "{err}".'
-                            error = 1
-                            continue
-                    zone_networks.append(net)
-            zone['networks'] = zone_networks
-
-            if content:
-                nlist_name = f'For zone {zone["name"]}'
-                err, list_id = add_new_nlist(parent.utm, nlist_name, 'network', content)
-                if err == 1:
-                    parent.stepChanged.emit(f'RED|    {list_id}')
-                    parent.stepChanged.emit(f'RED|       Error [Зона "{zone["name"]}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
-                    zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
-                    error = 1
-                elif err == 2:
-                    parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}" уже существует.')
-                    zone['networks'].append(['list_id', parent.ngfw_data['ip_lists'][nlist_name]])
-                else:
-                    zone['networks'].append(['list_id', list_id])
-                    parent.ngfw_data['ip_lists'][nlist_name] = list_id
-                    parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{zone["name"]}".')
+        zone['description'] = current_zone.description
+        error = current_zone.error
 
         err, result = parent.utm.add_zone(zone)
         if err == 1:
             error = 1
             parent.stepChanged.emit(f'RED|    {result}. Зона "{zone["name"]}" не импортирована.')
         elif err == 2:
-            parent.stepChanged.emit(f'GRAY|    {result}')
+            parent.stepChanged.emit(f'uGRAY|    {result}')
             err, result2 = parent.utm.update_zone(parent.ngfw_data['zones'][zone['name']], zone)
             if err == 1:
                 error = 1
                 parent.stepChanged.emit(f'RED|       {result2}')
             elif err == 2:
-                parent.stepChanged.emit(f'GRAY|       {result2}')
+                parent.stepChanged.emit(f'uGRAY|       {result2}')
             else:
-                parent.stepChanged.emit(f'BLACK|       Зона "{zone["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|       Зона "{zone["name"]}" обновлена.')
         else:
             parent.ngfw_data['zones'][zone["name"]] = result
             parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')

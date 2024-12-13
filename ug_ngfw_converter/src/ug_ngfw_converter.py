@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-# ug_universal_converter.py
-# Version 4.3  12.12.2024
+# ug_ngfw_converter.py
+# Version 4.4  13.12.2024
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 4.3)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации UG NGFW (version 4.4)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()

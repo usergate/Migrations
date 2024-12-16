@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.9 13.12.2024   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.10 16.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -649,8 +649,6 @@ class Zone:
             if self.ngfw_version < 7.1:
                 if isinstance(self.networks[0], list):
                     self.networks = []
-                    self.enable_antispoof = False
-                    self.antispoof_invert = False
                     self.parent.stepChanged.emit(f'ORANGE|    Для зоны "{zone["name"]}" удалены списки IP-адресов в защите от IP-спуфинга. Списки поддерживаются только в версии 7.1 и выше.')
                     self.description = f'{self.description}\nError: В защите от IP-спуфинга удалены списки IP-адресов. Списки поддерживаются только в версии 7.1 и выше.'
             else:
@@ -688,6 +686,9 @@ class Zone:
                             self.parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" защиты от IP-спуфинга для зоны "{self.name}".')
                             self.networks = [['list_id', list_id]]
                             self.parent.ngfw_data['ip_lists'][nlist_name] = list_id
+        if not self.networks:
+            self.enable_antispoof = False
+            self.antispoof_invert = False
 
 
     def check_sessions_limit(self):

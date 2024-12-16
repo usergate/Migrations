@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.2 12.12.2024  (только для ug_ngfw_converter)
+# Версия 3.3 16.12.2024  (только для ug_ngfw_converter)
 #
 
 import os, sys, json, time
@@ -1909,6 +1909,166 @@ def import_scenarios(parent, path):
 
 
 #-------------------------------------------- Сеть ------------------------------------------------------------
+class Zone:
+    def __init__(self, parent, zone):
+        self.parent = parent
+        self.name = zone['name']
+        self.description = zone['description']
+        self.services_access = zone['services_access']
+        self.enable_antispoof = zone['enable_antispoof']
+        self.antispoof_invert = zone['antispoof_invert']
+        self.networks = zone['networks']
+        self.sessions_limit_enabled = zone['sessions_limit_enabled']
+        self.sessions_limit_exclusions = zone['sessions_limit_exclusions']
+        self.service_ids = {
+            'Ping': 'ffffff03-ffff-ffff-ffff-ffffff000001',
+            'SNMP': 'ffffff03-ffff-ffff-ffff-ffffff000002',
+            'Captive-портал и страница блокировки': 'ffffff03-ffff-ffff-ffff-ffffff000004',
+            'XML-RPC для управления': 'ffffff03-ffff-ffff-ffff-ffffff000005',
+            'Кластер': 'ffffff03-ffff-ffff-ffff-ffffff000006',
+            'VRRP': 'ffffff03-ffff-ffff-ffff-ffffff000007',
+            'Консоль администрирования': 'ffffff03-ffff-ffff-ffff-ffffff000008',
+            'DNS': 'ffffff03-ffff-ffff-ffff-ffffff000009',
+            'HTTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000010',
+            'Агент аутентификации': 'ffffff03-ffff-ffff-ffff-ffffff000011',
+            'SMTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000012',
+            'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
+            'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
+            'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
+#           'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
+            'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
+            'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
+            'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
+            'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
+            'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
+            'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
+            'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
+            'SNMP-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000026',
+            'SSH-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000027',
+            'Multicast': 'ffffff03-ffff-ffff-ffff-ffffff000028',
+            'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
+            'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
+            'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
+            'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
+        }
+        self.error = 0
+        self.check_services_access()
+        self.check_networks()
+        self.check_sessions_limit()
+
+
+    def check_services_access(self):
+        """Обрабатываем сервисы из контроля доступа"""
+        new_services_access = []
+        for service in self.services_access:
+            if service['enabled']:
+                service_name = service['service_id']
+                # Проверяем что такой сервис существует в этой версии МС и получаем его ID.
+                try:
+                    service['service_id'] = self.service_ids[service['service_id']]
+                except KeyError as err:
+                    self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа. Сервис не импортирован.')
+                    self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'
+                    self.error = 1
+                    continue
+                # Приводим список разрешённых адресов сервиса к спискам IP-листов.
+                if service['allowed_ips']:
+                    if isinstance(service['allowed_ips'][0], list):
+                        allowed_ips = []
+                        for item in service['allowed_ips']:
+                            if item[0] == 'list_id':
+                                try:
+                                    item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                                except KeyError as err:
+                                    self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В контроле доступа "{service_name}" не найден список IP-адресов {err}.')
+                                    self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не найден список IP-адресов {err}.'
+                                    self.error = 1
+                                    continue
+                            allowed_ips.append(item)
+                        service['allowed_ips'] = allowed_ips
+                    else:
+                        nlist_name = f'Zone {self.name} (service access: {service_name})'
+                        if nlist_name in self.parent.mc_data['ip_lists']:
+                            service['allowed_ips'] = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
+                        else:
+                            content = [{'value': ip} for ip in service['allowed_ips']]
+                            err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
+                            if err == 1:
+                                self.parent.stepChanged.emit(f'RED|    {list_id}')
+                                self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в контроле доступа "{service_name}".')
+                                self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не создан список IP-адресов.'
+                                self.error = 1
+                                continue
+                            elif err == 3:
+                                self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}" уже существует.')
+                                self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                                continue
+                            else:
+                                self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" для зоны "{self.name}".')
+                                service['allowed_ips'] = [['list_id', list_id]]
+                                self.parent.mc_data['ip_lists'][nlist_name] = BaseObject(id=list_id, template_id=self.parent.template_id, template_name=self.parent.templates[self.parent.template_id])
+
+                new_services_access.append(service)
+        self.services_access = new_services_access
+
+
+    def check_networks(self):
+        """Обрабатываем защиту от IP-спуфинга"""
+        if self.networks:
+            if isinstance(self.networks[0], list):
+                new_networks = []
+                for item in self.networks:
+                    if item[0] == 'list_id':
+                        try:
+                            item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                        except KeyError as err:
+                            self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
+                            self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
+                            self.error = 1
+                            continue
+                    new_networks.append(item)
+                self.networks = new_networks
+            else:
+                nlist_name = f'Zone {self.name} (IP-spufing)'
+                if nlist_name in self.parent.mc_data['ip_lists']:
+                    self.networks = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
+                else:
+                    content = [{'value': ip} for ip in self.networks]
+                    err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
+                    if err == 1:
+                        self.parent.stepChanged.emit(f'RED|    {list_id}')
+                        self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
+                        self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
+                        self.networks = []
+                        self.error = 1
+                    elif err == 3:
+                        self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" в защите от IP-спуфинга зоны "{self.name}" уже существует.')
+                        self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                    else:
+                        self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" в защите от IP-спуфинга для зоны "{self.name}".')
+                        self.networks = [['list_id', list_id]]
+                        self.parent.mc_data['ip_lists'][nlist_name] = BaseObject(id=list_id, template_id=self.parent.template_id, template_name=self.parent.templates[self.parent.template_id])
+        if not self.networks:
+            self.enable_antispoof = False
+            self.antispoof_invert = False
+
+
+    def check_sessions_limit(self):
+        """Обрабатываем ограничение сессий"""
+        new_sessions_limit_exclusions = []
+        for item in self.sessions_limit_exclusions:
+            try:
+                item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                new_sessions_limit_exclusions.append(item)
+            except KeyError as err:
+                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Ограничение сессий" не найден список IP-адресов {err}.')
+                self.description = f'{self.description}\nError: В разделе "Ограничение сессий" не найден список IP-адресов {err}.'
+                self.error = 1
+        self.sessions_limit_exclusions = new_sessions_limit_exclusions
+        if not self.sessions_limit_exclusions:
+            self.sessions_limit_enabled = False
+
+
 def import_zones(parent, path):
     """Импортируем зоны на NGFW, если они есть."""
     json_file = os.path.join(path, 'config_zones.json')
@@ -1917,108 +2077,36 @@ def import_zones(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
-
-    service_ids = {
-        'Ping': 'ffffff03-ffff-ffff-ffff-ffffff000001',
-        'SNMP': 'ffffff03-ffff-ffff-ffff-ffffff000002',
-        'Captive-портал и страница блокировки': 'ffffff03-ffff-ffff-ffff-ffffff000004',
-        'XML-RPC для управления': 'ffffff03-ffff-ffff-ffff-ffffff000005',
-        'Кластер': 'ffffff03-ffff-ffff-ffff-ffffff000006',
-        'VRRP': 'ffffff03-ffff-ffff-ffff-ffffff000007',
-        'Консоль администрирования': 'ffffff03-ffff-ffff-ffff-ffffff000008',
-        'DNS': 'ffffff03-ffff-ffff-ffff-ffffff000009',
-        'HTTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000010',
-        'Агент аутентификации': 'ffffff03-ffff-ffff-ffff-ffffff000011',
-        'SMTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000012',
-        'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
-        'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
-        'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
-#        'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
-        'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
-        'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
-        'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
-        'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
-        'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
-        'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
-        'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
-        'SNMP-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000026',
-        'SSH-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000027',
-        'Multicast': 'ffffff03-ffff-ffff-ffff-ffffff000028',
-        'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
-        'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
-        'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
-        'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
-    }
-
-    zones = parent.mc_data['zones']
+    mc_zones = parent.mc_data['zones']
     error = 0
+
     for zone in data:
         zone['name'] = func.get_restricted_name(zone['name'])
-
-        if zone['name'] in zones:
-            if parent.template_id == zones[zone['name']].template_id:
+        if zone['name'] in mc_zones:
+            if parent.template_id == mc_zones[zone['name']].template_id:
                 parent.stepChanged.emit(f'uGRAY|    Зона "{zone["name"]}" уже существует в текущем шаблоне.')
             else:
-                parent.stepChanged.emit(f'sGREEN|    Зона "{zone["name"]}" уже существует в шаблоне "{zones[zone["name"]].template_name}".')
+                parent.stepChanged.emit(f'sGREEN|    Зона "{zone["name"]}" уже существует в шаблоне "{mc_zones[zone["name"]].template_name}".')
             continue
 
-        new_services_access = []
-        for service in zone['services_access']:
-            if service['enabled']:
-                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
-                    allowed_ips = []
-                    for item in service['allowed_ips']:
-                        if item[0] == 'list_id':
-                            try:
-                                item[1] = parent.mc_data['ip_lists'][item[1]].id
-                            except KeyError as err:
-                                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В контроле доступа "{service["service_id"]}" не найден список IP-адресов {err}.')
-                                zone['description'] = f'{zone["description"]}\nError: В контроле доступа "{service["service_id"]}" не найден список IP-адресов {err}.'
-                                error = 1
-                                continue
-                        allowed_ips.append(item)
-                    service['allowed_ips'] = allowed_ips
-                try:
-                    service['service_id'] = service_ids[service['service_id']]
-                    new_services_access.append(service)
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. Не корректный сервис "{service["service_id"]}" в контроле доступа. Сервис не импортирован.')
-                    zone['description'] = f'{zone["description"]}\nError: Не импортирован сервис "{service["service_id"]}" в контроль доступа.'
-                    error = 1
-        zone['services_access'] = new_services_access
-
-        zone_networks = []
-        for net in zone['networks']:
-            if net[0] == 'list_id':
-                try:
-                    net[1] = parent.mc_data['ip_lists'][net[1]].id
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
-                    zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
-                    error = 1
-                    continue
-            zone_networks.append(net)
-        zone['networks'] = zone_networks
-
-        sessions_limit_exclusions = []
-        for item in zone['sessions_limit_exclusions']:
-            try:
-                item[1] = parent.mc_data['ip_lists'][item[1]].id
-                sessions_limit_exclusions.append(item)
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Ограничение сессий" не найден список IP-адресов {err}.')
-                zone['description'] = f'{zone["description"]}\nError: В разделе "Ограничение сессий" не найден список IP-адресов {err}.'
-                error = 1
-        zone['sessions_limit_exclusions'] = sessions_limit_exclusions
+        current_zone = Zone(parent, zone)
+        zone['services_access'] = current_zone.services_access
+        zone['enable_antispoof'] = current_zone.enable_antispoof
+        zone['antispoof_invert'] = current_zone.antispoof_invert
+        zone['networks'] = current_zone.networks
+        zone['sessions_limit_enabled'] = current_zone.sessions_limit_enabled
+        zone['sessions_limit_exclusions'] = current_zone.sessions_limit_exclusions
+        zone['description'] = current_zone.description
+        error = current_zone.error
 
         err, result = parent.utm.add_template_zone(parent.template_id, zone)
         if err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}')
+            parent.stepChanged.emit(f'uGRAY|    {result}')
         elif err == 1:
             parent.stepChanged.emit(f'RED|    {result} [Зона "{zone["name"]}" не импортирована]')
             error = 1
         else:
-            zones[zone['name']] = BaseObject(id=result, template_id=parent.template_id, template_name=parent.templates[parent.template_id])
+            mc_zones[zone['name']] = BaseObject(id=result, template_id=parent.template_id, template_name=parent.templates[parent.template_id])
             parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')
 
     if error:
@@ -7687,6 +7775,25 @@ def add_empty_vrf(parent, vrf_name, ports, node_name):
     if err:
         return err, result
     return 0, result    # Возвращаем ID добавленного VRF
+
+
+def add_new_nlist(parent, name, nlist_type, content):
+    """Добавляем в библиотеку новый nlist с содержимым"""
+    nlist = {
+        'name': name,
+        'description': '',
+        'type': nlist_type,
+        'list_type_update': 'static',
+        'schedule': 'disabled',
+        'attributes': {'threat_level': 3},
+    }
+    err, list_id = parent.utm.add_template_nlist(parent.template_id, nlist)
+    if err:
+        return err, list_id
+    err, result = parent.utm.add_template_nlist_items(parent.template_id, list_id, content)
+    if err:
+        return err, result
+    return 0, list_id
 
 
 @dataclass(kw_only=True, slots=True, frozen=True)

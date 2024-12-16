@@ -430,7 +430,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f"Зона {zone['name']} уже существует."
             elif err.faultCode == 111:
-                return 1, f"Error: Зона '{zone['name']}' не добавлена [{err.faultString}]"
+                return 1, f'Error [Зона "{zone["name"]}"]: {err.faultString}'
             else:
                 return 1, f"Error utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:
@@ -444,7 +444,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Зона: {zone['name']} - нет отличающихся параметров для изменения."
+                return 2, f'Зона "{zone["name"]}" - нет отличающихся параметров для изменения.'
             else:
                 return 1, f"Error utm.update_zone: [{err.faultCode}] — {err.faultString}"
         else:

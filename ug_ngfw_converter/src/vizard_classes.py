@@ -1,6 +1,7 @@
 #!/usr/bin/python3
+#
 # Это только для ug_ngfw_converter
-# Версия 2.7 10.12.2024
+# Версия 2.8   17.12.2024
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -567,6 +568,8 @@ class SelectImportMode(SelectMode):
                     'iface_settings': '',
                 }
                 self.set_arguments(arguments)
+                if not func.check_auth(self):
+                    self.run_page_0()
 
                 self.thread = tf.ImportSelectedPoints(
                     self.utm,
@@ -648,7 +651,7 @@ class SelectImportMode(SelectMode):
         if err:
             return err, data
 
-        vlans = sorted([item['vlan_id'] for item in data if item['kind'] == 'vlan'])
+        vlans = {item['vlan_id']: {'zone': item['zone_id'], 'port': item['link']} for item in data if item['kind'] == 'vlan'}
         if not vlans:
             return 3, 'LBLUE|    Нет VLAN для импорта.'
 
@@ -679,10 +682,10 @@ class SelectImportMode(SelectMode):
         dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones)
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
-            new_vlans = {}
-            for key, value in dialog.vlans.items():
-                new_vlans[key] = {'port': value['port'].currentText(), 'zone': value['zone'].currentText()}
-            return 0, [data, ngfw_vlans, new_vlans]
+            for key, value in dialog.combo_vlans.items():
+                vlans[key]['port'] = value['port'].currentText()
+                vlans[key]['zone'] = value['zone'].currentText()
+            return 0, [data, ngfw_vlans, vlans]
         else:
             return 3, 'LBLUE|    Импорт настроек интерфейсов отменён пользователем.'
 
@@ -1211,8 +1214,9 @@ class VlanWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Настройка VLANs")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
-#        self.setFixedHeight(300)
-        self.vlans = {item: {'port': '', 'zone': ''} for item in vlans}
+#        self.vlans = {item: {'port': '', 'zone': ''} for item in vlans}
+        self.vlans = vlans
+        self.combo_vlans = {item: {'port': '', 'zone': ''} for item in sorted(vlans)}
         title = QLabel(f"<b><font color='green'>Настройка добавляемых интерфейсов VLAN</font></b>")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         text1 = QLabel("Для импортируемых VLAN установите порт и зону.<br>Если порт не будет назначен, VLAN не будет импортирован.")
@@ -1228,13 +1232,17 @@ class VlanWindow(QDialog):
 
         grid_layout = QGridLayout()
         for i, vlan in enumerate(self.vlans.keys()):
-            self.vlans[vlan]['port'] = QComboBox()
-            self.vlans[vlan]['port'].addItems(ports)
-            self.vlans[vlan]['zone'] = QComboBox()
-            self.vlans[vlan]['zone'].addItems(zones)
+            self.combo_vlans[vlan]['port'] = QComboBox()
+            self.combo_vlans[vlan]['port'].addItems(ports)
+            if self.vlans[vlan]['port'] in ports:
+                self.combo_vlans[vlan]['port'].setCurrentText(self.vlans[vlan]['port'])
+            self.combo_vlans[vlan]['zone'] = QComboBox()
+            self.combo_vlans[vlan]['zone'].addItems(zones)
+            if self.vlans[vlan]['zone'] in zones:
+                self.combo_vlans[vlan]['zone'].setCurrentText(self.vlans[vlan]['zone'])
             grid_layout.addWidget(QLabel(f'VLAN {vlan}'), i, 0)
-            grid_layout.addWidget(self.vlans[vlan]['port'], i, 1)
-            grid_layout.addWidget(self.vlans[vlan]['zone'], i, 2)
+            grid_layout.addWidget(self.combo_vlans[vlan]['port'], i, 1)
+            grid_layout.addWidget(self.combo_vlans[vlan]['zone'], i, 2)
 
         widget = QWidget()
         widget.setLayout(grid_layout)

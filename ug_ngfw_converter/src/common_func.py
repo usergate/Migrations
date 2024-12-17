@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-#
-#  common_func.py
 #  
 # Copyright @ 2021-2023 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <aremnev@usergate.com>
@@ -18,6 +16,11 @@
 
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
+#
+#-----------------------------------------------------------------------------
+# common_func.py
+# Общие функции (идентично для ug_ngfw_converter и universal_converter)
+# Версия 2.0  16.12.2024
 #
 
 import os, json, pickle
@@ -81,14 +84,12 @@ def read_json_file(parent, json_file_path, mode=0):
         with open(json_file_path, "r") as fh:
             data = json.load(fh)
     except ValueError as err:
-        if not mode:
-            parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
-            parent.error = 1
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
+        parent.error = 1
         return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
     except json.JSONDecodeError as err:
-        if not mode:
-            parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
-            parent.error = 1
+        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
+        parent.error = 1
         return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
     except FileNotFoundError as err:
         if not mode:
@@ -102,7 +103,7 @@ def read_json_file(parent, json_file_path, mode=0):
     return 0, data
 
 
-def create_ip_list(parent, path, ips=[], name=None):
+def create_ip_list(parent, path, ips=[], name=None, descr=None):
     """
     Создаём IP-лист для правила. Возвращаем имя ip-листа.
     В вызываемом модуле должна быть структура: self.ip_lists = set()
@@ -120,7 +121,7 @@ def create_ip_list(parent, path, ips=[], name=None):
 
         ip_list = {
             'name': iplist_name,
-            'description': 'Портировано...',
+            'description': descr if descr else '',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',

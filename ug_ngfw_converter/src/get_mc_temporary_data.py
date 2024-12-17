@@ -17,10 +17,12 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-# get_mc_temporary_data.py
-# Version 1.4  10.12.2024
 #--------------------------------------------------------------------------------------------------- 
+# get_mc_temporary_data.py
+# Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
+# Version 1.4  16.12.2024    (идентично для ug_ngfw_converter и universal_converter)
 #
+
 import os, sys, json
 from dataclasses import dataclass
 from PyQt6.QtCore import QThread, pyqtSignal

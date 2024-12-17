@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.3 16.12.2024  (только для ug_ngfw_converter)
+# Версия 3.4   17.12.2024  (только для ug_ngfw_converter)
 #
 
 import os, sys, json, time
@@ -2233,7 +2233,7 @@ def import_adapter_interfaces(parent, path, data):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|       Произошла ошибка при создании сетевых адаптеров.')
     else:
-        parent.stepChanged.emit('GREEN|       Сетевые адаптеры импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|       Импорт сетевых адаптеров завершён.')
 
 
 def import_bond_interfaces(parent, path, data):
@@ -2319,7 +2319,7 @@ def import_bond_interfaces(parent, path, data):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|       Произошла ошибка при создании агрегированных интерфейсов.')
     else:
-        parent.stepChanged.emit('GREEN|       Интерфейсы импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|       Импорт агрегированных интерфейсов завершён.')
 
 
 def import_ipip_interfaces(parent, path, data):
@@ -2392,7 +2392,7 @@ def import_ipip_interfaces(parent, path, data):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов GRE/IPIP/VXLAN.')
     else:
-        parent.stepChanged.emit('GREEN|       Интерфейсы GRE/IPIP/VXLAN импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
 
 
 def import_vpn_interfaces(parent, path, data):
@@ -2464,7 +2464,7 @@ def import_vpn_interfaces(parent, path, data):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов VPN.')
     else:
-        parent.stepChanged.emit('GREEN|       Интерфейсы VPN импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|       Импорт интерфейсов VPN завершён.')
 
 
 def import_vlan_interfaces(parent, path, data):
@@ -2546,7 +2546,7 @@ def import_vlan_interfaces(parent, path, data):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов VLAN.')
     else:
-        parent.stepChanged.emit('GREEN|       Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|       Импорт интерфейсов VLAN завершён.')
 
 
 #def import_vlans(parent, path):

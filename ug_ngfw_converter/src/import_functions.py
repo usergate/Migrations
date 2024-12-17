@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.10 16.12.2024   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.11   17.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -854,7 +854,7 @@ def import_ipip_interfaces(parent, path, data, ngfw_ifaces):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов GRE/IPIP/VXLAN.')
     else:
-        parent.stepChanged.emit('GREEN|    Интерфейсы GRE/IPIP/VXLAN импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|    Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
 
 
 def import_vlans(parent, path, list_netflow, list_lldp):
@@ -931,7 +931,7 @@ def import_vlans(parent, path, list_netflow, list_lldp):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейса VLAN.')
     else:
-        parent.stepChanged.emit('GREEN|    Интерфейсы VLAN импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|    Импорт интерфейсов VLAN завершён.')
 
 
 def import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifaces):
@@ -991,7 +991,7 @@ def import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifac
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейса VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Интерфейсы VPN импортированы в раздел "Сеть/Интерфейсы".')
+        parent.stepChanged.emit('GREEN|    Импорт интерфейсов VPN завершён.')
 
 
 def import_gateways(parent, path):

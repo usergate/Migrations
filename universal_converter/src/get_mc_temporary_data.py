@@ -17,10 +17,12 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-# get_mc_temporary_data.py
-# Version 1.3  10.12.2024
 #--------------------------------------------------------------------------------------------------- 
+# get_mc_temporary_data.py
+# Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
+# Version 1.4  16.12.2024    (идентично для ug_ngfw_converter и universal_converter)
 #
+
 import os, sys, json
 from dataclasses import dataclass
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -265,7 +267,7 @@ class GetExportTemporaryData(QThread):
             if write_bin_file(self, self.mc_data):
                 self.stepChanged.emit(f'iRED|Произошла ошибка инициализации экспорта! Не удалось сохранить служебные структуры данных.')
             else:
-                self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.')
+                self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')
 
 class GetImportTemporaryData(QThread):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
@@ -581,6 +583,7 @@ class GetImportTemporaryData(QThread):
                 else:
                     self.mc_data['auth_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
         self.mc_data['auth_profiles'][-1] = BaseObject(id=-1, template_id='', template_name='')
+        self.mc_data['auth_profiles'][False] = BaseObject(id=False, template_id='', template_name='')
 
         # Получаем список локальных групп
         self.stepChanged.emit(f'BLACK|    Получаем список групп пользователей группы шаблонов')

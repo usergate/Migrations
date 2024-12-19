@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 3.9 12.12.2024
+# Версия 3.10 19.12.2024
 #
 
 import os, sys, json, uuid
@@ -343,6 +343,7 @@ def convert_config_file(parent, path):
             if x == 'end':
                 config_fortigate[key] = config_block
                 config_block = []
+                key = 'Duble end'
                 continue
             config_block.append(x)
 
@@ -357,6 +358,8 @@ def convert_config_file(parent, path):
         content = [x.strip().split() for x in value]
         if content:
             config_fortigate[key] = make_conf_block(content)
+        else:
+            config_fortigate[key] = {}
 
     json_file = os.path.join(path, 'config.json')
     with open(json_file, 'w') as fh:
@@ -426,7 +429,6 @@ def convert_ntp_settings(parent, path, data):
     parent.stepChanged.emit('BLUE|Конвертация настроек NTP.')
 
     if 'config system ntp' in data and data['config system ntp'].get('ntpserver', None):
-        ntp_info = data['config system ntp']
         section_path = os.path.join(path, 'UserGate')
         current_path = os.path.join(section_path, 'GeneralSettings')
         err, msg = func.create_dir(current_path, delete='no')
@@ -435,10 +437,11 @@ def convert_ntp_settings(parent, path, data):
             parent.error = 1
             return
 
+        ntp_info = data['config system ntp']
         ntp_server = {
             'ntp_servers': [],
-            'ntp_enabled': True,
-            'ntp_synced': True if ntp_info['ntpsync'] == 'enable' else False
+            'ntp_enabled': True if ntp_info.get('server-mode', 'enable') == 'enable' else False,
+            'ntp_synced': True if ntp_info.get('ntpsync', 'enable') == 'enable' else False
         }
         for i, value in ntp_info['ntpserver'].items():
             ntp_server['ntp_servers'].append(value['server'])
@@ -1871,10 +1874,10 @@ def convert_dnat_rule(parent, path, data):
                 if value['extip'] in ips_for_rules:
                     list_id = value['extip']
                 else:
-                    list_id = func.create_ip_list(parent, path, ips=[value['extip']], name=value['extip'])
+                    list_id = func.create_ip_list(parent, path, ips=[value['extip']], name=value['extip'], descr='Портировано с Fortigate.')
                     ips_for_rules.add(list_id)
                 if value['mappedip'] not in ips_for_rules:
-                    ips_for_rules.add(func.create_ip_list(parent, path, ips=[value['mappedip']]))
+                    ips_for_rules.add(func.create_ip_list(parent, path, ips=[value['mappedip']], descr='Портировано с Fortigate.'))
                 if 'service' in value:
                     services = [['service' if x in parent.services else 'list_id', x] for x in value['service'].split()]
                 elif 'mappedport' in value:
@@ -1957,7 +1960,7 @@ def convert_loadbalancing_rule(parent, path, data):
                     'snat': True
                 })
                 ip_list_ips.append(server['ip'])
-            parent.ip_lists.add(func.create_ip_list(parent, path, ips=ip_list_ips, name=key))
+            parent.ip_lists.add(func.create_ip_list(parent, path, ips=ip_list_ips, name=key, descr='Портировано с Fortigate.'))
 
             rule = {
                 'name': f'Rule {func.get_restricted_name(key.strip())}',
@@ -2027,7 +2030,7 @@ def convert_firewall_policy(parent, path, data):
     rules = []
     for key, value in data['config firewall policy'].items():
         rule = {
-            'name': func.get_restricted_name(value.get("name", key)),
+            'name': func.get_restricted_name(value.get("name", key), default_name=key),
             'description': f"Портировано с Fortigate.\nFortigate UUID: {value.get('uuid', 'Отсутствует')}\n{value.get('comments', '')}",
             'action': value['action'] if value.get('action', None) else 'drop',
             'position': 'last',
@@ -2056,6 +2059,8 @@ def convert_firewall_policy(parent, path, data):
             'send_host_icmp': '',
             'rule_error': 0,
         }
+        if rule['name'] == key:
+            rule['description'] = f'{rule["description"]}\nИсходное имя правила заменено, так как оно не корректно.'
         if 'groups' in value:
             get_users_and_groups(parent, value['groups'], rule)
         elif 'users' in value:
@@ -2345,7 +2350,7 @@ def get_ips(parent, path, src_ips, dst_ips, rule):
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
-                    new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item)])
+                    new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item, descr='Портировано с Fortigate.')])
                 except ValueError as err:
                     parent.stepChanged.emit(f'RED|    Error! Не найден src-адрес "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
                     rule['description'] = f'{rule["description"]}\nError: Не найден src-адрес "{item}".'
@@ -2364,7 +2369,7 @@ def get_ips(parent, path, src_ips, dst_ips, rule):
             else:
                 try:
                     ipaddress.ip_address(item)   # проверяем что это IP-адрес или получаем ValueError
-                    new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item)])
+                    new_rule_ips.append(['list_id', func.create_ip_list(parent, path, ips=[item], name=item, descr='Портировано с Fortigate.')])
                 except ValueError as err:
                     parent.stepChanged.emit(f'RED|    Error! Не найден dst-адрес "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
                     rule['description'] = f'{rule["description"]}\nError! Не найден dst-адрес "{item}".'

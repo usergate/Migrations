@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-#
-#  common_func.py
 #  
 # Copyright @ 2021-2023 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <aremnev@usergate.com>
@@ -19,9 +17,13 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-#   Для универсального конвертера v.1.0  06.12.2024
+#-----------------------------------------------------------------------------
+# common_func.py
+# Общие функции (идентично для ug_ngfw_converter и universal_converter)
+# Версия 2.1  19.12.2024
+#
 
-import os, json, pickle
+import os, json, pickle, uuid
 import ipaddress
 from PyQt6.QtWidgets import QMessageBox
 from services import trans_filename, trans_name, trans_userlogin
@@ -101,7 +103,7 @@ def read_json_file(parent, json_file_path, mode=0):
     return 0, data
 
 
-def create_ip_list(parent, path, ips=[], name=None):
+def create_ip_list(parent, path, ips=[], name=None, descr=None):
     """
     Создаём IP-лист для правила. Возвращаем имя ip-листа.
     В вызываемом модуле должна быть структура: self.ip_lists = set()
@@ -119,7 +121,7 @@ def create_ip_list(parent, path, ips=[], name=None):
 
         ip_list = {
             'name': iplist_name,
-            'description': f'Портировано с {parent.vendor}.',
+            'description': descr if descr else '',
             'type': 'network',
             'url': '',
             'list_type_update': 'static',
@@ -204,7 +206,7 @@ def get_netroute(net):
         return 1, err
 
 
-def get_restricted_name(name):
+def get_restricted_name(name, default_name=None):
     """
     Получить имя объекта без запрещённых спецсимволов.
     Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
@@ -212,11 +214,14 @@ def get_restricted_name(name):
     if isinstance(name, str):
         new_name = name.translate(trans_name).strip()
         forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'}
-        while new_name[0] in forbidden_values:
-            new_name = new_name[1:]
+        try:
+            while new_name[0] in forbidden_values:
+                new_name = new_name[1:]
+        except IndexError:
+            new_name = default_name if default_name else str(uuid.uuid4()).split('-')[4]
         return new_name
     else:
-        return 'Name not valid'
+        return f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'
 
 def get_restricted_userlogin(user_login):
     """

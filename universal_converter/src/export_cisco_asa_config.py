@@ -792,7 +792,7 @@ def convert_zone_access(parent, path, data):
             for x in zone['services_access']:
                 if x['allowed_ips']:
                     list_name = f'For Zone: {zone["name"]} (service: {x["service_id"]})'
-                    iplist_name = func.create_ip_list(parent, path, ips=x['allowed_ips'], name=list_name)
+                    iplist_name = func.create_ip_list(parent, path, ips=x['allowed_ips'], name=list_name, descr='Портировано с Cisco ASA.')
                     if iplist_name:
                         x['allowed_ips'] = [["list_id", iplist_name]]
                     else:
@@ -2350,7 +2350,7 @@ def convert_dnat_rule(parent, path, data):
             rule['dest_ip'].append(["list_id", f"host {value[3]}"])
             rule['snat_target_ip'] = value[3]
         else:
-            iplist_name = func.create_ip_list(parent, path, ips=[value[3]])
+            iplist_name = func.create_ip_list(parent, path, ips=[value[3]], descr='Портировано с Cisco ASA.')
             data['ip_lists'][iplist_name] = [['host', value[3]]]
             rule['dest_ip'].append(["list_id", iplist_name])
             rule['snat_target_ip'] = value[3]
@@ -2449,7 +2449,7 @@ def convert_nat_rule(parent, path, data):
             elif f"host {value[i+1]}" in parent.ip_lists:
                 rule['source_ip'].append(["list_id", f"host {value[i+1]}"])
             else:
-                iplist_name = func.create_ip_list(parent, path, ips=[value[i+1]])
+                iplist_name = func.create_ip_list(parent, path, ips=[value[i+1]], descr='Портировано с Cisco ASA.')
                 rule['source_ip'].append(["list_id", iplist_name])
         if value[i+2] != 'any':
             if value[i+2] == 'pat-pool':
@@ -2459,7 +2459,7 @@ def convert_nat_rule(parent, path, data):
             elif f"host {value[i+2]}" in parent.ip_lists:
                 rule['dest_ip'].append(["list_id", f"host {value[i+2]}"])
             else:
-                iplist_name = func.create_ip_list(parent, path, ips=[value[i+2]])
+                iplist_name = func.create_ip_list(parent, path, ips=[value[i+2]], descr='Портировано с Cisco ASA.')
                 rule['dest_ip'].append(["list_id", iplist_name])
         if 'description' in value:
             i = value.index('description')
@@ -2539,7 +2539,7 @@ def get_ips(parent, path, data, ips_mode, address, rule, deq):
                 rule['services'].append(["service", ip_or_service_list])
         case 'host':
             ip = deq.popleft()
-            iplist_name = func.create_ip_list(parent, path, ips=[ip], name=f'host {ip}')
+            iplist_name = func.create_ip_list(parent, path, ips=[ip], name=f'host {ip}', descr='Портировано с Cisco ASA.')
             data['ip_lists'][iplist_name] = []
             rule[ips_mode].append(['list_id', iplist_name])
         case 'interface':
@@ -2550,7 +2550,7 @@ def get_ips(parent, path, data, ips_mode, address, rule, deq):
                 mask = deq.popleft()
                 subnet = ipaddress.ip_network(f'{address}/{mask}')
                 ip = f'{address}/{subnet.prefixlen}'
-                iplist_name = func.create_ip_list(parent, path, ips=[ip], name=f'subnet {ip}')
+                iplist_name = func.create_ip_list(parent, path, ips=[ip], name=f'subnet {ip}', descr='Портировано с Cisco ASA.')
                 data['ip_lists'][iplist_name] = []
                 rule[ips_mode].append(['list_id', iplist_name])
             except (ValueError, IndexError):

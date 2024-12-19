@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.18 07.10.2024
+# Версия 3.19 12.12.2024
 # Общий класс для работы с xml-rpc
 #
 # Коды возврата:
@@ -430,7 +430,7 @@ class UtmXmlRpc:
             if err.faultCode == 409:
                 return 2, f"Зона {zone['name']} уже существует."
             elif err.faultCode == 111:
-                return 1, f"Error: Зона '{zone['name']}' не добавлена [{err.faultString}]"
+                return 1, f'Error [Зона "{zone["name"]}"]: {err.faultString}'
             else:
                 return 1, f"Error utm.add_zone: [{err.faultCode}] — {err.faultString}"
         else:
@@ -444,7 +444,7 @@ class UtmXmlRpc:
             return 1, err
         except rpc.Fault as err:
             if err.faultCode == 409:
-                return 2, f"Зона: {zone['name']} - нет отличающихся параметров для изменения."
+                return 2, f'Зона "{zone["name"]}" - нет отличающихся параметров для изменения.'
             else:
                 return 1, f"Error utm.update_zone: [{err.faultCode}] — {err.faultString}"
         else:
@@ -567,7 +567,7 @@ class UtmXmlRpc:
             result = self._server.v1.netmanager.interface.add.tunnel(self._auth_token, self.node_name, tunnel['name'], tunnel)
         except rpc.Fault as err:
             if err.faultCode == 1205:
-                return 2, f'Интерфейс с таким IP-адресом {tunnel["ipv4"]} уже существует [{err.faultString}].'
+                return 2, f'Интерфейс с IP-адресом {tunnel["ipv4"]} уже существует [{err.faultString}].'
             else:
                 return 1, f"Error utm.add_interface_tunnel: [{err.faultCode}] — {err.faultString}"
         else:
@@ -579,7 +579,7 @@ class UtmXmlRpc:
             result = self._server.v1.netmanager.interface.add.vpn(self._auth_token, 'cluster', vpn['name'], vpn)
         except rpc.Fault as err:
             if err.faultCode == 18004:
-                return 2, f'Интерфейс {vpn["name"]} пропущен так как содержит IP принадлежащий подсети другого интерфейса VPN!.'
+                return 2, f'Интерфейс {vpn["name"]} содержит IP принадлежащий подсети другого интерфейса VPN.'
             else:
                 return 1, f'Error utm.add_interface_vpn: [{err.faultCode}] — {err.faultString}'
         else:

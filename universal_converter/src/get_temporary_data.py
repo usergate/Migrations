@@ -17,10 +17,12 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-# get_temporary_data.py
-# Version 1.6
 #--------------------------------------------------------------------------------------------------- 
+# get_temporary_data.py
+# Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
+# Version 1.7  16.12.2024    (идентично ug_ngfw_converter и universal_converter)
 #
+
 import os, sys
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import trans_name, default_urlcategorygroup
@@ -182,7 +184,7 @@ class GetExportTemporaryData(QThread):
         if write_bin_file(self, self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации экспорта! Не удалось сохранить служебные структуры данных.')
         else:
-            self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.')
+            self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')
 
 
 class GetImportTemporaryData(QThread):
@@ -221,6 +223,7 @@ class GetImportTemporaryData(QThread):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.ngfw_data['auth_profiles'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['auth_profiles'][False] = False
 
         # Получаем список локальных групп
         self.stepChanged.emit(f'BLACK|    Получаем список локальных групп')
@@ -340,4 +343,4 @@ class GetImportTemporaryData(QThread):
         if write_bin_file(self, self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Не удалось сохранить служебные структуры данных.')
         else:
-            self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.')
+            self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')

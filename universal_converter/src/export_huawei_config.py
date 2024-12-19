@@ -1793,7 +1793,7 @@ def get_ips(parent, path, rule_ips, rule_name, iplist_name=None):
         else:
             parent.stepChanged.emit(f'bRED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
     if ip_group:
-        ip_list_name = func.create_ip_list(parent, path, ips=ip_group, name=iplist_name)
+        ip_list_name = func.create_ip_list(parent, path, ips=ip_group, name=iplist_name, descr='Портировано с Huawei.')
         if ip_list_name:
             new_rule_ips.append(['list_id', ip_list_name])
 

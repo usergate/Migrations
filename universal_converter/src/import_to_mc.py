@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.3   17.12.2024  (только для universal_converter)
+# Версия 3.4   20.12.2024  (только для universal_converter)
 #
 
 import os, sys, json, time
@@ -145,7 +145,7 @@ class ImportSelectedPoints(QThread):
 def import_morphology_lists(parent, path):
     """Импортируем списки морфологии"""
     json_file = os.path.join(path, 'config_morphology_lists.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -221,7 +221,7 @@ def import_morphology_lists(parent, path):
 def import_services_list(parent, path):
     """Импортируем список сервисов раздела библиотеки"""
     json_file = os.path.join(path, 'config_services_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -258,7 +258,7 @@ def import_services_list(parent, path):
 def import_services_groups(parent, path):
     """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
     json_file = os.path.join(path, 'config_services_groups_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -359,7 +359,7 @@ def import_ip_lists(parent, path):
     parent.stepChanged.emit('LBLUE|    Импортируем списки IP-адресов без содержимого.')
     for file_name in files_list:
         json_file = os.path.join(path, file_name)
-        err, data = func.read_json_file(parent, json_file)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             continue
 
@@ -448,7 +448,7 @@ def import_ip_lists(parent, path):
 def import_useragent_lists(parent, path):
     """Импортируем списки Useragent браузеров"""
     json_file = os.path.join(path, 'config_useragents_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -516,7 +516,7 @@ def import_useragent_lists(parent, path):
 def import_mime_lists(parent, path):
     """Импортируем списки Типов контента"""
     json_file = os.path.join(path, 'config_mime_types.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -596,7 +596,7 @@ def import_url_lists(parent, path):
     parent.stepChanged.emit('LBLUE|    Импортируем списки URL без содержимого.')
     for file_name in files_list:
         json_file = os.path.join(path, file_name)
-        err, data = func.read_json_file(parent, json_file)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             continue
 
@@ -661,7 +661,7 @@ def import_url_lists(parent, path):
 def import_time_restricted_lists(parent, path):
     """Импортируем содержимое календарей"""
     json_file = os.path.join(path, 'config_calendars.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -724,7 +724,7 @@ def import_time_restricted_lists(parent, path):
 def import_shaper_list(parent, path):
     """Импортируем список Полос пропускания раздела библиотеки"""
     json_file = os.path.join(path, 'config_shaper_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -774,7 +774,7 @@ def import_templates_list(parent, path):
     После создания шаблона, он инициализируется страницей HTML по умолчанию для данного типа шаблона.
     """
     json_file = os.path.join(path, 'config_templates_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -845,7 +845,7 @@ def import_templates_list(parent, path):
 def import_url_categories(parent, path):
     """Импортировать группы URL категорий с содержимым"""
     json_file = os.path.join(path, 'config_url_categories.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -908,7 +908,7 @@ def import_url_categories(parent, path):
 def import_custom_url_category(parent, path):
     """Импортируем изменённые категории URL"""
     json_file = os.path.join(path, 'custom_url_categories.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -965,7 +965,7 @@ def import_custom_url_category(parent, path):
 def import_application_signature(parent, path):
     """Импортируем список Приложения"""
     json_file = os.path.join(path, 'config_applications.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1027,7 +1027,7 @@ def import_application_signature(parent, path):
 def import_app_profiles(parent, path):
     """Импортируем профили приложений"""
     json_file = os.path.join(path, 'config_app_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1087,7 +1087,7 @@ def import_app_profiles(parent, path):
 def import_application_groups(parent, path):
     """Импортировать группы приложений на UTM"""
     json_file = os.path.join(path, 'config_application_groups.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1166,7 +1166,7 @@ def import_application_groups(parent, path):
 def import_email_groups(parent, path):
     """Импортируем группы почтовых адресов."""
     json_file = os.path.join(path, 'config_email_groups.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1234,7 +1234,7 @@ def import_email_groups(parent, path):
 def import_phone_groups(parent, path):
     """Импортируем группы телефонных номеров."""
     json_file = os.path.join(path, 'config_phone_groups.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1302,7 +1302,7 @@ def import_phone_groups(parent, path):
 def import_custom_idps_signature(parent, path):
     """Импортируем пользовательские сигнатуры СОВ."""
     json_file = os.path.join(path, 'custom_idps_signatures.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1359,7 +1359,7 @@ def import_custom_idps_signature(parent, path):
 def import_idps_profiles(parent, path):
     """Импортируем профили СОВ"""
     json_file = os.path.join(path, 'config_idps_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1435,7 +1435,7 @@ def import_idps_profiles(parent, path):
 def import_notification_profiles(parent, path):
     """Импортируем список профилей оповещения"""
     json_file = os.path.join(path, 'config_notification_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1481,7 +1481,7 @@ def import_notification_profiles(parent, path):
 def import_netflow_profiles(parent, path):
     """Импортируем список профилей netflow"""
     json_file = os.path.join(path, 'config_netflow_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1525,7 +1525,7 @@ def import_netflow_profiles(parent, path):
 def import_lldp_profiles(parent, path):
     """Импортируем список профилей LLDP"""
     json_file = os.path.join(path, 'config_lldp_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1569,7 +1569,7 @@ def import_lldp_profiles(parent, path):
 def import_ssl_profiles(parent, path):
     """Импортируем список профилей SSL"""
     json_file = os.path.join(path, 'config_ssl_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1611,7 +1611,7 @@ def import_ssl_profiles(parent, path):
 def import_ssl_forward_profiles(parent, path):
     """Импортируем профили пересылки SSL"""
     json_file = os.path.join(path, 'config_ssl_forward_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1655,7 +1655,7 @@ def import_ssl_forward_profiles(parent, path):
 def import_hip_objects(parent, path):
     """Импортируем HIP объекты"""
     json_file = os.path.join(path, 'config_hip_objects.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1698,7 +1698,7 @@ def import_hip_objects(parent, path):
 def import_hip_profiles(parent, path):
     """Импортируем HIP профили"""
     json_file = os.path.join(path, 'config_hip_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1749,7 +1749,7 @@ def import_hip_profiles(parent, path):
 def import_bfd_profiles(parent, path):
     """Импортируем профили BFD"""
     json_file = os.path.join(path, 'config_bfd_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1792,7 +1792,7 @@ def import_bfd_profiles(parent, path):
 def import_useridagent_syslog_filters(parent, path):
     """Импортируем syslog фильтры UserID агента"""
     json_file = os.path.join(path, 'config_useridagent_syslog_filters.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1838,7 +1838,7 @@ def import_useridagent_syslog_filters(parent, path):
 def import_scenarios(parent, path):
     """Импортируем список сценариев"""
     json_file = os.path.join(path, 'config_scenarios.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1912,7 +1912,7 @@ def import_scenarios(parent, path):
 def import_zones(parent, path):
     """Импортируем зоны на NGFW, если они есть."""
     json_file = os.path.join(path, 'config_zones.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2030,6 +2030,13 @@ def import_zones(parent, path):
 
 def import_interfaces(parent, path):
     """Импортируем интерфесы Tunnel и Vlan."""
+    json_file = os.path.join(path, 'config_interfaces.json')
+    err, data = func.read_json_file(parent, json_file, mode=2)
+    if err:
+        return
+
+    parent.stepChanged.emit(f'BLUE|Импорт интерфейсов на узел кластера "{parent.node_name}"')
+
     if not parent.mc_data['interfaces']:
         if get_interfaces_list(parent):        # Получаем все интерфейсы группы шаблонов и заполняем: parent.mc_data['interfaces']
             parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
@@ -2045,16 +2052,10 @@ def import_interfaces(parent, path):
             parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
             return
 
-    json_file = os.path.join(path, 'config_interfaces.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
     kinds = set()
     for item in data:
         kinds.add(item['kind'])
 
-    parent.stepChanged.emit(f'BLUE|Импорт интерфейсов на узел кластера "{parent.node_name}"')
     if 'tunnel' in kinds:
         import_ipip_interfaces(parent, path, data)
     if 'vlan' in kinds:
@@ -2226,7 +2227,7 @@ def import_gateways(parent, path):
 def import_gateways_list(parent, path):
     """Импортируем список шлюзов"""
     json_file = os.path.join(path, 'config_gateways.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2319,7 +2320,7 @@ def import_gateways_list(parent, path):
 def import_gateway_failover(parent, path):
     """Импортируем настройки проверки сети"""
     json_file = os.path.join(path, 'config_gateway_failover.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2342,18 +2343,17 @@ def import_dhcp_subnets(parent, path):
         if parent.ngfw_ports == 1:
             parent.error = 1
         return
-    else:
-        if isinstance(parent.ngfw_ports, list) and not parent.dhcp_settings:
-            json_file = os.path.join(path, 'config_dhcp_subnets.json')
-            err, parent.dhcp_settings = func.read_json_file(parent, json_file, mode=1)
-            if err:
+
+    if isinstance(parent.ngfw_ports, list) and not parent.dhcp_settings:
+        json_file = os.path.join(path, 'config_dhcp_subnets.json')
+        err, parent.dhcp_settings = func.read_json_file(parent, json_file)
+        if err:
+            return
+        if not parent.mc_data['interfaces']:
+            if get_interfaces_list(parent):        # Получаем все интерфейсы группы шаблонов и заполняем: parent.mc_data['interfaces']
+                parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
                 return
-            if not parent.mc_data['interfaces']:
-                if get_interfaces_list(parent):        # Получаем все интерфейсы группы шаблонов и заполняем: parent.mc_data['interfaces']
-                    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
-                    return
-            parent.ngfw_ports = [x.split(':')[0] for x in parent.mc_data['interfaces'] if x.split(':')[1] == parent.node_name]
-    error = 0
+        parent.ngfw_ports = [x.split(':')[0] for x in parent.mc_data['interfaces'] if x.split(':')[1] == parent.node_name]
 
     err, result = parent.utm.get_template_dhcp_list(parent.template_id)
     if err:
@@ -2362,6 +2362,7 @@ def import_dhcp_subnets(parent, path):
         parent.error = 1
         return
     mc_dhcp_subnets = [x['name'] for x in result]
+    error = 0
 
     for item in parent.dhcp_settings:
         if 'node_name' in item:
@@ -2410,7 +2411,7 @@ def import_dns_config(parent, path):
 def import_dns_servers(parent, path):
     """Импортируем список системных DNS серверов"""
     json_file = os.path.join(path, 'config_dns_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2437,7 +2438,7 @@ def import_dns_servers(parent, path):
 def import_dns_proxy(parent, path):
     """Импортируем настройки DNS прокси"""
     json_file = os.path.join(path, 'config_dns_proxy.json')
-    err, result = func.read_json_file(parent, json_file, mode=1)
+    err, result = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2459,7 +2460,7 @@ def import_dns_proxy(parent, path):
 def import_dns_rules(parent, path):
     """Импортируем правила DNS-прокси"""
     json_file = os.path.join(path, 'config_dns_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2485,7 +2486,7 @@ def import_dns_rules(parent, path):
 def import_dns_static(parent, path):
     """Импортируем статические записи DNS"""
     json_file = os.path.join(path, 'config_dns_static.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2512,7 +2513,7 @@ def import_dns_static(parent, path):
 def import_vrf(parent, path):
     """Импортируем виртуальный маршрутизатор по умолчанию"""
     json_file = os.path.join(path, 'config_vrf.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2678,7 +2679,7 @@ def import_vrf(parent, path):
 def import_wccp_rules(parent, path):
     """Импортируем список правил WCCP"""
     json_file = os.path.join(path, 'config_wccp.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2757,7 +2758,7 @@ def import_certificates(parent, path):
         files = [entry.name for entry in os.scandir(cert_path) if entry.is_file()]
 
         json_file = os.path.join(cert_path, 'certificate_list.json')
-        err, data = func.read_json_file(parent, json_file, mode=1)
+        err, data = func.read_json_file(parent, json_file)
         if err:
             continue
 
@@ -2829,7 +2830,7 @@ def import_certificates(parent, path):
 def import_client_certificate_profiles(parent, path):
     """Импортируем профили пользовательских сертификатов в шаблон"""
     json_file = os.path.join(path, 'users_certificate_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2884,7 +2885,7 @@ def import_general_settings(parent, path):
 def import_ui(parent, path):
     """Импортируем раздел UserGate/Настройки/Настройки интерфейса"""
     json_file = os.path.join(path, 'config_settings_ui.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2964,7 +2965,7 @@ def import_ui(parent, path):
 def import_ntp_settings(parent, path):
     """Импортируем настройки NTP в шаблон"""
     json_file = os.path.join(path, 'config_ntp.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3005,7 +3006,7 @@ def import_ntp_settings(parent, path):
 def import_proxy_port(parent, path):
     """Импортируем HTTP(S)-прокси порт в шаблон"""
     json_file = os.path.join(path, 'config_proxy_port.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3023,7 +3024,7 @@ def import_proxy_port(parent, path):
 def import_modules(parent, path):
     """Импортируем модули"""
     json_file = os.path.join(path, 'config_settings_modules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3070,7 +3071,7 @@ def import_modules(parent, path):
 def import_cache_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
     json_file = os.path.join(path, 'config_proxy_settings.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3114,7 +3115,7 @@ def import_cache_settings(parent, path):
 def import_proxy_exceptions(parent, path):
     """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
     json_file = os.path.join(path, 'config_proxy_exceptions.json')
-    err, exceptions = func.read_json_file(parent, json_file, mode=1)
+    err, exceptions = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3167,7 +3168,7 @@ def import_proxy_exceptions(parent, path):
 def import_web_portal_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Веб-портал'"""
     json_file = os.path.join(path, 'config_web_portal.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3256,7 +3257,7 @@ def import_web_portal_settings(parent, path):
 def import_upstream_proxy_settings(parent, path):
     """Импортируем настройки вышестоящего прокси"""
     json_file = os.path.join(path, 'upstream_proxy_settings.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3281,7 +3282,7 @@ def import_upstream_proxy_settings(parent, path):
 def import_upstream_update_proxy_settings(parent, path):
     """Импортируем настройки вышестоящего прокси для проверки лицензий и обновлений"""
     json_file = os.path.join(path, 'upstream_update_proxy.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3307,7 +3308,7 @@ def import_upstream_update_proxy_settings(parent, path):
 def import_local_groups(parent, path):
     """Импортируем список локальных групп пользователей"""
     json_file = os.path.join(path, 'config_groups.json')
-    err, groups = func.read_json_file(parent, json_file, mode=1)
+    err, groups = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3377,7 +3378,7 @@ def import_local_groups(parent, path):
 def import_local_users(parent, path):
     """Импортируем локальных пользователей и добавляем их в группы"""
     json_file = os.path.join(path, 'config_users.json')
-    err, users = func.read_json_file(parent, json_file, mode=1)
+    err, users = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3448,7 +3449,7 @@ def import_auth_servers(parent, path):
 def import_ldap_servers(parent, path, ldap_servers):
     """Импортируем список серверов LDAP"""
     json_file = os.path.join(path, 'config_ldap_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3484,7 +3485,7 @@ def import_ldap_servers(parent, path, ldap_servers):
 def import_ntlm_server(parent, path, ntlm_servers):
     """Импортируем список серверов NTLM"""
     json_file = os.path.join(path, 'config_ntlm_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3518,7 +3519,7 @@ def import_ntlm_server(parent, path, ntlm_servers):
 def import_radius_server(parent, path, radius_servers):
     """Импортируем список серверов RADIUS"""
     json_file = os.path.join(path, 'config_radius_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3553,7 +3554,7 @@ def import_radius_server(parent, path, radius_servers):
 def import_tacacs_server(parent, path, tacacs_servers):
     """Импортируем список серверов TACACS+"""
     json_file = os.path.join(path, 'config_tacacs_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3588,7 +3589,7 @@ def import_tacacs_server(parent, path, tacacs_servers):
 def import_saml_server(parent, path, saml_servers):
     """Импортируем список серверов SAML"""
     json_file = os.path.join(path, 'config_saml_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3630,7 +3631,7 @@ def import_saml_server(parent, path, saml_servers):
 def import_2fa_profiles(parent, path):
     """Импортируем список 2FA профилей"""
     json_file = os.path.join(path, 'config_2fa_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3687,7 +3688,7 @@ def import_2fa_profiles(parent, path):
 def import_auth_profiles(parent, path):
     """Импортируем список профилей аутентификации"""
     json_file = os.path.join(path, 'config_auth_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3766,7 +3767,7 @@ def import_auth_profiles(parent, path):
 def import_captive_profiles(parent, path):
     """Импортируем список Captive-профилей"""
     json_file = os.path.join(path, 'config_captive_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3870,7 +3871,7 @@ def import_captive_profiles(parent, path):
 def import_captive_portal_rules(parent, path):
     """Импортируем список правил Captive-портала"""
     json_file = os.path.join(path, 'config_captive_portal_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3937,7 +3938,7 @@ def import_captive_portal_rules(parent, path):
 def import_terminal_servers(parent, path):
     """Импортируем список терминальных серверов"""
     json_file = os.path.join(path, 'config_terminal_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3998,7 +3999,7 @@ def import_userid_agent(parent, path):
 def import_agent_config_old_version(parent, path):
     """Импортируем настройки UserID агент (для версий МС 7.1 и 8.0)"""
     json_file = os.path.join(path, 'userid_agent_config.json')
-    err, result = func.read_json_file(parent, json_file, mode=1)
+    err, result = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4043,12 +4044,12 @@ def import_agent_config_old_version(parent, path):
 def import_agent_config(parent, path):
     """Импортируем настройки UserID агент"""
     json_file = os.path.join(path, 'userid_agent_config.json')
-    err, config_data = func.read_json_file(parent, json_file, mode=1)
+    err, config_data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
     json_file = os.path.join(parent.config_path, 'version.json')
-    err, source_version = func.read_json_file(parent, json_file, mode=1)
+    err, source_version = func.read_json_file(parent, json_file, mode=2)
     if err:
         if err == 1:
             parent.stepChanged.emit(f'RED|Проблема с файлом {json_file} при импорте свойств агента UserID.')
@@ -4149,7 +4150,7 @@ def set_useridagent_config(parent, data, useridagent_config):
 def import_agent_servers_old(parent, path):
     """Импортируем настройки AD и свойств отправителя syslog UserID агент (для версий МС 7.1 и 8.0)"""
     json_file = os.path.join(path, 'userid_agent_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4226,7 +4227,7 @@ def import_agent_servers_old(parent, path):
 def import_agent_servers(parent, path):
     """Импортируем коннекторы UserID агент"""
     json_file = os.path.join(path, 'userid_agent_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4318,7 +4319,7 @@ def import_agent_servers(parent, path):
 def import_firewall_rules(parent, path):
     """Импортируем правила межсетевого экрана"""
     json_file = os.path.join(path, 'config_firewall_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4440,7 +4441,7 @@ def import_firewall_rules(parent, path):
 def import_nat_rules(parent, path):
     """Импортируем список правил NAT"""
     json_file = os.path.join(path, 'config_nat_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4539,15 +4540,15 @@ def import_loadbalancing_rules(parent, path):
 
 def import_loadbalancing_tcpudp(parent, path, balansing_servers):
     """Импортируем балансировщики TCP/UDP"""
+    parent.stepChanged.emit('BLUE|    Импорт балансировщиков TCP/UDP.')
     json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err in (2, 3):
         parent.stepChanged.emit(f'GRAY|    Нет балансировщиков TCP/UDP для импорта.')
         return
     elif err == 1:
         return
 
-    parent.stepChanged.emit('BLUE|    Импорт балансировщиков TCP/UDP.')
     tcpudp_rules = {x['name']: x['id'] for x in balansing_servers if x['type'] == 'ipvs'}
     error = 0
 
@@ -4582,15 +4583,15 @@ def import_loadbalancing_tcpudp(parent, path, balansing_servers):
 
 def import_loadbalancing_icap(parent, path, balansing_servers):
     """Импортируем балансировщики ICAP"""
+    parent.stepChanged.emit('BLUE|    Импорт балансировщиков ICAP.')
     json_file = os.path.join(path, 'config_loadbalancing_icap.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err in (2, 3):
         parent.stepChanged.emit(f'GRAY|    Нет балансировщиков ICAP для импорта.')
         return
     elif err == 1:
         return
 
-    parent.stepChanged.emit('BLUE|    Импорт балансировщиков ICAP.')
     error = 0
 
     if not parent.mc_data['icap_servers']:
@@ -4640,15 +4641,15 @@ def import_loadbalancing_icap(parent, path, balansing_servers):
 
 def import_loadbalancing_reverse(parent, path, balansing_servers):
     """Импортируем балансировщики reverse-proxy"""
+    parent.stepChanged.emit('BLUE|    Импорт балансировщиков Reverse-proxy.')
     json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err in (2, 3):
         parent.stepChanged.emit(f'GRAY|    Нет балансировщиков Reverse-proxy для импорта.')
         return
     elif err == 1:
         return
 
-    parent.stepChanged.emit('BLUE|    Импорт балансировщиков Reverse-proxy.')
     error = 0
 
     if not parent.mc_data['reverseproxy_servers']:
@@ -4699,7 +4700,7 @@ def import_loadbalancing_reverse(parent, path, balansing_servers):
 def import_shaper_rules(parent, path):
     """Импортируем список правил пропускной способности"""
     json_file = os.path.join(path, 'config_shaper_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4776,7 +4777,7 @@ def import_shaper_rules(parent, path):
 def import_content_rules(parent, path):
     """Импортировать список правил фильтрации контента"""
     json_file = os.path.join(path, 'config_content_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4911,7 +4912,7 @@ def import_content_rules(parent, path):
 def import_safebrowsing_rules(parent, path):
     """Импортируем список правил веб-безопасности"""
     json_file = os.path.join(path, 'config_safebrowsing_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4965,7 +4966,7 @@ def import_safebrowsing_rules(parent, path):
 def import_tunnel_inspection_rules(parent, path):
     """Импортируем список правил инспектирования туннелей"""
     json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5015,7 +5016,7 @@ def import_tunnel_inspection_rules(parent, path):
 def import_ssldecrypt_rules(parent, path):
     """Импортируем список правил инспектирования SSL"""
     json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5092,7 +5093,7 @@ def import_ssldecrypt_rules(parent, path):
 def import_sshdecrypt_rules(parent, path):
     """Импортируем список правил инспектирования SSH"""
     json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5150,7 +5151,7 @@ def import_mailsecurity(parent, path):
 def import_mailsecurity_rules(parent, path):
     """Импортируем список правил защиты почтового трафика"""
     json_file = os.path.join(path, 'config_mailsecurity_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5228,18 +5229,20 @@ def import_mailsecurity_rules(parent, path):
 def import_mailsecurity_antispam(parent, path):
     """Импортируем dnsbl и batv защиты почтового трафика"""
     json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
+
+    parent.stepChanged.emit('BLUE|Импорт настроек антиспама защиты почтового трафика в раздел "Политики безопасности/Защита почтового трафика".')
 
     json_file = os.path.join(path, 'config_mailsecurity_batv.json')
     err, batv = func.read_json_file(parent, json_file, mode=1)
     if err:
         data['enabled'] = False
+        parent.stepChanged.emit('ORANGE|       В настройках антиспама BATV будет отключён.')
     else:
         data['enabled'] = batv['enabled']
 
-    parent.stepChanged.emit('BLUE|Импорт настроек антиспама защиты почтового трафика в раздел "Политики безопасности/Защита почтового трафика".')
 
     data['white_list'] = get_ips_id(parent, 'white_list', data['white_list'], {'name': 'antispam DNSBL'})
     data['black_list'] = get_ips_id(parent, 'black_list', data['black_list'], {'name': 'antispam DNSBL'})
@@ -5256,7 +5259,7 @@ def import_mailsecurity_antispam(parent, path):
 def import_icap_servers(parent, path):
     """Импортируем список серверов ICAP"""
     json_file = os.path.join(path, 'config_icap_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5301,7 +5304,7 @@ def import_icap_servers(parent, path):
 def import_icap_rules(parent, path):
     """Импортируем список правил ICAP"""
     json_file = os.path.join(path, 'config_icap_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5400,7 +5403,7 @@ def import_icap_rules(parent, path):
 def import_dos_profiles(parent, path):
     """Импортируем список профилей DoS"""
     json_file = os.path.join(path, 'config_dos_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5444,7 +5447,7 @@ def import_dos_profiles(parent, path):
 def import_dos_rules(parent, path):
     """Импортируем список правил защиты DoS"""
     json_file = os.path.join(path, 'config_dos_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5522,7 +5525,7 @@ def import_dos_rules(parent, path):
 def import_waf_custom_layers(parent, path):
     """Импортируем Персональные слои WAF"""
     json_file = os.path.join(path, 'config_waf_custom_layers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5562,7 +5565,7 @@ def import_waf_custom_layers(parent, path):
 def import_waf_profiles(parent, path):
     """Импортируем профили WAF"""
     json_file = os.path.join(path, 'config_waf_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5651,11 +5654,12 @@ def import_waf_profiles(parent, path):
 #-------------------------------------------- Глобальный портал --------------------------------------------------
 def import_proxyportal_rules(parent, path):
     """Импортируем список URL-ресурсов веб-портала"""
-    parent.stepChanged.emit('BLUE|Импорт списка ресурсов веб-портала в раздел "Глобальный портал/Веб-портал".')
     json_file = os.path.join(path, 'config_web_portal.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
+
+    parent.stepChanged.emit('BLUE|Импорт списка ресурсов веб-портала в раздел "Глобальный портал/Веб-портал".')
     error = 0
 
     err, result = parent.utm.get_template_proxyportal_rules(parent.template_id)
@@ -5716,7 +5720,7 @@ def import_proxyportal_rules(parent, path):
 def import_reverseproxy_servers(parent, path):
     """Импортируем список серверов reverse-прокси"""
     json_file = os.path.join(path, 'config_reverseproxy_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5760,7 +5764,7 @@ def import_reverseproxy_servers(parent, path):
 def import_reverseproxy_rules(parent, path):
     """Импортируем список правил reverse-прокси"""
     json_file = os.path.join(path, 'config_reverseproxy_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5922,7 +5926,7 @@ def import_reverseproxy_rules(parent, path):
 def import_vpnclient_security_profiles(parent, path):
     """Импортируем клиентские профилей безопасности VPN"""
     json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5974,7 +5978,7 @@ def import_vpnclient_security_profiles(parent, path):
 def import_vpnserver_security_profiles(parent, path):
     """Импортируем серверные профилей безопасности VPN"""
     json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6040,7 +6044,7 @@ def import_vpnserver_security_profiles(parent, path):
 def import_vpn_networks(parent, path):
     """Импортируем список сетей VPN"""
     json_file = os.path.join(path, 'config_vpn_networks.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6103,7 +6107,7 @@ def get_networks(parent, networks, rule):
 def import_vpn_client_rules(parent, path):
     """Импортируем список клиентских правил VPN"""
     json_file = os.path.join(path, 'config_vpn_client_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6173,7 +6177,7 @@ def import_vpn_client_rules(parent, path):
 def import_vpn_server_rules(parent, path):
     """Импортируем список серверных правил VPN"""
     json_file = os.path.join(path, 'config_vpn_server_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6268,7 +6272,7 @@ def import_vpn_server_rules(parent, path):
 def import_notification_alert_rules(parent, path):
     """Импортируем список правил оповещений"""
     json_file = os.path.join(path, 'config_alert_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6355,7 +6359,7 @@ def import_notification_alert_rules(parent, path):
 def import_snmp_security_profiles(parent, path):
     """Импортируем профили безопасности SNMP"""
     json_file = os.path.join(path, 'config_snmp_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6402,23 +6406,24 @@ def import_snmp_security_profiles(parent, path):
 
 def import_snmp_settings(parent, path):
     """Импортируем параметры SNMP"""
-    parent.stepChanged.emit('BLUE|Импорт параметров SNMP в раздел "Диагностика и мониторинг/Параметры SNMP".')
     json_file = os.path.join(path, 'config_snmp_engine.json')
-    err, engine = func.read_json_file(parent, json_file, mode=1)
+    err, engine = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
     json_file = os.path.join(path, 'config_snmp_sysname.json')
-    err, sysname = func.read_json_file(parent, json_file, mode=1)
+    err, sysname = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
     json_file = os.path.join(path, 'config_snmp_syslocation.json')
-    err, syslocation = func.read_json_file(parent, json_file, mode=1)
+    err, syslocation = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
     json_file = os.path.join(path, 'config_snmp_sysdescription.json')
-    err, sysdescription = func.read_json_file(parent, json_file, mode=1)
+    err, sysdescription = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
+
+    parent.stepChanged.emit('BLUE|Импорт параметров SNMP в раздел "Диагностика и мониторинг/Параметры SNMP".')
 
     data = {
         'name': parent.node_name,
@@ -6442,7 +6447,7 @@ def import_snmp_settings(parent, path):
 def import_snmp_rules(parent, path):
     """Импортируем список правил SNMP"""
     json_file = os.path.join(path, 'config_snmp_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 

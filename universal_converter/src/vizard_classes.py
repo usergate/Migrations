@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.6 10.12.2024
+# Версия 1.7    20.12.2024
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -673,7 +673,7 @@ class SelectImportMode(SelectMode):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_ug_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
@@ -720,7 +720,7 @@ class SelectImportMode(SelectMode):
     def import_dhcp(self, ngfw_interfaces):
         dhcp_path = os.path.join(self.current_ug_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
@@ -953,7 +953,7 @@ class SelectMcImportMode(SelectMode):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_ug_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
@@ -995,7 +995,7 @@ class SelectMcImportMode(SelectMode):
     def import_dhcp(self, mc_interfaces):
         dhcp_path = os.path.join(self.current_ug_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 

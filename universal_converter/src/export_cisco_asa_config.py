@@ -2478,8 +2478,9 @@ def convert_nat_rule(parent, path, data):
 def create_rule_service(parent, rule_service, mode='fw'):
     """Для ACE. Создаём сервис, заданный непосредственно в правиле, а не в сервисной группе."""
     if mode == 'dnat':
-        rule_service['dst_ips'] = ug_services.get(rule_service['dst_ips'], rule_service['dst_ips'])
-        if rule_service['dst_ips'].upper() in parent.services:
+        if rule_service['dst_ips'] in ug_services:
+            return ug_services[rule_service['dst_ips']]
+        elif rule_service['dst_ips'].upper() in parent.services:
             return rule_service['dst_ips'].upper()
         else:
             rule_service['dst_ips'] = get_service_number(rule_service['dst_ips'])

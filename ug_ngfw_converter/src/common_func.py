@@ -20,10 +20,10 @@
 #-----------------------------------------------------------------------------
 # common_func.py
 # Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 2.0  16.12.2024
+# Версия 2.2  20.12.2024
 #
 
-import os, json, pickle
+import os, json, pickle, uuid
 import ipaddress
 from PyQt6.QtWidgets import QMessageBox
 from services import trans_filename, trans_name, trans_userlogin
@@ -79,25 +79,32 @@ def write_bin_file(parent, data, bin_file_path='temporary_data.bin'):
 
 
 def read_json_file(parent, json_file_path, mode=0):
-    """Читаем json-файл с конфигурацией."""
+    """
+    Читаем json-файл с конфигурацией.
+    mode = 0 - ничего не печатается
+    mode = 1 - печатается всё
+    mode = 2 - печатаются ошибки формата файла
+    """
     try:
         with open(json_file_path, "r") as fh:
             data = json.load(fh)
     except ValueError as err:
-        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
-        parent.error = 1
+        if mode:
+            parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
+            parent.error = 1
         return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
     except json.JSONDecodeError as err:
-        parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
-        parent.error = 1
+        if mode:
+            parent.stepChanged.emit(f'RED|    JSONDecodeError: {err} "{json_file_path}".')
+            parent.error = 1
         return 1, f'RED|    JSONDecodeError: {err} "{json_file_path}".'
     except FileNotFoundError as err:
-        if not mode:
+        if mode == 1:
             parent.stepChanged.emit(f'RED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!')
             parent.error = 1
         return 2, f'bRED|    Error: Не найден файл "{json_file_path}" с сохранённой конфигурацией!'
     if not data:
-        if not mode:
+        if mode == 1:
             parent.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
         return 3, f'GRAY|    Файл "{json_file_path}" пуст.'
     return 0, data
@@ -206,7 +213,7 @@ def get_netroute(net):
         return 1, err
 
 
-def get_restricted_name(name):
+def get_restricted_name(name, default_name=None):
     """
     Получить имя объекта без запрещённых спецсимволов.
     Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
@@ -214,11 +221,14 @@ def get_restricted_name(name):
     if isinstance(name, str):
         new_name = name.translate(trans_name).strip()
         forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'}
-        while new_name[0] in forbidden_values:
-            new_name = new_name[1:]
+        try:
+            while new_name[0] in forbidden_values:
+                new_name = new_name[1:]
+        except IndexError:
+            new_name = default_name if default_name else str(uuid.uuid4()).split('-')[4]
         return new_name
     else:
-        return 'Name not valid'
+        return f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'
 
 def get_restricted_userlogin(user_login):
     """

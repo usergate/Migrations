@@ -21,6 +21,7 @@ class UtmXmlRpc:
         self._auth_token = None
         self._server = None
         self.node_name = None
+        self.product = None
         self.version = None
         self.version_hight = None
         self.version_midle = None
@@ -59,6 +60,7 @@ class UtmXmlRpc:
         else:
             self._auth_token = result.get('auth_token')
             self.node_name =  result.get('node')
+            self.product = result.get('product', None)
             self.version = result.get('version')
             tmp = self.version.split(".")
             self.version_hight = int(tmp[0])
@@ -1990,6 +1992,15 @@ class UtmXmlRpc:
         else:
             return 0, result     # Возвращает True
 
+################################### Политики безопасности #####################################
+    def get_content_profiles(self):
+        """Получить список профилей фильтрации контента. Только для DCFW"""
+        try:
+            result = self._server.v2.content.profiles.list(self._auth_token, 0, 100000, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_content_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
     def get_content_rules(self):
         """Получить список правил фильтрации контента"""
         try:
@@ -2356,6 +2367,7 @@ class UtmXmlRpc:
             return 1, f'Error utm.update_dos_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
+################################### Глобальный портал #####################################
     def get_proxyportal_rules(self):
         """Получить список ресурсов URL веб-портала"""
         try:

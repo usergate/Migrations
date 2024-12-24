@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_temporary_data.py
 # Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 1.7  16.12.2024    (идентично ug_ngfw_converter и universal_converter)
+# Version 1.8  20.12.2024    (идентично ug_ngfw_converter и universal_converter)
 #
 
 import os, sys
@@ -149,12 +149,13 @@ class GetExportTemporaryData(QThread):
             self.ngfw_data['service_groups'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
         # Получаем список типов контента
-        self.stepChanged.emit(f'BLACK|    Получаем список типов контента')
-        err, result = self.utm.get_nlists_list('mime')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.ngfw_data['mime'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        if self.utm.product != 'dcfw':
+            self.stepChanged.emit(f'BLACK|    Получаем список типов контента')
+            err, result = self.utm.get_nlists_list('mime')
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.ngfw_data['mime'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
 
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений')
@@ -215,6 +216,7 @@ class GetImportTemporaryData(QThread):
             return
         self.ngfw_data['certs'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
         self.ngfw_data['certs'][-1] = -1
+        self.ngfw_data['certs'][0] = 0
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
@@ -308,12 +310,13 @@ class GetImportTemporaryData(QThread):
             self.ngfw_data['service_groups'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
         # Получаем список типов контента
-        self.stepChanged.emit(f'BLACK|    Получаем список типов контента')
-        err, result = self.utm.get_nlists_list('mime')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.ngfw_data['mime'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        if self.utm.product != 'dcfw':
+            self.stepChanged.emit(f'BLACK|    Получаем список типов контента')
+            err, result = self.utm.get_nlists_list('mime')
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.ngfw_data['mime'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
 
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений')

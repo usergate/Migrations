@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 2.6 07.10.2024
+# Версия 2.7 20.12.2024
 # Общий класс для работы с xml-rpc Management Center
 #
 # Коды возврата:
@@ -25,6 +25,7 @@ class McXmlRpc:
         self._logan_session_mc = None
         self._real_admin_id = None
         self.node_name = None
+        self.product = 'mc'
         self.version = None
         self.version_hight = None
         self.version_midle = None

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.8   17.12.2024
+# Версия 2.9   19.12.2024
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -27,12 +27,12 @@ class SelectAction(QWidget):
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
-        text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации UserGate NGFW</font></b>"
-        text2 = "Экспорт конфигурации из <b>UG NGFW</b> версий <b>5, 6, 7, 8</b> и сохранение её в файлах json в каталоге \
-<b>data</b> в текущей директории."
+        text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации UserGate: NGFW, DCFW, MC</font></b>"
+        text2 = "Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7, 8</b>), <b>DCFW</b> и сохранение её в файлах json \
+    в каталоге <b>data</b> в текущей директории."
         text3 = "Экспорт конфигурации из шаблона <b>UserGate Management Center</b> версии <b>7, 8</b> и сохранение её в файлах json в каталоге \
 <b>data</b> в текущей директории."
-        text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> версий <b>5, 6, 7, 8</b>."
+        text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7, 8</b>) и <b>DCFW</b>."
         text5 = "Импорт файлов конфигурации из каталога <b>data</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -47,7 +47,7 @@ class SelectAction(QWidget):
 
         btn_font = QFont("SansSerif", pointSize=9, weight=600)
 
-        self.btn_export = QPushButton("Экспорт конфигурации из UG NGFW")
+        self.btn_export = QPushButton("Экспорт конфигурации из UG NGFW|DCFW")
         self.btn_export.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_export.setFont(btn_font)
         self.btn_export.setFixedWidth(280)
@@ -61,7 +61,7 @@ class SelectAction(QWidget):
         self.btn_export_mc.setEnabled(False)
         self.btn_export_mc.clicked.connect(self.set_export_mc_page)
         
-        self.btn_import = QPushButton("Импорт конфигурации на UG NGFW")
+        self.btn_import = QPushButton("Импорт конфигурации на UG NGFW|DCFW")
         self.btn_import.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import.setFont(btn_font)
         self.btn_import.setFixedWidth(280)
@@ -152,6 +152,7 @@ class SelectMode(QWidget):
         self.selected_points = []
         self.current_path = None
         self.utm = None
+        self.product = 'NGFW'
         self.thread = None
         self.log_list = QListWidget()
         
@@ -246,8 +247,9 @@ class SelectMode(QWidget):
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
             self.utm = dialog.utm
+            self.product = 'NGFW' if self.utm.product == 'utm' else self.utm.product.upper()
             self.label_node_name.setText(f'  {self.utm.node_name}')
-            self.label_version.setText(f'Версия NGFW: {self.utm.version}')
+            self.label_version.setText(f'Версия {self.product}: {self.utm.version}')
             return True
         else:
             return False
@@ -315,12 +317,16 @@ class SelectMode(QWidget):
         self.thread = None
         self.enable_buttons()
 
+#    def read_version_file(self):
+#        with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'r') as fh:
+#            
+
 
 class SelectExportMode(SelectMode):
     """Класс для выбора раздела конфигурации для экспорта из NGFW. Номер в стеке 1."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.title.setText("<b><font color='green' size='+2'>Экспорт конфигурации из UserGate NGFW</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Экспорт конфигурации из UserGate</font></b>")
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2.setText("Экспорт выбранного раздела")
         self.btn2.clicked.connect(self.export_selected_points)
@@ -341,16 +347,18 @@ class SelectExportMode(SelectMode):
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
                 if self.get_auth(mod='fw'):
+                    self.title.setText(f"<b><font color='green' size='+2'>Экспорт конфигурации из UserGate {self.product}</font></b>")
                     self.enable_buttons()
                     self.tree.version = self.utm.float_version
+                    self.tree.product = self.utm.product
                     self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_export()
                     self.tree.setCurrentItem(self.tree.topLevelItem(0))
-                    title = f'Экспорт конфигурации из NGFW версии {self.utm.version} в каталог "{self.parent.get_config_path()}".'
+                    title = f'Экспорт конфигурации из {self.product} версии {self.utm.version} в каталог "{self.parent.get_config_path()}".'
                     self.add_item_log(f'{title:>100}', color='GREEN')
                     self.add_item_log(f'{"="*100}', color='ORANGE')
                     with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'w') as fh:
-                        json.dump({'device': 'NGFW', 'version': self.utm.version, 'float_version': self.utm.float_version}, fh, indent=4)
+                        json.dump({'device': self.product, 'version': self.utm.version, 'float_version': self.utm.float_version}, fh, indent=4)
                     self.init_temporary_data('export')
                 else:
                     self.run_page_0()
@@ -512,10 +520,10 @@ class SelectMcExportMode(SelectMode):
 
 
 class SelectImportMode(SelectMode):
-    """Класс для импорта конфигурации на NGFW. Номер в стеке 3."""
+    """Класс для импорта конфигурации на NGFW и DCFW. Номер в стеке 3."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate NGFW</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate</font></b>")
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
@@ -535,12 +543,13 @@ class SelectImportMode(SelectMode):
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
                 if self.get_auth(mod='fw'):
+                    self.title.setText(f"<b><font color='green' size='+2'>Импорт конфигурации на UserGate {self.product}</font></b>")
                     self.enable_buttons()
                     self.tree.version = self.utm.float_version
+                    self.tree.product = self.utm.product
                     self.tree.waf_license = self.utm.waf_license
                     self.tree.change_items_status_for_import(self.parent.get_config_path())
-                    self.tree.setCurrentItem(self.tree.topLevelItem(0))
-                    title = f'Импорт конфигурации из "{self.parent.get_config_path()}" на NGFW {self.utm.version}.'
+                    title = f'Импорт конфигурации из "{self.parent.get_config_path()}" на {self.product} {self.utm.version}.'
                     self.add_item_log(f'{title:>100}', color='GREEN')
                     self.add_item_log(f'{"="*100}', color='ORANGE')
                     self.init_temporary_data('import')
@@ -585,7 +594,7 @@ class SelectImportMode(SelectMode):
                 func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
         else:
-            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для импорта.")
+            func.message_inform(self, "Внимание!", "Нет данных для импорта.\n Выбранный раздел пуст. ")
 
     def import_all(self):
         """
@@ -596,6 +605,10 @@ class SelectImportMode(SelectMode):
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
+        if not all_points:
+            func.message_inform(self, "Внимание!", "Нет данных для импорта.")
+            return
+        
         arguments = {
             'ngfw_ports': '',
             'dhcp_settings': '',
@@ -647,7 +660,7 @@ class SelectImportMode(SelectMode):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         iface_path = os.path.join(self.current_path, 'Interfaces')
         json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
@@ -692,7 +705,7 @@ class SelectImportMode(SelectMode):
     def import_dhcp(self, ngfw_interfaces):
         dhcp_path = os.path.join(self.current_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
@@ -760,6 +773,16 @@ class SelectMcImportMode(SelectMode):
                         self.run_page_0()
                         return
 
+#                    err, version_data = func.read_json_file(self, os.path.join(self.parent.get_config_path(), 'version.json'))
+#                    if err:
+#                        message = f'Не удалось прочитать файл {os.path.join(self.parent.get_config_path(), "version.json")}'
+#                        self.add_item_log(message, color='RED')
+#                        func.message_alert(self, message, version_data.split('|')[1].lstrip())
+#                        self.run_page_0()
+#                        return
+#                    if 'device' in version_data:
+#                        self.tree.product = version_data['device'].lower()
+
                     groups_dialog = SelectMcGroupTemplates(self, self.parent)
                     groups_result = groups_dialog.exec()
                     if groups_result == QDialog.DialogCode.Accepted:
@@ -790,6 +813,7 @@ class SelectMcImportMode(SelectMode):
             if not err:
                 self.utm.waf_license = True
             self.tree.version = self.utm.float_version
+            self.tree.product = self.utm.product
             self.tree.waf_license = self.utm.waf_license
             self.tree.change_items_status_for_import(self.parent.get_config_path())
             title = f'Импорт конфигурации в шаблон "{self.templates_group_name}/{self.template_name}" на МС.'
@@ -911,7 +935,7 @@ class SelectMcImportMode(SelectMode):
     def import_dhcp(self, mc_interfaces):
         dhcp_path = os.path.join(self.current_path, 'DHCP')
         json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
-        err, data = func.read_json_file(self, json_file, mode=1)
+        err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
@@ -1348,6 +1372,7 @@ class MainTree(QTreeWidget):
         super().__init__()
         self.setStyleSheet(cs.Style.MainTree)
         self.version = None     # Версия NGFW
+        self.product = None     # Тип продукта (ngfw, dcfw, mc)
         self.waf_license = False
 
         self.compliances = {
@@ -1377,7 +1402,7 @@ class MainTree(QTreeWidget):
             "CaptiveProfiles": "Captive-профили",
             "TerminalServers": "Терминальные серверы",
             "MFAProfiles": "Профили MFA",
-            "UserIDagent": "UserID агент",
+            "UserIDagent": "Агент UserID",
             "BYODPolicies": "Политики BYOD",
             "NetworkPolicies": "Политики сети",
             "Firewall": "Межсетевой экран",
@@ -1457,8 +1482,8 @@ class MainTree(QTreeWidget):
                          "Профили пользовательских сертификатов"],
             "Сеть": ["Зоны", "Интерфейсы", "Шлюзы", "DHCP", "DNS", "Виртуальные маршрутизаторы", "WCCP", "Маршруты", "OSPF", "BGP"],
             "Пользователи и устройства": [
-                "Группы", "Пользователи", "Серверы аутентификации", "Профили аутентификации", "Captive-профили", "Captive-портал",
-                "Терминальные серверы", "Профили MFA", "Политики BYOD", "UserID агент",
+                "Группы", "Пользователи", "Профили MFA", "Серверы аутентификации", "Профили аутентификации", "Captive-профили", "Captive-портал",
+                "Терминальные серверы", "Политики BYOD", "Агент UserID"
             ],
             "Политики сети": ["Межсетевой экран", "NAT и маршрутизация", "Балансировка нагрузки", "Пропускная способность"],
             "Политики безопасности": [
@@ -1483,6 +1508,13 @@ class MainTree(QTreeWidget):
         }
 
         self.restricted_items = {
+            'dcfw-8.0': {
+                "WCCP", "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Политики BYOD", "Политики безопасности",
+                "Фильтрация контента", "Веб-безопасность", "Инспектирование туннелей", "Инспектирование SSL", "Инспектирование SSH",
+                "СОВ", "Правила АСУ ТП", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила", "Профили DoS",
+                "Правила защиты DoS", "Глобальный портал", "Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси",
+                "Профили безопасности VPN", "Профили АСУ ТП", "Морфология", "Useragent браузеров", "Типы контента", "Категории URL",
+                "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии"},
             8.0: {
                 "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
@@ -1496,7 +1528,7 @@ class MainTree(QTreeWidget):
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
                 "Политики BYOD",
-                "UserID агент",
+                "Агент UserID",
                 "Правила АСУ ТП",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
@@ -1510,7 +1542,7 @@ class MainTree(QTreeWidget):
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
                 "Инспектирование туннелей",
-                "UserID агент",
+                "Агент UserID",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
@@ -1524,7 +1556,7 @@ class MainTree(QTreeWidget):
                 "Профили пользовательских сертификатов",
                 "Виртуальные маршрутизаторы",
                 "Терминальные серверы",
-                "UserID агент",
+                "Агент UserID",
                 "Инспектирование туннелей",
                 "Инспектирование SSH",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
@@ -1561,10 +1593,15 @@ class MainTree(QTreeWidget):
     def change_items_status_for_export(self):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем остальные."""
 #        item = self.findItems(self.compliances[name], Qt.MatchFlag.MatchRecursive)[0]
-        if not self.waf_license and self.version >= 7.1:
-            self.restricted_items[self.version].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
+        if self.product == 'dcfw':
+            key = f'dcfw-{self.version}'
+            self.restricted_items[key].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
+        else:
+            key = self.version
+            if not self.waf_license and key >= 7.1:
+                self.restricted_items[key].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
         for item in self.findItems('*', Qt.MatchFlag.MatchWrap|Qt.MatchFlag.MatchWildcard|Qt.MatchFlag.MatchRecursive):
-            if item.text(0) in self.restricted_items[self.version]:
+            if item.text(0) in self.restricted_items[key]:
                 item.setHidden(True)
             else:
                 item.setHidden(False)
@@ -1572,11 +1609,16 @@ class MainTree(QTreeWidget):
 
     def change_items_status_for_import(self, current_path):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем те, для которых есть конфигурация."""
-        if not self.waf_license and self.version >= 7.1:
-            self.restricted_items[self.version].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
+        if self.product == 'dcfw':
+            key = f'dcfw-{self.version}'
+            self.restricted_items[key].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
+        else:
+            key = self.version
+            if not self.waf_license and key >= 7.1:
+                self.restricted_items[key].update({'WAF', 'WAF-профили', 'Персональные WAF-слои'})
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
-            if item.text(0) in self.restricted_items[self.version]:
+            if item.text(0) in self.restricted_items[key]:
                 item.setHidden(True)
             else:
                 item_dir = self.over_compliances[item.text(0)]
@@ -1587,7 +1629,7 @@ class MainTree(QTreeWidget):
                     for i in range(item.childCount()):
                         child_text = item.child(i).text(0)
                         try:
-                            if child_text in self.restricted_items[self.version]:
+                            if child_text in self.restricted_items[key]:
                                 item.child(i).setHidden(True)
                             else:
                                 child_dir = self.over_compliances[child_text]
@@ -1616,9 +1658,9 @@ class MainTree(QTreeWidget):
             else:
                 item_childs = []
                 for i in range(selected_item.childCount()):
-                    child_text = selected_item.child(i).text(0)
                     try:
-                        if child_text not in self.restricted_items[self.version]:
+                        if not selected_item.child(i).isHidden():
+                            child_text = selected_item.child(i).text(0)
                             item_childs.append(self.over_compliances[child_text])
                     except KeyError:
                         pass
@@ -1634,17 +1676,18 @@ class MainTree(QTreeWidget):
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
             item_text = self.over_compliances[item.text(0)]
-            if item_text in self.restricted_items[self.version]:
+            if item.isHidden():
                 continue
             item_childs = []
             for i in range(item.childCount()):
-                child_text = item.child(i).text(0)
                 try:
-                    if child_text not in self.restricted_items[self.version]:
+                    if not item.child(i).isHidden():
+                        child_text = item.child(i).text(0)
                         item_childs.append(self.over_compliances[child_text])
                 except KeyError:
                     pass
-            array.append({'path': item_text, 'points': item_childs})
+            if item_childs:
+                array.append({'path': item_text, 'points': item_childs})
         return array
 
     def set_current_item(self):

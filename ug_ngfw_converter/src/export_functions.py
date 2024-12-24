@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.2  10.12.2024
+# Версия 3.3  23.12.2024
 #
 
 import os, sys, json
@@ -172,6 +172,7 @@ def export_general_settings(parent, path):
         parent.error = 1
     else:
         if parent.utm.float_version >= 7.1:
+            data['tunnel_inspection_zone_config'].pop('cc', None)
             zone_number = data['tunnel_inspection_zone_config']['target_zone']
             data['tunnel_inspection_zone_config']['target_zone'] = parent.ngfw_data['zones'].get(zone_number, 'Unknown')
         json_file = os.path.join(path, 'config_settings_modules.json')
@@ -700,39 +701,41 @@ def export_gateways_list(parent, path):
 def export_dhcp_subnets(parent, path):
     """Экспортируем настройки DHCP"""
     parent.stepChanged.emit('BLUE|Экспорт настроек DHCP раздела "Сеть/DHCP".')
-    err, msg = func.create_dir(path)
+    err, data = parent.utm.get_dhcp_list()
     if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DHCP.')
         parent.error = 1
         return
-    error = 0
 
     err, result = parent.utm.get_interfaces_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DHCP.')
         parent.error = 1
         return
     else:
         iface_names = translate_iface_name(parent.utm.float_version, path, result)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
-    err, result = parent.utm.get_dhcp_list()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        error = 1
-    else:
-        for item in result:
+    if data:
+        for item in data:
             item['iface_id'] = iface_names[item['iface_id']]
             item.pop('id', None)
             item.pop('node_name', None)
             item.pop('cc', None)
 
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+            return
+
         json_file = os.path.join(path, 'config_dhcp_subnets.json')
         with open(json_file, 'w') as fh:
-            json.dump(result, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Настройки DHCP выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DHCP!' if error else out_message)
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Настройки DHCP выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет настроек DHCP для экспорта.')
 
 
 def export_dns_config(parent, path):
@@ -759,7 +762,6 @@ def export_dns_config(parent, path):
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
-        parent.error = 1
     else:
         json_file = os.path.join(path, 'config_dns_proxy.json')
         with open(json_file, 'w') as fh:
@@ -770,44 +772,47 @@ def export_dns_config(parent, path):
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
-        parent.error = 1
     else:
-        json_file = os.path.join(path, 'config_dns_servers.json')
-        with open(json_file, 'w') as fh:
-            json.dump(result, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список системных DNS серверов выгружен в файл "{json_file}".')
+        if result:
+            json_file = os.path.join(path, 'config_dns_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(result, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список системных DNS серверов выгружен в файл "{json_file}".')
     
     err, result = parent.utm.get_dns_rules()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
-        parent.error = 1
     else:
-        for item in result:
-            item.pop('id', None)
-            item.pop('cc', None)
-            item.pop('position_layer', None)
-        json_file = os.path.join(path, 'config_dns_rules.json')
-        with open(json_file, 'w') as fh:
-            json.dump(result, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список правил DNS прокси выгружен в файл "{json_file}".')
+        if result:
+            for item in result:
+                item.pop('id', None)
+                item.pop('cc', None)
+                item.pop('position_layer', None)
+            json_file = os.path.join(path, 'config_dns_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(result, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Список правил DNS прокси выгружен в файл "{json_file}".')
     
     err, result = parent.utm.get_dns_static_records()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
         error = 1
+    else:
+        if result:
+            for item in result:
+                item.pop('id', None)
+                item.pop('cc', None)
+            json_file = os.path.join(path, 'config_dns_static.json')
+            with open(json_file, 'w') as fh:
+                json.dump(result, fh, indent=4, ensure_ascii=False)
+            parent.stepChanged.emit(f'BLACK|    Статические записи DNS прокси выгружены в файл "{json_file}".')
+
+    if error:
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DNS.')
         parent.error = 1
     else:
-        for item in result:
-            item.pop('id', None)
-            item.pop('cc', None)
-        json_file = os.path.join(path, 'config_dns_static.json')
-        with open(json_file, 'w') as fh:
-            json.dump(result, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Статические записи DNS прокси выгружены в файл "{json_file}".')
-
-    out_message = f'GREEN|    Настройки DNS экспортированы в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек DNS!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Настройки DNS экспортированы в каталог "{path}".')
 
 
 def export_vrf_list(parent, path):
@@ -1212,45 +1217,60 @@ def export_auth_servers(parent, path):
     err, msg = func.create_dir(path)
     if err:
         parent.stepChanged.emit(f'RED|    {msg}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов аутентификации.')
         parent.error = 1
         return
-    error = 0
 
     err, ldap, radius, tacacs, ntlm, saml = parent.utm.get_auth_servers()
     if err:
         parent.stepChanged.emit(f'RED|    {ldap}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов аутентификации.')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    n = 0
+    if ldap:
         json_file = os.path.join(path, 'config_ldap_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(ldap, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список серверов LDAP выгружен в файл "{json_file}".')
-
+    else:
+        n += 1
+    if radius:
         json_file = os.path.join(path, 'config_radius_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(radius, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список серверов RADIUS выгружен в файл "{json_file}".')
-
+    else:
+        n += 1
+    if tacacs:
         json_file = os.path.join(path, 'config_tacacs_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(tacacs, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список серверов TACACS выгружен в файл "{json_file}".')
-
+    else:
+        n += 1
+    if ntlm:
         json_file = os.path.join(path, 'config_ntlm_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(ntlm, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список серверов NTLM выгружен в файл "{json_file}".')
-
+    else:
+        n += 1
+    if saml:
         for item in saml:
             item['certificate_id'] = parent.ngfw_data['certs'].get(item['certificate_id'], 0)
         json_file = os.path.join(path, 'config_saml_servers.json')
         with open(json_file, 'w') as fh:
             json.dump(saml, fh, indent=4, ensure_ascii=False)
         parent.stepChanged.emit(f'BLACK|    Список серверов SAML выгружен в файл "{json_file}".')
+    else:
+        n += 1
 
-    out_message = f'GREEN|    Список серверов аутентификации экспортирован успешно.'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка серверов аутентификации!' if error else out_message)
+    if n == 5:
+        parent.stepChanged.emit(f'GRAY|    Нет серверов аутентификации для экспорта.')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Список серверов аутентификации экспортирован.')
 
 
 def export_2fa_profiles(parent, path):
@@ -1276,6 +1296,7 @@ def export_2fa_profiles(parent, path):
         err, msg = func.create_dir(path)
         if err:
             parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка MFA профилей!')
             parent.error = 1
             return
 
@@ -1301,16 +1322,11 @@ def export_2fa_profiles(parent, path):
 def export_auth_profiles(parent, path):
     """Экспортируем список профилей аутентификации"""
     parent.stepChanged.emit('BLUE|Экспорт списка профилей авторизации из раздела "Пользователи и устройства/Профили аутентификации".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
 
     err, ldap, radius, tacacs, ntlm, saml = parent.utm.get_auth_servers()
     if err:
         parent.stepChanged.emit(f'RED|    {ldap}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации!')
         parent.error = 1
         return
     auth_servers = {x['id']: x['name'].strip().translate(trans_name) for x in [*ldap, *radius, *tacacs, *ntlm, *saml]}
@@ -1318,6 +1334,7 @@ def export_auth_profiles(parent, path):
     err, result = parent.utm.get_2fa_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации!')
         parent.error = 1
         return
     profiles_2fa = {x['id']: x['name'].strip().translate(trans_name) for x in result}
@@ -1325,13 +1342,15 @@ def export_auth_profiles(parent, path):
     err, data = parent.utm.get_auth_profiles()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации!')
         parent.error = 1
-        error = 1
-    else:
+        return
+
+    if data:
         for item in data:
             item.pop('id', None)
             item.pop('cc', None)
-            item['name'] = item['name'].strip().translate(trans_name)
+            item['name'] = func.get_restricted_name(item['name'])
             item['2fa_profile_id'] = profiles_2fa.get(item['2fa_profile_id'], False)
             for auth_method in item['allowed_auth_methods']:
                 if len(auth_method) == 2:
@@ -1341,12 +1360,18 @@ def export_auth_profiles(parent, path):
                         if isinstance(value, int):
                             auth_method[key] = auth_servers[value]
 
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации!')
+            parent.error = 1
+            return
         json_file = os.path.join(path, 'config_auth_profiles.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Список профилей аутентификации выгружен в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей аутентификации!' if error else out_message)
+        parent.stepChanged.emit(f'GREEN|    Список профилей аутентификации выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет профилей аутентификации для экспорта.')
 
 
 def export_captive_profiles(parent, path):
@@ -1636,12 +1661,13 @@ def export_firewall_rules(parent, path):
             return
         l7_profiles = {x['id']: x['name'] for x in result}
 
-        err, result = parent.utm.get_hip_profiles_list()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.error = 1
-            return
-        hip_profiles = {x['id']: x['name'] for x in result}
+        if parent.utm.product != 'dcfw':
+            err, result = parent.utm.get_hip_profiles_list()
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.error = 1
+                return
+            hip_profiles = {x['id']: x['name'] for x in result}
 
     duplicate = {}
     err, data = parent.utm.get_firewall_rules()
@@ -1684,8 +1710,12 @@ def export_firewall_rules(parent, path):
                     item['ips_profile'] = False
             if 'l7_profile' in item and item['l7_profile']:
                 item['l7_profile'] = l7_profiles[item['l7_profile']]
-            if 'hip_profiles' in item:
-                item['hip_profiles'] = [hip_profiles[x] for x in item['hip_profiles']]
+
+            if parent.utm.product == 'dcfw':
+                item['hip_profiles'] = []
+            else:
+                if 'hip_profiles' in item:
+                    item['hip_profiles'] = [hip_profiles[x] for x in item['hip_profiles']]
 
         json_file = os.path.join(path, 'config_firewall_rules.json')
         with open(json_file, 'w') as fh:
@@ -1764,73 +1794,109 @@ def export_nat_rules(parent, path):
 def export_loadbalancing_rules(parent, path):
     """Экспортируем список правил балансировки нагрузки"""
     parent.stepChanged.emit('BLUE|Экспорт правил балансировки нагрузки из раздела "Политики сети/Балансировка нагрузки".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
-
-    err, result = parent.utm.get_icap_servers()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    icap_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-
-    err, result = parent.utm.get_reverseproxy_servers()
-    if err:
-        parent.stepChanged.emit(f'RED|    {result}')
-        parent.error = 1
-        return
-    reverse_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
-
     err, tcpudp, icap, reverse = parent.utm.get_loadbalancing_rules()
     if err:
         parent.stepChanged.emit(f'RED|    {tcpudp}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил балансировки нагрузки.')
         parent.error = 1
-        error = 1
+        return
+
+    if tcpudp or icap or reverse:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил балансировки нагрузки.')
+            parent.error = 1
+            return
     else:
-        for item in tcpudp:
-            item.pop('id', None)
-            item.pop('guid', None)
-            item.pop('cc', None)
-            item['name'] = item['name'].strip().translate(trans_name)
-            if parent.utm.float_version < 7.1:
-                item['src_zones'] = []
-                item['src_zones_negate'] = False
-                item['src_ips'] = []
-                item['src_ips_negate'] = False
-            else:
-                item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
-                item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
-        json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
-        with open(json_file, 'w') as fh:
-            json.dump(tcpudp, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список балансировщиков TCP/UDP выгружен в файл "{json_file}".')
+        parent.stepChanged.emit(f'GRAY|    Нет правил балансировки нагрузки  для экспорта.')
+        return
 
-        for item in icap:
-            item.pop('id', None)
-            item.pop('cc', None)
-            item['name'] = item['name'].strip().translate(trans_name)
-            item['profiles'] = [icap_servers[x] for x in item['profiles']]
-        json_file = os.path.join(path, 'config_loadbalancing_icap.json')
-        with open(json_file, 'w') as fh:
-            json.dump(icap, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список балансировщиков ICAP выгружен в файл "{json_file}".')
+    tcp_err = 0; icap_err = 0; reverse_err = 0
+    if tcpudp:
+        tcp_err = export_loadbalancing_tcpudp(parent, path, tcpudp)
+    if parent.utm.product != 'dcfw':
+        if icap:
+            icap_err = export_loadbalancing_icap(parent, path, icap)
+        if reverse:
+            reverse_err = export_loadbalancing_reverse(parent, path, reverse)
 
-        for item in reverse:
-            item.pop('id', None)
-            item.pop('cc', None)
-            item['name'] = item['name'].strip().translate(trans_name)
-            item['profiles'] = [reverse_servers[x] for x in item['profiles']]
-        json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
-        with open(json_file, 'w') as fh:
-            json.dump(reverse, fh, indent=4, ensure_ascii=False)
-        parent.stepChanged.emit(f'BLACK|    Список балансировщиков reverse-прокси выгружен в файл "{json_file}".')
+    if tcp_err or icap_err or reverse_err:
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил балансировки нагрузки.')
+    else:
+        parent.stepChanged.emit('GREEN|    Экспорт правил балансировки нагрузки завершён.')
 
-    out_message = f'GREEN|    Правила балансировки нагрузки выгружены в каталог "{path}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил балансировки нагрузки.' if error else out_message)
+
+def export_loadbalancing_tcpudp(parent, path, tcpudp):
+    """Экспортируем балансировщики TCP/UDP"""
+    parent.stepChanged.emit('BLUE|    Экспортируем балансировщики TCP/UDP.')
+    for item in tcpudp:
+        item.pop('id', None)
+        item.pop('guid', None)
+        item.pop('cc', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        if parent.utm.float_version < 7.1:
+            item['src_zones'] = []
+            item['src_zones_negate'] = False
+            item['src_ips'] = []
+            item['src_ips_negate'] = False
+        else:
+            item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
+            item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
+
+    json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
+    with open(json_file, 'w') as fh:
+        json.dump(tcpudp, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|       Список балансировщиков TCP/UDP выгружен в файл "{json_file}".')
+    return 0
+
+
+def export_loadbalancing_icap(parent, path, icap):
+    """Экспортируем балансировщики ICAP"""
+    parent.stepChanged.emit('BLUE|    Экспортируем балансировщики ICAP.')
+    err, result = parent.utm.get_icap_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|       {result}')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при экспорте балансировиков ICAP.')
+        parent.error = 1
+        return 1
+    icap_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    for item in icap:
+        item.pop('id', None)
+        item.pop('cc', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        item['profiles'] = [icap_servers[x] for x in item['profiles']]
+
+    json_file = os.path.join(path, 'config_loadbalancing_icap.json')
+    with open(json_file, 'w') as fh:
+        json.dump(icap, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|       Список балансировщиков ICAP выгружен в файл "{json_file}".')
+    return 0
+
+
+def export_loadbalancing_reverse(parent, path, reverse):
+    """Экспортируем балансировщики reverse-прокси"""
+    parent.stepChanged.emit('BLUE|    Экспортируем балансировщики reverse-прокси.')
+    err, result = parent.utm.get_reverseproxy_servers()
+    if err:
+        parent.stepChanged.emit(f'RED|       {result}')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при экспорте балансировиков reverse-прокси.')
+        parent.error = 1
+        return 1
+    reverse_servers = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+
+    for item in reverse:
+        item.pop('id', None)
+        item.pop('cc', None)
+        item['name'] = item['name'].strip().translate(trans_name)
+        item['profiles'] = [reverse_servers[x] for x in item['profiles']]
+
+    json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
+    with open(json_file, 'w') as fh:
+        json.dump(reverse, fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|       Список балансировщиков reverse-прокси выгружен в файл "{json_file}".')
+    return 0
 
 
 def export_shaper_rules(parent, path):

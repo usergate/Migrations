@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.11   17.12.2024   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.15   24.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -103,7 +103,7 @@ class ImportSelectedPoints(QThread):
         """Импортируем определённый раздел конфигурации"""
         err, self.ngfw_data = func.read_bin_file(self)
         if err:
-            parent.stepChanged.emit('iRED|Импорт конфигурации на UserGate NGFW прерван!')
+            self.stepChanged.emit('iRED|Импорт конфигурации на UserGate NGFW прерван! Не удалось прочитать служебные данные.')
             return
 
         for point in self.selected_points:
@@ -194,7 +194,7 @@ def import_certificates(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте сертификатов.')
     else:
-        parent.stepChanged.emit('GREEN|    Сертификаты импортированы в раздел "UserGate/Сертификаты".')
+        parent.stepChanged.emit('GREEN|    Импорт сертификатов завершён.')
 
 
 def import_general_settings(parent, path):
@@ -216,7 +216,7 @@ def import_general_settings(parent, path):
 def import_ui(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
     json_file = os.path.join(path, 'config_settings_ui.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -288,7 +288,7 @@ def import_ui(parent, path):
 def import_ntp_settings(parent, path):
     """Импортируем настройки NTP"""
     json_file = os.path.join(path, 'config_ntp.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -302,13 +302,13 @@ def import_ntp_settings(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек NTP.')
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы настройки NTP в раздел "UserGate/Настройки/Настройка времени сервера".')
+        parent.stepChanged.emit('GREEN|    Импорт настроек NTP завершён.')
 
 
 def import_proxy_port(parent, path):
     """Импортируем раздел UserGate/Настройки/Модули/HTTP(S)-прокси порт"""
     json_file = os.path.join(path, 'config_proxy_port.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -326,7 +326,7 @@ def import_proxy_port(parent, path):
 def import_modules(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Модули'"""
     json_file = os.path.join(path, 'config_settings_modules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -368,7 +368,7 @@ def import_modules(parent, path):
 def import_cache_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
     json_file = os.path.join(path, 'config_proxy_settings.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -410,7 +410,7 @@ def import_cache_settings(parent, path):
 def import_proxy_exceptions(parent, path):
     """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
     json_file = os.path.join(path, 'config_proxy_exceptions.json')
-    err, exceptions = func.read_json_file(parent, json_file, mode=1)
+    err, exceptions = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -438,7 +438,7 @@ def import_proxy_exceptions(parent, path):
 def import_web_portal_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки/Веб-портал'"""
     json_file = os.path.join(path, 'config_web_portal.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -508,7 +508,7 @@ def import_upstream_proxy_settings(parent, path):
     """Импортируем настройки вышестоящего прокси. Только для версии 7.1 и выше."""
     if parent.version >= 7.1:
         json_file = os.path.join(path, 'upstream_proxy_settings.json')
-        err, data = func.read_json_file(parent, json_file, mode=1)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             return
 
@@ -520,22 +520,22 @@ def import_upstream_proxy_settings(parent, path):
             parent.error = 1
             parent.stepChanged.emit('ORANGE|    Ошибка импорта настроек вышестоящего прокси!')
         else:
-            parent.stepChanged.emit('GREEN|    Импортированы настройки вышестоящего прокси в раздел "UserGate/Настройки/Вышестоящий прокси".')
+            parent.stepChanged.emit('GREEN|    Импорт настроек вышестоящего прокси завершён.')
 
 
 def import_users_certificate_profiles(parent, path):
     """Импортируем профили пользовательских сертификатов. Только для версии 7.1 и выше."""
     json_file = os.path.join(path, 'users_certificate_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
+    parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Профили пользовательских сертификатов".')
+
     if not parent.client_certificate_profiles:
         if get_client_certificate_profiles(parent): # Устанавливаем атрибут parent.client_certificate_profiles
-            parent.stepChanged.emit('ORANGE|    Ошибка импорта профилей пользовательских сертификатов!')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорту профилей пользовательских сертификатов!')
             return
-
-    parent.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Профили пользовательских сертификатов".')
     error = 0
 
     for item in data:
@@ -553,9 +553,9 @@ def import_users_certificate_profiles(parent, path):
 
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Ошибка импорта профилей пользовательских сертификатов!')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей пользовательских сертификатов!')
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы профили пользовательских сертификатов в раздел "UserGate/Профили пользовательских сертификатов".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей пользовательских сертификатов завершён.')
 
 
 #----------------------------------------------- Сеть --------------------------------------------------------
@@ -711,7 +711,7 @@ class Zone:
 def import_zones(parent, path):
     """Импортируем зоны на NGFW, если они есть."""
     json_file = os.path.join(path, 'config_zones.json')
-    err, zones = func.read_json_file(parent, json_file, mode=1)
+    err, zones = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -760,14 +760,20 @@ def import_zones(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.')
     else:
-        parent.stepChanged.emit('GREEN|    Зоны импортированы в раздел "Сеть/Зоны".')
+        parent.stepChanged.emit('GREEN|    Импорт зон завершён.')
 
 
 def import_interfaces(parent, path):
+    json_file = os.path.join(path, 'config_interfaces.json')
+    err, data = func.read_json_file(parent, json_file, mode=2)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN" и "VPN" в раздел "Сеть/Интерфейсы".')
     err, result = parent.utm.get_interfaces_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при создании интерфейсов GRE/IPIP/VXLAN.')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
         parent.error = 1
         return
     ngfw_ifaces = {x['name']: x['kind'] for x in result}
@@ -775,7 +781,7 @@ def import_interfaces(parent, path):
     err, result = parent.utm.get_netflow_profiles_list()
     if err:
         parent.stepChanged.emit(f'RED|    {result}')
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
         parent.error = 1
         return
     list_netflow = {x['name']: x['id'] for x in result}
@@ -786,18 +792,17 @@ def import_interfaces(parent, path):
         err, result = parent.utm.get_lldp_profiles_list()
         if err:
             parent.stepChanged.emit(f'RED|    {result}')
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка создания интерфейса VLAN.')
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
             parent.error = 1
             return
         list_lldp = {x['name']: x['id'] for x in result}
         list_lldp['undefined'] = 'undefined'
 
-    json_file = os.path.join(path, 'config_interfaces.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
     kinds = {item['kind'] for item in data}
+
+    if kinds.isdisjoint({'tunnel', 'vlan', 'vpn'}):
+        parent.stepChanged.emit('GRAY|    Нет интерфейсов "TUNNEL", "VLAN", "VPN" для импорта.')
+        return
 
     if 'tunnel' in kinds:
         import_ipip_interfaces(parent, path, data, ngfw_ifaces)
@@ -817,7 +822,7 @@ def import_ipip_interfaces(parent, path, data, ngfw_ifaces):
     if not is_gre:
         return
 
-    parent.stepChanged.emit('BLUE|Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
+    parent.stepChanged.emit('BLUE|    Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
     mc_gre = [int(name[3:]) for name, kind in ngfw_ifaces.items() if kind == 'tunnel' and name.startswith('gre')]
     gre_num = max(mc_gre) if mc_gre else 0
     if gre_num:
@@ -839,27 +844,27 @@ def import_ipip_interfaces(parent, path, data, ngfw_ifaces):
                 try:
                     item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'bRED|    Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    parent.stepChanged.emit(f'bRED|       Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
                     item['zone_id'] = 0
 
             err, result = parent.utm.add_interface_tunnel(item)
             if err == 1:
-                parent.stepChanged.emit(f'RED|    {result} [Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован]')
+                parent.stepChanged.emit(f'RED|       {result} [Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован]')
                 error = 1
             elif err == 2:
-                parent.stepChanged.emit(f'rNOTE|    {result} [Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован]')
+                parent.stepChanged.emit(f'rNOTE|       {result} [Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован]')
             else:
-                parent.stepChanged.emit(f'BLACK|    Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
+                parent.stepChanged.emit(f'BLACK|       Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов GRE/IPIP/VXLAN.')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте интерфейсов GRE/IPIP/VXLAN.')
     else:
-        parent.stepChanged.emit('GREEN|    Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
+        parent.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
 
 
 def import_vlans(parent, path, list_netflow, list_lldp):
     """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
-    parent.stepChanged.emit('BLUE|Импорт VLAN в раздел "Сеть/Интерфейсы".')
+    parent.stepChanged.emit('BLUE|    Импорт VLAN в раздел "Сеть/Интерфейсы".')
     error = 0
     if isinstance(parent.ngfw_vlans, int):
         parent.stepChanged.emit(parent.new_vlans)
@@ -872,10 +877,10 @@ def import_vlans(parent, path, list_netflow, list_lldp):
             current_port = parent.new_vlans[item['vlan_id']]['port']
             current_zone = parent.new_vlans[item['vlan_id']]['zone']
             if item["vlan_id"] in parent.ngfw_vlans:
-                parent.stepChanged.emit(f'GRAY|    VLAN {item["vlan_id"]} уже существует на порту {parent.ngfw_vlans[item["vlan_id"]]}')
+                parent.stepChanged.emit(f'GRAY|       VLAN {item["vlan_id"]} уже существует на порту {parent.ngfw_vlans[item["vlan_id"]]}')
                 continue
             if current_port == "Undefined":
-                parent.stepChanged.emit(f"rNOTE|    VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
+                parent.stepChanged.emit(f"rNOTE|       VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
                 continue
             item['link'] = current_port
             item['name'] = f'{current_port}.{item["vlan_id"]}'
@@ -896,7 +901,7 @@ def import_vlans(parent, path, list_netflow, list_lldp):
                 try:
                     item['zone_id'] = parent.ngfw_data['zones'][current_zone]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error: Не найдена зона "{err}" для VLAN "{item["name"]}". Импортируйте зоны и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|       Error: Не найдена зона "{err}" для VLAN "{item["name"]}". Импортируйте зоны и повторите попытку.')
                     item['zone_id'] = 0
                     error = 1
             else:
@@ -912,37 +917,37 @@ def import_vlans(parent, path, list_netflow, list_lldp):
                 try:
                     item['lldp_profile'] = list_lldp[item['lldp_profile']]
                 except KeyError:
-                    parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
+                    parent.stepChanged.emit(f'bRED|       Для VLAN "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
                     item['lldp_profile'] = 'undefined'
             try:
                 item['netflow_profile'] = list_netflow[item['netflow_profile']]
             except KeyError:
-                parent.stepChanged.emit(f'bRED|    Для VLAN "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
+                parent.stepChanged.emit(f'bRED|       Для VLAN "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
                 item['netflow_profile'] = 'undefined'
 
             err, result = parent.utm.add_interface_vlan(item)
             if err:
-                parent.stepChanged.emit(f'RED|    {result} [Интерфейс {item["name"]} не импортирован]')
+                parent.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
                 error = 1
             else:
                 parent.ngfw_vlans[item['vlan_id']] = item['name']
-                parent.stepChanged.emit(f'BLACK|    Интерфейс VLAN "{item["name"]}" импортирован.')
+                parent.stepChanged.emit(f'BLACK|       Интерфейс VLAN "{item["name"]}" импортирован.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейса VLAN.')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте интерфейса VLAN.')
     else:
-        parent.stepChanged.emit('GREEN|    Импорт интерфейсов VLAN завершён.')
+        parent.stepChanged.emit('GREEN|       Импорт интерфейсов VLAN завершён.')
 
 
 def import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifaces):
     """Импортируем интерфейсы VPN"""
-    parent.stepChanged.emit('BLUE|Импорт интерфейсов VPN в раздел "Сеть/Интерфейсы".')
+    parent.stepChanged.emit('BLUE|    Импорт интерфейсов VPN в раздел "Сеть/Интерфейсы".')
     error = 0
     
     for item in data:
         if 'kind' in item and item['kind'] == 'vpn':
             if item['name'] in ngfw_ifaces:
-                parent.stepChanged.emit(f'GRAY|    Интерфейс VPN {item["name"]} уже существует на NGFW.')
+                parent.stepChanged.emit(f'GRAY|       Интерфейс VPN {item["name"]} уже существует на NGFW.')
                 continue
 
             item['node_name'] = 'cluster'
@@ -955,7 +960,7 @@ def import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifac
                 try:
                     item['zone_id'] = parent.ngfw_data['zones'][item['zone_id']]
                 except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error: Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                    parent.stepChanged.emit(f'RED|       Error: Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
                     item['zone_id'] = 0
                     error = 1
 
@@ -968,30 +973,30 @@ def import_vpn_interfaces(parent, path, data, list_netflow, list_lldp, ngfw_ifac
                 try:
                     item['lldp_profile'] = list_lldp[item['lldp_profile']]
                 except KeyError:
-                    parent.stepChanged.emit(f'RED|    Error: Для интерфейса "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
+                    parent.stepChanged.emit(f'RED|       Error: Для интерфейса "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
                     item['lldp_profile'] = 'undefined'
                     error = 1
             try:
                 item['netflow_profile'] = list_netflow[item['netflow_profile']]
             except KeyError:
-                parent.stepChanged.emit(f'RED|    Error: Для интерфейса "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
+                parent.stepChanged.emit(f'RED|       Error: Для интерфейса "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
                 item['netflow_profile'] = 'undefined'
                 error = 1
 
             err, result = parent.utm.add_interface_vpn(item)
             if err == 1:
-                parent.stepChanged.emit(f'RED|    {result} [Интерфейс "{item["name"]}" не импортирован]')
+                parent.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                 error = 1
             elif err == 2:
-                parent.stepChanged.emit(f'rNOTE|    {result} [Интерфейс "{item["name"]}" не импортирован]')
+                parent.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
             else:
                 ngfw_ifaces[item['name']] = item['kind']
-                parent.stepChanged.emit(f'BLACK|    Интерфейс VPN "{item["name"]}" импортирован.')
+                parent.stepChanged.emit(f'BLACK|       Интерфейс VPN "{item["name"]}" импортирован.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейса VPN.')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте интерфейса VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Импорт интерфейсов VPN завершён.')
+        parent.stepChanged.emit('GREEN|       Импорт интерфейсов VPN завершён.')
 
 
 def import_gateways(parent, path):
@@ -1002,7 +1007,7 @@ def import_gateways(parent, path):
 def import_gateways_list(parent, path):
     """Импортируем список шлюзов"""
     json_file = os.path.join(path, 'config_gateways.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1069,13 +1074,13 @@ def import_gateways_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шлюзов.')
     else:
-        parent.stepChanged.emit('GREEN|    Шлюзы импортированы в раздел "Сеть/Шлюзы".')
+        parent.stepChanged.emit('GREEN|    Импорт шлюзов завершён.')
 
 
 def import_gateway_failover(parent, path):
     """Импортируем настройки проверки сети"""
     json_file = os.path.join(path, 'config_gateway_failover.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1092,12 +1097,13 @@ def import_gateway_failover(parent, path):
 
 def import_dhcp_subnets(parent, path):
     """Импортируем настойки DHCP"""
-    parent.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
     if isinstance(parent.ngfw_ports, int):
-        parent.stepChanged.emit(parent.dhcp_settings)
         if parent.ngfw_ports == 1:
+            parent.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
+            parent.stepChanged.emit(parent.dhcp_settings)
             parent.error = 1
         return
+    parent.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
     error = 0
 
     err, result = parent.utm.get_dhcp_list()
@@ -1133,45 +1139,20 @@ def import_dhcp_subnets(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP!')
     else:
-        parent.stepChanged.emit('GREEN|    Настройки DHCP импортированы.')
+        parent.stepChanged.emit('GREEN|    Импорт настроек DHCP завершён.')
 
 
 def import_dns_config(parent, path):
     """Импортируем настройки DNS"""
-    import_dns_proxy(parent, path)
     import_dns_servers(parent, path)
+    import_dns_proxy(parent, path)
     import_dns_rules(parent, path)
     import_dns_static(parent, path)
-
-
-def import_dns_proxy(parent, path):
-    """Импортируем настройки DNS прокси"""
-    json_file = os.path.join(path, 'config_dns_proxy.json')
-    err, result = func.read_json_file(parent, json_file, mode=1)
-    if err:
-        return
-
-    parent.stepChanged.emit('BLUE|Импорт настроек DNS-прокси раздела "Сеть/DNS/Настройки DNS-прокси".')
-    error = 0
-    if parent.version < 6.0:
-        result.pop('dns_receive_timeout', None)
-        result.pop('dns_max_attempts', None)
-    for key, value in result.items():
-        err, result = parent.utm.set_settings_param(key, value)
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            error = 1
-    if error:
-        parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DNS-прокси!')
-    else:
-        parent.stepChanged.emit('GREEN|    Настройки DNS-прокси импортированы.')
-
 
 def import_dns_servers(parent, path):
     """Импортируем список системных DNS серверов"""
     json_file = os.path.join(path, 'config_dns_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1193,13 +1174,35 @@ def import_dns_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте системных DNS-серверов!')
     else:
-        parent.stepChanged.emit('GREEN|    Системные DNS-сервера импортированы.')
+        parent.stepChanged.emit('GREEN|    Импорт системных DNS-серверов завершён.')
 
+def import_dns_proxy(parent, path):
+    """Импортируем настройки DNS прокси"""
+    json_file = os.path.join(path, 'config_dns_proxy.json')
+    err, result = func.read_json_file(parent, json_file, mode=2)
+    if err:
+        return
+
+    parent.stepChanged.emit('BLUE|Импорт настроек DNS-прокси раздела "Сеть/DNS/Настройки DNS-прокси".')
+    error = 0
+    if parent.version < 6.0:
+        result.pop('dns_receive_timeout', None)
+        result.pop('dns_max_attempts', None)
+    for key, value in result.items():
+        err, result = parent.utm.set_settings_param(key, value)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            error = 1
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DNS-прокси!')
+    else:
+        parent.stepChanged.emit('GREEN|    Импорт настроек DNS-прокси завершён.')
 
 def import_dns_rules(parent, path):
     """Импортируем список правил DNS прокси"""
     json_file = os.path.join(path, 'config_dns_rules.json')
-    err, rules = func.read_json_file(parent, json_file, mode=1)
+    err, rules = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1226,13 +1229,12 @@ def import_dns_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил DNS-прокси!')
     else:
-        parent.stepChanged.emit('GREEN|    Правила DNS-прокси импортированы.')
-
+        parent.stepChanged.emit('GREEN|    Импорт правил DNS-прокси завершён.')
 
 def import_dns_static(parent, path):
     """Импортируем статические записи DNS прокси"""
     json_file = os.path.join(path, 'config_dns_static.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1252,13 +1254,13 @@ def import_dns_static(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте статических записей DNS-прокси!')
     else:
-        parent.stepChanged.emit('GREEN|    Статические записи DNS-прокси импортированы.')
+        parent.stepChanged.emit('GREEN|    Импорт статических записей DNS-прокси завершён.')
 
     
 def import_vrf(parent, path):
     """Импортируем список виртуальных маршрутизаторов"""
     json_file = os.path.join(path, 'config_vrf.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1402,13 +1404,13 @@ def import_vrf(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте виртуальных маршрутизаторов.')
     else:
-        parent.stepChanged.emit('GREEN|    Виртуальные маршрутизаторы импортированы в раздел "Сеть/Виртуальные маршрутизаторы".')
+        parent.stepChanged.emit('GREEN|    Импорт виртуальных маршрутизаторов завершён.')
 
 
 def import_wccp_rules(parent, path):
     """Импортируем список правил WCCP"""
     json_file = os.path.join(path, 'config_wccp.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
     error = 0
@@ -1461,14 +1463,14 @@ def import_wccp_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил WCCP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила WCCP импортированы в раздел "Сеть/WCCP".')
+        parent.stepChanged.emit('GREEN|    Импорт правил WCCP завершён.')
 
 
 #-------------------------------------- Пользователи и устройства ---------------------------------------------------
 def import_local_groups(parent, path):
     """Импортируем список локальных групп пользователей"""
     json_file = os.path.join(path, 'config_groups.json')
-    err, groups = func.read_json_file(parent, json_file, mode=1)
+    err, groups = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1519,13 +1521,13 @@ def import_local_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Ошибка импорта локальных групп пользователей!')
     else:
-        parent.stepChanged.emit('GREEN|    Локальные группы пользователей импортирован в раздел "Пользователи и устройства/Группы".')
+        parent.stepChanged.emit('GREEN|    Импорт локальных групп пользователей завершён.')
 
 
 def import_local_users(parent, path):
     """Импортируем список локальных пользователей"""
     json_file = os.path.join(path, 'config_users.json')
-    err, users = func.read_json_file(parent, json_file, mode=1)
+    err, users = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1566,7 +1568,7 @@ def import_local_users(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте локальных пользователей!')
     else:
-        parent.stepChanged.emit('GREEN|    Локальные пользователи импортированы в раздел "Пользователи и устройства/Пользователи".')
+        parent.stepChanged.emit('GREEN|    Импорт локальных пользователей завершён.')
 
 
 def import_auth_servers(parent, path):
@@ -1581,7 +1583,7 @@ def import_auth_servers(parent, path):
 def import_ldap_servers(parent, path):
     """Импортируем список серверов LDAP"""
     json_file = os.path.join(path, 'config_ldap_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1603,6 +1605,8 @@ def import_ldap_servers(parent, path):
                 item['enabled'] = False
                 item['keytab_exists'] = False
                 item.pop("cc", None)
+                if parent.utm.float_version < 8.0:
+                    item.pop("cache_ttl", None)
                 err, result = parent.utm.add_auth_server('ldap', item)
                 if err:
                     parent.stepChanged.emit(f'RED|    {result} [Сервер аутентификации LDAP "{item["name"]}" не импортирован]')
@@ -1615,13 +1619,13 @@ def import_ldap_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов LDAP!')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера LDAP импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов LDAP завершён.')
 
 
 def import_ntlm_server(parent, path):
     """Импортируем список серверов NTLM"""
     json_file = os.path.join(path, 'config_ntlm_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1654,13 +1658,13 @@ def import_ntlm_server(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов NTLM!')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера NTLM импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов NTLM завершён.')
 
 
 def import_radius_server(parent, path):
     """Импортируем список серверов RADIUS"""
     json_file = os.path.join(path, 'config_radius_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1693,13 +1697,13 @@ def import_radius_server(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов RADIUS!')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера RADIUS импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов RADIUS завершён.')
 
 
 def import_tacacs_server(parent, path):
     """Импортируем список серверов TACACS+"""
     json_file = os.path.join(path, 'config_tacacs_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1732,13 +1736,13 @@ def import_tacacs_server(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов TACACS+!')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера TACACS+ импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов TACACS+ завершён.')
 
 
 def import_saml_server(parent, path):
     """Импортируем список серверов SAML"""
     json_file = os.path.join(path, 'config_saml_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1777,13 +1781,13 @@ def import_saml_server(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов SAML!')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера SAML импортированы в раздел "Пользователи и устройства/Серверы аутентификации".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов SAML завершён.')
 
 
 def import_2fa_profiles(parent, path):
     """Импортируем список 2FA профилей"""
     json_file = os.path.join(path, 'config_2fa_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1833,13 +1837,13 @@ def import_2fa_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей MFA.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили MFA импортированы в раздел "Пользователи и устройства/Профили MFA".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей MFA завершён.')
 
 
 def import_auth_profiles(parent, path):
     """Импортируем список профилей аутентификации"""
     json_file = os.path.join(path, 'config_auth_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -1916,13 +1920,13 @@ def import_auth_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей аутентификации.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили аутентификации импортированы в раздел "Пользователи и устройства/Профили аутентификации".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей аутентификации завершён.')
 
 
 def import_captive_profiles(parent, path):
     """Импортируем список Captive-профилей"""
     json_file = os.path.join(path, 'config_captive_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2026,13 +2030,13 @@ def import_captive_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте Captive-профилей.')
     else:
-        parent.stepChanged.emit('GREEN|    Captive-профили импортированы в раздел "Пользователи и устройства/Captive-профили".')
+        parent.stepChanged.emit('GREEN|    Импорт Captive-профилей завершён.')
 
 
 def import_captive_portal_rules(parent, path):
     """Импортируем список правил Captive-портала"""
     json_file = os.path.join(path, 'config_captive_portal_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2065,13 +2069,13 @@ def import_captive_portal_rules(parent, path):
                 item['description'] = f'{item["description"]}\nError: Не найден Captive-профиль "{item["profile_id"]}".'
                 item['profile_id'] = 0
                 error = 1
-        item['src_zones'] = get_zones_id(parent, item['src_zones'], item['name'])
-        item['dst_zones'] = get_zones_id(parent, item['dst_zones'], item['name'])
-        item['src_ips'] = get_ips_id(parent, item['src_ips'], item['name'])
-        item['dst_ips'] = get_ips_id(parent, item['dst_ips'], item['name'])
-        item['urls'] = get_urls_id(parent, item['urls'], item['name'])
-        item['url_categories'] = get_url_categories_id(parent, item['url_categories'], item['name'])
-        item['time_restrictions'] = get_time_restrictions_id(parent, item['time_restrictions'], item['name'])
+        item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
+        item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
+        item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
+        item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+        item['urls'] = get_urls_id(parent, item['urls'], item)
+        item['url_categories'] = get_url_categories_id(parent, item)
+        item['time_restrictions'] = get_time_restrictions_id(parent, item)
 
         if item['name'] in captive_portal_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило Captive-портала "{item["name"]}" уже существует.')
@@ -2093,13 +2097,13 @@ def import_captive_portal_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил Captive-портала.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила Captive-портала импортированы в раздел "Пользователи и устройства/Captive-портал".')
+        parent.stepChanged.emit('GREEN|    Импорт правил Captive-портала завершён.')
 
 
 def import_terminal_servers(parent, path):
     """Импортируем список терминальных серверов"""
     json_file = os.path.join(path, 'config_terminal_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2136,13 +2140,13 @@ def import_terminal_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка терминальных серверов.')
     else:
-        parent.stepChanged.emit('GREEN|    Список терминальных серверов импортирован в раздел "Пользователи и устройства/Терминальные серверы".')
+        parent.stepChanged.emit('GREEN|    Импорт терминальных серверов завершён.')
 
 
 def import_byod_policy(parent, path):
     """Импортируем список Политики BYOD"""
     json_file = os.path.join(path, 'config_byod_policy.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2180,7 +2184,7 @@ def import_byod_policy(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Политики BYOD".')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Политики BYOD" импортирован в раздел "Пользователи и устройства/Политики BYOD".')
+        parent.stepChanged.emit('GREEN|    Импорт политик BYOD завершён.')
 
 
 def import_userid_agent(parent, path):
@@ -2192,7 +2196,7 @@ def import_userid_agent(parent, path):
 def import_agent_config(parent, path):
     """Импортируем настройки UserID агент"""
     json_file = os.path.join(path, 'userid_agent_config.json')
-    err, result = func.read_json_file(parent, json_file, mode=1)
+    err, result = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2257,7 +2261,7 @@ def import_agent_config(parent, path):
 def import_agent_servers(parent, path):
     """Импортируем настройки AD и свойств отправителя syslog UserID агент"""
     json_file = os.path.join(path, 'userid_agent_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2283,7 +2287,7 @@ def import_agent_servers(parent, path):
 
     for item in data:
         item['name'] = func.get_restricted_name(item['name'])
-        if parent.utm.float_version != 7.2:
+        if parent.utm.float_version < 7.2:
             if item['type'] == 'radius':
                 parent.stepChanged.emit(f'NOTE|    Коннектор UserID агент "{item["name"]}" не импортирован так как ваша версия NGFW меньше 7.2.')
                 continue
@@ -2330,24 +2334,24 @@ def import_agent_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек UserID агент.')
     else:
-        parent.stepChanged.emit('GREEN|    Агенты UserID импортированы в раздел "Пользователи и устройства/Агент UserID".')
+        parent.stepChanged.emit('GREEN|    Импорт Агентов UserID завершён.')
 
 
 #---------------------------------------- Политики сети ---------------------------------------------------------
 def import_firewall_rules(parent, path):
     """Импортируем список правил межсетевого экрана"""
     json_file = os.path.join(path, 'config_firewall_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
     parent.stepChanged.emit('BLUE|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
-#    parent.stepChanged.emit('LBLUE|    После импорта правила МЭ будут в не активном состоянии. Необходимо проверить и включить нужные.')
 
-    if not parent.scenarios_rules:
-        if get_scenarios_rules(parent):     # Устанавливаем атрибут parent.scenarios_rules
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
-            return
+    if parent.utm.product != 'dcfw':
+        if not parent.scenarios_rules:
+            if get_scenarios_rules(parent):     # Устанавливаем атрибут parent.scenarios_rules
+                parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
+                return
 
     if parent.version >= 7.1:
         err, result = parent.utm.get_idps_profiles_list()
@@ -2366,13 +2370,14 @@ def import_firewall_rules(parent, path):
             return
         l7_profiles = {x['name']: x['id'] for x in result}
 
-        err, result = parent.utm.get_hip_profiles_list()
-        if err:
-            parent.stepChanged.emit(f'RED|    {result}')
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
-            parent.error = 1
-            return
-        hip_profiles = {x['name']: x['id'] for x in result}
+        if parent.utm.product != 'dcfw':
+            err, result = parent.utm.get_hip_profiles_list()
+            if err:
+                parent.stepChanged.emit(f'RED|    {result}')
+                parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
+                parent.error = 1
+                return
+            hip_profiles = {x['name']: x['id'] for x in result}
 
     err, result = parent.utm.get_firewall_rules()
     if err:
@@ -2389,18 +2394,21 @@ def import_firewall_rules(parent, path):
         item.pop('time_created', None)
         item.pop('time_updated', None)
 
-        if item['scenario_rule_id']:
-            try:
-                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
-                item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+        if parent.utm.product == 'dcfw':
+            item['scenario_rule_id'] = False
+        else:
+            if item['scenario_rule_id']:
+                try:
+                    item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
+                    item['scenario_rule_id'] = False
+                    item['enabled'] = False
+                    error = 1
         if parent.version < 7.1:
             if 'apps' in item:
-                item['apps'] = get_apps(parent, item['apps'], item['name'])
+                item['apps'] = get_apps(parent, item)
             else:
                 item['apps'] = []
                 item['apps_negate'] = False
@@ -2434,19 +2442,23 @@ def import_firewall_rules(parent, path):
                     error = 1
             else:
                 item['l7_profile'] = False
-            if 'hip_profiles' in item:
-                new_hip_profiles = []
-                for hip in item['hip_profiles']:
-                    try:
-                        new_hip_profiles.append(hip_profiles[hip])
-                    except KeyError as err:
-                        parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{item["name"]}"]. Не найден профиль HIP {err}. Загрузите профили HIP и повторите попытку.')
-                        item['description'] = f'{item["description"]}\nError: Не найден профиль HIP {err}.'
-                        item['enabled'] = False
-                        error = 1
-                item['hip_profiles'] = new_hip_profiles
-            else:
+
+            if parent.utm.product == 'dcfw':
                 item['hip_profile'] = []
+            else:
+                if 'hip_profiles' in item:
+                    new_hip_profiles = []
+                    for hip in item['hip_profiles']:
+                        try:
+                            new_hip_profiles.append(hip_profiles[hip])
+                        except KeyError as err:
+                            parent.stepChanged.emit(f'RED|    Error [Правило МЭ "{item["name"]}"]. Не найден профиль HIP {err}. Загрузите профили HIP и повторите попытку.')
+                            item['description'] = f'{item["description"]}\nError: Не найден профиль HIP {err}.'
+                            item['enabled'] = False
+                            error = 1
+                    item['hip_profiles'] = new_hip_profiles
+                else:
+                    item['hip_profile'] = []
 
         item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
         item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
@@ -2477,13 +2489,13 @@ def import_firewall_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".')
+        parent.stepChanged.emit('GREEN|    Импорт правил межсетевого экрана завершён.')
 
 
 def import_nat_rules(parent, path):
     """Импортируем список правил NAT"""
     json_file = os.path.join(path, 'config_nat_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2491,10 +2503,11 @@ def import_nat_rules(parent, path):
 #    parent.stepChanged.emit('LBLUE|    После импорта правила NAT будут в не активном состоянии. Необходимо проверить и включить нужные.')
     error = 0
 
-    if not parent.scenarios_rules:
-        if get_scenarios_rules(parent):     # Устанавливаем атрибут parent.scenarios_rules
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
-            return
+    if parent.utm.product != 'dcfw':
+        if not parent.scenarios_rules:
+            if get_scenarios_rules(parent):     # Устанавливаем атрибут parent.scenarios_rules
+                parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
+                return
 
     err, result = parent.utm.get_gateways_list()
     if err:
@@ -2517,15 +2530,19 @@ def import_nat_rules(parent, path):
         item.pop('position_layer', None)
         item.pop('time_created', None)
         item.pop('time_updated', None)
-        if item['scenario_rule_id']:
-            try:
-                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
-                item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+
+        if parent.utm.product == 'dcfw':
+            item['scenario_rule_id'] = False
+        else:
+            if item['scenario_rule_id']:
+                try:
+                    item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
+                    item['scenario_rule_id'] = False
+                    item['enabled'] = False
+                    error = 1
         if parent.version >= 6:
             item['users'] = get_guids_users_and_groups(parent, item)
         else:
@@ -2537,9 +2554,6 @@ def import_nat_rules(parent, path):
         item['service'] = get_services(parent, item['service'], item)
         item['gateway'] = ngfw_gateways.get(item['gateway'], item['gateway'])
             
-        if item['action'] == 'route':
-            parent.stepChanged.emit(f'LBLUE|    [Правило "{item["name"]}"] Проверьте шлюз для правила ПБР. В случае отсутствия, установите вручную.')
-
         if item['name'] in nat_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило "{item["name"]}" уже существует.')
             item.pop('position', None)
@@ -2558,11 +2572,13 @@ def import_nat_rules(parent, path):
             else:
                 nat_rules[item['name']] = result
                 parent.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
+        if item['action'] == 'route':
+            parent.stepChanged.emit(f'LBLUE|       [Правило "{item["name"]}"] Проверьте шлюз для правила ПБР. В случае отсутствия, установите вручную.')
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила NAT импортированы в раздел "Политики сети/NAT и маршрутизация".')
+        parent.stepChanged.emit('GREEN|    Импорт правил NAT завершён.')
 
 
 def import_loadbalancing_rules(parent, path):
@@ -2574,15 +2590,17 @@ def import_loadbalancing_rules(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки нагрузки.')
         parent.error = 1
         return
+
     import_loadbalancing_tcpudp(parent, path, tcpudp)
-    import_loadbalancing_icap(parent, path, icap)
-    import_loadbalancing_reverse(parent, path, reverse)
+    if parent.utm.product != 'dcfw':
+        import_loadbalancing_icap(parent, path, icap)
+        import_loadbalancing_reverse(parent, path, reverse)
 
 
 def import_loadbalancing_tcpudp(parent, path, tcpudp):
     """Импортируем балансировщики TCP/UDP"""
     json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err in (2, 3):
         parent.stepChanged.emit(f'GRAY|    Нет балансировщиков TCP/UDP для импорта.')
         return
@@ -2622,15 +2640,15 @@ def import_loadbalancing_tcpudp(parent, path, tcpudp):
                 parent.stepChanged.emit(f'BLACK|       Правило балансировки TCP/UDP "{item["name"]}" импортировано.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки TCP/UDP.')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте правил балансировки TCP/UDP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила балансировки TCP/UDP импортированы.')
+        parent.stepChanged.emit('GREEN|       Правила балансировки TCP/UDP импортированы.')
 
 
 def import_loadbalancing_icap(parent, path, icap):
     """Импортируем балансировщики ICAP"""
     json_file = os.path.join(path, 'config_loadbalancing_icap.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err in (2, 3):
         parent.stepChanged.emit(f'GRAY|    Нет балансировщиков ICAP для импорта.')
         return
@@ -2643,7 +2661,7 @@ def import_loadbalancing_icap(parent, path, icap):
 
     if not parent.icap_servers:
         if get_icap_servers(parent):      # Устанавливаем атрибут parent.icap_servers
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки ICAP.')
+            parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте правил балансировки ICAP.')
             return
 
     for item in data:
@@ -2675,15 +2693,15 @@ def import_loadbalancing_icap(parent, path, icap):
                 parent.stepChanged.emit(f'BLACK|       Правило балансировки ICAP "{item["name"]}" импортировано.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки ICAP.')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте правил балансировки ICAP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила балансировки ICAP импортированы.')
+        parent.stepChanged.emit('GREEN|       Правила балансировки ICAP импортированы.')
 
 
 def import_loadbalancing_reverse(parent, path, reverse):
     """Импортируем балансировщики reverse-proxy"""
     json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err in (2, 3):
         parent.stepChanged.emit(f'GRAY|    Нет балансировщиков Reverse-proxy для импорта.')
         return
@@ -2693,7 +2711,7 @@ def import_loadbalancing_reverse(parent, path, reverse):
     parent.stepChanged.emit('BLUE|    Импорт балансировщиков Reverse-proxy.')
     if not parent.reverseproxy_servers:
         if get_reverseproxy_servers(parent):      # Устанавливаем атрибут parent.reverseproxy_servers
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки Reverse-proxy.')
+            parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте правил балансировки Reverse-proxy.')
             return
 
     reverse_rules = {func.get_restricted_name(x['name']): x['id'] for x in reverse}
@@ -2728,25 +2746,26 @@ def import_loadbalancing_reverse(parent, path, reverse):
                 parent.stepChanged.emit(f'BLACK|       Правило балансировки reverse-proxy "{item["name"]}" импортировано.')
     if error:
         parent.error = 1
-        parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки Reverse-proxy.')
+        parent.stepChanged.emit('ORANGE|       Произошла ошибка при импорте правил балансировки Reverse-proxy.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила балансировки Reverse-proxy импортированы.')
+        parent.stepChanged.emit('GREEN|       Правила балансировки Reverse-proxy импортированы.')
 
 
 def import_shaper_rules(parent, path):
     """Импортируем список правил пропускной способности"""
     json_file = os.path.join(path, 'config_shaper_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
     parent.stepChanged.emit('BLUE|Импорт правил пропускной способности в раздел "Политики сети/Пропускная способность".')
     error = 0
 
-    if not parent.scenarios_rules:
-        if get_scenarios_rules(parent):     # Устанавливаем атрибут parent.scenarios_rules
-            parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.')
-            return
+    if parent.utm.product != 'dcfw':
+        if not parent.scenarios_rules:
+            if get_scenarios_rules(parent):     # Устанавливаем атрибут parent.scenarios_rules
+                parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.')
+                return
 
     err, result = parent.utm.get_shaper_list()
     if err:
@@ -2773,15 +2792,19 @@ def import_shaper_rules(parent, path):
             item.pop('limit_burst', None)
             item.pop('log', None)
             item.pop('log_session_start', None)
-        if item['scenario_rule_id']:
-            try:
-                item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
-                item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+
+        if parent.utm.product == 'dcfw':
+            item['scenario_rule_id'] = False
+        else:
+            if item['scenario_rule_id']:
+                try:
+                    item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
+                except KeyError as err:
+                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
+                    item['scenario_rule_id'] = False
+                    item['enabled'] = False
+                    error = 1
         item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
         item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
         item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
@@ -2820,14 +2843,14 @@ def import_shaper_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила пропускной способности импортированы в раздел "Политики сети/Пропускная способность".')
+        parent.stepChanged.emit('GREEN|    Импорт правил пропускной способности завершён.')
 
 
 #----------------------------------------- Политики безопасности --------------------------------------------------
 def import_content_rules(parent, path):
     """Импортируем список правил фильтрации контента"""
     json_file = os.path.join(path, 'config_content_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -2964,13 +2987,13 @@ def import_content_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".')
+        parent.stepChanged.emit('GREEN|    Импорт правил контентной фильтрации завершён.')
 
 
 def import_safebrowsing_rules(parent, path):
     """Импортируем список правил веб-безопасности"""
     json_file = os.path.join(path, 'config_safebrowsing_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3017,13 +3040,13 @@ def import_safebrowsing_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил веб-безопасности.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила веб-безопасности импортированны в раздел "Политики безопасности/Веб-безопасность".')
+        parent.stepChanged.emit('GREEN|    Импорт правил веб-безопасности завершён.')
 
 
 def import_tunnel_inspection_rules(parent, path):
     """Импортируем список правил инспектирования туннелей"""
     json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3067,13 +3090,13 @@ def import_tunnel_inspection_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования туннелей.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила инспектирования туннелей импортированны в раздел "Политики безопасности/Инспектирование туннелей".')
+        parent.stepChanged.emit('GREEN|    Импорт правил инспектирования туннелей завершён.')
 
 
 def import_ssldecrypt_rules(parent, path):
     """Импортируем список правил инспектирования SSL"""
     json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3159,13 +3182,13 @@ def import_ssldecrypt_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSL.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила инспектирования SSL импортированны в раздел "Политики безопасности/Инспектирование SSL".')
+        parent.stepChanged.emit('GREEN|    Импорт правил инспектирования SSL завершён.')
 
 
 def import_sshdecrypt_rules(parent, path):
     """Импортируем список правил инспектирования SSH"""
     json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3217,13 +3240,13 @@ def import_sshdecrypt_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSH.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила инспектирования SSH импортированны в раздел "Политики безопасности/Инспектирование SSH".')
+        parent.stepChanged.emit('GREEN|    Импорт правил инспектирования SSH завершён.')
 
 
 def import_idps_rules(parent, path):
     """Импортируем список правил СОВ"""
     json_file = os.path.join(path, 'config_idps_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3299,13 +3322,13 @@ def import_idps_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил СОВ.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила СОВ импортированны в раздел "Политики безопасности/СОВ".')
+        parent.stepChanged.emit('GREEN|    Импорт правил СОВ завершён.')
 
 
 def import_scada_rules(parent, path):
     """Импортируем список правил АСУ ТП"""
     json_file = os.path.join(path, 'config_scada_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3375,7 +3398,7 @@ def import_scada_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил АСУ ТП.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила АСУ ТП импортированны в раздел "Политики безопасности/Правила АСУ ТП".')
+        parent.stepChanged.emit('GREEN|    Импорт правил АСУ ТП завершён.')
 
 
 def import_mailsecurity(parent, path):
@@ -3386,7 +3409,7 @@ def import_mailsecurity(parent, path):
 def import_mailsecurity_rules(parent, path):
     """Импортируем список правил защиты почтового трафика"""
     json_file = os.path.join(path, 'config_mailsecurity_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3473,13 +3496,13 @@ def import_mailsecurity_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты почтового трафика.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила защиты почтового трафика импортированы в раздел "Политики безопасности/Защита почтового трафика".')
+        parent.stepChanged.emit('GREEN|    Импорт правил защиты почтового трафика завершён.')
 
 
 def import_mailsecurity_antispam(parent, path):
     """Импортируем dnsbl защиты почтового трафика"""
     json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3501,7 +3524,7 @@ def import_mailsecurity_antispam(parent, path):
 def import_mailsecurity_batv(parent, path):
     """Импортируем batv защиты почтового трафика"""
     json_file = os.path.join(path, 'config_mailsecurity_batv.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3519,7 +3542,7 @@ def import_mailsecurity_batv(parent, path):
 def import_icap_servers(parent, path):
     """Импортируем список серверов ICAP"""
     json_file = os.path.join(path, 'config_icap_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3554,13 +3577,13 @@ def import_icap_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов ICAP.')
     else:
-        parent.stepChanged.emit('GREEN|    Серверы ICAP импортированы в раздел "Политики безопасности/ICAP-серверы".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов ICAP завершён.')
 
 
 def import_icap_rules(parent, path):
     """Импортируем список правил ICAP"""
     json_file = os.path.join(path, 'config_icap_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3653,13 +3676,13 @@ def import_icap_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил ICAP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила ICAP импортированы в раздел "Политики безопасности/ICAP-правила".')
+        parent.stepChanged.emit('GREEN|    Импорт правил ICAP завершён.')
 
 
 def import_dos_profiles(parent, path):
     """Импортируем список профилей DoS"""
     json_file = os.path.join(path, 'config_dos_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3696,13 +3719,13 @@ def import_dos_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей DoS.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили DoS импортированы в раздел "Политики безопасности/Профили DoS".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей DoS завершён.')
 
 
 def import_dos_rules(parent, path):
     """Импортируем список правил защиты DoS"""
     json_file = os.path.join(path, 'config_dos_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3780,7 +3803,7 @@ def import_dos_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты DoS.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила защиты DoS импортированы в раздел "Политики безопасности/Правила защиты DoS".')
+        parent.stepChanged.emit('GREEN|    Импорт правил защиты DoS завершён.')
 
 
 #------------------------------------------ Глобальный портал -----------------------------------------------------------
@@ -3788,7 +3811,7 @@ def import_proxyportal_rules(parent, path):
     """Импортируем список URL-ресурсов веб-портала"""
     parent.stepChanged.emit('BLUE|Импорт списка ресурсов веб-портала в раздел "Глобальный портал/Веб-портал".')
     json_file = os.path.join(path, 'config_web_portal.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
     error = 0
@@ -3851,13 +3874,13 @@ def import_proxyportal_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте ресурсов веб-портала.')
     else:
-        parent.stepChanged.emit('GREEN|    Список ресурсов веб-портала импортирован в раздел "Глобальный портал/Веб-портал".')
+        parent.stepChanged.emit('GREEN|    Импорт списка ресурсов веб-портала завершён.')
 
 
 def import_reverseproxy_servers(parent, path):
     """Импортируем список серверов reverse-прокси"""
     json_file = os.path.join(path, 'config_reverseproxy_servers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -3891,13 +3914,13 @@ def import_reverseproxy_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера reverse-прокси импортированы в раздел "Глобальный портал/Серверы reverse-прокси".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов reverse-прокси завершён.')
 
 
 def import_reverseproxy_rules(parent, path):
     """Импортируем список правил reverse-прокси"""
     json_file = os.path.join(path, 'config_reverseproxy_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4060,14 +4083,14 @@ def import_reverseproxy_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила reverse-прокси импортированы в раздел "Глобальный портал/Правила reverse-прокси".')
+        parent.stepChanged.emit('GREEN|    Импорт правил reverse-прокси завершён.')
     parent.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
 
 #--------------------------------------------------- WAF ----------------------------------------------------------------
 def import_waf_custom_layers(parent, path):
     """Импортируем персональные WAF-слои. Для версии 7.1 и выше"""
     json_file = os.path.join(path, 'config_waf_custom_layers.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4106,13 +4129,13 @@ def import_waf_custom_layers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте персональных слоёв WAF.')
     else:
-        parent.stepChanged.emit('GREEN|    Персональные WAF-слои импортированы в раздел "WAF/Персональные WAF-слои".')
+        parent.stepChanged.emit('GREEN|    Импорт персональных WAF-слоёв завершён.')
 
 
 def import_waf_profiles(parent, path):
     """Импортируем профили WAF. Для версии 7.1 и выше"""
     json_file = os.path.join(path, 'config_waf_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4202,13 +4225,13 @@ def import_waf_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей WAF.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили WAF импортированы в раздел "WAF/WAF-профили".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей WAF завершён.')
 
 #--------------------------------------------------- VPN ----------------------------------------------------------------
 def import_vpn_security_profiles(parent, path):
     """Импортируем список профилей безопасности VPN"""
     json_file = os.path.join(path, 'config_vpn_security_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4258,12 +4281,13 @@ def import_vpn_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей безопасности VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили безопасности VPN импортированы в раздел "VPN/Профили безопасности VPN".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей безопасности VPN завершён.')
+
 
 def import_vpnclient_security_profiles(parent, path):
     """Импортируем клиентские профилей безопасности VPN. Для версии 7.1 и выше"""
     json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4308,12 +4332,13 @@ def import_vpnclient_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских профилей безопасности VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Клиентские профили безопасности импортированы в раздел "VPN/Клиентские профили безопасности".')
+        parent.stepChanged.emit('GREEN|    Импорт клиентских профилей безопасности завершён.')
+
 
 def import_vpnserver_security_profiles(parent, path):
     """Импортируем серверные профилей безопасности VPN. Для версии 7.1 и выше"""
     json_file = os.path.join(path, 'config_vpnserver_security_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4371,13 +4396,13 @@ def import_vpnserver_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных профилей безопасности VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Серверные профили безопасности импортированы в раздел "VPN/Серверные профили безопасности".')
+        parent.stepChanged.emit('GREEN|    Импорт серверных профилей безопасности завершён.')
 
 
 def import_vpn_networks(parent, path):
     """Импортируем список сетей VPN"""
     json_file = os.path.join(path, 'config_vpn_networks.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4427,7 +4452,7 @@ def import_vpn_networks(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сетей VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Список сетей VPN импортирован в раздел "VPN/Сети VPN".')
+        parent.stepChanged.emit('GREEN|    Импорт списка сетей VPN завершён.')
 
 
 def get_vpn_networks(parent, networks, rule):
@@ -4446,7 +4471,7 @@ def get_vpn_networks(parent, networks, rule):
 def import_vpn_client_rules(parent, path):
     """Импортируем список клиентских правил VPN"""
     json_file = os.path.join(path, 'config_vpn_client_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4524,13 +4549,13 @@ def import_vpn_client_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских правил VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Клиентские правила VPN импортированы в раздел "VPN/Клиентские правила".')
+        parent.stepChanged.emit('GREEN|    Импорт клиентских правил VPN завершён.')
 
 
 def import_vpn_server_rules(parent, path):
     """Импортируем список серверных правил VPN"""
     json_file = os.path.join(path, 'config_vpn_server_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4622,14 +4647,14 @@ def import_vpn_server_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных правил VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Серверные правила VPN импортированы в раздел "VPN/Серверные правила".')
+        parent.stepChanged.emit('GREEN|    Импорт серверных правил VPN завершён.')
 
 
 #------------------------------------------------ Библиотека ------------------------------------------------------------
 def import_morphology_lists(parent, path):
     """Импортируем списки морфологии"""
     json_file = os.path.join(path, 'config_morphology_lists.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4699,13 +4724,13 @@ def import_morphology_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков морфологии.')
     else:
-        parent.stepChanged.emit('GREEN|    Списки морфологии импортированны в раздел "Библиотеки/Морфология".')
+        parent.stepChanged.emit('GREEN|    Импорт списков морфологии завершён.')
 
 
 def import_services_list(parent, path):
     """Импортируем список сервисов раздела библиотеки"""
     json_file = os.path.join(path, 'config_services_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4738,13 +4763,13 @@ def import_services_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при добавлении сервисов!')
     else:
-        parent.stepChanged.emit('GREEN|    Список сервисов импортирован в раздел "Библиотеки/Сервисы"')
+        parent.stepChanged.emit('GREEN|    Импорт списка сервисов завершён.')
 
 
 def import_services_groups(parent, path):
     """Импортируем группы сервисов в раздел Библиотеки/Группы сервисов"""
     json_file = os.path.join(path, 'config_services_groups_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4801,7 +4826,7 @@ def import_services_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп сервисов.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".')
+        parent.stepChanged.emit('GREEN|    Импорт групп сервисов завершён.')
 
 
 def import_ip_lists(parent, path):
@@ -4810,7 +4835,7 @@ def import_ip_lists(parent, path):
     error = 0
 
     if not os.path.isdir(path):
-        parent.stepChanged.emit("GRAY|    Нет списков IP-адресов для импорта.")
+#        parent.stepChanged.emit("GRAY|    Нет списков IP-адресов для импорта.")
         return
     files_list = os.listdir(path)
     if not files_list:
@@ -4821,7 +4846,7 @@ def import_ip_lists(parent, path):
     parent.stepChanged.emit(f'LBLUE|    Импортируем списки IP-адресов без содержимого.')
     for file_name in files_list:
         json_file = os.path.join(path, file_name)
-        err, data = func.read_json_file(parent, json_file, mode=1)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             continue
 
@@ -4855,7 +4880,7 @@ def import_ip_lists(parent, path):
     parent.stepChanged.emit(f'LBLUE|    Импортируем содержимое списков IP-адресов.')
     for file_name in files_list:
         json_file = os.path.join(path, file_name)
-        err, data = func.read_json_file(parent, json_file, mode=1)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             continue
 
@@ -4899,13 +4924,13 @@ def import_ip_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков IP-адресов.')
     else:
-        parent.stepChanged.emit('GREEN|    Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".')
+        parent.stepChanged.emit('GREEN|    Импорт списков IP-адресов завершён.')
 
 
 def import_useragent_lists(parent, path):
     """Импортируем списки Useragent браузеров"""
     json_file = os.path.join(path, 'config_useragents_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -4965,13 +4990,13 @@ def import_useragent_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков Useragent браузеров.')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Useragent браузеров" импортирован в раздел "Библиотеки/Useragent браузеров".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Useragent браузеров" завершён.')
 
 
 def import_mime_lists(parent, path):
     """Импортируем списки Типов контента"""
     json_file = os.path.join(path, 'config_mime_types.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5030,7 +5055,7 @@ def import_mime_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков "Типы контента".')
     else:
-        parent.stepChanged.emit('GREEN|    Списки "Типы контента" импортированы в раздел "Библиотеки/Типы контента".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Типы контента" завершён.')
 
 
 def import_url_lists(parent, path):
@@ -5039,7 +5064,7 @@ def import_url_lists(parent, path):
     error = 0
 
     if not os.path.isdir(path):
-        parent.stepChanged.emit("GRAY|    Нет списков URL для импорта.")
+#        parent.stepChanged.emit("GRAY|    Нет списков URL для импорта.")
         return
     files_list = os.listdir(path)
     if not files_list:
@@ -5050,7 +5075,7 @@ def import_url_lists(parent, path):
     parent.stepChanged.emit(f'LBLUE|    Импортируем списки URL без содержимого.')
     for file_name in files_list:
         json_file = os.path.join(path, file_name)
-        err, data = func.read_json_file(parent, json_file, mode=1)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             continue
 
@@ -5076,7 +5101,7 @@ def import_url_lists(parent, path):
             elif err == 2:
                 parent.stepChanged.emit(f'GRAY|    {result}')
             else:
-                parent.stepChanged.emit(f'BLACK|    Список URL "{data["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|       Список URL "{data["name"]}" updated.')
         else:
             err, result = parent.utm.add_nlist(data)
             if err:
@@ -5090,7 +5115,7 @@ def import_url_lists(parent, path):
     parent.stepChanged.emit(f'LBLUE|    Импортируем содержимое списков URL.')
     for file_name in files_list:
         json_file = os.path.join(path, file_name)
-        err, data = func.read_json_file(parent, json_file, mode=1)
+        err, data = func.read_json_file(parent, json_file, mode=2)
         if err:
             continue
 
@@ -5118,13 +5143,13 @@ def import_url_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков URL.')
     else:
-        parent.stepChanged.emit('GREEN|    Списки URL импортированы в раздел "Библиотеки/Списки URL".')
+        parent.stepChanged.emit('GREEN|    Импорт списков URL завершён.')
 
 
 def import_time_restricted_lists(parent, path):
     """Импортируем содержимое календарей"""
     json_file = os.path.join(path, 'config_calendars.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5141,16 +5166,16 @@ def import_time_restricted_lists(parent, path):
             item.pop('schedule', None)
 
         if item['name'] in parent.ngfw_data['calendars']:
-            parent.stepChanged.emit(f'GRAY|    Календарь "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'uGRAY|    Календарь "{item["name"]}" уже существует.')
             err, result = parent.utm.update_nlist(parent.ngfw_data['calendars'][item['name']], item)
             if err == 1:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Календарь: {item["name"]}]')
+                parent.stepChanged.emit(f'RED|       {result}  [Календарь: {item["name"]}]')
                 continue
             elif err == 2:
-                parent.stepChanged.emit(f'GRAY|    {result}')
+                parent.stepChanged.emit(f'GRAY|       {result}')
             else:
-                parent.stepChanged.emit(f'BLACK|    Календарь "{item["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|       Календарь "{item["name"]}" обновлён.')
         else:
             err, result = parent.utm.add_nlist(item)
             if err:
@@ -5165,25 +5190,25 @@ def import_time_restricted_lists(parent, path):
             parent.stepChanged.emit(f'GRAY|       На версию 5 невозможно импортировать сожержимое календарей. Добавьте содержимое вручную.')
             continue
         if content:
-            if parent.utm.version_hight >= 7 and parent.utm.version_midle >= 1:
+            if parent.utm.float_version >= 7.1:
                 for value in content:
                     err2, result2 = parent.utm.add_nlist_item(parent.ngfw_data['calendars'][item['name']], value)
                     if err2 == 2:
-                        parent.stepChanged.emit(f'GRAY|       Элемент "{value["name"]}" уже существует в календаре "{itm["name"]}".')
+                        parent.stepChanged.emit(f'uGRAY|          Элемент "{value["name"]}" уже существует в календаре "{item["name"]}".')
                     elif err2 == 1:
                         error = 1
-                        parent.stepChanged.emit(f'RED|       {result2}  [Календарь: "{item["name"]}"]')
+                        parent.stepChanged.emit(f'RED|          {result2}  [Календарь: "{item["name"]}"]')
                     else:
-                        parent.stepChanged.emit(f'BLACK|       Элемент "{value["name"]}" календаря "{item["name"]}" добавлен.')
+                        parent.stepChanged.emit(f'BLACK|          Элемент "{value["name"]}" календаря "{item["name"]}" добавлен.')
             else:
                 err2, result2 = parent.utm.add_nlist_items(parent.ngfw_data['calendars'][item['name']], content)
                 if err2 == 2:
-                    parent.stepChanged.emit(f'GRAY|       {result2}')
+                    parent.stepChanged.emit(f'uGRAY|          {result2}')
                 elif err2 == 1:
                     error = 1
-                    parent.stepChanged.emit(f'RED|       {result2}  [Календарь: "{item["name"]}"]')
+                    parent.stepChanged.emit(f'RED|          {result2}  [Календарь: "{item["name"]}"]')
                 else:
-                    parent.stepChanged.emit(f'BLACK|       Содержимое календаря "{item["name"]}" обновлено.')
+                    parent.stepChanged.emit(f'BLACK|          Содержимое календаря "{item["name"]}" обновлено.')
         else:
             parent.stepChanged.emit(f'GRAY|       Календарь "{item["name"]}" пуст.')
 
@@ -5191,13 +5216,13 @@ def import_time_restricted_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Календари".')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Календари" импортирован в раздел "Библиотеки/Календари".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Календари" завершён.')
 
 
 def import_shaper_list(parent, path):
     """Импортируем список Полос пропускания раздела библиотеки"""
     json_file = os.path.join(path, 'config_shaper_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5215,13 +5240,13 @@ def import_shaper_list(parent, path):
     for item in data:
         item['name'] = func.get_restricted_name(item['name'])
         if item['name'] in shaper_list:
-            parent.stepChanged.emit(f'GRAY|    Полоса пропускания "{item["name"]}" уже существует.')
+            parent.stepChanged.emit(f'uGRAY|    Полоса пропускания "{item["name"]}" уже существует.')
             err, result = parent.utm.update_shaper(shaper_list[item['name']], item)
             if err:
                 error = 1
-                parent.stepChanged.emit(f'RED|    {result}  [Полоса пропускания: {item["name"]} не обновлена]')
+                parent.stepChanged.emit(f'RED|       {result}  [Полоса пропускания: {item["name"]} не обновлена]')
             else:
-                parent.stepChanged.emit(f'BLACK|    Полоса пропускания "{item["name"]}" updated.')
+                parent.stepChanged.emit(f'BLACK|       Полоса пропускания "{item["name"]}" updated.')
         else:
             err, result = parent.utm.add_shaper(item)
             if err:
@@ -5234,13 +5259,13 @@ def import_shaper_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Полосы пропускания".')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Полосы пропускания" импортирован в раздел "Библиотеки/Полосы пропускания".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Полосы пропускания" завершён.')
 
 
 def import_scada_profiles(parent, path):
     """Импортируем список профилей АСУ ТП"""
     json_file = os.path.join(path, 'config_scada_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5284,7 +5309,7 @@ def import_scada_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Профили АСУ ТП".')
     else:
-        parent.stepChanged.emit('GREEN|    Список профилей АСУ ТП импортирован в раздел "Библиотеки/Профили АСУ ТП".')
+        parent.stepChanged.emit('GREEN|    Импорт списка профилей АСУ ТП завершён.')
 
 
 def import_templates_list(parent, path):
@@ -5293,7 +5318,7 @@ def import_templates_list(parent, path):
     После создания шаблона, он инициализируется страницей HTML по умолчанию для данного типа шаблона.
     """
     json_file = os.path.join(path, 'config_templates_list.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5338,13 +5363,13 @@ def import_templates_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка шаблонов страниц.')
     else:
-        parent.stepChanged.emit('GREEN|    Список шаблонов страниц импортирован в раздел "Библиотеки/Шаблоны страниц".')
+        parent.stepChanged.emit('GREEN|    Импорт списка шаблонов страниц завершён.')
 
 
 def import_url_categories(parent, path):
     """Импортируем группы URL категорий с содержимым на UTM"""
     json_file = os.path.join(path, 'config_url_categories.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5399,13 +5424,13 @@ def import_url_categories(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте URL категорий.')
     else:
-        parent.stepChanged.emit('GREEN|    Категории URL категорий импортированы в раздел "Библиотеки/Категории URL".')
+        parent.stepChanged.emit('GREEN|    Импорт категорий URL завершён.')
 
 
 def import_custom_url_category(parent, path):
     """Импортируем изменённые категории URL"""
     json_file = os.path.join(path, 'custom_url_categories.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5446,13 +5471,13 @@ def import_custom_url_category(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте изменённых категорий URL.')
     else:
-        parent.stepChanged.emit('GREEN|    Изменённые категории URL категорий импортированы в раздел "Библиотеки/Изменённые категории URL".')
+        parent.stepChanged.emit('GREEN|    Импорт изменённых категории URL завершён.')
 
 
 def import_application_signature(parent, path):
     """Импортируем список "Приложения" на UTM для версии 7.1 и выше"""
     json_file = os.path.join(path, 'config_applications.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5501,13 +5526,13 @@ def import_application_signature(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских приложений.')
     else:
-        parent.stepChanged.emit('GREEN|    Пользовательские приложения импортированы в раздел "Библиотеки/Приложения".')
+        parent.stepChanged.emit('GREEN|    Импорт пользовательских приложений завершён.')
 
 
 def import_app_profiles(parent, path):
     """Импортируем профили приложений. Только для версии 7.1 и выше."""
     json_file = os.path.join(path, 'config_app_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5553,13 +5578,13 @@ def import_app_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей приложений.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили приложений импортированы в раздел "Библиотеки/Профили приложений".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей приложений завершён.')
 
 
 def import_application_groups(parent, path):
     """Импортируем группы приложений."""
     json_file = os.path.join(path, 'config_application_groups.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5618,13 +5643,13 @@ def import_application_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп приложений.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы приложений импортированы в раздел "Библиотеки/Группы приложений".')
+        parent.stepChanged.emit('GREEN|    Импорт групп приложений завершён.')
 
 
 def import_email_groups(parent, path):
     """Импортируем группы почтовых адресов."""
     json_file = os.path.join(path, 'config_email_groups.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5664,13 +5689,13 @@ def import_email_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп почтовых адресов.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы почтовых адресов импортированы в раздел "Библиотеки/Почтовые адреса".')
+        parent.stepChanged.emit('GREEN|    Импорт групп почтовых адресов завершён.')
 
 
 def import_phone_groups(parent, path):
     """Импортируем группы телефонных номеров."""
     json_file = os.path.join(path, 'config_phone_groups.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5710,13 +5735,13 @@ def import_phone_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп телефонных номеров.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы телефонных номеров импортированы в раздел "Библиотеки/Номера телефонов".')
+        parent.stepChanged.emit('GREEN|    Импорт групп телефонных номеров завершён.')
 
 
 def import_custom_idps_signature(parent, path):
     """Импортируем пользовательские сигнатуры СОВ. Только для версии 7.1 и выше"""
     json_file = os.path.join(path, 'custom_idps_signatures.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5753,13 +5778,13 @@ def import_custom_idps_signature(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских сигнатур СОВ.')
     else:
-        parent.stepChanged.emit('GREEN|    Пользовательские сигнатуры СОВ импортированы в раздел "Библиотеки/Сигнатуры СОВ".')
+        parent.stepChanged.emit('GREEN|    Импорт пользовательских сигнатур СОВ завершён.')
 
 
 def import_idps_profiles(parent, path):
     """Импортируем профили СОВ"""
     json_file = os.path.join(path, 'config_idps_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5863,13 +5888,13 @@ def import_idps_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей СОВ.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили СОВ импортированы в раздел "Библиотеки/Профили СОВ".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей СОВ завершён.')
 
 
 def import_notification_profiles(parent, path):
     """Импортируем список профилей оповещения"""
     json_file = os.path.join(path, 'config_notification_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5906,13 +5931,13 @@ def import_notification_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей оповещений.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили оповещений импортированы в раздел "Библиотеки/Профили оповещений".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей оповещений завершён.')
 
 
 def import_netflow_profiles(parent, path):
     """Импортируем список профилей netflow"""
     json_file = os.path.join(path, 'config_netflow_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5949,13 +5974,13 @@ def import_netflow_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей netflow.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили netflow импортированы в раздел "Библиотеки/Профили netflow".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей netflow завершён.')
 
 
 def import_lldp_profiles(parent, path):
     """Импортируем список профилей LLDP"""
     json_file = os.path.join(path, 'config_lldp_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -5992,13 +6017,13 @@ def import_lldp_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей LLDP.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили LLDP импортированы в раздел "Библиотеки/Профили LLDP".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей LLDP завершён.')
 
 
 def import_ssl_profiles(parent, path):
     """Импортируем список профилей SSL"""
     json_file = os.path.join(path, 'config_ssl_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6033,13 +6058,13 @@ def import_ssl_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей SSL.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили SSL импортированы в раздел "Библиотеки/Профили SSL".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей SSL .')
 
 
 def import_ssl_forward_profiles(parent, path):
     """Импортируем профили пересылки SSL"""
     json_file = os.path.join(path, 'config_ssl_forward_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6076,13 +6101,13 @@ def import_ssl_forward_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей пересылки SSL.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили пересылки SSL импортированы в раздел "Библиотеки/Профили пересылки SSL".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей пересылки SSL завершён.')
 
 
 def import_hip_objects(parent, path):
     """Импортируем HIP объекты"""
     json_file = os.path.join(path, 'config_hip_objects.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6122,13 +6147,13 @@ def import_hip_objects(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP объектов.')
     else:
-        parent.stepChanged.emit('GREEN|    HIP объекты импортированы в раздел "Библиотеки/HIP объекты".')
+        parent.stepChanged.emit('GREEN|    Импорт HIP объектов завершён.')
 
 
 def import_hip_profiles(parent, path):
     """Импортируем HIP профили"""
     json_file = os.path.join(path, 'config_hip_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6178,13 +6203,13 @@ def import_hip_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP профилей.')
     else:
-        parent.stepChanged.emit('GREEN|    HIP профили импортированы в раздел "Библиотеки/HIP профили".')
+        parent.stepChanged.emit('GREEN|    Импорт HIP профилей завершён.')
 
 
 def import_bfd_profiles(parent, path):
     """Импортируем профили BFD"""
     json_file = os.path.join(path, 'config_bfd_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6220,13 +6245,13 @@ def import_bfd_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей BFD.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили BFD импортированы в раздел "Библиотеки/Профили BFD".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей BFD завершён.')
 
 
 def import_useridagent_syslog_filters(parent, path):
     """Импортируем syslog фильтры UserID агента"""
     json_file = os.path.join(path, 'config_useridagent_syslog_filters.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6261,13 +6286,13 @@ def import_useridagent_syslog_filters(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
     else:
-        parent.stepChanged.emit('GREEN|    Syslog фильтры UserID агента импортированы в раздел "Библиотеки/Syslog фильтры UserID агента".')
+        parent.stepChanged.emit('GREEN|    Импорт Syslog фильтров UserID агента завершён.')
 
 
 def import_scenarios(parent, path):
     """Импортируем список сценариев"""
     json_file = os.path.join(path, 'config_scenarios.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6284,7 +6309,7 @@ def import_scenarios(parent, path):
         new_conditions = []
         for condition in item['conditions']:
             if condition['kind'] == 'application':
-                condition['apps'] = get_apps(parent, condition['apps'], item['name'])
+                condition['apps'] = get_apps(parent, item, apps=condition['apps'])
             elif condition['kind'] == 'mime_types':
                 try:
                     condition['content_types'] = [parent.ngfw_data['mime'][x] for x in condition['content_types']]
@@ -6325,14 +6350,14 @@ def import_scenarios(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сценариев.')
     else:
-        parent.stepChanged.emit('GREEN|    Список сценариев импортирован в раздел "Библиотеки/Сценарии".')
+        parent.stepChanged.emit('GREEN|    Импорт списка сценариев завершён.')
 
 
 #--------------------------------------------------- Оповещения ---------------------------------------------------------
 def import_notification_alert_rules(parent, path):
     """Импортируем список правил оповещений"""
     json_file = os.path.join(path, 'config_alert_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6419,13 +6444,13 @@ def import_notification_alert_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил оповещений.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила оповещений импортированы в раздел "Диагностика и мониторинг/Оповещения/Правила оповещений".')
+        parent.stepChanged.emit('GREEN|    Импорт правил оповещений завершён.')
 
 
 def import_snmp_security_profiles(parent, path):
     """Импортируем профили безопасности SNMP"""
     json_file = os.path.join(path, 'config_snmp_profiles.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6461,13 +6486,13 @@ def import_snmp_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей безопасности SNMP.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили безопасности SNMP импортированы в раздел "Диагностика и мониторинг/Оповещения/Профили безопасности SNMP".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей безопасности SNMP завершён.')
 
 
 def import_snmp_rules(parent, path):
     """Импортируем список правил SNMP"""
     json_file = os.path.join(path, 'config_snmp_rules.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6548,7 +6573,7 @@ def import_snmp_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил SNMP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила SNMP импортированы в раздел "Диагностика и мониторинг/Оповещения/SNMP".')
+        parent.stepChanged.emit('GREEN|    Импорт правил SNMP завершён.')
 
 
 def import_snmp_settings(parent, path):
@@ -6564,7 +6589,7 @@ def import_snmp_settings(parent, path):
 
 def import_snmp_engine(parent, path):
     json_file = os.path.join(path, 'config_snmp_engine.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6578,7 +6603,7 @@ def import_snmp_engine(parent, path):
 
 def import_snmp_sys_name(parent, path):
     json_file = os.path.join(path, 'config_snmp_sysname.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6592,7 +6617,7 @@ def import_snmp_sys_name(parent, path):
 
 def import_snmp_sys_location(parent, path):
     json_file = os.path.join(path, 'config_snmp_syslocation.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6606,7 +6631,7 @@ def import_snmp_sys_location(parent, path):
 
 def import_snmp_sys_description(parent, path):
     json_file = os.path.join(path, 'config_snmp_sysdescription.json')
-    err, data = func.read_json_file(parent, json_file, mode=1)
+    err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
         return
 
@@ -6658,13 +6683,13 @@ import_funcs = {
     'Interfaces': import_interfaces,
     'Gateways': import_gateways,
     'AuthServers': import_auth_servers,
+    'MFAProfiles': import_2fa_profiles,
     'AuthProfiles': import_auth_profiles,
     'CaptiveProfiles': import_captive_profiles,
     'CaptivePortal': import_captive_portal_rules,
     'Groups': import_local_groups,
     'Users': import_local_users,
     'TerminalServers': import_terminal_servers,
-    'MFAProfiles': import_2fa_profiles,
     'UserIDagent': import_userid_agent,
     'BYODPolicies': import_byod_policy,
     'BYODDevices': pass_function,
@@ -6735,8 +6760,8 @@ def get_ips_id(parent, mode, rule_ips, rule):
                 else:
                     new_rule_ips.append(['urllist_id', parent.ngfw_data['url_lists'][ips[1]]])
         except KeyError as err:
-            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеки и повторите импорт.')
-            rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
+            parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден список {mode}-адресов (IP/URL) "{ips[1]}". Загрузите списки в библиотеки и повторите импорт.')
+            rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов  (IP/URL) "{ips[1]}".'
             rule['enabled'] = False
             parent.error = 1
     return new_rule_ips
@@ -6897,10 +6922,11 @@ def get_time_restrictions_id(parent, rule):
             parent.error = 1
     return new_schedules
 
-def get_apps(parent, rule):
+def get_apps(parent, rule, apps=None):
     """Определяем ID приложения или группы приложений по именам."""
     new_app_list = []
-    for app in rule['apps']:
+    applications = apps if apps else rule['apps']
+    for app in applications:
         if app[0] == 'ro_group':
             if app[1] == 'All':
                 if parent.version >= 6:

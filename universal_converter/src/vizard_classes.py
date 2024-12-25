@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.7    20.12.2024
+# Версия 1.8    24.12.2024
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -31,11 +31,11 @@ class SelectAction(QWidget):
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
-        text1 = "<b><font color='green' size='+2'>Перенос конфигурации сторонних вендоров<br>на UserGate NGFW и Management Center</font></b>"
+        text1 = "<b><font color='green' size='+2'>Перенос конфигурации сторонних вендоров<br>на UserGate NGFW, DCFW и Management Center</font></b>"
         text2 = "Экспорт конфигурации из конфигурационных файлов <b>Cisco ASA</b>, <b>Cisco FPR</b>, <b>Check Point</b>, \
 <b>Fortigate</b>, <b>Huawei</b>, <b>MikroTik</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
 После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
-        text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> версий <b>5, 6, 7, 8</b>."
+        text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7, 8</b>) и <b>DCFW</b>."
         text4 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -55,7 +55,7 @@ class SelectAction(QWidget):
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self.set_export_page)
 
-        self.btn_import = QPushButton("Импорт конфигурации на UG NGFW")
+        self.btn_import = QPushButton("Импорт конфигурации на UG NGFW|DCFW")
         self.btn_import.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import.setFont(btn_font)
         self.btn_import.setFixedWidth(280)
@@ -137,6 +137,7 @@ class SelectMode(QWidget):
         self.selected_points = []
         self.current_ug_path = None
         self.utm = None
+        self.product = 'NGFW'
         self.thread = None
         self.log_list = QListWidget()
         
@@ -230,8 +231,9 @@ class SelectMode(QWidget):
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
             self.utm = dialog.utm
+            self.product = 'NGFW' if self.utm.product == 'utm' else self.utm.product.upper()
             self.label_node_name.setText(f'  {self.utm.node_name}')
-            self.label_version.setText(f'Версия NGFW: {self.utm.version}')
+            self.label_version.setText(f'Версия {self.product}: {self.utm.version}')
             return True
         else:
             return False
@@ -303,7 +305,7 @@ class SelectExportMode(QWidget):
         self.thread = None
         self.log_list = QListWidget()
         
-        self.title = QLabel("<b><font color='green' size='+2'>Конвертация сторонней конфигурации в формат UserGate NGFW</font></b>")
+        self.title = QLabel("<b><font color='green' size='+2'>Конвертация сторонней конфигурации в формат UserGate</font></b>")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.title.setFixedHeight(22)
 
@@ -533,7 +535,7 @@ class SelectImportMode(SelectMode):
     """Класс для выбора раздела конфигурации для импорта на NGFW. Номер в стеке 2."""
     def __init__(self, parent):
         super().__init__(parent)
-        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации на UserGate NGFW</font></b>")
+        self.title.setText(f"<b><font color='green' size='+2'>Импорт конфигурации на UserGate</font></b>")
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
@@ -553,23 +555,25 @@ class SelectImportMode(SelectMode):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с NGFW! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с {self.product}! {self.thread}')
 
     def init_import_widget(self, e):
         """
         При открытии этой вкладки выбираем каталог с конфигурацией для импорта.
         """
         if e == 2:
-            self.parent.resize(900, 500)
+            self.parent.resize(980, 750)
             dialog =  SelectImportConfigDirectory(self.parent)
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 self.label_config_directory.setText(f'{self.parent.get_ug_config_path()}  ')
                 if self.get_auth(mod='fw'):
+                    self.title.setText(f"<b><font color='green' size='+2'>Импорт конфигурации на UserGate {self.product}</font></b>")
                     self.enable_buttons()
                     self.tree.version = self.utm.float_version
+                    self.tree.product = self.utm.product
                     self.tree.change_items_status(self.parent.get_ug_config_path())
-                    title = f'Импорт конфигурации из "{self.parent.get_ug_config_path()}" на NGFW {self.utm.version}.'
+                    title = f'Импорт конфигурации из "{self.parent.get_ug_config_path()}" на {self.product} {self.utm.version}.'
                     self.add_item_log(f'{title:>100}', color='GREEN')
                     self.add_item_log(f'{"="*100}', color='ORANGE')
                     self.init_temporary_data()
@@ -597,6 +601,8 @@ class SelectImportMode(SelectMode):
                     'iface_settings': '',
                 }
                 self.set_arguments(arguments)
+                if not func.check_auth(self):
+                    self.run_page_0()
 
                 self.thread = tf.ImportSelectedPoints(
                     self.utm,
@@ -612,7 +618,7 @@ class SelectImportMode(SelectMode):
                 func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
         else:
-            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для импорта.")
+            func.message_inform(self, "Внимание!", "Нет данных для импорта.\n Выбранный раздел пуст.")
 
     def import_all(self):
         """
@@ -623,6 +629,10 @@ class SelectImportMode(SelectMode):
             self.run_page_0()
 
         all_points = self.tree.select_all_items()
+        if not all_points:
+            func.message_inform(self, 'Внимание!', 'Нет данных для импорта.')
+            return
+
         arguments = {
             'ngfw_ports': '',
             'dhcp_settings': '',
@@ -804,6 +814,9 @@ class SelectMcImportMode(SelectMode):
 
 
     def select_template(self, init=False):
+        if not func.check_auth(self):
+            self.run_page_0()
+
         template_dialog = SelectMcDestinationTemplate(self.utm, self.parent, self.templates_group_name, templates=self.templates_ids)
         template_result = template_dialog.exec()
         if template_result == QDialog.DialogCode.Accepted:
@@ -813,6 +826,7 @@ class SelectMcImportMode(SelectMode):
             self.label_version.setText(f'MC (версия {self.utm.version})  Группа шаблонов: {self.templates_group_name}  Шаблон: {self.template_name}')
             self.enable_buttons()
             self.tree.version = self.utm.float_version
+            self.tree.product = self.utm.product
             self.tree.change_items_status(self.parent.get_ug_config_path())
             title = f'Импорт конфигурации в шаблон "{self.templates_group_name}/{self.template_name}" на МС.'
             self.add_item_log(f'{title:>100}', color='GREEN')
@@ -1544,6 +1558,7 @@ class MainTree(QTreeWidget):
         super().__init__()
         self.setStyleSheet(cs.Style.MainTree)
         self.version = None     # Версия NGFW
+        self.product = None     # Тип продукта (ngfw, dcfw, mc)
 
         self.compliances = {
             "UserGate": "UserGate",
@@ -1572,7 +1587,7 @@ class MainTree(QTreeWidget):
             "CaptiveProfiles": "Captive-профили",
             "TerminalServers": "Терминальные серверы",
             "MFAProfiles": "Профили MFA",
-            "UserIDagent": "UserID агент",
+            "UserIDagent": "Агент UserID",
             "BYODPolicies": "Политики BYOD",
             "NetworkPolicies": "Политики сети",
             "Firewall": "Межсетевой экран",
@@ -1652,8 +1667,8 @@ class MainTree(QTreeWidget):
                          "Профили пользовательских сертификатов"],
             "Сеть": ["Зоны", "Интерфейсы", "Шлюзы", "DHCP", "DNS", "Виртуальные маршрутизаторы", "WCCP", "Маршруты", "OSPF", "BGP"],
             "Пользователи и устройства": [
-                "Группы", "Пользователи", "Серверы аутентификации", "Профили аутентификации", "Captive-профили", "Captive-портал",
-                "Терминальные серверы", "Профили MFA", "Политики BYOD", "UserID агент",
+                "Группы", "Пользователи", "Профили MFA", "Серверы аутентификации", "Профили аутентификации", "Captive-профили",
+                "Captive-портал", "Терминальные серверы", "Политики BYOD", "Агент UserID"
             ],
             "Политики сети": ["Межсетевой экран", "NAT и маршрутизация", "Балансировка нагрузки", "Пропускная способность"],
             "Политики безопасности": [
@@ -1678,6 +1693,14 @@ class MainTree(QTreeWidget):
         }
 
         self.restricted_items = {
+            'dcfw-8.0': {
+                "WCCP", "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Политики BYOD", "Агент UserID", "Политики безопасности",
+                "Фильтрация контента", "Веб-безопасность", "Инспектирование туннелей", "Инспектирование SSL", "Инспектирование SSH",
+                "СОВ", "Правила АСУ ТП", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила", "Профили DoS",
+                "Правила защиты DoS", "Глобальный портал", "Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси",
+                "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
+                "Профили безопасности VPN", "Профили АСУ ТП", "Морфология", "Useragent браузеров", "Типы контента", "Категории URL",
+                "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии"},
             8.0: {
                 "Маршруты", "OSPF", "BGP",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
@@ -1694,7 +1717,7 @@ class MainTree(QTreeWidget):
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
                 "Политики BYOD",
-                "UserID агент",
+                "Агент UserID",
                 "Правила АСУ ТП",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
@@ -1708,7 +1731,7 @@ class MainTree(QTreeWidget):
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
                 "Инспектирование туннелей",
-                "UserID агент",
+                "Агент UserID",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
@@ -1722,7 +1745,7 @@ class MainTree(QTreeWidget):
                 "Профили пользовательских сертификатов",
                 "Виртуальные маршрутизаторы",
                 "Терминальные серверы",
-                "UserID агент",
+                "Агент UserID",
                 "Инспектирование туннелей",
                 "Инспектирование SSH",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
@@ -1758,10 +1781,13 @@ class MainTree(QTreeWidget):
 
     def change_items_status(self, current_ug_path):
         """Скрываем пункты меню отсутствующие в данной версии NGFW и активируем те, для которых есть конфигурация."""
-#        print(self.version)
+        if self.product == 'dcfw':
+            key = f'dcfw-{self.version}'
+        else:
+            key = self.version
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
-            if item.text(0) in self.restricted_items[self.version]:
+            if item.text(0) in self.restricted_items[key]:
                 item.setHidden(True)
             else:
                 item_dir = self.over_compliances[item.text(0)]
@@ -1772,7 +1798,7 @@ class MainTree(QTreeWidget):
                     for i in range(item.childCount()):
                         child_text = item.child(i).text(0)
                         try:
-                            if child_text in self.restricted_items[self.version]:
+                            if child_text in self.restricted_items[key]:
                                 item.child(i).setHidden(True)
                             else:
                                 child_dir = self.over_compliances[child_text]
@@ -1831,7 +1857,8 @@ class MainTree(QTreeWidget):
                     item_childs.append(self.over_compliances[child_text])
                 except KeyError:
                     pass
-            array.append({'path': item_text, 'points': item_childs})
+            if item_childs:
+                array.append({'path': item_text, 'points': item_childs})
         return array
 
     def set_current_item(self):

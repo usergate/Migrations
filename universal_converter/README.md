@@ -1,8 +1,8 @@
-<h2 align="center">Перенос конфигурации сторонних вендоров на NGFW UserGate</h2>
+<h2 align="center">Перенос конфигурации сторонних вендоров на UserGate NGFW, DCFW и MC</h2>
 <h3 align="center">(Версия 7.13)</h3>
 
 Программа предназначена для переноса конфигурации с Cisco ASA, Cisco FPR, Check Point, Fortigate, Huawei, MikroTik на NGFW
-версий 5, 6, 7, 8 и Management Center версии 7.1 и выше.
+(версий 5, 6, 7, 8), DCFW и Management Center версии 7.1 и выше.
 
 <p align="center"><img src="main_image.png"></p>
 <p align="center"><img src="main_image2.png"></p>

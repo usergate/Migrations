@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.15   24.12.2024   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.16   26.12.2024   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -587,7 +587,7 @@ class Zone:
             try:
                 service['service_id'] = self.ngfw_zone_services[service['service_id']]
             except KeyError as err:
-                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа.')
+                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа. Возможно он не существует в этой версии NGFW.')
                 self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'
                 self.error = 1
                 continue
@@ -633,13 +633,14 @@ class Zone:
                                 self.parent.stepChanged.emit(f'BLACK|    Cоздан список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}".')
                                 service['allowed_ips'] = [['list_id', list_id]]
                                 self.parent.ngfw_data['ip_lists'][nlist_name] = list_id
-            # Удаляем сервисы зон версии 7.1 которых нет в более старых версиях.
-            if self.ngfw_version < 7.1:
-                for service in zone['services_access']:
-                    if service['service_id'] in (31, 32, 33):
-                        continue
 
+            # Удаляем сервисы зон версии 7.1 которых нет в более старых версиях.
+#            if self.ngfw_version < 7.1:
+#                for service in self.services_access:
+#                    if service['service_id'] in (31, 32, 33):
+#                        continue
             new_service_access.append(service)
+
         self.services_access = new_service_access
 
 

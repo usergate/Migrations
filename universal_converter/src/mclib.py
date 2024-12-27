@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-# Версия 2.7 20.12.2024
-# Общий класс для работы с xml-rpc Management Center
+# Версия 3.0   26.12.2024
+# Общий класс для работы с xml-rpc для Management Center
 #
 # Коды возврата:
 # 0 - Успешно
@@ -149,10 +149,10 @@ class McXmlRpc:
                 return 1, f'Error mclib.get_usercatalog_servers_status: [{err.faultCode}] — {err.faultString}'
         return 0, result
 
-    def get_usercatalog_ldap_servers(self):
+    def get_usercatalog_ldap_servers(self, start=0, limit=500, query={'enabled': True}):
         """Получить список активных LDAP серверов области находящихся в каталогах пользователей."""
         try:
-            result = self._server.v1.usercatalogs.servers.list(self._auth_token, 0, 500, {'enabled': True}, [])
+            result = self._server.v1.usercatalogs.servers.list(self._auth_token, start, limit, query, [])
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f"Error mclib.get_usercatalog_ldap_servers: [{err.faultCode}] — {err.faultString}"
@@ -180,10 +180,10 @@ class McXmlRpc:
         return 0, groups[0]['guid'] if groups else 0  # Возвращает или guid или 0
 
 ######## NGFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
-    def get_device_templates_groups(self):
+    def get_device_templates_groups(self, start=0, limit=1000, query={}):
         """Получить список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
         try:
-            result = self._server.v1.ccdevices.templates.groups.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.ccdevices.templates.groups.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
@@ -193,10 +193,10 @@ class McXmlRpc:
             group['device_templates'] = [x[0] for x in group['device_templates'] if x[1]]
         return 0, result['items']   # Возвращает [{id: str, name: str, device_templates: [id_1, id_2, ...]}, ...]
 
-    def get_device_templates(self):
+    def get_device_templates(self, start=0, limit=1000, query={}):
         """Получить список шаблонов устройств области"""
         try:
-            result = self._server.v1.ccdevices.templates.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.ccdevices.templates.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
@@ -228,102 +228,102 @@ class McXmlRpc:
                 return 1, f'Error mclib.add_device_template: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного шаблона.
 
-    def get_realm_ssl_profiles_list(self):
+    def get_realm_ssl_profiles_list(self, start=0, limit=1000, query={}):
         """Получить список профилей SSL области"""
         try:
-            result = self._server.v1.cccontent.realm.ssl.profiles.list(self._auth_token, 0, 1000, {})
+            result = self._server.v1.cccontent.realm.ssl.profiles.list(self._auth_token, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_ssl_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_realm_certificates_list(self):
+    def get_realm_certificates_list(self, start=0, limit=100, query={}):
         """Получить список сертификатов области"""
         try:
-            result = self._server.v1.cccertificates.realm.certificates.list(self._auth_token, 0, 100, {}, [])
+            result = self._server.v1.cccertificates.realm.certificates.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_certificates_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']  # Возвращает список
 
-    def get_realm_zones_list(self):
+    def get_realm_zones_list(self, start=0, limit=1000, query={}):
         """Получить список зон области (со всех шаблонов)"""
         try:
-            result = self._server.v1.ccnetmanager.realm.zones.list(self._auth_token, 0, 200, {}, [])
+            result = self._server.v1.ccnetmanager.realm.zones.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_zones_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список зон области.
 
-    def get_realm_responsepages_list(self):
+    def get_realm_responsepages_list(self, start=0, limit=1000, query={}):
         """Получить список шаблонов страниц области (со всех шаблонов)"""
         try:
-            result = self._server.v1.ccresponsepages.realm.templates.list(self._auth_token, 0, 500, {}, [])
+            result = self._server.v1.ccresponsepages.realm.templates.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_responsepages_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_realm_client_certificate_profiles(self):
+    def get_realm_client_certificate_profiles(self, start=0, limit=1000, query={}):
         """Получить список профилей пользовательских сертификатов области"""
         try:
-            result = self._server.v1.cccertificates.realm.client.profiles.list(self._auth_token, 0, 500, {}, [])
+            result = self._server.v1.cccertificates.realm.client.profiles.list(self._auth_token, start, limit, query, [])
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error utm.get_realm_client_certificate_profiles: [{err.faultCode}] — {err.faultString}'
 
-    def get_realm_auth_servers(self, servers_type=''):
+    def get_realm_auth_servers(self, start=0, limit=1000, query={}):
         """
-        Получить серверов авторизации области.
+        Получить серверов авторизации области. Пример: query={'type': 'ldap'}.
         Если servers_type не указан, выводятся все сервера аутентификации.
         """
         try:
-            result = self._server.v1.ccauth.realm.auth.servers.list(self._auth_token, 0, 500, {'type': servers_type}, [])
+            result = self._server.v1.ccauth.realm.auth.servers.list(self._auth_token, start, limit, query, [])
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f"Error mclib.get_realm_auth_servers: [{err.faultCode}] — {err.faultString}"
 
-    def get_realm_auth_profiles(self):
+    def get_realm_auth_profiles(self, start=0, limit=10000, query={}):
         """Получить список профилей аутентификации области"""
         try:
-            result = self._server.v1.ccauth.realm.user.auth.profiles.list(self._auth_token, 0, 10000, {}, [])
+            result = self._server.v1.ccauth.realm.user.auth.profiles.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_auth_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_realm_captive_profiles(self):
+    def get_realm_captive_profiles(self, start=0, limit=1000, query={}):
         """Получить список Captive-профилей области"""
         try:
-            result = self._server.v1.cccaptiveportal.realm.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.cccaptiveportal.realm.profiles.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_captive_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_realm_2fa_profiles(self):
+    def get_realm_2fa_profiles(self, start=0, limit=1000, query={}):
         """Получить список профилей MFA области"""
         try:
-            result = self._server.v1.ccauth.realm.cc2fa.profiles.list(self._auth_token, 0, 1000, {}, [])
+            result = self._server.v1.ccauth.realm.cc2fa.profiles.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_2fa_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_realm_notification_profiles(self):
+    def get_realm_notification_profiles(self, start=0, limit=1000, query={}):
         """Получить список профилей оповещения области"""
         try:
-            result = self._server.v1.ccnotification.realm.notification.profiles.list(self._auth_token, 0, 100, {}, [])
+            result = self._server.v1.ccnotification.realm.notification.profiles.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_notification_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список словарей
 
-    def get_realm_nlists_list(self, list_type):
+    def get_realm_nlists_list(self, list_type, start=0, limit=100000, query={}):
         """Получить список именованных списков по их типу из Библиотеки в области"""
         array = []
         try:
-            result = self._server.v1.ccnlists.realm.lists.list(self._auth_token, list_type, 0, 100000, {})
+            result = self._server.v1.ccnlists.realm.lists.list(self._auth_token, list_type, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_nlists_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
 
-    def get_realm_services_list(self):
+    def get_realm_services_list(self, start=0, limit=50000, query={}):
         """Получить список сервисов раздела Библиотеки области"""
         try:
-            result = self._server.v1.ccnetwork.realm.services.list(self._auth_token, 0, 50000, {}, [])
+            result = self._server.v1.ccnetwork.realm.services.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_realm_services_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист сервисов (список словарей).
@@ -345,10 +345,10 @@ class McXmlRpc:
             return 1, f'Error mclib.set_template_settings: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает True
 
-    def get_template_certificates_list(self, template_id):
+    def get_template_certificates_list(self, template_id, start=0, limit=500, query={}):
         """Получить список сертификатов шаблона"""
         try:
-            result = self._server.v1.cccertificates.certificates.list(self._auth_token, template_id, 0, 100, {}, [])
+            result = self._server.v1.cccertificates.certificates.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_certificates_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']  # Возвращает список
@@ -414,10 +414,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_certificate: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает True
 
-    def get_template_client_certificate_profiles(self, template_id):
+    def get_template_client_certificate_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей пользовательских сертификатов шаблона"""
         try:
-            result = self._server.v1.cccertificates.client.profiles.list(self._auth_token, template_id, 0, 500, {}, [])
+            result = self._server.v1.cccertificates.client.profiles.list(self._auth_token, template_id, start, limit, query, [])
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error utm.get_template_client_certificate_profiles: [{err.faultCode}] — {err.faultString}'
@@ -434,10 +434,10 @@ class McXmlRpc:
                 return 1, f'Error utm.add_template_client_certificate_profile: [{err.faultCode}] — {err.faultString}'
 
 ########################## Zone #############################################################################
-    def get_template_zones_list(self, template_id):
+    def get_template_zones_list(self, template_id, start=0, limit=200, query={}):
         """Получить список зон шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.zones.list(self._auth_token, template_id, 0, 200, {}, [])
+            result = self._server.v1.ccnetmanager.zones.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_zones_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список зон.
@@ -471,10 +471,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Interfaces #######################################################################
-    def get_template_interfaces_list(self, template_id):
+    def get_template_interfaces_list(self, template_id, start=0, limit=1000, query={}):
         """Получить список сетевых интерфейсов шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, 0, 1000, {})
+            result = self._server.v1.ccnetmanager.interfaces.list(self._auth_token, template_id, start, limit, query)
             return 0, result['items']    # Возвращает список интерфейсов.
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_interfaces_list: [{err.faultCode}] — {err.faultString}'
@@ -488,10 +488,10 @@ class McXmlRpc:
         return 0, result     # Возвращает ID созданного интерфейса.
 
 ################################ Gateways ################################################################
-    def get_template_gateways(self, template_id):
+    def get_template_gateways(self, template_id, start=0, limit=100, query={}):
         """Получить список шлюзов шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.gateways.list(self._auth_token, template_id, 0, 100,  {}, [])
+            result = self._server.v1.ccnetmanager.gateways.list(self._auth_token, template_id, start, limit,  query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 1, f'Нет прав на получение списка шлюзов шаблона [Error mclib.get_template_gateways_list: {err.faultString}].'
@@ -553,10 +553,10 @@ class McXmlRpc:
         return 0, result    # Возвращает True
 
 ##################################### DHCP ######################################
-    def get_template_dhcp_list(self, template_id):
+    def get_template_dhcp_list(self, template_id, start=0, limit=100, query={}):
         """Получить список подсетей dhcp для шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.dhcp.subnets.list(self._auth_token, template_id, 0, 100, {}, [])
+            result = self._server.v1.ccnetmanager.dhcp.subnets.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f"Error mclib.get_template_dhcp_list: [{err.faultCode}] — {err.faultString}"
         return 0, result['items']    # Возвращает list of all DHCP subnets on that node
@@ -595,10 +595,10 @@ class McXmlRpc:
                 return 1, f'Error mclib.add_template_dns_server: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта.
 
-    def get_template_dns_rules(self, template_id):
+    def get_template_dns_rules(self, template_id, start=0, limit=1000, query={}):
         """Получить список правил DNS шаблона"""
         try:
-            result = self._server.v1.ccdns.rules.list(self._auth_token, template_id, 0, 1000, {})
+            result = self._server.v1.ccdns.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_dns_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список NgfwDnsRuleInfo
@@ -614,10 +614,10 @@ class McXmlRpc:
                 return 1, f'Error mclib.add_template_dns_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного объекта.
 
-    def get_template_dns_static_records(self, template_id):
+    def get_template_dns_static_records(self, template_id, start=0, limit=10000, query={}):
         """Получить список статических записей DNS шаблона"""
         try:
-            result = self._server.v1.ccdns.static.records.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccdns.static.records.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_dns_static_records: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список NgfwStaticDnsRecordInfo
@@ -708,10 +708,10 @@ class McXmlRpc:
             return 0, result     # Возвращает ID добавленного правила
 
 ########################## Library ##########################################################################
-    def get_template_services_list(self, template_id):
+    def get_template_services_list(self, template_id, start=0, limit=50000, query={}):
         """Получить список сервисов раздела Библиотеки шаблона"""
         try:
-            result = self._server.v1.ccnetwork.services.list(self._auth_token, template_id, 0, 50000, {}, [])
+            result = self._server.v1.ccnetwork.services.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_services_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист сервисов (список словарей).
@@ -740,11 +740,11 @@ class McXmlRpc:
                 return 1, f'Error mclib.update_template_service: [{err.faultCode}] — {err.faultString} [Сервис "{service["name"]}"]'
         return 0, result     # Возвращает True
 
-    def get_template_nlists_list(self, template_id, list_type):
+    def get_template_nlists_list(self, template_id, list_type, start=0, limit=100000, query={}):
         """Получить список именованных списков по их типу из Библиотеки в шаблоне"""
         array = []
         try:
-            result = self._server.v1.ccnlists.lists.list(self._auth_token, template_id, list_type, 0, 100000, {}, [])
+            result = self._server.v1.ccnlists.lists.list(self._auth_token, template_id, list_type, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_nlists_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
@@ -775,11 +775,11 @@ class McXmlRpc:
                 return 1, f'Error mclib.update_template_nlist: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_nlist_items(self, template_id, named_list_id):
+    def get_template_nlist_items(self, template_id, named_list_id, start=0, limit=100000, query={}):
         """Получить содержимое именованного списка Библиотеки в шаблоне"""
         array = []
         try:
-            result = self._server.v1.ccnlists.items.list(self._auth_token, template_id, named_list_id, 0, 100000, {}, [])
+            result = self._server.v1.ccnlists.items.list(self._auth_token, template_id, named_list_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_nlist_items: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист списков (список словарей).
@@ -891,10 +891,10 @@ class McXmlRpc:
             return 1, f'Error mclib.set_template_responsepage_data: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает True
 
-    def get_template_custom_url_list(self, template_id):
+    def get_template_custom_url_list(self, template_id, start=0, limit=10000, query={}):
         """Получить список изменённых категорий URL раздела Библиотеки"""
         try:
-            result = self._server.v1.cccontent.override.domains.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v1.cccontent.override.domains.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_custom_url_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -927,10 +927,10 @@ class McXmlRpc:
         else:
             return 0, result
 
-    def get_template_app_signatures(self, template_id, query={}):
+    def get_template_app_signatures(self, template_id, start=0, limit=50000, query={}):
         """Получить список пользовательских приложений l7 шаблона"""
         try:
-            result = self._server.v1.ccl7.signatures.list(self._auth_token, template_id, 0, 50000, query, [])
+            result = self._server.v1.ccl7.signatures.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_app_signatures: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -954,10 +954,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_l7_profiles_list(self, template_id):
+    def get_template_l7_profiles_list(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей приложений шаблона"""
         try:
-            result = self._server.v1.ccl7.profiles.list(self._auth_token, template_id, 0, 100, {}, [])
+            result = self._server.v1.ccl7.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_l7_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list
@@ -978,10 +978,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_l7_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
-    def get_template_notification_profiles(self, template_id):
+    def get_template_notification_profiles(self, template_id, start=0, limit=100, query={}):
         """Получить список профилей оповещения шаблона"""
         try:
-            result = self._server.v1.ccnotification.notification.profiles.list(self._auth_token, template_id, 0, 100, {}, [])
+            result = self._server.v1.ccnotification.notification.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_notification_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список словарей
@@ -1008,10 +1008,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_idps_signatures_list(self, template_id, query={}):
+    def get_template_idps_signatures_list(self, template_id, start=0, limit=50000, query={}):
         """Получить список сигнатур IDPS шаблона"""
         try:
-            result = self._server.v2.ccidps.signatures.list(self._auth_token, template_id, 0, 50000, query, [])
+            result = self._server.v2.ccidps.signatures.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_idps_signatures_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list сигнатур
@@ -1042,10 +1042,10 @@ class McXmlRpc:
             return 1, f'Error mclib.get_template_idps_signature_fetch: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает словарь
 
-    def get_template_idps_profiles_list(self, template_id):
+    def get_template_idps_profiles_list(self, template_id, start=0, limit=10000, query={}):
         """Получить список профилей СОВ шаблона"""
         try:
-            result = self._server.v2.ccidps.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v2.ccidps.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_idps_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает list
@@ -1066,10 +1066,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_idps_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
-    def get_template_netflow_profiles(self, template_id):
+    def get_template_netflow_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей netflow из Библиотеки шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.netflow.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccnetmanager.netflow.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_netflow_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1096,10 +1096,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_lldp_profiles(self, template_id):
+    def get_template_lldp_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей LLDP раздела Библиотеки шаблона."""
         try:
-            result = self._server.v1.ccnetmanager.lldp.profiles.list(self._auth_token, template_id, 0, 1000, {}, '')
+            result = self._server.v1.ccnetmanager.lldp.profiles.list(self._auth_token, template_id, start, limit, query, '')
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_lldp_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список словарей
@@ -1126,10 +1126,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_ssl_profiles(self, template_id):
+    def get_template_ssl_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей SSL шаблона"""
         try:
-            result = self._server.v1.cccontent.ssl.profiles.list(self._auth_token, template_id, 0, 1000, {})
+            result = self._server.v1.cccontent.ssl.profiles.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_ssl_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1159,10 +1159,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_ssl_forward_profiles(self, template_id):
+    def get_template_ssl_forward_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей пересылки SSL шаблона"""
         try:
-            result = self._server.v1.cccontent.ssl.forward.profiles.list(self._auth_token, template_id, 0, 1000, {})
+            result = self._server.v1.cccontent.ssl.forward.profiles.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_ssl_forward_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1231,10 +1231,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_hip_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_bfd_profiles(self, template_id):
+    def get_template_bfd_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей BFD шаблона"""
         try:
-            result = self._server.v1.ccnetmanager.bfd.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccnetmanager.bfd.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_bfd_profiles_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1279,10 +1279,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_useridagent_filter: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_scenarios_rules(self, template_id):
+    def get_template_scenarios_rules(self, template_id, start=0, limit=1000, query={}):
         """Получить список сценариев шаблона"""
         try:
-            result = self._server.v1.ccscenarios.rules.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccscenarios.rules.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_scenarios_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1304,10 +1304,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Пользователи #####################################################################
-    def get_template_groups_list(self, template_id):
+    def get_template_groups_list(self, template_id, start=0, limit=1000, query={}):
         """Получить список локальных групп в шаблоне"""
         try:
-            result = self._server.v1.ccaccounts.groups.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccaccounts.groups.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_groups_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1335,18 +1335,18 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_group_users(self, template_id, group_guid):
+    def get_template_group_users(self, template_id, group_guid, start=0, limit=10000, query={}):
         """Получить список пользователей в группе шаблона"""
         try:
-            result = self._server.v1.ccaccounts.group.users.list(self._auth_token, template_id, group_guid, 0, 10000, {})
+            result = self._server.v1.ccaccounts.group.users.list(self._auth_token, template_id, group_guid, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_group_users: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
-    def get_template_users_list(self, template_id):
+    def get_template_users_list(self, template_id, start=0, limit=10000, query={}):
         """Получить список локальных пользователей в шаблоне"""
         try:
-            result = self._server.v1.ccaccounts.users.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v1.ccaccounts.users.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error get_template_users_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1370,10 +1370,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_user: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_user_groups(self, template_id, user_id):
+    def get_template_user_groups(self, template_id, user_id, start=0, limit=1000):
         """Получить список групп локального пользователя в шаблоне"""
         try:
-            result = self._server.v1.ccaccounts.user.groups.list(self._auth_token, template_id, user_id, 0, 10000)
+            result = self._server.v1.ccaccounts.user.groups.list(self._auth_token, template_id, user_id, start, limit)
         except rpc.Fault as err:
             return 1, f'Error get_template_user_groups: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1386,13 +1386,13 @@ class McXmlRpc:
             return 1, f'Error mclib.add_user_in_template_group: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает true
 
-    def get_template_auth_servers(self, template_id, servers_type=''):
+    def get_template_auth_servers(self, template_id, start=0, limit=500, query={}):
         """
-        Получить список активных серверов авторизации шаблона.
+        Получить список активных серверов авторизации шаблона. Пример: query={'type': 'ldap'}
         Если servers_type не указан, выводятся все сервера аутентификации.
         """
         try:
-            result = self._server.v1.ccauth.auth.servers.list(self._auth_token, template_id, 0, 500, {'type': servers_type}, [])
+            result = self._server.v1.ccauth.auth.servers.list(self._auth_token, template_id, start, limit, query, [])
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f"Error mclib.get_template_auth_servers: [{err.faultCode}] — {err.faultString}"
@@ -1405,10 +1405,10 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f"Error mclib.add_template_auth_server: [{err.faultCode}] — {err.faultString}"
 
-    def get_template_auth_profiles(self, template_id):
+    def get_template_auth_profiles(self, template_id, start=0, limit=10000, query={}):
         """Получить список профилей аутентификации в шаблоне"""
         try:
-            result = self._server.v1.ccauth.user.auth.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v1.ccauth.user.auth.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_auth_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1429,10 +1429,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_auth_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает True
 
-    def get_template_captive_profiles(self, template_id):
+    def get_template_captive_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список Captive-профилей шаблона"""
         try:
-            result = self._server.v1.cccaptiveportal.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.cccaptiveportal.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_captive_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1458,10 +1458,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_captive_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_captive_portal_rules(self, template_id):
+    def get_template_captive_portal_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список правил Captive-портала шаблона"""
         try:
-            result = self._server.v1.cccaptiveportal.rules.list(self._auth_token, template_id, 0, 10000, {})
+            result = self._server.v1.cccaptiveportal.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_captive_portal_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1488,10 +1488,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_2fa_profiles(self, template_id):
+    def get_template_2fa_profiles(self, template_id, start=0, limit=1000, query={}):
         """Получить список профилей MFA шаблона"""
         try:
-            result = self._server.v1.ccauth.cc2fa.profiles.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccauth.cc2fa.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_2fa_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1504,10 +1504,10 @@ class McXmlRpc:
             return 1, f'Error mclib.add_template_2fa_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает ID добавленного профиля
 
-    def get_template_terminal_servers(self, template_id):
+    def get_template_terminal_servers(self, template_id, start=0, limit=1000, query={}):
         """Получить список терминальных серверов шаблона"""
         try:
-            result = self._server.v1.ccauth.terminal.agent.list(self._auth_token, template_id, 0, 1000, {}, [])
+            result = self._server.v1.ccauth.terminal.agent.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_terminal_servers: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список
@@ -1528,10 +1528,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_terminal_server: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает True
 
-    def get_template_useridagent_servers(self, template_id):
+    def get_template_useridagent_servers(self, template_id, start=0, limit=50000, query={}):
         """Получить список UserID агентов шаблона"""
         try:
-            result = self._server.v1.ccuseridagent.servers.list(self._auth_token, template_id, 0, 50000, {}, [])
+            result = self._server.v1.ccuseridagent.servers.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_useridagent_servers: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список
@@ -1555,14 +1555,14 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_useridagent_server: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает True
 
-    def get_template_useridagent_config(self, template_id):
+    def get_template_useridagent_config(self, template_id, start=0, limit=100, query={}):
         """Получить список параметров UserID шаблона"""
         try:
             if self.float_version in (7.1, 8.0):
                 result = self._server.v1.ccuseridagent.get.agent.config(self._auth_token, template_id)
                 return 0, result    # Возвращает dict
             else:
-                result = self._server.v1.ccuseridagent.agent.config.list(self._auth_token, template_id, 0, 100, {})
+                result = self._server.v1.ccuseridagent.agent.config.list(self._auth_token, template_id, start, limit, query)
                 return 0, result['items']    # Возвращает dict
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_useridagent_config: [{err.faultCode}] — {err.faultString}'
@@ -1587,10 +1587,10 @@ class McXmlRpc:
         return 0, result    # Возвращает True
 
 ########################## Политики сети ####################################################################
-    def get_template_firewall_rules(self, template_id):
+    def get_template_firewall_rules(self, template_id, start=0, limit=130000, query={}):
         """Получить список правил межсетевого экрана шаблона"""
         try:
-            result = self._server.v1.ccfirewall.rules.list(self._auth_token, template_id, 0, 20000, {})
+            result = self._server.v1.ccfirewall.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f"Error mclib.get_template_firewall_rules: [{err.faultCode}] — {err.faultString}"
         return 0, result['items']
@@ -1611,10 +1611,10 @@ class McXmlRpc:
             return 1, f"Error mclib.update_template_firewall_rule: [{err.faultCode}] — {err.faultString}"
         return 0, result     # Возвращает True
 
-    def get_template_traffic_rules(self, template_id):
+    def get_template_traffic_rules(self, template_id, start=0, limit=1000, query={}):
         """Получить список правил NAT шаблона"""
         try:
-            result = self._server.v1.cctraffic.rules.list(self._auth_token, template_id, 0, 1000, {})
+            result = self._server.v1.cctraffic.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_traffic_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1637,13 +1637,13 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_loadbalancing_rules(self, template_id, query={}):
+    def get_template_loadbalancing_rules(self, template_id, start=0, limit=100, query={}):
         """
         Получить список правил балансировки нагрузки шаблона.
         query: {'query': 'type = reverse'} (Тип принимает значения: 'ipvs', 'icap', 'reverse')
         """
         try:
-            result = self._server.v1.ccloadbalancing.rules.list(self._auth_token, template_id, 0, 100, query)
+            result = self._server.v1.ccloadbalancing.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_loadbalancing_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1666,10 +1666,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_shaper_rules(self, template_id):
+    def get_template_shaper_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил пропускной способности"""
         try:
-            result = self._server.v1.ccshaper.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccshaper.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_shaper_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1691,10 +1691,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################## Политики безопасности ############################################################
-    def get_template_content_rules(self, template_id):
+    def get_template_content_rules(self, template_id, start=0, limit=50000, query={}):
         """Получить список правил фильтрации контента шаблона"""
         try:
-            result = self._server.v1.cccontent.rules.list(self._auth_token, template_id, 0, 20000, {})
+            result = self._server.v1.cccontent.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f"Error mclib.get_template_content_rules: [{err.faultCode}] — {err.faultString}"
         return 0, result['items']
@@ -1715,10 +1715,10 @@ class McXmlRpc:
             return 1, f"Error mclib.update_template_content_rule: [{err.faultCode}] — {err.faultString}"
         return 0, result     # Возвращает True
 
-    def get_template_safebrowsing_rules(self, template_id):
+    def get_template_safebrowsing_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил веб-безопасности шаблона"""
         try:
-            result = self._server.v1.cccontent.safe.browsing.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.cccontent.safe.browsing.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_template_safebrowsing_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1739,10 +1739,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_safebrowsing_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_tunnel_inspection_rules(self, template_id):
+    def get_template_tunnel_inspection_rules(self, template_id, start=0, limit=5000, query={}):
         """Получить список правил инспектирования туннелей шаблона"""
         try:
-            result = self._server.v1.ccfirewall.tunnel.inspection.rules.list(self._auth_token, template_id, 0, 5000, {})
+            result = self._server.v1.ccfirewall.tunnel.inspection.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_tunnel_inspection_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1763,10 +1763,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_tunnel_inspection_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_ssldecrypt_rules(self, template_id):
+    def get_template_ssldecrypt_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список правил инспектирования SSL шаблона"""
         try:
-            result = self._server.v1.cccontent.ssl.decryption.rules.list(self._auth_token, template_id, 0, 10000, {})
+            result = self._server.v1.cccontent.ssl.decryption.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_ssldecrypt_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1787,10 +1787,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_ssldecrypt_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_sshdecrypt_rules(self, template_id):
+    def get_template_sshdecrypt_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список правил инспектирования SSH шаблона"""
         try:
-            result = self._server.v1.cccontent.ssh.decryption.rules.list(self._auth_token, template_id, 0, 10000, {})
+            result = self._server.v1.cccontent.ssh.decryption.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_sshdecrypt_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1811,10 +1811,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_sshdecrypt_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_mailsecurity_rules(self, template_id):
+    def get_template_mailsecurity_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил защиты почтового трафика шаблона"""
         try:
-            result = self._server.v1.ccmailsecurity.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccmailsecurity.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_mailsecurity_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1854,10 +1854,10 @@ class McXmlRpc:
         else:
             return 0, result     # Возвращает True
 
-    def get_template_icap_servers(self, template_id):
+    def get_template_icap_servers(self, template_id, start=0, limit=100, query={}):
         """Получить список серверов ICAP шаблона"""
         try:
-            result = self._server.v1.ccicap.profiles.list(self._auth_token, template_id, 0, 100, {}, [])
+            result = self._server.v1.ccicap.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_icap_servers: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']    # Возвращает список настроек ICAP серверов
@@ -1878,10 +1878,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_icap_server: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_icap_rules(self, template_id):
+    def get_template_icap_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил ICAP шаблона"""
         try:
-            result = self._server.v1.ccicap.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccicap.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_icap_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1902,10 +1902,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_icap_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_dos_profiles(self, template_id):
+    def get_template_dos_profiles(self, template_id, start=0, limit=10000, query={}):
         """Получить список профилей DoS шаблона"""
         try:
-            result = self._server.v1.ccdos.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v1.ccdos.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_dos_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1926,10 +1926,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_dos_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_dos_rules(self, template_id):
+    def get_template_dos_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил защиты DoS шаблона"""
         try:
-            result = self._server.v1.ccdos.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccdos.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_dos_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1951,10 +1951,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ############################# Глобальный портал #####################################################################
-    def get_template_proxyportal_rules(self, template_id):
+    def get_template_proxyportal_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список ресурсов URL веб-портала шаблона"""
         try:
-            result = self._server.v1.ccproxyportal.bookmarks.list(self._auth_token, template_id, 0, 10000, {})
+            result = self._server.v1.ccproxyportal.bookmarks.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_proxyportal_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -1975,10 +1975,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_proxyportal_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_reverseproxy_servers(self, template_id):
+    def get_template_reverseproxy_servers(self, template_id, start=0, limit=10000, query={}):
         """Получить список серверов reverse-прокси шаблона"""
         try:
-            result = self._server.v1.ccreverseproxy.profiles.list(self._auth_token, template_id, 0, 100000, {}, [])
+            result = self._server.v1.ccreverseproxy.profiles.list(self._auth_token, template_id, start, limit, query, [])
             return 0, result['items']   # Возвращает список настроек серверов reverse-прокси
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_reverseproxy_servers: [{err.faultCode}] — {err.faultString}'
@@ -1999,10 +1999,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_reverseproxy_servers: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_reverseproxy_rules(self, template_id):
+    def get_template_reverseproxy_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил reverse-прокси шаблона"""
         try:
-            result = self._server.v1.ccreverseproxy.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccreverseproxy.rules.list(self._auth_token, template_id, start, limit, query)
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_reverseproxy_rules: [{err.faultCode}] — {err.faultString}'
@@ -2024,10 +2024,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ################################### WAF #############################################################################
-    def get_waf_technology_list(self):
+    def get_waf_technology_list(self, start=0, limit=100000, query={}):
         """Получить список технологий WAF"""
         try:
-            result = self._server.v1.ccwaf.system.rules.technologies.list(self._auth_token, 0, 100000, {}, [])
+            result = self._server.v1.ccwaf.system.rules.technologies.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Нет лицензии на модуль WAF или прав на получение параметров WAF.'
@@ -2035,10 +2035,10 @@ class McXmlRpc:
                 return 1, f'Error mclib.get_waf_technology_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей: {'id': <int>, 'name': <str>}
 
-    def get_template_waf_system_layers(self, template_id):
+    def get_template_waf_system_layers(self, template_id, start=0, limit=100000, query={}):
         """Получить список системных слоёв WAF"""
         try:
-            result = self._server.v1.ccwaf.system.layers.list(self._auth_token, template_id, 0, 100000, {}, [])
+            result = self._server.v1.ccwaf.system.layers.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Нет лицензии на модуль WAF или прав на получение системных слоёв WAF.'
@@ -2046,10 +2046,10 @@ class McXmlRpc:
                 return 1, f'Error mclib.get_waf_system_layers: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список
 
-    def get_template_waf_profiles(self, template_id):
+    def get_template_waf_profiles(self, template_id, start=0, limit=100000, query={}):
         """Получить список профилей WAF шаблона"""
         try:
-            result = self._server.v1.ccwaf.profiles.list(self._auth_token, template_id, 0, 100000, {}, [])
+            result = self._server.v1.ccwaf.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Нет лицензии на модуль WAF или прав на получение профилей WAF шаблона.'
@@ -2079,10 +2079,10 @@ class McXmlRpc:
                 return 1, f'Error mclib.update_template_waf_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_waf_custom_layers(self, template_id):
+    def get_template_waf_custom_layers(self, template_id, start=0, limit=100000, query={}):
         """Получить список персональных слоёв WAF шаблона"""
         try:
-            result = self._server.v1.ccwaf.custom.layers.list(self._auth_token, template_id, 0, 100000, {}, [])
+            result = self._server.v1.ccwaf.custom.layers.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Нет лицензии на модуль WAF или прав на получение персональных слоёв WAF шаблона.'
@@ -2113,10 +2113,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ################################### VPN #############################################################################
-    def get_template_vpn_client_security_profiles(self, template_id):
+    def get_template_vpn_client_security_profiles(self, template_id, start=0, limit=100000, query={}):
         """Получить клиентские профили безопасности VPN шаблона"""
         try:
-            result = self._server.v1.ccvpn.client.security.profiles.list(self._auth_token, template_id, 0, 100000, {}, [])
+            result = self._server.v1.ccvpn.client.security.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_vpn_client_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2137,10 +2137,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_vpn_client_security_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_vpn_server_security_profiles(self, template_id):
+    def get_template_vpn_server_security_profiles(self, template_id, start=0, limit=10000, query={}):
         """Получить серверные профили безопасности VPN шаблона"""
         try:
-            result = self._server.v1.ccvpn.server.security.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v1.ccvpn.server.security.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_vpn_server_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2161,10 +2161,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_vpn_server_security_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_vpn_networks(self, template_id):
+    def get_template_vpn_networks(self, template_id, start=0, limit=1000, query={}):
         """Получить список сетей VPN шаблона"""
         try:
-            result = self._server.v1.ccvpn.tunnels.list(self._auth_token, template_id, 0, 1000, {})
+            result = self._server.v1.ccvpn.tunnels.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_vpn_networks: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2185,10 +2185,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_vpn_network: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_vpn_server_rules(self, template_id):
+    def get_template_vpn_server_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список серверных правил VPN шаблона"""
         try:
-            result = self._server.v1.ccvpn.server.rules.list(self._auth_token, template_id, 0, 10000, {})
+            result = self._server.v1.ccvpn.server.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_vpn_server_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2209,10 +2209,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_vpn_server_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_vpn_client_rules(self, template_id):
+    def get_template_vpn_client_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список клиентских правил VPN шаблона"""
         try:
-            result = self._server.v1.ccvpn.client.rules.list(self._auth_token, template_id, 0, 10000, {})
+            result = self._server.v1.ccvpn.client.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_vpn_client_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2234,10 +2234,10 @@ class McXmlRpc:
         return 0, result     # Возвращает True
 
 ########################################### Оповещения #############################################################
-    def get_template_notification_alert_rules(self, template_id):
+    def get_template_notification_alert_rules(self, template_id, start=0, limit=10000, query={}):
         """Получить список правил оповещений шаблона"""
         try:
-            result = self._server.v1.ccnotification.alert.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccnotification.alert.rules.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_notification_alert_rules: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2258,10 +2258,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_notification_alert_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_snmp_security_profiles(self, template_id):
+    def get_template_snmp_security_profiles(self, template_id, start=0, limit=10000, query={}):
         """Получить профили безопасности SNMP шаблона"""
         try:
-            result = self._server.v1.ccsnmp.security.profiles.list(self._auth_token, template_id, 0, 10000, {}, [])
+            result = self._server.v1.ccsnmp.security.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_snmp_security_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
@@ -2282,10 +2282,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_snmp_security_profile: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_snmp_parameters(self, template_id):
+    def get_template_snmp_parameters(self, template_id, start=0, limit=100, query={}):
         """Получить параметры SNMP шаблона"""
         try:
-            result = self._server.v1.ccsnmp.parameters.list(self._auth_token, template_id, 0, 100, {})
+            result = self._server.v1.ccsnmp.parameters.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.gettemplate_snmp_parameters: [{err.faultCode}] — {err.faultString}'
         return 0, result
@@ -2309,10 +2309,10 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_snmp_parameters: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-    def get_template_snmp_rules(self, template_id):
+    def get_template_snmp_rules(self, template_id, start=0, limit=100000, query={}):
         """Получить список правил SNMP шаблона"""
         try:
-            result = self._server.v1.ccsnmp.rules.list(self._auth_token, template_id, 0, 100000, {})
+            result = self._server.v1.ccsnmp.rules.list(self._auth_token, template_id, start, limit, query)
             return 0, result['items']
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_snmp_rules: [{err.faultCode}] — {err.faultString}'
@@ -2352,10 +2352,10 @@ class McXmlRpc:
         else:
             return 0, result  # Возвращает список [{id: name}, ...]
 
-    def get_l7_apps(self, template_id):
+    def get_l7_apps(self, template_id, start=0, limit=500000, query={}):
         """Получить список приложений l7 шаблона"""
         try:
-            result = self._server.v1.ccl7.signatures.list(self._auth_token, template_id, 0, 500000, {}, [])
+            result = self._server.v1.ccl7.signatures.list(self._auth_token, template_id, start, limit, query, [])
             return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
         except rpc.Fault as err:
             return 1, f"Error mclib.get_l7_apps: [{err.faultCode}] — {err.faultString}"

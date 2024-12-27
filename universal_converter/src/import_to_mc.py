@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.4   20.12.2024  (только для universal_converter)
+# Версия 3.5   26.12.2024  (только для universal_converter)
 #
 
 import os, sys, json, time
@@ -62,17 +62,17 @@ class ImportAll(QThread):
             return
 
         path_dict = {}
-        try:
-            for item in self.all_points:
-                top_level_path = os.path.join(self.config_path, item['path'])
-                for point in item['points']:
-                    path_dict[point] = os.path.join(top_level_path, point)
-            for key, value in import_funcs.items():
-                if key in path_dict:
-                    value(self, path_dict[key])
-        except Exception as err:
-            self.error = 1
-            self.stepChanged.emit(f'RED|Ошибка функции "{value.__name__}":  {err}')
+#        try:
+        for item in self.all_points:
+            top_level_path = os.path.join(self.config_path, item['path'])
+            for point in item['points']:
+                path_dict[point] = os.path.join(top_level_path, point)
+        for key, value in import_funcs.items():
+            if key in path_dict:
+                value(self, path_dict[key])
+#        except Exception as err:
+#            self.error = 1
+#            self.stepChanged.emit(f'RED|Ошибка функции "{value.__name__}":  {err}')
 
         # Сохраняем бинарный файл библиотечных данных после изменений во время работы.
         if func.write_bin_file(self, self.mc_data):
@@ -215,7 +215,7 @@ def import_morphology_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков морфологии.')
     else:
-        parent.stepChanged.emit('GREEN|    Списки морфологии импортированны в раздел "Библиотеки/Морфология".')
+        parent.stepChanged.emit('GREEN|    Импорт списков морфологии завершён.')
 
 
 def import_services_list(parent, path):
@@ -252,7 +252,7 @@ def import_services_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при добавлении сервисов.')
     else:
-        parent.stepChanged.emit('GREEN|    Список сервисов импортирован в раздел "Библиотеки/Сервисы"')
+        parent.stepChanged.emit('GREEN|    Импорт списков сервисов завершён.')
 
 
 def import_services_groups(parent, path):
@@ -337,7 +337,7 @@ def import_services_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп сервисов.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".')
+        parent.stepChanged.emit('GREEN|    Импорт групп сервисов завершён.')
 
 
 def import_ip_lists(parent, path):
@@ -442,7 +442,7 @@ def import_ip_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков IP-адресов.')
     else:
-        parent.stepChanged.emit('GREEN|    Списки IP-адресов импортированы в раздел "Библиотеки/IP-адреса".')
+        parent.stepChanged.emit('GREEN|    Импорт списков IP-адресов завершён.')
 
 
 def import_useragent_lists(parent, path):
@@ -510,7 +510,7 @@ def import_useragent_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков Useragent браузеров.')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Useragent браузеров" импортирован в раздел "Библиотеки/Useragent браузеров".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Useragent браузеров" завершён.')
 
 
 def import_mime_lists(parent, path):
@@ -574,7 +574,7 @@ def import_mime_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков "Типы контента".')
     else:
-        parent.stepChanged.emit('GREEN|    Списки "Типы контента" импортированы в раздел "Библиотеки/Типы контента".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Типы контента" завершён.')
 
 
 def import_url_lists(parent, path):
@@ -655,7 +655,7 @@ def import_url_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков URL.')
     else:
-        parent.stepChanged.emit('GREEN|    Списки URL импортированы в раздел "Библиотеки/Списки URL".')
+        parent.stepChanged.emit('GREEN|    Импорт списков URL завершён.')
 
 
 def import_time_restricted_lists(parent, path):
@@ -718,7 +718,7 @@ def import_time_restricted_lists(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Календари".')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Календари" импортирован в раздел "Библиотеки/Календари".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Календари" завершён.')
 
 
 def import_shaper_list(parent, path):
@@ -765,7 +765,7 @@ def import_shaper_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Полосы пропускания".')
     else:
-        parent.stepChanged.emit('GREEN|    Список "Полосы пропускания" импортирован в раздел "Библиотеки/Полосы пропускания".')
+        parent.stepChanged.emit('GREEN|    Импорт списка "Полосы пропускания" завершён.')
 
 
 def import_templates_list(parent, path):
@@ -839,7 +839,7 @@ def import_templates_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка шаблонов страниц.')
     else:
-        parent.stepChanged.emit('GREEN|    Список шаблонов страниц импортирован в раздел "Библиотеки/Шаблоны страниц".')
+        parent.stepChanged.emit('GREEN|    Импорт списка шаблонов страниц завершён.')
 
 
 def import_url_categories(parent, path):
@@ -902,7 +902,7 @@ def import_url_categories(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп URL категорий.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы URL категорий импортированы в раздел "Библиотеки/Категории URL".')
+        parent.stepChanged.emit('GREEN|    Импорт групп URL категорий завершён.')
 
 
 def import_custom_url_category(parent, path):
@@ -959,7 +959,7 @@ def import_custom_url_category(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте изменённых категорий URL.')
     else:
-        parent.stepChanged.emit('GREEN|    Изменённые категории URL категорий импортированы в раздел "Библиотеки/Изменённые категории URL".')
+        parent.stepChanged.emit('GREEN|    Импорт изменённых категорий URL завершён.')
 
 
 def import_application_signature(parent, path):
@@ -1021,7 +1021,7 @@ def import_application_signature(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских приложений.')
     else:
-        parent.stepChanged.emit('GREEN|    Пользовательские приложения импортированы в раздел "Библиотеки/Приложения".')
+        parent.stepChanged.emit('GREEN|    Импорт пользовательских приложений завершён.')
 
 
 def import_app_profiles(parent, path):
@@ -1081,7 +1081,7 @@ def import_app_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей приложений.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили приложений импортированы в раздел "Библиотеки/Профили приложений".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей приложений завершён.')
 
 
 def import_application_groups(parent, path):
@@ -1160,7 +1160,7 @@ def import_application_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп приложений.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы приложений импортированы в раздел "Библиотеки/Группы приложений".')
+        parent.stepChanged.emit('GREEN|    Импорт групп приложений завершён.')
 
 
 def import_email_groups(parent, path):
@@ -1228,7 +1228,7 @@ def import_email_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп почтовых адресов.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы почтовых адресов импортированы в раздел "Библиотеки/Почтовые адреса".')
+        parent.stepChanged.emit('GREEN|    Импорт групп почтовых адресов завершён.')
 
 
 def import_phone_groups(parent, path):
@@ -1296,7 +1296,7 @@ def import_phone_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп телефонных номеров.')
     else:
-        parent.stepChanged.emit('GREEN|    Группы телефонных номеров импортированы в раздел "Библиотеки/Номера телефонов".')
+        parent.stepChanged.emit('GREEN|    Импорт групп телефонных номеров завершён.')
 
 
 def import_custom_idps_signature(parent, path):
@@ -1353,7 +1353,7 @@ def import_custom_idps_signature(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских сигнатур СОВ.')
     else:
-        parent.stepChanged.emit('GREEN|    Пользовательские сигнатуры СОВ импортированы в раздел "Библиотеки/Сигнатуры СОВ".')
+        parent.stepChanged.emit('GREEN|    Импорт пользовательских сигнатур СОВ завершён.')
 
 
 def import_idps_profiles(parent, path):
@@ -1429,7 +1429,7 @@ def import_idps_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей СОВ.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили СОВ импортированы в раздел "Библиотеки/Профили СОВ".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей СОВ завершён.')
 
 
 def import_notification_profiles(parent, path):
@@ -1475,7 +1475,7 @@ def import_notification_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей оповещений.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили оповещений импортированы в раздел "Библиотеки/Профили оповещений".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей оповещений завершён.')
 
 
 def import_netflow_profiles(parent, path):
@@ -1519,7 +1519,7 @@ def import_netflow_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей netflow.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили netflow импортированы в раздел "Библиотеки/Профили netflow".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей netflow завершён.')
 
 
 def import_lldp_profiles(parent, path):
@@ -1563,7 +1563,7 @@ def import_lldp_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей LLDP.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили LLDP импортированы в раздел "Библиотеки/Профили LLDP".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей LLDP завершён.')
 
 
 def import_ssl_profiles(parent, path):
@@ -1605,7 +1605,7 @@ def import_ssl_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей SSL.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили SSL импортированы в раздел "Библиотеки/Профили SSL".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей SSL завершён.')
 
 
 def import_ssl_forward_profiles(parent, path):
@@ -1649,7 +1649,7 @@ def import_ssl_forward_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей пересылки SSL.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили пересылки SSL импортированы в раздел "Библиотеки/Профили пересылки SSL".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей пересылки SSL завершён.')
 
 
 def import_hip_objects(parent, path):
@@ -1692,7 +1692,7 @@ def import_hip_objects(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP объектов.')
     else:
-        parent.stepChanged.emit('GREEN|    HIP объекты импортированы в раздел "Библиотеки/HIP объекты".')
+        parent.stepChanged.emit('GREEN|    Импорт HIP объектов завершён.')
 
 
 def import_hip_profiles(parent, path):
@@ -1743,7 +1743,7 @@ def import_hip_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP профилей.')
     else:
-        parent.stepChanged.emit('GREEN|    HIP профили импортированы в раздел "Библиотеки/HIP профили".')
+        parent.stepChanged.emit('GREEN|    Импорт HIP профилей завершён.')
 
 
 def import_bfd_profiles(parent, path):
@@ -1786,7 +1786,7 @@ def import_bfd_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей BFD.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили BFD импортированы в раздел "Библиотеки/Профили BFD".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей BFD завершён.')
 
 
 def import_useridagent_syslog_filters(parent, path):
@@ -1832,7 +1832,7 @@ def import_useridagent_syslog_filters(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
     else:
-        parent.stepChanged.emit('GREEN|    Syslog фильтры UserID агента импортированы в раздел "Библиотеки/Syslog фильтры UserID агента".')
+        parent.stepChanged.emit('GREEN|    Импорт Syslog фильтров UserID агента завершён.')
 
 
 def import_scenarios(parent, path):
@@ -1905,10 +1905,124 @@ def import_scenarios(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сценариев.')
     else:
-        parent.stepChanged.emit('GREEN|    Список сценариев импортирован в раздел "Библиотеки/Сценарии".')
+        parent.stepChanged.emit('GREEN|    Импорт списка сценариев завершён.')
 
 
 #-------------------------------------------- Сеть ------------------------------------------------------------
+class Zone:
+    def __init__(self, parent, zone):
+        self.parent = parent
+        self.name = zone['name']
+        self.description = zone['description']
+        self.services_access = zone['services_access']
+        self.enable_antispoof = zone['enable_antispoof']
+        self.antispoof_invert = zone['antispoof_invert']
+        self.networks = zone['networks']
+        self.sessions_limit_enabled = zone['sessions_limit_enabled']
+        self.sessions_limit_exclusions = zone['sessions_limit_exclusions']
+        self.service_ids = {
+            'Ping': 'ffffff03-ffff-ffff-ffff-ffffff000001',
+            'SNMP': 'ffffff03-ffff-ffff-ffff-ffffff000002',
+            'Captive-портал и страница блокировки': 'ffffff03-ffff-ffff-ffff-ffffff000004',
+            'XML-RPC для управления': 'ffffff03-ffff-ffff-ffff-ffffff000005',
+            'Кластер': 'ffffff03-ffff-ffff-ffff-ffffff000006',
+            'VRRP': 'ffffff03-ffff-ffff-ffff-ffffff000007',
+            'Консоль администрирования': 'ffffff03-ffff-ffff-ffff-ffffff000008',
+            'DNS': 'ffffff03-ffff-ffff-ffff-ffffff000009',
+            'HTTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000010',
+            'Агент аутентификации': 'ffffff03-ffff-ffff-ffff-ffffff000011',
+            'SMTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000012',
+            'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
+            'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
+            'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
+#           'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
+            'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
+            'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
+            'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
+            'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
+            'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
+            'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
+            'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
+            'SNMP-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000026',
+            'SSH-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000027',
+            'Multicast': 'ffffff03-ffff-ffff-ffff-ffffff000028',
+            'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
+            'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
+            'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
+            'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
+        }
+        self.error = 0
+        self.check_services_access()
+        self.check_networks()
+        self.check_sessions_limit()
+
+
+    def check_services_access(self):
+        """Обрабатываем сервисы из контроля доступа"""
+        new_services_access = []
+        for service in self.services_access:
+            if service['enabled']:
+                service_name = service['service_id']
+                # Проверяем что такой сервис существует в этой версии МС и получаем его ID.
+                try:
+                    service['service_id'] = self.service_ids[service['service_id']]
+                except KeyError as err:
+                    self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа. Сервис не импортирован.')
+                    self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'
+                    self.error = 1
+                    continue
+                # Приводим список разрешённых адресов сервиса к спискам IP-листов.
+                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
+                    allowed_ips = []
+                    for item in service['allowed_ips']:
+                        if item[0] == 'list_id':
+                            try:
+                                item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                            except KeyError as err:
+                                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В контроле доступа "{service_name}" не найден список IP-адресов {err}.')
+                                self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не найден список IP-адресов {err}.'
+                                self.error = 1
+                                continue
+                        allowed_ips.append(item)
+                    service['allowed_ips'] = allowed_ips
+
+                new_services_access.append(service)
+        self.services_access = new_services_access
+
+
+    def check_networks(self):
+        """Обрабатываем защиту от IP-спуфинга"""
+        if self.networks and isinstance(self.network[0], list):
+            new_networks = []
+            for item in self.networks:
+                if item[0] == 'list_id':
+                    try:
+                        item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                    except KeyError as err:
+                        self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
+                        self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
+                        self.error = 1
+                        continue
+                new_networks.append(item)
+            self.networks = new_networks
+
+
+    def check_sessions_limit(self):
+        """Обрабатываем ограничение сессий"""
+        new_sessions_limit_exclusions = []
+        for item in self.sessions_limit_exclusions:
+            try:
+                item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                new_sessions_limit_exclusions.append(item)
+            except KeyError as err:
+                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Ограничение сессий" не найден список IP-адресов {err}.')
+                self.description = f'{self.description}\nError: В разделе "Ограничение сессий" не найден список IP-адресов {err}.'
+                self.error = 1
+        self.sessions_limit_exclusions = new_sessions_limit_exclusions
+        if not self.sessions_limit_exclusions:
+            self.sessions_limit_enabled = False
+
+
 def import_zones(parent, path):
     """Импортируем зоны на NGFW, если они есть."""
     json_file = os.path.join(path, 'config_zones.json')
@@ -1917,115 +2031,43 @@ def import_zones(parent, path):
         return
 
     parent.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
-
-    service_ids = {
-        'Ping': 'ffffff03-ffff-ffff-ffff-ffffff000001',
-        'SNMP': 'ffffff03-ffff-ffff-ffff-ffffff000002',
-        'Captive-портал и страница блокировки': 'ffffff03-ffff-ffff-ffff-ffffff000004',
-        'XML-RPC для управления': 'ffffff03-ffff-ffff-ffff-ffffff000005',
-        'Кластер': 'ffffff03-ffff-ffff-ffff-ffffff000006',
-        'VRRP': 'ffffff03-ffff-ffff-ffff-ffffff000007',
-        'Консоль администрирования': 'ffffff03-ffff-ffff-ffff-ffffff000008',
-        'DNS': 'ffffff03-ffff-ffff-ffff-ffffff000009',
-        'HTTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000010',
-        'Агент аутентификации': 'ffffff03-ffff-ffff-ffff-ffffff000011',
-        'SMTP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000012',
-        'POP(S)-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000013',
-        'CLI по SSH': 'ffffff03-ffff-ffff-ffff-ffffff000014',
-        'VPN': 'ffffff03-ffff-ffff-ffff-ffffff000015',
-#        'SCADA': 'ffffff03-ffff-ffff-ffff-ffffff000017',
-        'Reverse-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000018',
-        'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
-        'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
-        'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
-        'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
-        'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
-        'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
-        'SNMP-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000026',
-        'SSH-прокси': 'ffffff03-ffff-ffff-ffff-ffffff000027',
-        'Multicast': 'ffffff03-ffff-ffff-ffff-ffffff000028',
-        'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
-        'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
-        'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
-        'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
-    }
-
-    zones = parent.mc_data['zones']
+    mc_zones = parent.mc_data['zones']
     error = 0
+
     for zone in data:
         zone['name'] = func.get_restricted_name(zone['name'])
-
-        if zone['name'] in zones:
-            if parent.template_id == zones[zone['name']].template_id:
+        if zone['name'] in mc_zones:
+            if parent.template_id == mc_zones[zone['name']].template_id:
                 parent.stepChanged.emit(f'uGRAY|    Зона "{zone["name"]}" уже существует в текущем шаблоне.')
             else:
-                parent.stepChanged.emit(f'sGREEN|    Зона "{zone["name"]}" уже существует в шаблоне "{zones[zone["name"]].template_name}".')
+                parent.stepChanged.emit(f'sGREEN|    Зона "{zone["name"]}" уже существует в шаблоне "{mc_zones[zone["name"]].template_name}".')
             continue
 
-        new_services_access = []
-        for service in zone['services_access']:
-            if service['enabled']:
-                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
-                    allowed_ips = []
-                    for item in service['allowed_ips']:
-                        if item[0] == 'list_id':
-                            try:
-                                item[1] = parent.mc_data['ip_lists'][item[1]].id
-                            except KeyError as err:
-                                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В контроле доступа "{service["service_id"]}" не найден список IP-адресов {err}.')
-                                zone['description'] = f'{zone["description"]}\nError: В контроле доступа "{service["service_id"]}" не найден список IP-адресов {err}.'
-                                error = 1
-                                continue
-                        allowed_ips.append(item)
-                    service['allowed_ips'] = allowed_ips
-                try:
-                    service['service_id'] = service_ids[service['service_id']]
-                    new_services_access.append(service)
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. Не корректный сервис "{service["service_id"]}" в контроле доступа. Сервис не импортирован.')
-                    zone['description'] = f'{zone["description"]}\nError: Не импортирован сервис "{service["service_id"]}" в контроль доступа.'
-                    error = 1
-        zone['services_access'] = new_services_access
-
-        zone_networks = []
-        for net in zone['networks']:
-            if net[0] == 'list_id':
-                try:
-                    net[1] = parent.mc_data['ip_lists'][net[1]].id
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
-                    zone['description'] = f'{zone["description"]}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
-                    error = 1
-                    continue
-            zone_networks.append(net)
-        zone['networks'] = zone_networks
-
-        sessions_limit_exclusions = []
-        for item in zone['sessions_limit_exclusions']:
-            try:
-                item[1] = parent.mc_data['ip_lists'][item[1]].id
-                sessions_limit_exclusions.append(item)
-            except KeyError as err:
-                parent.stepChanged.emit(f'RED|    Error [Зона "{zone["name"]}"]. В разделе "Ограничение сессий" не найден список IP-адресов {err}.')
-                zone['description'] = f'{zone["description"]}\nError: В разделе "Ограничение сессий" не найден список IP-адресов {err}.'
-                error = 1
-        zone['sessions_limit_exclusions'] = sessions_limit_exclusions
+        current_zone = Zone(parent, zone)
+        zone['services_access'] = current_zone.services_access
+        zone['enable_antispoof'] = current_zone.enable_antispoof
+        zone['antispoof_invert'] = current_zone.antispoof_invert
+        zone['networks'] = current_zone.networks
+        zone['sessions_limit_enabled'] = current_zone.sessions_limit_enabled
+        zone['sessions_limit_exclusions'] = current_zone.sessions_limit_exclusions
+        zone['description'] = current_zone.description
+        error = current_zone.error
 
         err, result = parent.utm.add_template_zone(parent.template_id, zone)
         if err == 3:
-            parent.stepChanged.emit(f'GRAY|    {result}')
+            parent.stepChanged.emit(f'uGRAY|    {result}')
         elif err == 1:
             parent.stepChanged.emit(f'RED|    {result} [Зона "{zone["name"]}" не импортирована]')
             error = 1
         else:
-            zones[zone['name']] = BaseObject(id=result, template_id=parent.template_id, template_name=parent.templates[parent.template_id])
+            mc_zones[zone['name']] = BaseObject(id=result, template_id=parent.template_id, template_name=parent.templates[parent.template_id])
             parent.stepChanged.emit(f'BLACK|    Зона "{zone["name"]}" импортирована.')
 
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте зон.')
     else:
-        parent.stepChanged.emit('GREEN|    Зоны импортированы в раздел "Сеть/Зоны".')
+        parent.stepChanged.emit('GREEN|    Импорт Зон завершён.')
 
 
 def import_interfaces(parent, path):
@@ -2314,7 +2356,7 @@ def import_gateways_list(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шлюзов.')
     else:
-        parent.stepChanged.emit('GREEN|    Шлюзы импортированы в раздел "Сеть/Шлюзы".')
+        parent.stepChanged.emit('GREEN|    Импорт шлюзов завершён.')
 
 
 def import_gateway_failover(parent, path):
@@ -2398,7 +2440,7 @@ def import_dhcp_subnets(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
     else:
-        parent.stepChanged.emit('GREEN|    Настройки DHCP импортированы в раздел "Сеть/DHCP".')
+        parent.stepChanged.emit('GREEN|    Импорт настроек DHCP завершён.')
 
 
 def import_dns_config(parent, path):
@@ -2433,7 +2475,7 @@ def import_dns_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте DNS-серверов.')
     else:
-        parent.stepChanged.emit('GREEN|    Cистемные DNS-сервера Импортированы в раздел "Сеть/DNS/Системные DNS-серверы".')
+        parent.stepChanged.emit('GREEN|    Импорт системных DNS-серверов завершён.')
 
 def import_dns_proxy(parent, path):
     """Импортируем настройки DNS прокси"""
@@ -2481,7 +2523,7 @@ def import_dns_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил DNS-прокси.')
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы правила DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".')
+        parent.stepChanged.emit('GREEN|    Импорт правил DNS-прокси завершён.')
 
 def import_dns_static(parent, path):
     """Импортируем статические записи DNS"""
@@ -2507,7 +2549,7 @@ def import_dns_static(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте статических записей DNS.')
     else:
-        parent.stepChanged.emit('GREEN|    Статические записи DNS импортированы в раздел "Сеть/DNS/DNS-прокси/Статические записи".')
+        parent.stepChanged.emit('GREEN|    Импорт статических записей DNS завершён.')
 
 
 def import_vrf(parent, path):
@@ -2673,7 +2715,7 @@ def import_vrf(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте виртуальных маршрутизаторов.')
     else:
-        parent.stepChanged.emit('GREEN|    Виртуальные маршрутизаторы импортированы в раздел "Сеть/Виртуальные маршрутизаторы".')
+        parent.stepChanged.emit('GREEN|    Импорт виртуальных маршрутизаторов завершён.')
 
 
 def import_wccp_rules(parent, path):
@@ -2738,7 +2780,7 @@ def import_wccp_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил WCCP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила WCCP импортированы в раздел "Сеть/WCCP".')
+        parent.stepChanged.emit('GREEN|    Импорт правил WCCP завершён.')
 
 #------------------------------------------- UserGate ------------------------------------------------------------
 def import_certificates(parent, path):
@@ -2824,7 +2866,7 @@ def import_certificates(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте сертификатов.')
     else:
-        parent.stepChanged.emit('GREEN|    Сертификаты импортированы в раздел "UserGate/Сертификаты".')
+        parent.stepChanged.emit('GREEN|    Импорт сертификатов завершён.')
 
 
 def import_client_certificate_profiles(parent, path):
@@ -2866,20 +2908,20 @@ def import_client_certificate_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей клиентских сертификатов.')
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы профили клиентских сертификатов в раздел "UserGate/Профили клиентских сертификатов".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей клиентских сертификатов завершён.')
 
 
 def import_general_settings(parent, path):
     """Импортируем раздел 'UserGate/Настройки'."""
-#    import_ui(parent, path)
-#    import_ntp_settings(parent, path)
-#    import_proxy_port(parent, path)
-#    import_modules(parent, path)
-#    import_cache_settings(parent, path)
+    import_ui(parent, path)
+    import_ntp_settings(parent, path)
+    import_proxy_port(parent, path)
+    import_modules(parent, path)
+    import_cache_settings(parent, path)
     import_proxy_exceptions(parent, path)
-#    import_web_portal_settings(parent, path)
-#    import_upstream_proxy_settings(parent, path)
-#    import_upstream_update_proxy_settings(parent, path)
+    import_web_portal_settings(parent, path)
+    import_upstream_proxy_settings(parent, path)
+    import_upstream_update_proxy_settings(parent, path)
 
 
 def import_ui(parent, path):
@@ -2959,7 +3001,7 @@ def import_ui(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек интерфейса.')
     else:
-        parent.stepChanged.emit('GREEN|    Настройки интерфейса импортированы в раздел "UserGate/Настройки/Настройки интерфейса".')
+        parent.stepChanged.emit('GREEN|    Импорт настроек интерфейса завершён.')
 
 
 def import_ntp_settings(parent, path):
@@ -3000,7 +3042,7 @@ def import_ntp_settings(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произоша ошибка при импорте настроек NTP.')
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы сервера NTP в раздел "Настройки/Настройки времени сервера".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов NTP завершён.')
 
 
 def import_proxy_port(parent, path):
@@ -3059,13 +3101,13 @@ def import_modules(parent, path):
                 parent.stepChanged.emit(f'RED|    {result} [Параметр "{params[key]}" не установлен]')
                 error = 1
             else:
-                parent.stepChanged.emit(f'BLACK|    Параметр "{params[key]}" установлен в знчение "{data[key]}".')
+                parent.stepChanged.emit(f'BLACK|    Параметр "{params[key]}" установлен в значение "{data[key]}".')
 
     if error:
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Импорт модулей прошёл с ошибками.')
     else:
-        parent.stepChanged.emit('GREEN|    Модули импортированы в раздел "UserGate/Настройки/Модули".')
+        parent.stepChanged.emit('GREEN|    Импорт модулей завершён.')
 
 
 def import_cache_settings(parent, path):
@@ -3251,7 +3293,7 @@ def import_web_portal_settings(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек Веб-портала.')
         parent.error = 1
     else:
-        parent.stepChanged.emit('GREEN|    Импортирован раздел "UserGate/Настройки/Веб-портал".')
+        parent.stepChanged.emit('GREEN|    Импорт настроек Веб-портала завершён.')
 
 
 def import_upstream_proxy_settings(parent, path):
@@ -3276,7 +3318,7 @@ def import_upstream_proxy_settings(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек вышестоящего прокси!')
         parent.error = 1
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы настройки вышестоящего прокси в раздел "UserGate/Настройки/Вышестоящий прокси".')
+        parent.stepChanged.emit('GREEN|    Настройки вышестоящего прокси импортированы.')
 
 
 def import_upstream_update_proxy_settings(parent, path):
@@ -3301,7 +3343,7 @@ def import_upstream_update_proxy_settings(parent, path):
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек вышестоящего прокси для проверки лицензий и обновлений')
         parent.error = 1
     else:
-        parent.stepChanged.emit('GREEN|    Импортированы настройки вышестоящего прокси в раздел "UserGate/Настройки/Вышестоящий прокси для проверки лицензий и обновлений".')
+        parent.stepChanged.emit('GREEN|    Настройки вышестоящего прокси для проверки лицензий и обновлений импортированы.')
 
 
 #---------------------------------------- Пользователи и устройства --------------------------------------------------------
@@ -3372,7 +3414,7 @@ def import_local_groups(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте локальных групп пользователей.')
     else:
-        parent.stepChanged.emit('GREEN|    Импорт групп пользователей в раздел "Пользователи и устройства/Группы" завершён.')
+        parent.stepChanged.emit('GREEN|    Импорт локальных групп пользователей завершён.')
 
 
 def import_local_users(parent, path):
@@ -3426,7 +3468,7 @@ def import_local_users(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте локальных пользователей.')
     else:
-        parent.stepChanged.emit('GREEN|    Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи" завершён.')
+        parent.stepChanged.emit('GREEN|    Импорт локальных пользователей завершён.')
 
 
 def import_auth_servers(parent, path):
@@ -4221,7 +4263,7 @@ def import_agent_servers_old(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте агентов UserID.')
     else:
-        parent.stepChanged.emit('GREEN|    Агенты UserID импортированы в раздел "Пользователи и устройства/Агент UserID".')
+        parent.stepChanged.emit('GREEN|    Импорт Агентов UserID завершён.')
 
 
 def import_agent_servers(parent, path):
@@ -4312,7 +4354,7 @@ def import_agent_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте агентов UserID.')
     else:
-        parent.stepChanged.emit('GREEN|    Агенты UserID импортированы в раздел "Пользователи и устройства/Агент UserID".')
+        parent.stepChanged.emit('GREEN|    Импорт Агентов UserID завершён.')
 
 
 #-------------------------------------- Политики сети ---------------------------------------------------------
@@ -4435,7 +4477,7 @@ def import_firewall_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила межсетевого экрана импортированы в раздел "Политики сети/Межсетевой экран".')
+        parent.stepChanged.emit('GREEN|    Импорт правил межсетевого экрана завершён.')
 
 
 def import_nat_rules(parent, path):
@@ -4520,7 +4562,7 @@ def import_nat_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила NAT импортированы в раздел "Политики сети/NAT и маршрутизация".')
+        parent.stepChanged.emit('GREEN|    Импорт правил NAT завершён.')
 
 
 def import_loadbalancing_rules(parent, path):
@@ -4578,7 +4620,7 @@ def import_loadbalancing_tcpudp(parent, path, balansing_servers):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки TCP/UDP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила балансировки TCP/UDP импортированы в раздел "Политики сети/Балансировка нагрузки".')
+        parent.stepChanged.emit('GREEN|    Импорт правил балансировки TCP/UDP завершён.')
 
 
 def import_loadbalancing_icap(parent, path, balansing_servers):
@@ -4636,7 +4678,7 @@ def import_loadbalancing_icap(parent, path, balansing_servers):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки ICAP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила балансировки ICAP импортированы.')
+        parent.stepChanged.emit('GREEN|    Импорт правил балансировки ICAP завершён.')
 
 
 def import_loadbalancing_reverse(parent, path, balansing_servers):
@@ -4694,7 +4736,7 @@ def import_loadbalancing_reverse(parent, path, balansing_servers):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки Reverse-proxy.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила балансировки Reverse-proxy импортированы.')
+        parent.stepChanged.emit('GREEN|    Импорт правил балансировки Reverse-proxy завершён.')
 
 
 def import_shaper_rules(parent, path):
@@ -4771,7 +4813,7 @@ def import_shaper_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила пропускной способности импортированы в раздел "Политики сети/Пропускная способность".')
+        parent.stepChanged.emit('GREEN|    Импорт правил пропускной способности завершён.')
 
 #-------------------------------------------- Политики безопасности --------------------------------------------------
 def import_content_rules(parent, path):
@@ -4906,7 +4948,7 @@ def import_content_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила контентной фильтрации импортированы в раздел "Политики безопасности/Фильтрация контента".')
+        parent.stepChanged.emit('GREEN|    Импорт правил контентной фильтрации завершён.')
 
 
 def import_safebrowsing_rules(parent, path):
@@ -4960,7 +5002,7 @@ def import_safebrowsing_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил веб-безопасности.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила веб-безопасности импортированны в раздел "Политики безопасности/Веб-безопасность".')
+        parent.stepChanged.emit('GREEN|    Импорт правил веб-безопасности завершён.')
 
 
 def import_tunnel_inspection_rules(parent, path):
@@ -5010,7 +5052,7 @@ def import_tunnel_inspection_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования туннелей.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила инспектирования туннелей импортированны в раздел "Политики безопасности/Инспектирование туннелей".')
+        parent.stepChanged.emit('GREEN|    Импорт правил инспектирования туннелей завершён.')
 
 
 def import_ssldecrypt_rules(parent, path):
@@ -5087,7 +5129,7 @@ def import_ssldecrypt_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSL.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила инспектирования SSL импортированны в раздел "Политики безопасности/Инспектирование SSL".')
+        parent.stepChanged.emit('GREEN|    Импорт правил инспектирования SSL завершён.')
 
 
 def import_sshdecrypt_rules(parent, path):
@@ -5141,7 +5183,7 @@ def import_sshdecrypt_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSH.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила инспектирования SSH импортированны в раздел "Политики безопасности/Инспектирование SSH".')
+        parent.stepChanged.emit('GREEN|    Импорт правил инспектирования SSH завершён.')
 
 
 def import_mailsecurity(parent, path):
@@ -5223,7 +5265,7 @@ def import_mailsecurity_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты почтового трафика.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила защиты почтового трафика импортированы в раздел "Политики безопасности/Защита почтового трафика".')
+        parent.stepChanged.emit('GREEN|    Импорт правил защиты почтового трафика завершён.')
 
 
 def import_mailsecurity_antispam(parent, path):
@@ -5298,7 +5340,7 @@ def import_icap_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов ICAP.')
     else:
-        parent.stepChanged.emit('GREEN|    Серверы ICAP импортированы в раздел "Политики безопасности/ICAP-серверы".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов ICAP завершён.')
 
 
 def import_icap_rules(parent, path):
@@ -5397,7 +5439,7 @@ def import_icap_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил ICAP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила ICAP импортированы в раздел "Политики безопасности/ICAP-правила".')
+        parent.stepChanged.emit('GREEN|    Импорт правил ICAP завершён.')
 
 
 def import_dos_profiles(parent, path):
@@ -5441,7 +5483,7 @@ def import_dos_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей DoS.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили DoS импортированы в раздел "Политики безопасности/Профили DoS".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей DoS завершён.')
 
 
 def import_dos_rules(parent, path):
@@ -5518,7 +5560,7 @@ def import_dos_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты DoS.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила защиты DoS импортированы в раздел "Политики безопасности/Правила защиты DoS".')
+        parent.stepChanged.emit('GREEN|    Импорт правил защиты DoS завершён.')
 
 
 #-------------------------------------------------- WAF ----------------------------------------------------------
@@ -5559,7 +5601,7 @@ def import_waf_custom_layers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте персональных слоёв WAF.')
     else:
-        parent.stepChanged.emit('GREEN|    Персональные слои импортированы в раздел "WAF/Персональные слои".')
+        parent.stepChanged.emit('GREEN|    Импорт персональных слоёв WAF завершён.')
 
 
 def import_waf_profiles(parent, path):
@@ -5648,7 +5690,7 @@ def import_waf_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей WAF.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили WAF импортированы в раздел "WAF/Профили".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей WAF завершён.')
 
 
 #-------------------------------------------- Глобальный портал --------------------------------------------------
@@ -5714,7 +5756,7 @@ def import_proxyportal_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте ресурсов веб-портала.')
     else:
-        parent.stepChanged.emit('GREEN|    Список ресурсов веб-портала импортирован в раздел "Глобальный портал/Веб-портал".')
+        parent.stepChanged.emit('GREEN|    Импорт списка ресурсов веб-портала завершён.')
 
 
 def import_reverseproxy_servers(parent, path):
@@ -5758,7 +5800,7 @@ def import_reverseproxy_servers(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.')
     else:
-        parent.stepChanged.emit('GREEN|    Сервера reverse-прокси импортированы в раздел "Глобальный портал/Серверы reverse-прокси".')
+        parent.stepChanged.emit('GREEN|    Импорт серверов reverse-прокси завершён.')
 
 
 def import_reverseproxy_rules(parent, path):
@@ -5919,7 +5961,7 @@ def import_reverseproxy_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила reverse-прокси импортированы в раздел "Глобальный портал/Правила reverse-прокси".')
+        parent.stepChanged.emit('GREEN|    Импорт правил reverse-прокси завершён.')
     parent.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
 
 #-------------------------------------------- VPN -----------------------------------------------------------------------
@@ -5972,7 +6014,7 @@ def import_vpnclient_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских профилей безопасности VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Клиентские профили безопасности импортированы в раздел "VPN/Клиентские профили безопасности".')
+        parent.stepChanged.emit('GREEN|    Импорт клиентских профили безопасности завершён.')
 
 
 def import_vpnserver_security_profiles(parent, path):
@@ -6038,7 +6080,7 @@ def import_vpnserver_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных профилей безопасности VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Серверные профили безопасности импортированы в раздел "VPN/Серверные профили безопасности".')
+        parent.stepChanged.emit('GREEN|    Импорт серверных профилей безопасности завершён.')
 
 
 def import_vpn_networks(parent, path):
@@ -6089,7 +6131,7 @@ def import_vpn_networks(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сетей VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Список сетей VPN импортирован в раздел "VPN/Сети VPN".')
+        parent.stepChanged.emit('GREEN|    Импорт списка сетей VPN завершён.')
 
 
 def get_networks(parent, networks, rule):
@@ -6171,7 +6213,7 @@ def import_vpn_client_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских правил VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Клиентские правила VPN импортированы в раздел "VPN/Клиентские правила".')
+        parent.stepChanged.emit('GREEN|    Импорт клиентских правил VPN завершён.')
 
 
 def import_vpn_server_rules(parent, path):
@@ -6265,7 +6307,7 @@ def import_vpn_server_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных правил VPN.')
     else:
-        parent.stepChanged.emit('GREEN|    Серверные правила VPN импортированы в раздел "VPN/Серверные правила".')
+        parent.stepChanged.emit('GREEN|    Импорт серверных правил VPN завершён.')
 
 
 #--------------------------------------------------- Оповещения ---------------------------------------------------------
@@ -6353,7 +6395,7 @@ def import_notification_alert_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил оповещений.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила оповещений импортированы в раздел "Диагностика и мониторинг/Правила оповещений".')
+        parent.stepChanged.emit('GREEN|    Импорт правил оповещений завершён.')
 
 
 def import_snmp_security_profiles(parent, path):
@@ -6401,7 +6443,7 @@ def import_snmp_security_profiles(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей безопасности SNMP.')
     else:
-        parent.stepChanged.emit('GREEN|    Профили безопасности SNMP импортированы в раздел "Диагностика и мониторинг/Профили безопасности SNMP".')
+        parent.stepChanged.emit('GREEN|    Импорт профилей безопасности SNMP завершён.')
 
 
 def import_snmp_settings(parent, path):
@@ -6441,7 +6483,7 @@ def import_snmp_settings(parent, path):
     elif err == 3:
         parent.stepChanged.emit(f'GRAY|    {result}')
     else:
-        parent.stepChanged.emit('GREEN|    Параметры SNMP импортированы  в раздел "Диагностика и мониторинг/Параметры SNMP".')
+        parent.stepChanged.emit('GREEN|    Параметры SNMP импортированы.')
 
 
 def import_snmp_rules(parent, path):
@@ -6509,7 +6551,7 @@ def import_snmp_rules(parent, path):
         parent.error = 1
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил SNMP.')
     else:
-        parent.stepChanged.emit('GREEN|    Правила SNMP импортированы в раздел "Диагностика и мониторинг/SNMP".')
+        parent.stepChanged.emit('GREEN|    Импорт правил SNMP завершён.')
 
 #------------------------------------------------------------------------------------------------------------------------
 def pass_function(parent, path):

@@ -190,7 +190,6 @@ class SelectMode(QWidget):
 
         self.btn1 = QPushButton("Назад")
         self.btn1.setFixedWidth(100)
-#        self.btn1.clicked.connect(self.run_page_0)
         self.btn2 = QPushButton()
         self.btn2.setFixedWidth(230)
         self.btn3 = QPushButton()
@@ -273,7 +272,7 @@ class SelectMode(QWidget):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения часто используемых данных с NGFW! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения часто используемых данных с {self.product}! {self.thread}')
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
@@ -316,10 +315,6 @@ class SelectMode(QWidget):
     def on_finished(self):
         self.thread = None
         self.enable_buttons()
-
-#    def read_version_file(self):
-#        with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'r') as fh:
-#            
 
 
 class SelectExportMode(SelectMode):
@@ -772,16 +767,6 @@ class SelectMcImportMode(SelectMode):
                         func.message_inform(self, 'Внимание!', message)
                         self.run_page_0()
                         return
-
-#                    err, version_data = func.read_json_file(self, os.path.join(self.parent.get_config_path(), 'version.json'))
-#                    if err:
-#                        message = f'Не удалось прочитать файл {os.path.join(self.parent.get_config_path(), "version.json")}'
-#                        self.add_item_log(message, color='RED')
-#                        func.message_alert(self, message, version_data.split('|')[1].lstrip())
-#                        self.run_page_0()
-#                        return
-#                    if 'device' in version_data:
-#                        self.tree.product = version_data['device'].lower()
 
                     groups_dialog = SelectMcGroupTemplates(self, self.parent)
                     groups_result = groups_dialog.exec()
@@ -1482,8 +1467,8 @@ class MainTree(QTreeWidget):
                          "Профили пользовательских сертификатов"],
             "Сеть": ["Зоны", "Интерфейсы", "Шлюзы", "DHCP", "DNS", "Виртуальные маршрутизаторы", "WCCP", "Маршруты", "OSPF", "BGP"],
             "Пользователи и устройства": [
-                "Группы", "Пользователи", "Профили MFA", "Серверы аутентификации", "Профили аутентификации", "Captive-профили", "Captive-портал",
-                "Терминальные серверы", "Политики BYOD", "Агент UserID"
+                "Группы", "Пользователи", "Профили MFA", "Серверы аутентификации", "Профили аутентификации", "Captive-профили",
+                "Captive-портал", "Терминальные серверы", "Политики BYOD", "Агент UserID"
             ],
             "Политики сети": ["Межсетевой экран", "NAT и маршрутизация", "Балансировка нагрузки", "Пропускная способность"],
             "Политики безопасности": [
@@ -1675,9 +1660,9 @@ class MainTree(QTreeWidget):
         array = []
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
-            item_text = self.over_compliances[item.text(0)]
             if item.isHidden():
                 continue
+            item_text = self.over_compliances[item.text(0)]
             item_childs = []
             for i in range(item.childCount()):
                 try:

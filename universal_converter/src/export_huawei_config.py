@@ -21,11 +21,11 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.5 04.10.2024
+# Версия 1.6 14.01.2025
 #
 
 import os, sys, json
-import copy, re
+import copy, re, time
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import app_compliance, l7_categories, l7_categories_compliance
@@ -913,6 +913,7 @@ def convert_services(parent, path, data):
                     protocol['app_proto'] = services_proto.get(protocol['port'], '')
                 if protocol['port'] == '0-65535':
                     protocol['port'] = ''
+                protocol['source_port'] = protocol.get('source_port', '')   # Это поле может отсутствовать.
                 if protocol['source_port'] == '0-65535':
                     protocol['source_port'] = ''
     else:
@@ -957,6 +958,7 @@ def convert_ip_lists(parent, path, data):
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
     else:
         indicator.pop()
 
@@ -974,6 +976,7 @@ def convert_ip_lists(parent, path, data):
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
     else:
         indicator.pop()
 
@@ -996,6 +999,7 @@ def convert_ip_lists(parent, path, data):
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+                time.sleep(0.1)
     else:
         indicator.pop()
 
@@ -1029,6 +1033,7 @@ def convert_url_lists(parent, path, data):
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+            time.sleep(0.1)
         parent.stepChanged.emit(f'GREEN|    Списки URL выгружены в каталог "{current_path}".')
     else:
         parent.stepChanged.emit('GRAY|    Нет списков URL для экспорта.')
@@ -1513,6 +1518,7 @@ def convert_nat_rules(parent, path, data):
                 })
                 nat_rules.append(copy.deepcopy(rule))
                 parent.stepChanged.emit(f'BLACK|    Создано правило {rule["action"]} "{rule["name"]}".')
+                time.sleep(0.1)
 
         json_file = os.path.join(current_path, 'config_nat_rules.json')
         with open(json_file, 'w') as fh:
@@ -1566,6 +1572,7 @@ def convert_firewall_rules(parent, path, data):
                 'send_host_icmp': '',
             })
             parent.stepChanged.emit(f'BLACK|    Создано правило МЭ "{rule["name"]}".')
+            time.sleep(0.1)
 
         json_file = os.path.join(current_path, 'config_firewall_rules.json')
         with open(json_file, 'w') as fh:
@@ -1796,7 +1803,7 @@ def get_ips(parent, path, rule_ips, rule_name, iplist_name=None):
         ip_list_name = func.create_ip_list(parent, path, ips=ip_group, name=iplist_name, descr='Портировано с Huawei.')
         if ip_list_name:
             new_rule_ips.append(['list_id', ip_list_name])
-
+        time.sleep(0.1)
     return new_rule_ips
 
 def get_services(parent, rule_services, rule_type, rule_name):

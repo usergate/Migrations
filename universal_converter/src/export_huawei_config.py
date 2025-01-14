@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.6 14.01.2025
+# Версия 1.6    14.01.2025
 #
 
 import os, sys, json
@@ -29,10 +29,12 @@ import copy, re, time
 import common_func as func
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import app_compliance, l7_categories, l7_categories_compliance
-from services import trans_table, trans_filename, zone_services, ug_services
+from services import trans_table, trans_filename, zone_services, ug_services, ip_proto
 
 
 pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+ug_proto = {x for x in ip_proto.values()}
+
 
 class ConvertHuaweiConfig(QThread):
     """Преобразуем файл конфигурации Huawei в формат UserGate NGFW."""
@@ -46,7 +48,7 @@ class ConvertHuaweiConfig(QThread):
         self.vendor = 'Huawei'
 
         self.huawei_services = set()
-        self.service_groups = set()
+        self.hw_service_groups = set()
         self.ip_lists = set()
         self.ip_lists_groups = set()
         self.url_lists = set()
@@ -87,6 +89,7 @@ class ConvertHuaweiConfig(QThread):
                 convert_static_routes(self, self.current_ug_path, data)
                 convert_notification_profile(self, self.current_ug_path, data)
                 convert_services(self, self.current_ug_path, data)
+                convert_service_groups(self, self.current_ug_path, data)
                 convert_ip_lists(self, self.current_ug_path, data)
                 convert_url_lists(self, self.current_ug_path, data)
                 convert_time_sets(self, self.current_ug_path, data)
@@ -238,6 +241,7 @@ def make_block(parent, data):
                     case ['description', *descr]:
                         value['description'] = ' '.join(descr)
             return 'ip_lists_group', [value]
+
         case ['ip', 'service-set', name, 'type', 'object', *_]:
             parent.huawei_services.add(name)
             value = {
@@ -286,9 +290,26 @@ def make_block(parent, data):
                         value['protocols'].append({'proto': proto, 'source_port': port})
                     case ['service', _, _, proto, 'source-port', port1, 'to', port2]:
                         value['protocols'].append({'proto': proto, 'source_port': f'{port1}-{port2}'})
+                    case ['service', _, 'protocol', proto]:
+                        if proto in ug_proto:
+                            value['protocols'].append({'proto': proto, 'port': ''})
                     case ['description', *descr]:
                         value['description'] = ' '.join(descr)
-            return 'services_lists', [value]
+            return 'services', {value['name']: value}
+
+        case ['ip', 'service-set', name, 'type', 'group', *_]:
+            parent.hw_service_groups.add(name)
+            value = {
+                'name': name,
+                'description': '',
+                'content': []
+            }
+            for item in data:
+                match item:
+                    case ['service', _, 'service-set', service_name]:
+                        value['content'].append(service_name)
+            return 'service_groups', [value]
+
         case ['time-range', name]:
             value = []
             time_set = None
@@ -899,13 +920,12 @@ def convert_services(parent, path, data):
         parent.error = 1
         return
 
-    if 'services_lists' in data:
+    if 'services' in data:
         services_proto = {'110': 'pop3', '995': 'pop3s', '25': 'smtp', '465': 'smtps'}
-        for service in data['services_lists']:
+        for service in data['services'].values():
             service['description'] = f"Перенесено с Huawei.\n{service['description']}"
             for protocol in service['protocols']:
-                if 'port' not in protocol:
-                    protocol['port'] = ''
+                protocol['port'] = protocol.get('port', '')   # Это поле может отсутствовать.
                 protocol['app_proto'] = ''
                 protocol['alg'] = ''
                 if protocol['proto'] == 'tcp':
@@ -917,13 +937,54 @@ def convert_services(parent, path, data):
                 if protocol['source_port'] == '0-65535':
                     protocol['source_port'] = ''
     else:
-        data['services_lists'] = []
-    data['services_lists'].extend(func.create_ug_services())
+        data['services'] = {}
+    for ug_service in func.create_ug_services():
+        data['services'].update({ug_service['name']: ug_service})
 
     json_file = os.path.join(current_path, 'config_services_list.json')
     with open(json_file, 'w') as fh:
-        json.dump(data['services_lists'], fh, indent=4, ensure_ascii=False)
+        json.dump([x for x in data['services'].values()], fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'BLACK|    Сервисы выгружены в файл "{json_file}".')
+
+
+def convert_service_groups(parent, path, data):
+    """Конвертируем группы сервисов."""
+    parent.stepChanged.emit('BLUE|Конвертация групп сервисов.')
+    if not data.get('service_groups', False):
+        parent.stepChanged.emit('GRAY|    Нет групп сервисов для экспорта.')
+        return
+
+    for srv_group in data['service_groups']:
+        srv_group['description'] = 'Портировано с Huawei.'
+        srv_group['type'] = 'servicegroup'
+        srv_group['url'] = ''
+        srv_group['list_type_update'] = 'static'
+        srv_group['schedule'] = 'disabled'
+        srv_group['attributes'] = {}
+
+        new_content = []
+        for item in srv_group['content']:
+            service = copy.deepcopy(data['services'].get(item, None))
+            if service:
+                for x in service['protocols']:
+                    x['src_port'] = x.pop('source_port', '')
+                new_content.append(service)
+            else:
+                parent.stepChanged.emit(f'RED|    Error: Не найден сервис "{item}" для группы сервисов "{srv_group["name"]}".')
+        srv_group['content'] = new_content
+
+    section_path = os.path.join(path, 'Libraries')
+    current_path = os.path.join(section_path, 'ServicesGroups')
+    err, msg = func.create_dir(current_path)
+    if err:
+        parent.stepChanged.emit(f'RED|    {msg}.')
+        parent.error = 1
+        return
+
+    json_file = os.path.join(current_path, 'config_services_groups.json')
+    with open(json_file, 'w') as fh:
+        json.dump(data['service_groups'], fh, indent=4, ensure_ascii=False)
+    parent.stepChanged.emit(f'BLACK|    Группы сервисов выгружены в файл "{json_file}".')
 
 
 def convert_ip_lists(parent, path, data):
@@ -1798,7 +1859,7 @@ def get_ips(parent, path, rule_ips, rule_name, iplist_name=None):
             if item[1] in parent.url_lists:
                 new_rule_ips.append(item)
         else:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
+            parent.stepChanged.emit(f'RED|    Error! Не найден список IP-адресов/URL "{item}" для правила "{rule_name}".')
     if ip_group:
         ip_list_name = func.create_ip_list(parent, path, ips=ip_group, name=iplist_name, descr='Портировано с Huawei.')
         if ip_list_name:
@@ -1813,23 +1874,34 @@ def get_services(parent, rule_services, rule_type, rule_name):
     for item in rule_services:
         if item[0] == 'new':
             if 'name' in item[1]:
-                parent.stepChanged.emit(f'bRED|    Error! Не найден сервис "{item[1]["name"]}" для правила "{rule_name}".')
+                if item[1]['name'] in parent.hw_service_groups:
+                    new_service_list.append(['list_id', item[1]['name']])
+                else:
+                    parent.stepChanged.emit(f'RED|    Error! Не найден сервис "{item[1]["name"]}" для правила "{rule_name}".')
                 continue
-            service = {
-                'name': f'For {rule_type} rule {rule_name}-{num}',
-                'description': f'Перенесено с Huawei.\nСоздано для правила {rule_type} "{rule_name}"',
-                'protocols': [{
-                    'proto': item[1]['proto'],
-                    'port': '' if item[1].get('dst', '') == '0-65535' else item[1].get('dst', ''),
-                    'source_port': '' if item[1].get('src', '') == '0-65535' else item[1].get('src', ''),
-                    'app_proto': '',
-                    'alg': ''
-                }],
-            }
-            num += 1
-            new_service_list.append(['service', service['name']])
-            parent.new_services.append(service)
-            parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}" для правила "{rule_name}".')
+
+            if item[1]['dst'] == '22' and item[1]['proto'] == 'tcp':
+                new_service_list.append(['service', 'SSH'])
+            elif item[1]['dst'] == '80' and item[1]['proto'] == 'tcp':
+                new_service_list.append(['service', 'HTTP'])
+            elif item[1]['dst'] == '443' and item[1]['proto'] == 'tcp':
+                new_service_list.append(['service', 'HTTPS'])
+            else:
+                service = {
+                    'name': f'For {rule_type} rule {rule_name}-{num}',
+                    'description': f'Перенесено с Huawei.\nСоздано для правила {rule_type} "{rule_name}"',
+                    'protocols': [{
+                        'proto': item[1]['proto'],
+                        'port': '' if item[1].get('dst', '') == '0-65535' else item[1].get('dst', ''),
+                        'source_port': '' if item[1].get('src', '') == '0-65535' else item[1].get('src', ''),
+                        'app_proto': '',
+                        'alg': ''
+                    }],
+                }
+                num += 1
+                new_service_list.append(['service', service['name']])
+                parent.new_services.append(service)
+                parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}" для правила "{rule_name}".')
         else:
             new_service_list.append(item)
 
@@ -1844,7 +1916,7 @@ def get_apps(parent, rule_apps, rule_name):
             try:
                 app_list.update(app_compliance[item[1]])
             except KeyError:
-                parent.stepChanged.emit(f'bRED|    Не найдено приложение "{item[1]}" для правила "{rule_name}". Данное приложение не существует на UG NGFW.')
+                parent.stepChanged.emit(f'RED|    Не найдено приложение "{item[1]}" для правила "{rule_name}". Данное приложение не существует на UG NGFW.')
         elif item[0] == 'ro_group':
             if item[1] in l7_categories:
                 new_apps.append(item)
@@ -1853,7 +1925,7 @@ def get_apps(parent, rule_apps, rule_name):
                     item[1] = l7_categories_compliance[item[1]]
                     new_apps.append(item)
                 except KeyError:
-                    parent.stepChanged.emit(f'bRED|    Не найдена категория приложений "{item[1]}" для правила "{rule_name}". Данная категория не существует на UG NGFW.')
+                    parent.stepChanged.emit(f'RED|    Не найдена категория приложений "{item[1]}" для правила "{rule_name}". Данная категория не существует на UG NGFW.')
     if app_list:
         group_name = create_application_group(parent, app_list, rule_name)
         new_apps.append(['group', group_name])
@@ -1885,7 +1957,7 @@ def get_users_and_groups(parent, users, rule_name):
         elif item in parent.local_groups:
             new_users_list.append(['group', item])
         else:
-            parent.stepChanged.emit(f'bRED|    Error! Не найден локальный пользователь/группа "{item}" для правила "{rule_name}".')
+            parent.stepChanged.emit(f'RED|    Error! Не найден локальный пользователь/группа "{item}" для правила "{rule_name}".')
     return new_users_list
 
 

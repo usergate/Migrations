@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.6    14.01.2025
+# Версия 1.7    15.01.2025
 #
 
 import os, sys, json
@@ -337,6 +337,7 @@ def make_block(parent, data):
                         })
             if time_set: value.append(time_set)
             return 'calendars', value
+
         case ['interface', name]:
             value = {
                 name: {
@@ -358,6 +359,7 @@ def make_block(parent, data):
                     case ['description', *descr]:
                         value[name]['description'] = ' '.join(descr)
             return 'ifaces' if value[name]['vlan_id'] else 0, value
+
         case ['destination-nat', 'address-group', name, _]:
             dnat_name = None
             for item in data:
@@ -367,6 +369,7 @@ def make_block(parent, data):
                     case ['section', ip1, ip2]:
                         parent.dnat_ip[dnat_name] = ip1
             return 0, ''
+
         case ['nat', 'address-group', name, _]:
 #            nat_mode = None
             for item in data[1:]:
@@ -377,6 +380,7 @@ def make_block(parent, data):
 #                        if nat_mode == 'pat':
                         parent.snat_ip[name] = ip1
             return 0, ''
+
         case ['firewall', 'zone', name]:
             value = {
                 'name': name,
@@ -390,6 +394,7 @@ def make_block(parent, data):
                     case ['description', *descr]:
                         value['description'] = ' '.join(descr)
             return 'zones', [value]
+
         case ['firewall', 'zone', 'name', name, 'id', zone_id]:
             value = {
                 'name': name,
@@ -403,10 +408,13 @@ def make_block(parent, data):
                     case ['description', *descr]:
                         value['description'] = ' '.join(descr)
             return 'zones', [value]
+
         case ['ip', 'route-static', ip, mask, port_name, gateway, *other]:
             routes = []
             for item in data:
                 match item:
+                    case ['ip', 'route-static', 'vpn-instance', *other]:
+                        continue
                     case ['ip', 'route-static', ip, mask, gateway_ip]:
                         try:
                             dest = func.pack_ip_address(ip, mask)
@@ -417,7 +425,7 @@ def make_block(parent, data):
                                 gateway = gateway_ip
                             else:
                                 continue
-                            routes.append({'dest': dest, 'gateway': gateway})
+                            routes.append({'dest': dest, 'gateway': gateway, 'description': ''})
                     case ['ip', 'route-static', ip, mask, port_name, gateway_ip, *other]:
                         try:
                             dest = func.pack_ip_address(ip, mask)
@@ -430,8 +438,15 @@ def make_block(parent, data):
                                 gateway = port_name
                             else:
                                 continue
-                            routes.append({'dest': dest, 'gateway': gateway})
+                            descr = ''
+                            if 'description' in other:
+                                i = other.index('description')
+                                descr = ' '.join(other[i+1:])
+                            elif gateway_ip == 'description':
+                                descr = ' '.join(other)
+                            routes.append({'dest': dest, 'gateway': gateway, 'description': descr})
             return 'routes', routes
+
         case ['profile', 'type', 'dns-filter', 'name', *name]:
             value = {
                 'name': func.get_restricted_name(' '.join(name)),
@@ -1409,7 +1424,7 @@ def convert_static_routes(parent, path, data):
                 gateways_list.append({
                     'name': route['gateway'],
                     'enabled': False,
-                    'description': 'Перенесено с Huawei.',
+                    'description': f'Перенесено с Huawei.\n{route["description"]}',
                     'ipv4': route['gateway'],
                     'vrf': 'default',
                     'weight': 1,
@@ -1421,7 +1436,7 @@ def convert_static_routes(parent, path, data):
                 continue
             route['enabled'] = False
             route['name'] = f'Route for {route["dest"]}'
-            route['description'] = 'Перенесено с Huawei.'
+            route['description'] = f'Перенесено с Huawei.\n{route["description"]}'
             route['ifname'] = 'undefined'
             route['kind'] = 'unicast'
             route['metric'] = 0

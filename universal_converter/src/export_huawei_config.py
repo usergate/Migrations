@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.7    15.01.2025
+# Версия 1.8    20.01.2025
 #
 
 import os, sys, json
@@ -996,7 +996,7 @@ def convert_service_groups(parent, path, data):
         parent.error = 1
         return
 
-    json_file = os.path.join(current_path, 'config_services_groups.json')
+    json_file = os.path.join(current_path, 'config_services_groups_list.json')
     with open(json_file, 'w') as fh:
         json.dump(data['service_groups'], fh, indent=4, ensure_ascii=False)
     parent.stepChanged.emit(f'BLACK|    Группы сервисов выгружены в файл "{json_file}".')
@@ -1013,6 +1013,7 @@ def convert_ip_lists(parent, path, data):
         parent.error = 1
         return
 
+    n = 1
     indicator = [1, 1, 1]
     if 'ip_lists' in data:
         for ip_list in data['ip_lists']:
@@ -1033,7 +1034,8 @@ def convert_ip_lists(parent, path, data):
             json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            n += 1
             time.sleep(0.1)
     else:
         indicator.pop()
@@ -1051,7 +1053,8 @@ def convert_ip_lists(parent, path, data):
             json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+            n += 1
             time.sleep(0.1)
     else:
         indicator.pop()
@@ -1074,7 +1077,8 @@ def convert_ip_lists(parent, path, data):
                 json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-                parent.stepChanged.emit(f'BLACK|       Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+                parent.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+                n += 1
                 time.sleep(0.1)
     else:
         indicator.pop()
@@ -1917,6 +1921,7 @@ def get_services(parent, rule_services, rule_type, rule_name):
                 new_service_list.append(['service', service['name']])
                 parent.new_services.append(service)
                 parent.stepChanged.emit(f'NOTE|    Создан сервис "{service["name"]}" для правила "{rule_name}".')
+                time.sleep(0.1)
         else:
             new_service_list.append(item)
 

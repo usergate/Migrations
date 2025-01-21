@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.5   26.12.2024  (только для universal_converter)
+# Версия 3.6   21.01.2025  (только для universal_converter)
 #
 
 import os, sys, json, time
@@ -3954,6 +3954,10 @@ def import_captive_portal_rules(parent, path):
         item['url_categories'] = get_url_categories_id(parent, item)
         item['time_restrictions'] = get_time_restrictions(parent, item)
 
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
+
         if item['name'] in captive_portal_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило Captive-портала "{item["name"]}" уже существует в текущем шаблоне.')
             err, result = parent.utm.update_template_captive_portal_rule(parent.template_id, captive_portal_rules[item['name']], item)
@@ -4409,8 +4413,7 @@ def import_firewall_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
                 item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         if 'ips_profile' in item and item['ips_profile']:
             try:
                 item['ips_profile'] = idps_profiles[item['ips_profile']].id
@@ -4418,8 +4421,7 @@ def import_firewall_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден профиль СОВ {err}. Загрузите профили СОВ и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
                 item['ips_profile'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         else:
             item['ips_profile'] = False
         if 'l7_profile' in item and item['l7_profile']:
@@ -4429,8 +4431,7 @@ def import_firewall_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден профиль приложений {err}. Загрузите профили приложений и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
                 item['l7_profile'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         else:
             item['l7_profile'] = False
         if 'hip_profiles' in item:
@@ -4441,8 +4442,7 @@ def import_firewall_rules(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден профиль HIP {err}. Загрузите профили HIP и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден профиль HIP {err}.'
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
             item['hip_profiles'] = new_hip_profiles
         else:
             item['hip_profiles'] = []
@@ -4454,7 +4454,11 @@ def import_firewall_rules(parent, path):
         item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
         item['services'] = get_services(parent, item['services'], item)
         item['time_restrictions'] = get_time_restrictions(parent, item)
-        
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
+
         if item['name'] in firewall_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило МЭ "{item["name"]}" уже существует.')
             item.pop('position', None)
@@ -4529,6 +4533,7 @@ def import_nat_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден шлюз "{item["gateway"]}" для правила ПБР в группе шаблонов.')
                 item['description'] = f'{item["description"]}\nError: Не найден шлюз "{item["gateway"]}" для правила ПБР в группе шаблонов.'
                 item['gateway'] = ''
+                error = 1
 
         if item['scenario_rule_id']:
             try:
@@ -4537,9 +4542,12 @@ def import_nat_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
                 item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
             
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
+
         if item['name'] in nat_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило "{item["name"]}" уже существует.')
             item.pop('position', None)
@@ -4598,6 +4606,10 @@ def import_loadbalancing_tcpudp(parent, path, balansing_servers):
         item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
         item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
         item['type'] = 'ipvs'
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         item['name'] = func.get_restricted_name(item['name'])
         if item['name'] in tcpudp_rules:
@@ -4772,8 +4784,7 @@ def import_shaper_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
                 item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
         item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
         item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
@@ -4787,8 +4798,11 @@ def import_shaper_rules(parent, path):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найдена полоса пропускания "{item["pool"]}". Импортируйте полосы пропускания и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найдена полоса пропускания "{item["pool"]}".'
-            item['enabled'] = False
+            item['error'] = True
             item['pool'] = 1
+
+        if item.pop('error', False):
+            item['enabled'] = False
             error = 1
 
         if item['name'] in shaper_rules:
@@ -4862,8 +4876,7 @@ def import_content_rules(parent, path):
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден шаблон страницы блокировки {err}. Импортируйте шаблоны страниц и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найден шаблон страницы блокировки {err}.'
             item['blockpage_template_id'] = -1
-            item['enabled'] = False
-            error = 1
+            item['error'] = True
 
         item['src_zones'] = get_zones_id(parent, 'src', item['src_zones'], item)
         item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
@@ -4883,8 +4896,7 @@ def import_content_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Загрузите сценарии и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
                 item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
 
         new_morph_categories = []
         for x in item['morph_categories']:
@@ -4896,8 +4908,7 @@ def import_content_rules(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список морфологии {err}. Загрузите списки морфологии и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден список морфологии {err}.'
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
         item['morph_categories'] = new_morph_categories
 
         new_user_agents = []
@@ -4910,8 +4921,7 @@ def import_content_rules(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список UserAgent {err}. Загрузите списки UserAgent браузеров и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден список UserAgent {err}.'
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
         item['user_agents'] = new_user_agents
 
         new_content_types = []
@@ -4921,9 +4931,12 @@ def import_content_rules(parent, path):
             except KeyError as err:
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список типов контента {err}. Загрузите списки типов контента и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден список типов контента {err}.'
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         item['content_types'] = new_content_types
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         if item['name'] in content_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило контентной фильтрации "{item["name"]}" уже существует.')
@@ -4980,6 +4993,10 @@ def import_safebrowsing_rules(parent, path):
         item['time_restrictions'] = get_time_restrictions(parent, item)
         item['url_list_exclusions'] = get_urls_id(parent, item['url_list_exclusions'], item)
 
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
+
         if item['name'] in safebrowsing_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило веб-безопасности "{item["name"]}" уже существует.')
             item.pop('position', None)
@@ -5030,6 +5047,10 @@ def import_tunnel_inspection_rules(parent, path):
         item['dst_zones'] = get_zones_id(parent, 'dst', item['dst_zones'], item)
         item['src_ips'] = get_ips_id(parent, 'src', item['src_ips'], item)
         item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         if item['name'] in tunnel_inspect_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило инспектирования туннелей "{item["name"]}" уже существует.')
@@ -5097,14 +5118,16 @@ def import_ssldecrypt_rules(parent, path):
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль SSL {err}. Загрузите профили SSL и повторите импорт.')
             item['description'] = f'{item["description"]}\nError: Не найден профиль SSL {err}. Установлен Default SSL profile.'
             item['ssl_profile_id'] = parent.mc_data['ssl_profiles']['Default SSL profile'].id
-            item['enabled'] = False
-            error = 1
+            item['error'] = True
         try:
             item['ssl_forward_profile_id'] = ssl_forward_profiles[item['ssl_forward_profile_id']].id
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль пересылки SSL {err}. Загрузите профили пересылки SSL и повторите импорт.')
             item['description'] = f'{item["description"]}\nError: Не найден профиль пересылки SSL {err}.'
             item['ssl_forward_profile_id'] = -1
+            item['error'] = True
+
+        if item.pop('error', False):
             item['enabled'] = False
             error = 1
 
@@ -5161,6 +5184,10 @@ def import_sshdecrypt_rules(parent, path):
         item['dst_ips'] = get_ips_id(parent, 'dst', item['dst_ips'], item)
         item['time_restrictions'] = get_time_restrictions(parent, item)
         item['protocols'] = get_services(parent, item['protocols'], item)
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         if item['name'] in sshdecrypt_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило инспектирования SSH "{item["name"]}" уже существует.')
@@ -5232,8 +5259,7 @@ def import_mailsecurity_rules(parent, path):
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список почтовых адресов {err}. Загрузите список почтовых адресов и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найден список почтовых адресов {err}.'
             item['envelope_from'] = []
-            item['enabled'] = False
-            error = 1
+            item['error'] = True
 
         try:
             item['envelope_to'] = [[x[0], email[x[1]].id] for x in item['envelope_to']]
@@ -5241,6 +5267,9 @@ def import_mailsecurity_rules(parent, path):
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список почтовых адресов {err}. Загрузите список почтовых адресов и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найден список почтовых адресов {err}.'
             item['envelope_to'] = []
+            item['error'] = True
+
+        if item.pop('error', False):
             item['enabled'] = False
             error = 1
 
@@ -5389,16 +5418,14 @@ def import_icap_rules(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден балансировщик серверов ICAP {err}. Импортируйте балансировщики ICAP и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден балансировщик серверов ICAP {err}.'
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
             elif server[0] == 'profile':
                 try:
                     new_servers.append(['profile', icap_servers[server[1]].id])
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сервер ICAP {err}. Импортируйте сервера ICAP и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден сервер ICAP {err}.'
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
         item['servers'] = new_servers
 
         item['users'] = get_guids_users_and_groups(parent, item) if parent.mc_data['ldap_servers'] else []
@@ -5414,9 +5441,12 @@ def import_icap_rules(parent, path):
             except KeyError as err:
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]: Не найден список типов контента {err}. Загрузите списки типов контента и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден список типов контента {err}.'
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         item['content_types'] = new_content_types
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         if item['name'] in icap_rules:
             parent.stepChanged.emit(f'uGRAY|    ICAP-правило "{item["name"]}" уже существует.')
@@ -5527,8 +5557,7 @@ def import_dos_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль DoS {err}. Импортируйте профили DoS и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден профиль DoS {err}.'
                 item['dos_profile'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         if item['scenario_rule_id']:
             try:
                 item['scenario_rule_id'] = parent.mc_data['scenarios'][item['scenario_rule_id']].id
@@ -5536,8 +5565,11 @@ def import_dos_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден сценарий {err}. Импортируйте сценарии и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
                 item['scenario_rule_id'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         if item['name'] in dos_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило защиты DoS "{item["name"]}" уже существует.')
@@ -5656,6 +5688,7 @@ def import_waf_profiles(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Профиль "{item["name"]}"]. Не найден персональный слой "{layer["id"]}".')
                     item['description'] = f'{item["description"]}\nError: Не найден персональный слой "{layer["id"]}"'
+                    error = 1
             else:
                 protection_technologies = []
                 for x in layer['protection_technologies']:
@@ -5664,6 +5697,7 @@ def import_waf_profiles(parent, path):
                     except KeyError as err:
                         parent.stepChanged.emit(f'RED|    Error [Профиль "{item["name"]}"]. В слое "{layer["id"]}" обнаружена не существующая технология защиты {err}.')
                         item['description'] = f'{item["description"]}\nError: В слое "{layer["id"]}" обнаружена не существующая технология защиты {err}.'
+                        error = 1
                 layer['protection_technologies'] = protection_technologies
                 layer['id'] = waf_system_layers[layer['id']]
                 rule_layers.append(layer)
@@ -5883,8 +5917,7 @@ def import_reverseproxy_rules(parent, path):
                 item['description'] = f'{item["description"]}\nError: Не найден профиль SSL {err}.'
                 item['ssl_profile_id'] = 0
                 item['is_https'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         else:
             item['is_https'] = False
 
@@ -5896,8 +5929,7 @@ def import_reverseproxy_rules(parent, path):
                 item['description'] = f'{item["description"]}\nError: Не найден сертификат {err}.'
                 item['certificate_id'] = -1
                 item['is_https'] = False
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
         else:
             item['certificate_id'] = -1
             item['is_https'] = False
@@ -5912,8 +5944,7 @@ def import_reverseproxy_rules(parent, path):
                 except KeyError as err:
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден список Useragent {err}. Импортируйте списки useragent браузеров и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден Useragent {err}.'
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
         item['user_agents'] = new_user_agents
 
         if item['client_certificate_profile_id']:
@@ -5923,8 +5954,7 @@ def import_reverseproxy_rules(parent, path):
                 parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}". Импортируйте профили пользовательских сертификатов и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}".'
                 item['client_certificate_profile_id'] = 0
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
 
         if item['waf_profile_id']:
             if parent.utm.waf_license:
@@ -5934,11 +5964,14 @@ def import_reverseproxy_rules(parent, path):
                     parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF {err}. Импортируйте профили WAF и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
                     item['waf_profile_id'] = 0
-                    item['enabled'] = False
-                    error = 1
+                    item['error'] = True
             else:
                 item['waf_profile_id'] = 0
                 item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
+
+        if item.pop('error', False):
+            item['enabled'] = False
+            error = 1
 
         if item['name'] in reverseproxy_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')
@@ -6261,6 +6294,7 @@ def import_vpn_server_rules(parent, path):
         if f'{item["iface_id"]}:cluster' not in parent.mc_data['interfaces']:
             parent.stepChanged.emit(f'RED|    Eror [Правило "{item["name"]}"]. Не найден интерфейс VPN "{item["iface_id"]}" в группе шаблонов.')
             parent.stepChanged.emit(f'RED|       Error: Правило "{item["name"]}" не импортировано.')
+            error = 1
             continue
         try:
             item['security_profile_id'] = security_profiles[item['security_profile_id']].id
@@ -6275,14 +6309,16 @@ def import_vpn_server_rules(parent, path):
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найдена сеть VPN "{err}". Загрузите сети VPN и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найдена сеть VPN "{err}".'
             item['tunnel_id'] = False
-            item['enabled'] = False
-            error = 1
+            item['error'] = True
         try:
             item['auth_profile_id'] = parent.mc_data['auth_profiles'][item['auth_profile_id']].id
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль авторизации {err}. Загрузите профили авторизации и повторите попытку.')
             item['description'] = f'{item["description"]}\nError: Не найден профиль авторизации {err}.'
             item['auth_profile_id'] = False
+            item['error'] = True
+
+        if item.pop('error', False):
             item['enabled'] = False
             error = 1
 
@@ -6664,8 +6700,7 @@ def get_ips_id(parent, mode, rule_ips, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден список {mode}-адресов "{ips[1]}". Загрузите списки в библиотеку и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips[1]}".'
-            rule['enabled'] = False
-            parent.error = 1
+            rule['error'] = True
     return new_rule_ips
 
 
@@ -6681,8 +6716,7 @@ def get_zones_id(parent, mode, zones, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найдена {mode}-зона "{zone}" в группе шаблонов. Импортируйте зоны и повторите попытку.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена {mode}-зона "{zone}".'
-            rule['enabled'] = False
-            parent.error = 1
+            rule['error'] = True
     return new_zones
 
 
@@ -6706,22 +6740,19 @@ def get_guids_users_and_groups(parent, rule):
                     try:
                         ldap_id = parent.mc_data['ldap_servers'][ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}".')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Пользователь "{item[1]}" не добавлен. Нет LDAP-коннектора для домена "{ldap_domain}".')
                         rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
-                        rule['enabled'] = False
-                        parent.error = 1
+                        rule['error'] = True
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_user_guid(ldap_id, user_name)
                         if err:
                             parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
                             rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID пользователя "{user_name}" - {result}.'
-                            rule['enabled'] = False
-                            parent.error = 1
+                            rule['error'] = True
                         elif not result:
                             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет пользователя "{user_name}" в домене "{ldap_domain}".')
                             rule['description'] = f'{rule["description"]}\nError: Нет пользователя "{user_name}" в домене "{ldap_domain}".'
-                            rule['enabled'] = False
-                            parent.error = 1
+                            rule['error'] = True
                         else:
                             new_users.append(['user', result])
                 else:
@@ -6730,8 +6761,7 @@ def get_guids_users_and_groups(parent, rule):
                     except KeyError as err:
                         parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Не найден локальный пользователь {err}. Импортируйте локальных пользователей.')
                         rule['description'] = f'{rule["description"]}\nError: Не найден локальный пользователь {err}.'
-                        rule['enabled'] = False
-                        parent.error = 1
+                        rule['error'] = True
             case 'group':
                 group_name = None
                 try:
@@ -6742,22 +6772,19 @@ def get_guids_users_and_groups(parent, rule):
                     try:
                         ldap_id = parent.mc_data['ldap_servers'][ldap_domain.lower()]
                     except KeyError:
-                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет LDAP-коннектора для домена "{ldap_domain}"')
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Доменная группа "{item[1]}" не добавлена. Нет LDAP-коннектора для домена "{ldap_domain}"')
                         rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
-                        rule['enabled'] = False
-                        parent.error = 1
+                        rule['error'] = True
                     else:
                         err, result = parent.utm.get_usercatalog_ldap_group_guid(ldap_id, group_name)
                         if err:
                             parent.stepChanged.emit(f'RED|    {result}  [Правило "{rule["name"]}"]')
                             rule['description'] = f'{rule["description"]}\nError: Не удалось получить ID группы "{group_name}" - {result}.'
-                            rule['enabled'] = False
-                            parent.error = 1
+                            rule['error'] = True
                         elif not result:
                             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]: Нет группы "{group_name}" в домене "{ldap_domain}"!')
                             rule['description'] = f'{rule["description"]}\nError: Нет группы "{group_name}" в домене "{ldap_domain}".'
-                            rule['enabled'] = False
-                            parent.error = 1
+                            rule['error'] = True
                         else:
                             new_users.append(['group', result])
                 else:
@@ -6766,8 +6793,7 @@ def get_guids_users_and_groups(parent, rule):
                     except KeyError as err:
                         parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена группа пользователей {err}. Импортируйте группы пользователей.')
                         rule['description'] = f'{rule["description"]}\nError: Не найдена группа пользователей {err}.'
-                        rule['enabled'] = False
-                        parent.error = 1
+                        rule['error'] = True
     return new_users
 
 
@@ -6783,8 +6809,7 @@ def get_services(parent, service_list, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден сервис или группа сервисов "{item[1]}" в группе шаблонов. Загрузите сервисы и группы сервисов и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
-            rule['enabled'] = False
-            parent.error = 1
+            rule['error'] = True
     return new_service_list
 
 
@@ -6801,8 +6826,7 @@ def get_url_categories_id(parent, rule, referer=0):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена категория URL "{item[1]}" в группе шаблонов. Загрузите категории URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найдена категория URL "{item[1]}".'
-            rule['enabled'] = False
-            parent.error = 1
+            rule['error'] = True
     return new_categories
 
 
@@ -6815,8 +6839,7 @@ def get_urls_id(parent, urls, rule):
         except KeyError as err:
             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден список URL "{item}" в группе шаблонов. Загрузите списки URL и повторите импорт.')
             rule['description'] = f'{rule["description"]}\nError: Не найден список URL "{item}".'
-            rule['enabled'] = False
-            parent.error = 1
+            rule['error'] = True
     return new_urls
 
 
@@ -6834,16 +6857,14 @@ def get_apps(parent, rule):
                     parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена категория l7 "{app[1]}".')
                     parent.stepChanged.emit('RED|    Возможно нет лицензии и MC не получил список категорий l7. Установите лицензию и повторите попытку.')
                     rule['description'] = f'{rule["description"]}\nError: Не найдена категория l7 "{app[1]}".'
-                    rule['enabled'] = False
-                    parent.error = 1
+                    rule['error'] = True
         elif app[0] == 'group':
             try:
                 new_app_list.append(['group', parent.mc_data['apps_groups'][app[1]].id])
             except KeyError as err:
                 parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найдена группа приложений l7 "{app[1]}".')
                 rule['description'] = f'{rule["description"]}\nError: Не найдена группа приложений l7 "{app[1]}".'
-                rule['enabled'] = False
-                parent.error = 1
+                rule['error'] = True
     return new_app_list
 
 
@@ -6856,8 +6877,7 @@ def get_time_restrictions(parent, rule):
         except KeyError:
             parent.stepChanged.emit(f'RED|    Error [Правило "{rule["name"]}"]. Не найден календарь "{name}" в группе шаблонов.')
             rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{name}".'
-            rule['enabled'] = False
-            parent.error = 1
+            rule['error'] = True
     return new_schedules
 
 

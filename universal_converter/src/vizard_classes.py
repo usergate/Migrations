@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.8    24.12.2024
+# Версия 1.9    21.01.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -32,7 +32,7 @@ class SelectAction(QWidget):
         super().__init__()
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Перенос конфигурации сторонних вендоров<br>на UserGate NGFW, DCFW и Management Center</font></b>"
-        text2 = "Экспорт конфигурации из конфигурационных файлов <b>Cisco ASA</b>, <b>Cisco FPR</b>, <b>Check Point</b>, \
+        text2 = "Экспорт конфигурации из конфигурационных файлов <b>Blue Coat</b>, <b>Cisco ASA</b>, <b>Cisco FPR</b>, <b>Check Point</b>, \
 <b>Fortigate</b>, <b>Huawei</b>, <b>MikroTik</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
 После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
         text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7, 8</b>) и <b>DCFW</b>."
@@ -106,7 +106,7 @@ class SelectAction(QWidget):
 
     def resize_window(self, e):
         if e == 0:
-            self.parent.resize(610, 350)
+            self.parent.resize(610, 360)
 
     def set_export_page(self):
         """Переходим на страницу экспорта конфигурации. Номер в стеке 1."""

@@ -1,9 +1,10 @@
 #!/usr/bin/python3
 #
-# Версия 1.9    21.01.2025
+# Версия 1.10    03.02.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
+from datetime import datetime as dt
 from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
@@ -248,7 +249,8 @@ class SelectMode(QWidget):
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
-        path_logfile = os.path.join(self.parent.get_ug_config_path(), log_file)
+        today = dt.now()
+        path_logfile = os.path.join(self.parent.get_ug_config_path(), f'{today:%Y-%m-%d_%M:%S}-{log_file}')
         list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
         with open(path_logfile, 'w') as fh:
             print(*list_items, sep='\n', file=fh)
@@ -491,7 +493,8 @@ class SelectExportMode(QWidget):
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
-        path_logfile = os.path.join(self.vendor_current_path, log_file)
+        today = dt.now()
+        path_logfile = os.path.join(self.vendor_current_path, f'{today:%Y-%m-%d_%M:%S}-{log_file}')
         list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
         with open(path_logfile, 'w') as fh:
             print(*list_items, sep='\n', file=fh)
@@ -1243,7 +1246,7 @@ class SelectConfigDirectories(QDialog):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
 
-        list_ugdir = os.listdir(self.main_window.get_base_ug_path())
+        list_ugdir = os.listdir(self.main_window.base_ug_path)
         self.ug_directory = QComboBox()
         self.ug_directory.addItems(sorted(list_ugdir))
         self.ug_directory.setEditable(True)
@@ -1303,7 +1306,7 @@ class SelectImportConfigDirectory(QDialog):
         self.setWindowTitle("Выбор каталога для импорта")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
 
-        list_dir = os.listdir(self.main_window.get_base_ug_path())
+        list_dir = os.listdir(self.main_window.base_ug_path)
         self.config_directory = QComboBox()
         self.config_directory.addItems(sorted(list_dir))
         self.setFixedHeight(120)

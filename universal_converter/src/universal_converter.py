@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.0    21.01.2025
+# Version 8.1    03.02.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,11 +32,10 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.0)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.1)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
-        self._base_ug_path = 'data_usergate'
         self._base_bluecoat_path = 'data_blue_coat'
         self._base_asa_path = 'data_cisco_asa'
         self._base_fpr_path = 'data_cisco_fpr'
@@ -57,7 +56,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
 
         # Создаём базовые каталоги вендоров и UG в текущей директории. Если успешно, активируем кнопки экспорта/импорта.
-        err, msg = func.create_dir(self._base_ug_path, delete='no')
+        err, msg = func.create_dir(self.base_ug_path, delete='no')
         if err:
             func.message_alert(self, msg, '')
         else:
@@ -69,6 +68,11 @@ class MainWindow(QMainWindow):
             func.create_dir(self._base_huawei_path, delete='no')
             func.create_dir(self._base_mikrotik_path, delete='no')
             self.stacklayout.widget(0).enable_buttons()
+
+    @property
+    def base_ug_path(self):
+        """Получаем имя базового каталога конфигураций UG NGFW"""
+        return 'data_usergate'
 
     def get_vendor_base_path(self, vendor):
         """Получаем имя базового каталога конфигураций выбранного вендора"""
@@ -87,10 +91,6 @@ class MainWindow(QMainWindow):
                 return self._base_huawei_path
             case 'MikroTik':
                 return self._base_mikrotik_path
-
-    def get_base_ug_path(self):
-        """Получаем имя базового каталога конфигураций UG NGFW"""
-        return self._base_ug_path
 
     def get_ug_config_path(self):
         """Получаем путь к каталогу с конфигурацией выбранного устройсва UG NGFW"""

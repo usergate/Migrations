@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.9   19.12.2024
+# Версия 2.10   03.02.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
+from datetime import datetime as dt
 from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
@@ -263,7 +264,7 @@ class SelectMode(QWidget):
 
     def init_temporary_data(self, mode):
         """
-        Запускаем в потоке gtd.GetTemporaryData() для получения часто используемых данных с NGFW.
+        Запускаем в потоке GetTemporaryData() для получения часто используемых данных с NGFW.
         """
         if self.thread is None:
             self.disable_buttons()
@@ -272,11 +273,12 @@ class SelectMode(QWidget):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения часто используемых данных с {self.product}! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с {self.product}! {self.thread}')
 
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
-        path_logfile = os.path.join(self.parent.get_config_path(), log_file)
+        today = dt.now()
+        path_logfile = os.path.join(self.parent.get_config_path(), f'{today:%Y-%m-%d_%M:%S}-{log_file}')
         list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
         with open(path_logfile, 'w') as fh:
             print(*list_items, sep='\n', file=fh)
@@ -400,118 +402,264 @@ class SelectExportMode(SelectMode):
             func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
 
 
-class SelectMcExportMode(SelectMode):
-    """Класс для выбора раздела конфигурации для экспорта из шаблона MC. Номер в стеке 2."""
+class SelectMcExportMode(QWidget):
+    """Класс для экспорта конфигурации из группы шаблонов MC. Номер в стеке 2."""
     def __init__(self, parent):
-        super().__init__(parent)
-        self.title.setText("<b><font color='green' size='+2'>Экспорт конфигурации из шаблона UserGate Management Center</font></b>")
-        self.templates_group_name = None
-        self.templates_ids = None
-        self.template_id = None
-        self.template_name = None
-        self.btn2.setText("Экспорт выбранного раздела")
-        self.btn2.clicked.connect(self.export_selected_points)
-        self.btn3.setText("Экспортировать всё")
-        self.btn3.clicked.connect(self.export_all)
-        self.btn4.clicked.connect(lambda: self._save_logs('export.log'))
-        self.parent.stacklayout.currentChanged.connect(self.init_export_widget)
+        super().__init__()
+        self.parent = parent
+        self.utm = None
+        self.base_path = None
+        self.group_path = None
+        self.groups = None
+        self.selected_group = None
+        self.thread = None
 
-    def init_temporary_data(self):
-        """Запускаем в потоке mctd_GetTemporaryData() для получения часто используемых данных с MC"""
-        if self.thread is None:
-            self.disable_buttons()
-            self.thread = mctd.GetExportTemporaryData(self.utm, self.template_id)
-            self.thread.stepChanged.connect(self.on_step_changed)
-            self.thread.finished.connect(self.on_finished)
-            self.thread.start()
+        self.title = QLabel()
+        self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.title.setFixedHeight(22)
+        self.title.setText("<b><font color='green' size='+2'>Экспорт конфигурации из группы шаблонов UserGate Management Center</font></b>")
+
+        frame_nodeinfo = QFrame()
+        frame_nodeinfo.setFixedHeight(22)
+        frame_nodeinfo.setStyleSheet(
+            'background-color: #2690c8; '
+            'color: white; font-size: 12px; font-weight: bold; '
+            'border-radius: 4px; padding: 0px; margin: 0px;'
+        )
+        self.label_node_name = QLabel()
+        self.label_node_name.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.label_version = QLabel()
+        self.label_version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label_config_directory = QLabel()
+        self.label_config_directory.setAlignment(Qt.AlignmentFlag.AlignRight)
+        hbox_info = QHBoxLayout()
+        hbox_info.addWidget(self.label_node_name)
+        hbox_info.addWidget(self.label_version)
+        hbox_info.addWidget(self.label_config_directory)
+        hbox_info.setContentsMargins(0, 2, 0, 2)
+        frame_nodeinfo.setLayout(hbox_info)
+
+        self.log_list = QListWidget()
+        self.tree = TreeGroupTemplates()
+        splitter = QSplitter()
+        splitter.addWidget(self.tree)
+        splitter.addWidget(self.log_list)
+        hbox_splitter = QHBoxLayout()
+        hbox_splitter.addWidget(splitter)
+
+        self.btn1 = QPushButton('Назад')
+        self.btn1.setFixedWidth(100)
+        self.btn1.setStyleSheet('color: steelblue; background: white;')
+        self.btn1.clicked.connect(self.run_page_0)
+        self.btn2 = QPushButton('Экспорт выбранной группы шаблонов')
+        self.btn2.setFixedWidth(260)
+        self.btn2.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn2.setEnabled(False)
+        self.btn2.clicked.connect(self.export_selected_group)
+        self.btn3 = QPushButton('Сохранить лог')
+        self.btn3.setFixedWidth(130)
+        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn3.setEnabled(False)
+        self.btn3.clicked.connect(lambda: self._save_logs('export.log'))
+        hbox_btn = QHBoxLayout()
+        hbox_btn.addWidget(self.btn1)
+        hbox_btn.addStretch()
+        hbox_btn.addWidget(self.btn2)
+        hbox_btn.addStretch()
+        hbox_btn.addWidget(self.btn3)
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.title)
+        vbox.addWidget(frame_nodeinfo)
+        vbox.addLayout(hbox_splitter)
+        vbox.addSpacerItem(QSpacerItem(1, 3))
+        vbox.addLayout(hbox_btn)
+        self.setLayout(vbox)
+
+        self.parent.stacklayout.currentChanged.connect(self.init_export_widget)
+        self.tree.itemSelected.connect(self.get_selected_item)
+
+    def disable_buttons(self):
+        self.btn1.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn1.setEnabled(False)
+        self.btn2.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn2.setEnabled(False)
+        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+        self.btn3.setEnabled(False)
+
+    def enable_buttons(self):
+        self.btn1.setStyleSheet('color: steelblue; background: white;')
+        self.btn1.setEnabled(True)
+        self.btn2.setStyleSheet('color: forestgreen; background: white;')
+        self.btn2.setEnabled(True)
+        self.btn3.setStyleSheet('color: steelblue; background: white;')
+        self.btn3.setEnabled(True)
+
+    def get_auth(self):
+        """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
+        if self.utm:
+            self.utm.logout()
+            self.utm = None
+        dialog = LoginWindow(self, mode='mc')
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            self.utm = dialog.utm
+            return True
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса экспорта! {self.thread}')
+            return False
 
     def init_export_widget(self, e):
         """
-        При открытии этой вкладки выбираем/создаём каталог для экспорта конфигурации.
-        Затем выбираем шаблон для экспорта.
+        При открытии этой вкладки создаём каталог для области.
+        Пишем туда файл version.json и затем инициализируем дерево групп шаблонов.
         """
         if e == 2:
-            self.parent.resize(900, 500)
-            dialog =  SelectConfigDirectoryWindow(self.parent, mode='export')
-            result = dialog.exec()
-            if result == QDialog.DialogCode.Accepted:
-                self.label_config_directory.setText(f'{self.parent.get_config_path()}  ')
-                if self.get_auth(mod='mc'):
-                    if self.utm.float_version < 7.1:
-                        message = f'Экспорт из шаблона Management Center версии мене чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
-                        self.add_item_log(message, color='RED')
-                        func.message_inform(self, 'Внимание!', message)
-                        self.run_page_0()
-                    else:
-                        template_dialog = SelectMcDestinationTemplate(self.utm, self.parent, self.templates_group_name, templates=self.templates_ids)
-                        template_result = template_dialog.exec()
-                        if template_result == QDialog.DialogCode.Accepted:
-                            self.template_name = template_dialog.current_template_name
-                            self.template_id = template_dialog.templates[self.template_name]
-                            self.label_version.setText(f'MC (версия {self.utm.version}) - шаблон: {self.template_name}')
-                            err, result = self.utm.get_template_waf_profiles(self.template_id)
-                            if not err:
-                                self.utm.waf_license = True
-                            self.tree.version = self.utm.float_version
-                            self.tree.waf_license = self.utm.waf_license
-                            self.tree.change_items_status_for_export()
-                            self.tree.setCurrentItem(self.tree.topLevelItem(0))
-                            with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'w') as fh:
-                                json.dump({'device': 'MC', 'version': self.utm.version, 'float_version': self.utm.float_version, 'template': self.template_name}, fh, indent=4)
-                            self.init_temporary_data()
-                        else:
-                            self.run_page_0()
+            self.parent.resize(980, 750)
+            if self.get_auth():
+                self.label_node_name.setText(f'  {self.utm.node_name}')
+                self.label_version.setText(f'MC (версия {self.utm.version})')
+                if self.utm.float_version < 7.1:
+                    message = f'Экспорт шаблонов Management Center версии мене чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
+                    self.add_item_log(message, color='RED')
+                    func.message_inform(self, 'Внимание!', message)
+                    self.run_page_0()
+                    return
+
+                self.base_path = os.path.join(self.parent.mc_base_path, self.utm._login.split('/')[1])
+                err, msg = func.create_dir(self.base_path, delete='no')
+                if err:
+                    func.message_alert(self, msg, '')
+                    self.run_page_0()
+                    return
                 else:
+                    with open(os.path.join(self.base_path, 'version.json'), 'w') as fh:
+                        json.dump({'device': 'MC', 'node name': self.utm.node_name, 'version': self.utm.version, 'admin': self.utm._login}, fh, indent=4)
+                self.groups = self.get_groups_templates()
+                if self.groups:
+                    print('groups', self.groups)
+                    self.tree.init_tree({key: [x for x in value.values()] for key, value in self.groups.items()})
+                    self.tree.setHidden(False)
+                    self.btn2.setStyleSheet('color: forestgreen; background: white;')
+                    self.btn2.setEnabled(True)
+                else:
+                    func.message_inform(self, 'Проблема..', 'Нет групп шаблонов в области.\nШаблоны не входящие в группу шаблонов не экспортируются.')
                     self.run_page_0()
             else:
                 self.run_page_0()
 
-    def export_selected_points(self):
-        """
-        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
-        Затем запускаем экспорт выбранного раздела конфигурации.
-        """
-        if not func.check_auth(self):
-            self.run_page_0()
+    def get_groups_templates(self):
+        """Получаем группы шаблонов области и шаблоны каждой группы."""
+        groups = {}
+        err, result = self.utm.get_device_templates()
+        if err:
+            func.message_alert(self, 'Не удалось получить список шаблонов', result)
+        else:
+            realm_templates = {x['id']: x['name'] for x in result}
 
-        if self.selected_points:
-            self.disable_buttons()
-            if self.thread is None:
-                self.thread = expmc.ExportSelectedPoints(
-                    self.utm,
-                    self.parent.get_config_path(),
-                    self.current_path,
-                    self.selected_points,
-                    self.template_id
-                )
-                self.thread.stepChanged.connect(self.on_step_changed)
-                self.thread.finished.connect(self.on_finished)
-                self.thread.start()
+            err, result = self.utm.get_device_templates_groups()
+            if err:
+                func.message_alert(self, 'Не удалось получить список групп шаблонов', result)
             else:
-                func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
-        else:
-            func.message_inform(self, "Внимание!", "Вы не выбрали раздел для экспорта.")
+                for item in result:
+                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['device_templates']}
+        return groups
 
-    def export_all(self):
+    def get_selected_item(self, selected_item):
+        """Получаем выбранную группу шаблонов"""
+        self.group_path = os.path.join(self.base_path, selected_item)
+        self.label_config_directory.setText(f'{self.group_path}  ')
+        self.selected_group = selected_item
+        self.log_list.clear()
+        self.btn3.setEnabled(False)
+        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+
+    def export_selected_group(self):
         """
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
-        Затем запускаем экспорт выбранного раздела конфигурации.
+        Создаём каталог для выбранной группы шаблонов если в ней есть шаблоны.
+        Затем запускаем экспорт выбранной группы шаблонов.
         """
         if not func.check_auth(self):
             self.run_page_0()
 
-        all_points = self.tree.select_all_items()
+        if self.selected_group:
+            title = f'Экспорт конфигурации из группы шаблонов "{self.selected_group}" МС версии {self.utm.version} в каталог "{self.group_path}".'
+            self.add_item_log(f'{title:>100}', color='GREEN')
+            self.add_item_log(f'{"="*100}', color='ORANGE')
+            templates = self.groups[self.selected_group]
+            if templates:
+                err, msg = func.create_dir(self.group_path, delete='no')
+                if err:
+                    func.message_alert(self, msg, '')
+                    return
+                self.disable_buttons()
+                self.tree.setEnabled(False)
 
-        self.disable_buttons()
-        if self.thread is None:
-            self.thread = expmc.ExportAll(self.utm, self.parent.get_config_path(), all_points)
-            self.thread.stepChanged.connect(self.on_step_changed)
-            self.thread.finished.connect(self.on_finished)
-            self.thread.start()
+                if self.thread is None:
+                    self.thread = expmc.ExportAll(
+                        self.utm,
+                        self.selected_group,
+                        self.group_path,
+                        templates
+                    )
+                    self.thread.stepChanged.connect(self.on_step_changed)
+                    self.thread.finished.connect(self.on_finished)
+                    self.thread.start()
+                else:
+                    func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {self.thread}')
+            else:
+                message = f'В группе шаблонов "{self.selected_group}" отсутствуют шаблоны для экспорта.'
+                func.message_inform(self, 'Внимание!', message)
+                self.add_item_log(f'{message}\n', color='ORANGE')
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка при экспорте! {key} {self.thread}')
+            func.message_inform(self, "Внимание!", "Вы не выбрали группу шаблонов для экспорта.")
+
+    def _save_logs(self, log_file):
+        """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
+        today = dt.now()
+        path_logfile = os.path.join(self.group_path, f'{today:%Y-%m-%d_%M:%S}-{log_file}')
+        list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
+        with open(path_logfile, 'w') as fh:
+            print(*list_items, sep='\n', file=fh)
+            fh.write('\n')
+        func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
+
+    def run_page_0(self):
+        """Возвращаемся на стартовое окно"""
+        if self.utm:
+            self.utm.logout()
+        self.utm = None
+        self.base_path = None
+        self.group_path = None
+        self.groups = None
+        self.selected_group = None
+        self.label_node_name.setText('')
+        self.label_version.setText('')
+        self.label_config_directory.setText('')
+        self.log_list.clear()
+        self.tree.clear()
+        self.tree.setHidden(True)
+        if os.path.isfile('temporary_data.bin'):
+            os.remove('temporary_data.bin')
+        self.parent.stacklayout.setCurrentIndex(0)
+
+    def add_item_log(self, message, color='BLACK'):
+        """Добавляем запись лога в log_list."""
+        i = QListWidgetItem(message)
+        i.setForeground(QColor(cs.color.get(color, 'RED')))
+        self.log_list.addItem(i)
+
+    def on_step_changed(self, msg):
+        color, _, message = msg.partition('|')
+        self.add_item_log(message, color=color)
+        self.log_list.scrollToBottom()
+        if color in ('iORANGE', 'iGREEN', 'iRED'):
+            func.message_inform(self, 'Внимание!', message)
+
+    def on_finished(self):
+        self.thread = None
+        self.enable_buttons()
+        self.tree.setEnabled(True)
 
 
 class SelectImportMode(SelectMode):
@@ -1020,10 +1168,10 @@ class SelectMcDestinationTemplate(QDialog):
         self.group_templates = templates
         self.templates = {}
         self.current_template_name = None
-        self.setWindowTitle("Выбор шаблона MC для экспорта")
+        self.setWindowTitle("Выбор шаблона MC для импорта")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
 
-        self.label = QLabel(f'<b><font color="green">Выберите шаблон для экспорта конфигурации.</font></b><br>Шаблоны группы: <font color="blue">"{self.name_group_templates}"</font>')
+        self.label = QLabel(f'<b><font color="green">Выберите шаблон для импорта конфигурации.</font></b><br>Шаблоны группы: <font color="blue">"{self.name_group_templates}"</font>')
         self.label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.device_templates_list = QListWidget()
 
@@ -1086,7 +1234,7 @@ class SelectConfigDirectoryWindow(QDialog):
         self.setWindowTitle("Выбор каталога")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
 
-        list_dir = os.listdir(self.main_window.get_base_config_path())
+        list_dir = os.listdir(self.main_window.ngfw_base_path)
         self.config_directory = QComboBox()
         self.config_directory.addItems(sorted(list_dir))
         if mode == 'export':
@@ -1349,6 +1497,39 @@ class CreateDhcpSubnetsWindow(QDialog):
         for subnet in self.new_subnets:
             subnet['iface_id'] = self.dhcp[subnet['name']].currentText()
         self.accept()
+
+
+class TreeGroupTemplates(QTreeWidget):
+    itemSelected = pyqtSignal(str)
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet(cs.Style.MainTree)
+        self.setHeaderHidden(True)
+        self.setIndentation(10)
+        self.setHidden(True)
+        self.itemSelectionChanged.connect(self.select_item)
+
+    def init_tree(self, data):
+        tree_head_font = QFont("Noto Sans", pointSize=10, weight=300)
+        items = []
+        for key, values in data.items():
+            item = QTreeWidgetItem([key])
+            item.setForeground(0, Qt.GlobalColor.darkBlue)
+            item.setFont(0, tree_head_font)
+            for value in values:
+                child = QTreeWidgetItem([value])
+                child.setDisabled(True)
+                child.setForeground(0, QColor('#556682'))
+                item.addChild(child)
+            items.append(item)
+        self.insertTopLevelItems(0, items)
+        self.expandAll()
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
+        self.setCurrentItem(self.topLevelItem(0))
+
+    def select_item(self):
+        if self.selectedItems():
+            self.itemSelected.emit(self.selectedItems()[0].text(0))
 
 
 class MainTree(QTreeWidget):

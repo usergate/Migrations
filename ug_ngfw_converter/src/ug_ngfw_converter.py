@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_ngfw_converter.py
-# Version 4.9  27.12.2024
+# Version 4.10  03.02.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,11 +32,10 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.9)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.10)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
-        self._base_config_path = 'data'
         self._current_config_path = None    # Полный путь к каталогу с конфигурацией данного узла
 
         self.stacklayout = QStackedLayout()
@@ -50,16 +49,26 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(self.stacklayout)
         self.setCentralWidget(main_widget)
 
-        # Создаём каталог data в текущей директории. Если успешно, активируем кнопки экспорта/импорта.
-        err, msg = func.create_dir(self._base_config_path, delete='no')
+        # Создаём базовые каталоги в текущей директории. Если успешно, активируем кнопки экспорта/импорта.
+        err, msg = func.create_dir(self.ngfw_base_path, delete='no')
         if err:
             func.message_alert(self, msg, '')
         else:
-            self.stacklayout.widget(0).enable_buttons()
+            err, msg = func.create_dir(self.mc_base_path, delete='no')
+            if err:
+                func.message_alert(self, msg, '')
+            else:
+                self.stacklayout.widget(0).enable_buttons()
 
-    def get_base_config_path(self):
-        """Получаем имя базового каталога конфигураций"""
-        return self._base_config_path
+    @property
+    def ngfw_base_path(self):
+        """Получаем имя базового каталога конфигураций для NGFW, DCFW"""
+        return 'data'
+
+    @property
+    def mc_base_path(self):
+        """Получаем имя базового каталога шаблонов МС"""
+        return 'mc_templates'
 
     def get_config_path(self):
         """Получаем путь к каталогу с конфигурацией данного узла"""

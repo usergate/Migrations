@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
 # Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 1.4  16.12.2024    (идентично для ug_ngfw_converter и universal_converter)
+# Version 1.5  28.01.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, json
@@ -47,12 +47,33 @@ class BaseObject:
 class GetExportTemporaryData(QThread):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных для экспорта."""
     stepChanged = pyqtSignal(str)
-    def __init__(self, utm, template_id):
+    def __init__(self, utm, templates):
         super().__init__()
         self.utm = utm
-        self.template_id = template_id
+        self.templates = templates    # структура {template_id: template_name}
         self.mc_data = {
             'ldap_servers': {},
+            'zones': {},
+            'services': {},
+            'service_groups': {},
+            'ip_lists': {
+                'id-BOTNET_BLACK_LIST': 'BOTNET_BLACK_LIST',
+                'id-BANKS_IP_LIST': 'BANKS_IP_LIST',
+                'id-ZAPRET_INFO_BLACK_LIST_IP': 'ZAPRET_INFO_BLACK_LIST_IP',
+            },
+            'mime': {},
+            'url_lists': {},
+            'calendars': {},
+            'url_categorygroups': {},
+            'ssl_profiles': {},
+            'scenarios': {},
+            'certs': {},
+            'auth_profiles': {},
+            'local_groups': {},
+            'local_users': {},
+            'apps_groups': {},
+            'url_categories': {},
+            'l7_categories': {},
             'ug_morphology': (
                 'MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
                 'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
@@ -82,7 +103,6 @@ class GetExportTemporaryData(QThread):
                 'USERAGENT_YABROWSER'
             )
         }
-        self.ug_iplists = ('BOTNET_BLACK_LIST', 'BANKS_IP_LIST', 'ZAPRET_INFO_BLACK_LIST_IP')
         self.ug_url_lists = ('ENTENSYS_WHITE_LIST', 'BAD_SEARCH_BLACK_LIST', 'ENTENSYS_BLACK_LIST',
             'ENTENSYS_KAZ_BLACK_LIST', 'FISHING_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST_DOMAIN')
         self.ug_mime = ('MIME_CAT_APPLICATIONS', 'MIME_CAT_DOCUMENTS', 'MIME_CAT_IMAGES',
@@ -119,76 +139,175 @@ class GetExportTemporaryData(QThread):
             self.stepChanged.emit('NOTE|       Нет доступных LDAP-серверов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
 
         # Получаем список зон
-        self.stepChanged.emit(f'BLACK|    Получаем список зон.')
-        err, result = self.utm.get_realm_zones_list()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['zones'] = {x['id']: x['name'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список зон группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_zones_list(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['zones'][x['id']] = x['name']
 
         # Получаем список сервисов
-        self.stepChanged.emit(f'BLACK|    Получаем список сервисов.')
-        err, result = self.utm.get_realm_services_list()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['services'] = {x['id']: x['name'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список сервисов группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_services_list(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['services'][x['id']] = x['name']
 
         # Получаем список групп сервисов
-        self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов.')
-        err, result = self.utm.get_realm_nlists_list('servicegroup')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['service_groups'] = {x['id']: x['name'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'servicegroup')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['service_groups'][x['id']] = x['name']
+
+        # Получаем список IP-листов
+        self.stepChanged.emit(f'BLACK|    Получаем список IP-листов группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'network')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['ip_lists'][x['id']] = x['name']
 
         # Получаем список типов контента
-        self.stepChanged.emit(f'BLACK|    Получаем список типов контента.')
-        err, result = self.utm.get_realm_nlists_list('mime')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['mime'] = {x['id']: x['name'].strip() for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список типов контента группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'mime')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['mime'][x['id']] = x['name'].strip()
         for item in self.ug_mime:
             self.mc_data['mime'][f'id-{item}'] = item
 
-        # Получаем список IP-листов
-        self.stepChanged.emit(f'BLACK|    Получаем список IP-листов.')
-        err, result = self.utm.get_realm_nlists_list('network')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['ip_lists'] = {x['id']: x['name'] for x in result}
-        for item in self.ug_iplists:
-            self.mc_data['ip_lists'][f'id-{item}'] = item
-
         # Получаем список URL-листов
-        self.stepChanged.emit(f'BLACK|    Получаем список URL-листов.')
-        err, result = self.utm.get_realm_nlists_list('url')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['url_lists'] = {x['id']: x['name'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список URL-листов группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'url')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['url_lists'][x['id']] = x['name']
         for item in self.ug_url_lists:
             self.mc_data['url_lists'][f'id-{item}'] = item
 
         # Получаем список календарей
-        self.stepChanged.emit(f'BLACK|    Получаем список календарей.')
-        err, result = self.utm.get_realm_nlists_list('timerestrictiongroup')
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            self.error = 1
-        self.mc_data['calendars'] = {x['id']: x['name'] for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список календарей группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'timerestrictiongroup')
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['calendars'][x['id']] = x['name']
 
         # Получаем список групп категорий URL
-        self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL.')
-        err, result = self.utm.get_realm_nlists_list('urlcategorygroup')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['url_categorygroups'] = {x['id']: default_urlcategorygroup.get(x['name'], x['name']) for x in result}
+        self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'urlcategorygroup')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['url_categorygroups'][x['id']] = default_urlcategorygroup.get(x['name'], x['name'])
 
-        # Получаем список категорий URL
+        # Получаем список профилей SSL
+        self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_ssl_profiles(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['ssl_profiles'][x['id']] = x['name']
+
+        # Получаем список сценариев шаблона
+        self.stepChanged.emit(f'BLACK|    Получаем список сценариев группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_scenarios_rules(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['scenarios'][x['id']] = x['name']
+
+        # Получаем список сертификатов
+        self.stepChanged.emit(f'BLACK|    Получаем список сертификатов группы шаблонов')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_certificates_list(uid)
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['certs'][x['id']] = x['name']
+
+        # Получаем список профилей аутентификации
+        self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации группы шаблонов')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_auth_profiles(uid)
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['auth_profiles'][x['id']] = x['name']
+
+        # Получаем список локальных групп
+        self.stepChanged.emit(f'BLACK|    Получаем список групп пользователей группы шаблонов')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_groups_list(uid)
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['local_groups'][x['id']] = x['name']
+
+        # Получаем список локальных пользователей
+        self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей группы шаблонов')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_users_list(uid)
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['local_users'][x['id']] = x['name']
+
+        # Получаем список групп приложений
+        self.stepChanged.emit(f'BLACK|    Получаем список групп приложений группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'applicationgroup')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                self.mc_data['apps_groups'][x['id']] = x['name']
+
+        # Получаем список предопределёных категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список категорий URL.')
         err, result = self.utm.get_url_categories()
         if err:
@@ -196,63 +315,7 @@ class GetExportTemporaryData(QThread):
             self.error = 1
         self.mc_data['url_categories'] = {x['id']: x['name'] for x in result}
 
-        # Получаем список профилей SSL области
-        self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL области.')
-        err, result = self.utm.get_realm_ssl_profiles_list()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['ssl_profiles'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список сценариев шаблона
-        self.stepChanged.emit(f'BLACK|    Получаем список сценариев.')
-        err, result = self.utm.get_template_scenarios_rules(self.template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['scenarios'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список сертификатов
-        self.stepChanged.emit(f'BLACK|    Получаем список сертификатов области')
-        err, result = self.utm.get_realm_certificates_list()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.mc_data['certs'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список профилей аутентификации
-        self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')
-        err, result = self.utm.get_realm_auth_profiles()
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.mc_data['auth_profiles'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список локальных групп
-        self.stepChanged.emit(f'BLACK|    Получаем список локальных групп')
-        err, result = self.utm.get_template_groups_list(self.template_id)
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.mc_data['local_groups'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список локальных пользователей
-        self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей')
-        err, result = self.utm.get_template_users_list(self.template_id)
-        if err:
-            self.stepChanged.emit(f'iRED|{result}')
-            return
-        self.mc_data['local_users'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список групп приложений
-        self.stepChanged.emit(f'BLACK|    Получаем список групп приложений.')
-        err, result = self.utm.get_template_nlists_list(self.template_id, 'applicationgroup')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        self.mc_data['application_groups'] = {x['id']: x['name'] for x in result}
-
-        # Получаем список категорий приложений l7
+        # Получаем список предопределённых категорий приложений l7
         self.stepChanged.emit(f'BLACK|    Получаем список категорий приложений.')
         err, result = self.utm.get_l7_categories()
         if err:

@@ -31,79 +31,92 @@ from services import trans_filename, default_urlcategorygroup
 
 
 class ExportAll(QThread):
-    """Экспортируем всю конфигурацию с NGFW"""
+    """Экспортируем все шаблоны из данной группы шаблонов МС"""
     stepChanged = pyqtSignal(str)
     
-    def __init__(self, utm, config_path, all_points):
+    def __init__(self, utm, group_name, group_path, templates):
         super().__init__()
         self.utm = utm
-        self.config_path = config_path      # Путь к каталогу с конфигурацией данного узла
-        self.all_points = all_points
-#        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
-#        self.version = float(f'{self.utm.version_hight}.{self.utm.version_midle}')
+        self.group_name = group_name      # Имя группы шаблонов
+        self.group_path = group_path      # Путь к каталогу с конфигурацией шаблона
+        self.templates = templates        # Шаблоны в группе: структура {template_id: template_name}
         self.error = 0
+        self.group_error = 0
 
     def run(self):
-        """Экспортируем всё в пакетном режиме"""
-        err, self.ngfw_data = func.read_bin_file(self)
-        if err:
-            self.stepChanged.emit('iRED|Экспорт конфигурации с UserGate NGFW прерван!')
+        """
+        Получаем служебные структуры данных. Создаём каталог для каждого шаблона из
+        данной группы шаблонов и экспортируем шаблон в этот каталог.
+        """
+        self.mc_data = get_export_mc_temporary_data(self.stepChanged, self.utm, self.templates)
+        if isinstance(self.mc_data, int):
             return
+        for template_id, template_name in self.templates.items():
+            template_path = os.path.join(self.group_path, template_name)
+            err, msg = func.create_dir(template_path, delete='no')
+            if err:
+                self.stepChanged.emit(f'iRED|{msg}')
+                return
+            self.stepChanged.emit(f'LBLUE|Экспорт шаблона "{template_name}" в каталог "{template_path}"')
+            self.stepChanged.emit(f'LBLUE|{"-"*160}')
 
-        for item in self.all_points:
-            top_level_path = os.path.join(self.config_path, item['path'])
-            for point in item['points']:
-                current_path = os.path.join(top_level_path, point)
-                if point in export_funcs:
-                    export_funcs[point](self, current_path)
-                else:
-                    self.error = 1
-                    self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
+            for item in export_funcs:
+                export_funcs[item](self, template_path, template_id, template_name)
 
-        self.stepChanged.emit('iORANGE|Экспорт конфигурации прошёл с ошибками!\n' if self.error else 'iGREEN|Экспорт всей конфигурации прошёл успешно.\n')
-
-
-class ExportSelectedPoints(QThread):
-    """Экспортируем выделенный раздел конфигурации с NGFW"""
-    stepChanged = pyqtSignal(str)
-    
-    def __init__(self, utm, config_path, selected_path, selected_points, template_id):
-        super().__init__()
-        self.utm = utm
-        self.config_path = config_path
-        self.selected_path = selected_path
-        self.selected_points = selected_points
-        self.template_id = template_id
-
-#        self.scenarios_rules = {}           # Устанавливаются через функцию set_scenarios_rules()
-        self.error = 0
-
-    def run(self):
-        """Экспортируем определённый раздел конфигурации"""
-        # Читаем бинарный файл библиотечных данных.
-        err, self.mc_data = func.read_bin_file(self)
-        if err:
-            self.stepChanged.emit('iRED|Экспорт конфигурации из шаблона UserGate Management Center прерван! Не удалось прочитать служебные данные.')
-            return
-
-#        try:
-        for point in self.selected_points:
-            current_path = os.path.join(self.selected_path, point)
-            if point in export_funcs:
-                export_funcs[point](self, current_path)
+            if self.error:
+                self.stepChanged.emit(f'ORANGE|Экспорт шаблона "{template_name}" прошёл с ошибками!\n')
+                self.error = 0
+                self.group_error = 1
             else:
-                self.error = 1
-                self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
-#        except Exception as err:
-#            self.error = 1
-#            self.stepChanged.emit('RED|Ошибка функции "{export_funcs[point].__name__}": {err}')
+                self.stepChanged.emit(f'GREEN|Экспорт шаблона "{template_name}" завершён.\n')
 
-        if self.error:
-            self.stepChanged.emit('iORANGE|Экспорт конфигурации прошёл с ошибками!\n')
+        if self.group_error:
+            self.stepChanged.emit(f'iORANGE|Экспорт группы шаблонов "{self.group_name}" прошёл с ошибками!')
         else:
-            self.stepChanged.emit('iGREEN|Экспорт конфигурации завершён.\n')
+            self.stepChanged.emit(f'iGREEN|Экспорт группы шаблонов "{self.group_name}" завершён.')
 
 
+#---------------------------------------------------- Библиотека --------------------------------------------------------
+def export_morphology_lists(parent, path, template_id, template_name):
+    """Экспортируем списки морфологии"""
+    parent.stepChanged.emit('BLUE|Экспорт списков морфологии из раздела "Библиотеки/Морфология".')
+    error = 0
+
+    err, data = parent.utm.get_template_nlists_list(template_id, 'morphology')
+    if err:
+        parent.stepChanged.emit(f'RED|    {data}')
+        parent.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте списков морфологии.')
+        parent.error = 1
+        return
+
+#    for item in data:
+#        item.pop('id', None)
+#        item.pop('template_id', None)
+#        item.pop('hidden_data', None)
+#        item.pop('readonly', None)
+#        item.pop('readonly_data', None)
+#        item.pop('version', None)
+#        item.pop('list_use_in_queries', None)
+#        for content in item['content']:
+#            content.pop('id', None)
+
+    if data:
+        morphology_path = os.path.join(path, 'Libraries/Morphology')
+        err, msg = func.create_dir(morphology_path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(morphology_path, 'config_morphology_lists.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Списки морфологии выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет списков морфологии для экспорта.')
+
+
+#-------------------------------------------------- General Settings -------------------------------------------------------
 def export_general_settings(parent, path):
     """Экспортируем раздел 'UserGate/Настройки'."""
     err, data = parent.utm.get_template_general_settings(parent.template_id)
@@ -2970,63 +2983,6 @@ def export_vpn_server_rules(parent, path):
     parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте серверных правил VPN.' if error else out_message)
 
 
-#---------------------------------------------------- Библиотека --------------------------------------------------------
-def export_morphology_lists(parent, path):
-    """Экспортируем списки морфологии"""
-    parent.stepChanged.emit('BLUE|Экспорт списков морфологии из раздела "Библиотеки/Морфология".')
-    err, msg = func.create_dir(path)
-    if err:
-        parent.stepChanged.emit(f'RED|    {msg}')
-        parent.error = 1
-        return
-    error = 0
-
-    err, data = parent.utm.get_nlist_list('morphology')
-    if err:
-        parent.stepChanged.emit(f'RED|    {data}')
-        parent.error = 1
-        error = 1
-    else:
-        for item in data:
-            item['name'] = item['name'].strip().translate(trans_name)
-            if parent.version < 6:
-                attributes = {}
-                for attr in item['attributes']:
-                    if attr['name'] == 'threat_level':
-                        attributes['threat_level'] = attr['value']
-                    else:
-                        attributes['threshold'] = attr['value']
-                item['attributes'] = attributes
-                try:
-                    item['last_update'] = dt.strptime(item['last_update'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    item['last_update'] = ''
-                if item['url']:
-                    item['list_type_update'] = 'dynamic'
-                    item['schedule'] = '0 0-23/1 * * *'
-                    item['attributes']['readonly_data'] = True
-                else:
-                    item['list_type_update'] = 'static'
-                    item['schedule'] = 'disabled'
-            else:
-                item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
-            item.pop('id', None)
-            item.pop('guid', None)
-            item.pop('editable', None)
-            item.pop('enabled', None)
-            item.pop('global', None)
-            item.pop('version', None)
-            for content in item['content']:
-                content.pop('id', None)
-
-        json_file = os.path.join(path, 'config_morphology_lists.json')
-        with open(json_file, 'w') as fh:
-            json.dump(data, fh, indent=4, ensure_ascii=False)
-
-    out_message = f'GREEN|    Списки морфологии выгружены в файл "{json_file}".'
-    parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков морфологии.' if error else out_message)
-
-
 def export_services_list(parent, path):
     """Экспортируем список сервисов раздела библиотеки"""
     parent.stepChanged.emit('BLUE|Экспорт списка сервисов из раздела "Библиотеки/Сервисы".')
@@ -4314,91 +4270,89 @@ def pass_function(parent, path):
 
 
 export_funcs = {
-    'GeneralSettings':  export_general_settings,
-    'DeviceManagement': pass_function,
-    'Administrators': pass_function,
-    'Certificates': export_certificates,
-    'UserCertificateProfiles': export_users_certificate_profiles,
-    'Zones': export_zones,
-    'Interfaces': export_interfaces_list,
-    'Gateways': export_gateways_list,
-    'DHCP': export_dhcp_subnets,
-    'DNS': export_dns_config,
-    'VRF': export_vrf_list,
-    'WCCP': export_wccp,
-    'Groups': export_local_groups,
-    'Users': export_local_users,
-    'AuthServers': export_auth_servers,
-    'AuthProfiles': export_auth_profiles,
-    'CaptivePortal': export_captive_portal_rules,
-    'CaptiveProfiles': export_captive_profiles,
-    'TerminalServers': export_terminal_servers,
-    'MFAProfiles': export_2fa_profiles,
-    'UserIDagent': export_userid_agent,
-#    'BYODPolicies': export_byod_policy,
-#    'BYODDevices': pass_function,
-    'Firewall': export_firewall_rules,
-    'NATandRouting': export_nat_rules,
-    'LoadBalancing': export_loadbalancing_rules,
-    'TrafficShaping': export_shaper_rules,
-    "ContentFiltering": export_content_rules,
-    "SafeBrowsing": export_safebrowsing_rules,
-    "TunnelInspection": export_tunnel_inspection_rules,
-    "SSLInspection": export_ssldecrypt_rules,
-    "SSHInspection": export_sshdecrypt_rules,
-    "IntrusionPrevention": export_idps_rules,
-    "Scenarios": export_scenarios,
-    "MailSecurity": export_mailsecurity_rules,
-    "ICAPRules": export_icap_rules,
-    "ICAPServers": export_icap_servers,
-    "DoSRules": export_dos_rules,
-    "DoSProfiles": export_dos_profiles,
-    "SCADARules": export_scada_rules,
-    "WebPortal": export_proxyportal_rules,
-    "ReverseProxyRules": export_reverseproxy_rules,
-    "ReverseProxyServers": export_reverseproxy_servers,
-    "WAFprofiles": export_waf_profiles_list,
-    "CustomWafLayers": export_waf_custom_layers,
-    "SystemWafRules": pass_function,
-    "ServerRules": export_vpn_server_rules,
-    "ClientRules": export_vpn_client_rules,
-    "VPNNetworks": export_vpn_networks,
-    "SecurityProfiles": export_vpn_security_profiles,
-    "ServerSecurityProfiles": export_vpnserver_security_profiles,
-    "ClientSecurityProfiles": export_vpnclient_security_profiles,
     "Morphology": export_morphology_lists,
-    "Services": export_services_list,
-    "ServicesGroups": export_services_groups,
-    "IPAddresses": export_IP_lists,
-    "Useragents": export_useragent_lists,
-    "ContentTypes": export_mime_lists,
-    "URLLists": export_url_lists,
-    "TimeSets": export_time_restricted_lists,
-    "BandwidthPools": export_shaper_list,
-    "SCADAProfiles": export_scada_profiles,
-    "ResponcePages": export_templates_list,
-    "URLCategories": export_url_categories,
-    "OverURLCategories": export_custom_url_category,
-    "Applications": export_applications,
-    "ApplicationProfiles": export_app_profiles,
-    "ApplicationGroups": export_application_groups,
-    "Emails": export_email_groups,
-    "Phones": export_phone_groups,
-    "IPDSSignatures": export_custom_idps_signatures,
-    "IDPSProfiles": export_idps_profiles,
-    "NotificationProfiles": export_notification_profiles,
-    "NetflowProfiles": export_netflow_profiles,
-    "SSLProfiles": export_ssl_profiles,
-    "LLDPProfiles": export_lldp_profiles,
-    "SSLForwardingProfiles": export_ssl_forward_profiles,
-    "HIDObjects": export_hip_objects,
-    "HIDProfiles": export_hip_profiles,
-    "BfdProfiles": export_bfd_profiles,
-    "UserIdAgentSyslogFilters": export_useridagent_syslog_filters,
-    "AlertRules": export_notification_alert_rules,
-    "SNMP": export_snmp_rules,
-    "SNMPParameters": export_snmp_settings,
-    "SNMPSecurityProfiles": export_snmp_security_profiles,
+#    "Services": export_services_list,
+#    "ServicesGroups": export_services_groups,
+#    "IPAddresses": export_IP_lists,
+#    "Useragents": export_useragent_lists,
+#    "ContentTypes": export_mime_lists,
+#    "URLLists": export_url_lists,
+#    "TimeSets": export_time_restricted_lists,
+#    "BandwidthPools": export_shaper_list,
+#    "SCADAProfiles": export_scada_profiles,
+#    "ResponcePages": export_templates_list,
+#    "URLCategories": export_url_categories,
+#    "OverURLCategories": export_custom_url_category,
+#    "Applications": export_applications,
+#    "ApplicationProfiles": export_app_profiles,
+#    "ApplicationGroups": export_application_groups,
+#    "Emails": export_email_groups,
+#    "Phones": export_phone_groups,
+#    "IPDSSignatures": export_custom_idps_signatures,
+#    "IDPSProfiles": export_idps_profiles,
+#    "NotificationProfiles": export_notification_profiles,
+#    "NetflowProfiles": export_netflow_profiles,
+#    "LLDPProfiles": export_lldp_profiles,
+#    "SSLProfiles": export_ssl_profiles,
+#    "SSLForwardingProfiles": export_ssl_forward_profiles,
+#    "HIDObjects": export_hip_objects,
+#    "HIDProfiles": export_hip_profiles,
+#    "BfdProfiles": export_bfd_profiles,
+#    "UserIdAgentSyslogFilters": export_useridagent_syslog_filters,
+#    "Scenarios": export_scenarios,
+#    'GeneralSettings':  export_general_settings,
+#    'DeviceManagement': pass_function,
+#    'Administrators': pass_function,
+#    'Certificates': export_certificates,
+#    'UserCertificateProfiles': export_users_certificate_profiles,
+#    'Zones': export_zones,
+#    'Interfaces': export_interfaces_list,
+#    'Gateways': export_gateways_list,
+#    'DHCP': export_dhcp_subnets,
+#    'DNS': export_dns_config,
+#    'VRF': export_vrf_list,
+#    'WCCP': export_wccp,
+#    'Groups': export_local_groups,
+#    'Users': export_local_users,
+#    'AuthServers': export_auth_servers,
+#    'AuthProfiles': export_auth_profiles,
+#    'CaptivePortal': export_captive_portal_rules,
+#    'CaptiveProfiles': export_captive_profiles,
+#    'TerminalServers': export_terminal_servers,
+#    'MFAProfiles': export_2fa_profiles,
+#    'UserIDagent': export_userid_agent,
+#    'Firewall': export_firewall_rules,
+#    'NATandRouting': export_nat_rules,
+#    'LoadBalancing': export_loadbalancing_rules,
+#    'TrafficShaping': export_shaper_rules,
+#    "ContentFiltering": export_content_rules,
+#    "SafeBrowsing": export_safebrowsing_rules,
+#    "TunnelInspection": export_tunnel_inspection_rules,
+#    "SSLInspection": export_ssldecrypt_rules,
+#    "SSHInspection": export_sshdecrypt_rules,
+#    "IntrusionPrevention": export_idps_rules,
+#    "MailSecurity": export_mailsecurity_rules,
+#    "ICAPRules": export_icap_rules,
+#    "ICAPServers": export_icap_servers,
+#    "DoSRules": export_dos_rules,
+#    "DoSProfiles": export_dos_profiles,
+#    "SCADARules": export_scada_rules,
+#    "WebPortal": export_proxyportal_rules,
+#    "ReverseProxyRules": export_reverseproxy_rules,
+#    "ReverseProxyServers": export_reverseproxy_servers,
+#    "WAFprofiles": export_waf_profiles_list,
+#    "CustomWafLayers": export_waf_custom_layers,
+#    "SystemWafRules": pass_function,
+#    "ServerRules": export_vpn_server_rules,
+#    "ClientRules": export_vpn_client_rules,
+#    "VPNNetworks": export_vpn_networks,
+#    "SecurityProfiles": export_vpn_security_profiles,
+#    "ServerSecurityProfiles": export_vpnserver_security_profiles,
+#    "ClientSecurityProfiles": export_vpnclient_security_profiles,
+#    "AlertRules": export_notification_alert_rules,
+#    "SNMP": export_snmp_rules,
+#    "SNMPParameters": export_snmp_settings,
+#    "SNMPSecurityProfiles": export_snmp_security_profiles,
 }
 
 ###################################### Служебные функции ##########################################
@@ -4573,3 +4527,280 @@ def translate_iface_name(ngfw_version, path, data):
         iface_name = {x['name']: x['name'] for x in data}
     return iface_name
 
+def get_export_mc_temporary_data(step_changed, utm, templates):
+    """Получаем конфигурационные данные из группы шаблонов MC для заполнения служебных структур данных для экспорта."""
+    mc_data = {
+        'ldap_servers': {},
+        'morphology': {},
+        'zones': {},
+        'services': {},
+        'service_groups': {},
+        'ip_lists': {
+            'id-BOTNET_BLACK_LIST': 'BOTNET_BLACK_LIST',
+            'id-BANKS_IP_LIST': 'BANKS_IP_LIST',
+            'id-ZAPRET_INFO_BLACK_LIST_IP': 'ZAPRET_INFO_BLACK_LIST_IP',
+        },
+        'mime': {},
+        'url_lists': {},
+        'calendars': {},
+        'url_categorygroups': {},
+        'ssl_profiles': {},
+        'scenarios': {},
+        'certs': {},
+        'auth_profiles': {},
+        'local_groups': {},
+        'local_users': {},
+        'apps_groups': {},
+        'url_categories': {},
+        'l7_categories': {},
+        'ug_morphology': (
+            'MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING', 'MORPH_CAT_DLP_FINANCE',
+            'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
+            'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
+            'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS'
+        ),
+        'ug_useragents': (
+            'USERAGENT_ANDROID', 'USERAGENT_APPLE', 'USERAGENT_BLACKBERRY', 'USERAGENT_CHROMEGENERIC',
+            'USERAGENT_CHROMEOS', 'USERAGENT_CHROMIUM', 'USERAGENT_EDGE', 'USERAGENT_FFGENERIC',
+            'USERAGENT_IE', 'USERAGENT_IOS', 'USERAGENT_LINUX', 'USERAGENT_MACOS', 'USERAGENT_OPERA',
+            'USERAGENT_MOBILESAFARI', 'USERAGENT_SAFARIGENERIC', 'USERAGENT_SPIDER',
+            'USERAGENT_UCBROWSER', 'USERAGENT_WIN', 'USERAGENT_WINPHONE', 'USERAGENT_YABROWSER'
+        )
+    }
+    ug_url_lists = ('ENTENSYS_WHITE_LIST', 'BAD_SEARCH_BLACK_LIST', 'ENTENSYS_BLACK_LIST',
+        'ENTENSYS_KAZ_BLACK_LIST', 'FISHING_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST_DOMAIN')
+    ug_mime = ('MIME_CAT_APPLICATIONS', 'MIME_CAT_DOCUMENTS', 'MIME_CAT_IMAGES',
+        'MIME_CAT_JAVASCRIPT', 'MIME_CAT_SOUNDS', 'MIME_CAT_VIDEO')
+    error = 0
+
+    step_changed.emit(f'BLUE|Заполняем служебные структуры данных.')
+
+    # Получаем список всех активных LDAP-серверов области
+    step_changed.emit(f'BLACK|    Получаем список активных LDAP-серверов в каталогах пользователей области.')
+    mc_data['ldap_servers'] = {}
+    err, result = utm.get_usercatalog_ldap_servers()
+    if err:
+        step_changed.emit(f'RED|       {result}')
+        step_changed.emit(f'iRED|Произошла ошибка инициализации экспорта! Устраните ошибки и повторите экспорт.')
+        return 1
+    elif result:
+        err, result2 = utm.get_usercatalog_servers_status()
+        if err:
+            step_changed.emit(f'RED|       {result2}')
+            error = 1
+        else:
+            servers_status = {x['id']: x['status'] for x in result2}
+            for srv in result:
+                if servers_status[srv['id']] == 'connected':
+                    for domain in srv['domains']:
+                        mc_data['ldap_servers'][srv['id']] = domain.lower()
+                    step_changed.emit(f'GREEN|       LDAP-коннектор "{srv["name"]}" - статус: "connected".')
+                else:
+                    step_changed.emit(f'GRAY|       LDAP-коннектор "{srv["name"]}" имеет не корректный статус: "{servers_status[srv["id"]]}".')
+    if not mc_data['ldap_servers']:
+        step_changed.emit('NOTE|       Нет доступных LDAP-серверов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
+
+    # Получаем список морфологии
+    step_changed.emit(f'BLACK|    Получаем список морфологии группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'morphology')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['morphology'][x['id']] = x['name']
+
+    # Получаем список зон
+    step_changed.emit(f'BLACK|    Получаем список зон группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_zones_list(uid)
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['zones'][x['id']] = x['name']
+
+    # Получаем список сервисов
+    step_changed.emit(f'BLACK|    Получаем список сервисов группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_services_list(uid)
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['services'][x['id']] = x['name']
+
+    # Получаем список групп сервисов
+    step_changed.emit(f'BLACK|    Получаем список групп сервисов группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'servicegroup')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['service_groups'][x['id']] = x['name']
+
+    # Получаем список IP-листов
+    step_changed.emit(f'BLACK|    Получаем список IP-листов группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'network')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['ip_lists'][x['id']] = x['name']
+
+    # Получаем список типов контента
+    step_changed.emit(f'BLACK|    Получаем список типов контента группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'mime')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['mime'][x['id']] = x['name'].strip()
+    for item in ug_mime:
+        mc_data['mime'][f'id-{item}'] = item
+
+    # Получаем список URL-листов
+    step_changed.emit(f'BLACK|    Получаем список URL-листов группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'url')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['url_lists'][x['id']] = x['name']
+    for item in ug_url_lists:
+        mc_data['url_lists'][f'id-{item}'] = item
+
+    # Получаем список календарей
+    step_changed.emit(f'BLACK|    Получаем список календарей группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'timerestrictiongroup')
+        if err:
+            step_changed.emit(f'iRED|{result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['calendars'][x['id']] = x['name']
+
+    # Получаем список групп категорий URL
+    step_changed.emit(f'BLACK|    Получаем список групп категорий URL группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'urlcategorygroup')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['url_categorygroups'][x['id']] = default_urlcategorygroup.get(x['name'], x['name'])
+
+    # Получаем список профилей SSL
+    step_changed.emit(f'BLACK|    Получаем список профилей SSL группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_ssl_profiles(uid)
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['ssl_profiles'][x['id']] = x['name']
+
+    # Получаем список сценариев шаблона
+    step_changed.emit(f'BLACK|    Получаем список сценариев группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_scenarios_rules(uid)
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['scenarios'][x['id']] = x['name']
+
+    # Получаем список сертификатов
+    step_changed.emit(f'BLACK|    Получаем список сертификатов группы шаблонов')
+    for uid, name in templates.items():
+        err, result = utm.get_template_certificates_list(uid)
+        if err:
+            step_changed.emit(f'iRED|{result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['certs'][x['id']] = x['name']
+
+    # Получаем список профилей аутентификации
+    step_changed.emit(f'BLACK|    Получаем список профилей аутентификации группы шаблонов')
+    for uid, name in templates.items():
+        err, result = utm.get_template_auth_profiles(uid)
+        if err:
+            step_changed.emit(f'iRED|{result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['auth_profiles'][x['id']] = x['name']
+
+    # Получаем список локальных групп
+    step_changed.emit(f'BLACK|    Получаем список групп пользователей группы шаблонов')
+    for uid, name in templates.items():
+        err, result = utm.get_template_groups_list(uid)
+        if err:
+            step_changed.emit(f'iRED|{result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['local_groups'][x['id']] = x['name']
+
+    # Получаем список локальных пользователей
+    step_changed.emit(f'BLACK|    Получаем список локальных пользователей группы шаблонов')
+    for uid, name in templates.items():
+        err, result = utm.get_template_users_list(uid)
+        if err:
+            step_changed.emit(f'iRED|{result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['local_users'][x['id']] = x['name']
+
+    # Получаем список групп приложений
+    step_changed.emit(f'BLACK|    Получаем список групп приложений группы шаблонов.')
+    for uid, name in templates.items():
+        err, result = utm.get_template_nlists_list(uid, 'applicationgroup')
+        if err:
+            step_changed.emit(f'RED|    {result}')
+            error = 1
+            break
+        for x in result:
+            mc_data['apps_groups'][x['id']] = x['name']
+
+    # Получаем список предопределёных категорий URL
+    step_changed.emit(f'BLACK|    Получаем список категорий URL.')
+    err, result = utm.get_url_categories()
+    if err:
+        step_changed.emit(f'RED|    {result}')
+        error = 1
+    else:
+        mc_data['url_categories'] = {x['id']: x['name'] for x in result}
+
+    # Получаем список предопределённых категорий приложений l7
+    step_changed.emit(f'BLACK|    Получаем список категорий приложений.')
+    err, result = utm.get_l7_categories()
+    if err:
+        step_changed.emit(f'RED|    {result}')
+        error = 1
+    else:
+        mc_data['l7_categories'] = {x['id']: x['name'] for x in result}
+
+    if error:
+        step_changed.emit(f'iRED|Произошла ошибка инициализации экспорта! Устраните ошибки и повторите экспорт.')
+        return 1
+    else:
+        step_changed.emit(f'GREEN|Служебные структуры данных заполнены.\n')
+        return mc_data

@@ -268,6 +268,14 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error utm.get_realm_client_certificate_profiles: [{err.faultCode}] — {err.faultString}'
 
+    def get_realm_users_groups(self, start=0, limit=1000, query={}):
+        """Получить список локальных групп области"""
+        try:
+            result = self._server.v1.ccaccounts.realm.groups.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_users_groups: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
     def get_realm_auth_servers(self, start=0, limit=1000, query={}):
         """
         Получить серверов авторизации области. Пример: query={'type': 'ldap'}.

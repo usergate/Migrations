@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.1    03.02.2025
+# Version 8.2    04.02.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.1)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.2)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
 
     def set_ug_config_path(self, directory):
         """Запоминаем путь к каталогу с конфигурацией выбранного устройсва UG NGFW"""
-        self._current_ug_path = os.path.join(self._base_ug_path, directory)
+        self._current_ug_path = os.path.join(self.base_ug_path, directory)
 
     def del_ug_config_path(self):
         """Удаляем путь к каталогу с конфигурацией выбранного устройсва UG NGFW"""

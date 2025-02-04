@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.6    03.10.2024
+# Версия 3.7    04.02.2025
 #
 
 import os, sys, json, uuid, time
@@ -1522,19 +1522,19 @@ def convert_access_policy_files(parent):
                 item.pop('install-on', None)
                 item.pop('custom-fields', None)
                 item.pop('user-check', None)
-                item['description'] = ["Портировано с CheckPoint.",]
+                item['description'] = []
 
                 destination = []
                 for uid in item['destination']:
                     if parent.objects[uid]['type'] in checkpoint_hosts:
-                        item['description'].append(f'Из destination удалена запись {parent.objects[uid]["name"]},')
+                        item['description'].append(f'Из destination удалена запись {parent.objects[uid]["name"]}.')
                     else:
                         destination.append(parent.objects[uid])
                 item['destination'] = destination
                 source = []
                 for uid in item['source']:
                     if parent.objects[uid]['type'] in checkpoint_hosts:
-                        item['description'].append(f'Из source удалена запись {parent.objects[uid]["name"]},')
+                        item['description'].append(f'Из source удалена запись {parent.objects[uid]["name"]}.')
                     else:
                         source.append(parent.objects[uid])
                 item['source'] = source
@@ -1651,11 +1651,9 @@ def create_firewall_rule(parent):
         else:
             rule_names[item['name']] = 0
 
+        description = f'Портировано с CheckPoint.\n{"\n".join(item["description"])}'
         if item['comments']:
-            tmp = "\n".join(item["description"])
-            description = f'{item["comments"]}\n{tmp}'
-        else:
-            description = "\n".join(item['description'])
+            description = f'{item["comments"]}\n{description}'
         n += 1
         rule = {
             'name': item['name'],
@@ -1723,11 +1721,10 @@ def create_content_rule(parent):
         else:
             rule_names[item['name']] = 0
 
+        description = f'Портировано с CheckPoint.\n{"\n".join(item["description"])}'
         if item['comments']:
-            tmp = "\n".join(item["description"])
-            description = f'{item["comments"]}\n{tmp}'
-        else:
-            description = "\n".join(item['description'])
+            description = f'{item["comments"]}\n{description}'
+
         n += 1
         rule = {
             'position': item['rule-number'],

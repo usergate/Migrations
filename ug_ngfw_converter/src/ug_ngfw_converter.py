@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_ngfw_converter.py
-# Version 4.10  03.02.2025
+# Version 4.11  03.02.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,7 +32,7 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.10)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.11)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
         self._base_path = os.getcwd()
@@ -71,15 +71,15 @@ class MainWindow(QMainWindow):
         return 'mc_templates'
 
     def get_config_path(self):
-        """Получаем путь к каталогу с конфигурацией данного узла"""
+        """Получаем путь к каталогу с конфигурацией данного узла NGFW"""
         return self._current_config_path
 
     def set_config_path(self, directory):
-        """Запоминаем путь к каталогу с конфигурацией данного узла"""
-        self._current_config_path = os.path.join(self._base_config_path, directory)
+        """Запоминаем путь к каталогу с конфигурацией данного узла NGFW"""
+        self._current_config_path = os.path.join(self.ngfw_base_path, directory)
 
     def del_config_path(self):
-        """Удаляем путь к каталогу с конфигурацией данного узла"""
+        """Удаляем путь к каталогу с конфигурацией данного узла NGFW"""
         self._current_config_path = None
 
     def closeEvent(self, event):

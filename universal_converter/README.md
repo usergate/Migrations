@@ -17,6 +17,8 @@
 1. Открыть веб-консоль администратора таким образом: https://<usergate_ip>:8001/?features=zone-xml-rpc
 2. В настройках нужной зоны активировать сервис "XML-RPC для управления".
 
+Архив universal_converter.zip с исполняемым файлом доступен здесь: https://dropbox.usergate.com/index.php/s/FjW9gEcKda6fBEF
+
 <b>Экспорт конфигурации:</b><br>
 1. Скачайте архив <b>universal_converter.zip</b> и распакуйте его. Файл <b>universal_converter</b> сделайте исполняемым.<br>
 2. Запустите программу <b>universal_converter</b>. Программа выполняется в графической среде. В текущей директории будут созданы

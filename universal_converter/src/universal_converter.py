@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.2    04.02.2025
+# Version 8.31    10.03.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,10 +32,10 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.2)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.31)")
         ico = QIcon("favicon.png")
         self.setWindowIcon(ico)
-        self._base_path = os.getcwd()
+#        self._base_path = os.getcwd()
         self._base_bluecoat_path = 'data_blue_coat'
         self._base_asa_path = 'data_cisco_asa'
         self._base_fpr_path = 'data_cisco_fpr'

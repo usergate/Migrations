@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
-# Версия 1.6 21.10.2024
+# Версия 1.7 19.02.2025
 #
 
 import os, sys, json, re
@@ -293,12 +293,12 @@ def convert_config_file(parent, path):
             
         try:
             i = y.index('source')
-            source_port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
+            source_port = get_service_number(y[i+2]) if y[i+1] == 'eq' else f'{get_service_number(y[i+2])}-{get_service_number(y[i+3])}'
         except ValueError:
             pass
         try:
             i = y.index('destination')
-            port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
+            port = get_service_number(y[i+2]) if y[i+1] == 'eq' else f'{get_service_number(y[i+2])}-{get_service_number(y[i+3])}'
         except ValueError:
             pass
 
@@ -325,26 +325,16 @@ def convert_config_file(parent, path):
 
         line = fh.readline()
         y = line.translate(trans_table).rstrip().split(' ')
-
         try:
             proto_array = x[3].split('-')
             while y[0] == '':
                 if y[1] == 'port-object':
                     for indx, port in enumerate(y[3:]):
-                        if not port.isdigit():
-                            try:
-                                y[indx+3] = service_ports[port]
-                            except KeyError as err:
-                                parent.stepChanged.emit(f'RED|    Error: не найден порт {err} в сервисе "{" ".join(x)}"')
-                                error = 1
-                                break
-#                                while True:
-#                                    port_number = input(f'\t\033[36mВведите номер порта для сервиса {err}:\033[0m')
-#                                    if not port_number.isdigit() or (int(port_number) > 65535) or (int(port_number) < 1):
-#                                        print('\t\033[31mНеверно, номер порта должен быть цифрой между 1 и 65535.\033[0m')
-#                                    else:
-#                                        y[indx+3] = port_number
-#                                        break
+                        y[indx+3] = get_service_number(port)
+                        if not y[indx+3]:
+                            parent.stepChanged.emit(f'RED|    Error: не найден порт "{port}" в сервисе "{" ".join(x)}"')
+                            error = 1
+                            break
                     for proto in proto_array:
                         if y[3] == "0":
                             port_for_proto = ''
@@ -375,17 +365,32 @@ def convert_config_file(parent, path):
                     port = ''
                     source_port = ''
                     proto_array = y[2].split('-')
-                    try:
-                        i = y.index('source')
-                        source_port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-                    except ValueError:
-                        pass
-                    try:
-                        i = y.index('destination')
-                        port = y[i+2] if y[i+1] == 'eq' else f'{y[i+2]}-{y[i+3]}'
-                    except ValueError:
-                        pass
+                    match y[2:]:
+                        case ['tcp'|'udp'|'tcp-udp', 'source', mode, src_port]:
+                            if mode == 'eq':
+                                port = get_service_number(src_port)
+                            elif mode == 'gt':
+                                port = f'{int(src_port)+1}-65535'
+                            elif mode == 'lt':
+                                port = f'0-{int(src_port)-1}'
+                            else:
+                                parent.stepChanged.emit(f'RED|    Error [group-object "{service["name"]}"]: Не конвертирован сервис "{" ".join(y)}"')
+                        case ['tcp'|'udp'|'tcp-udp', 'source', 'range', port1, port2]:
+                            port = f'{get_service_number(port1)}-{get_service_number(port2)}'
+                        case ['tcp'|'udp'|'tcp-udp', 'destination', mode, dst_port]:
+                            if mode == 'eq':
+                                port = get_service_number(dst_port)
+                            elif mode == 'gt':
+                                port = f'{int(dst_port)+1}-65535'
+                            elif mode == 'lt':
+                                port = f'0-{int(dst_port)-1}'
+                            else:
+                                parent.stepChanged.emit(f'RED|    Error [group-object "{service["name"]}"]: Не конвертирован сервис "{" ".join(y)}"')
+                        case ['tcp'|'udp'|'tcp-udp', 'destination', 'range', port1, port2]:
+                            port = f'{get_service_number(port1)}-{get_service_number(port2)}'
                     for proto in proto_array:
+                        if proto == 'ip':
+                            continue
                         service['protocols'].append(
                             {
                                 'proto': proto,
@@ -985,7 +990,7 @@ def convert_ip_lists(parent, path, list_ips):
             with open(json_file, "w") as fh:
                 json.dump(value, fh, indent=4, ensure_ascii=False)
             parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
-            time.sleep(0.1)
+            time.sleep(0.01)
 
         parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
     else:
@@ -1022,6 +1027,7 @@ def convert_service_groups(parent, path, services):
     parent.stepChanged.emit('BLUE|Конвертация групп сервисов.')
 
     services_groups = []
+    new_services = {}
     for key, value in services.items():
         if value['group']:
             srv_group = {
@@ -1035,17 +1041,28 @@ def convert_service_groups(parent, path, services):
                 'content': []
             }
             for item in value['protocols']:
-                service = copy.deepcopy(services[item['name']])
-                service.pop('group')
-                for x in service['protocols']:
-                    x.pop('source_port', None)
-                srv_group['content'].append(service)
+                if 'name' in item:
+                    service = copy.deepcopy(services[item['name']])
+                    service.pop('group')
+                    for x in service['protocols']:
+                        x.pop('source_port', None)
+                    srv_group['content'].append(service)
+                else:
+                    service = {
+                        'name': f'{item["proto"]}{item["port"]}',
+                        'description': 'Портировано с Cisco FPR.',
+                        'protocols': [item,]
+                    }
+                    new_services[service['name']] = copy.deepcopy(service)
+                    item.pop('source_port', None)
+                    srv_group['content'].append(service)
 
             services_groups.append(srv_group)
             parent.stepChanged.emit(f'BLACK|    Создана группа сервисов "{srv_group["name"]}".')
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     if services_groups:
+        services.update(new_services)
         section_path = os.path.join(path, 'Libraries')
         current_path = os.path.join(section_path, 'ServicesGroups')
         err, msg = func.create_dir(current_path)
@@ -1068,7 +1085,7 @@ def convert_services_list(parent, path, services):
 
     services_list = []
     for key, value in services.items():
-        if value['group']:
+        if value.get('group', False):
             continue
         service = copy.deepcopy(value)
         service.pop('group', None)
@@ -1269,6 +1286,16 @@ def get_ips(data, rule_ips):
             if item in data['url_lists']:
                 new_rule_ips.append(['urllist_id', item])
     return new_rule_ips
+
+
+def get_service_number(service):
+    """Получить цифровое значение сервиса из его имени"""
+    if service.isdigit():
+        return service
+    elif (service_number:= service_ports.get(service, False)):
+        return service_number
+    else:
+        return False
 
 
 def main():

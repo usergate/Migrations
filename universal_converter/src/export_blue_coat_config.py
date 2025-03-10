@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Blue Coat в формат json NGFW UserGate.
-# Версия 1.0  21.01.2025
+# Версия 1.1  10.03.2025
 #
 
 import os, sys, json, re, time
@@ -200,7 +200,7 @@ def make_firewall_rules(parent, data):
                     rule['enabled'] = True
                 
                 if (category := pattern_category.search(item)):
-                    rule['description'] = f'{rule['description']}\nНе конвертированы категории: {category.group()}.'
+                    rule['description'] = f'{rule["description"]}\nНе конвертированы категории: {category.group()}.'
                     rule['enabled'] = False
 
                 rule['action'] = 'accept' if action == 'allow' else 'drop'

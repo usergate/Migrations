@@ -261,20 +261,25 @@ def check_auth(parent):
 
 def create_ug_services():
     ug_services = [
+        {'name': 'DHCP', 'description': 'Dynamic Host Configuration Protocol', 'protocols': [
+            {'proto': 'udp', 'port': '67', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'udp', 'port': '68', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'DNS', 'description': 'Domain Name Service', 'protocols': [
             {'proto': 'udp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'HTTP', 'description': 'Hypertext Transport Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'HTTPS', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
             {'proto': 'tcp', 'port': '443', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
-            {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
-            {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'IMAP', 'description': 'Internet Mail Access Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '143', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'IMAPS', 'description': 'Internet Mail Access Protocol over SSL', 'protocols': [
             {'proto': 'tcp', 'port': '993', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'MySQL', 'description': 'MySQL', 'protocols': [
+            {'proto': 'tcp', 'port': '3306', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'NTP', 'description': 'Network Time Protocol', 'protocols': [
             {'proto': 'udp', 'port': '123', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'POP3', 'description': 'Post Office Protocol', 'protocols': [
@@ -285,9 +290,13 @@ def create_ug_services():
             {'proto': 'tcp', 'port': '5432', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'RDP', 'description': 'Remote Desktop Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '3389', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'Rsync', 'description': '', 'protocols': [
+            {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SIP', 'description': 'Session Initiation Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '5060-5061', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'udp', 'port': '5060', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SMB', 'description': 'Server Message Block', 'protocols': [
+            {'proto': 'tcp', 'port': '445', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SMTP', 'description': 'Simple Mail Transfer Protocol', 'protocols': [
             {'proto': 'smtp', 'port': '25', 'app_proto': 'smtp', 'source_port': '', 'alg': ''}]},
         {'name': 'SMTPS', 'description': 'Simple Mail Transfer Protocol over SSL', 'protocols': [
@@ -295,12 +304,13 @@ def create_ug_services():
         {'name': 'SNMP', 'description': 'Simple Network Management Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'udp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'SNMPTRAP', 'description': 'Simple Network Management Protocol Trap', 'protocols': [
+            {'proto': 'tcp', 'port': '162', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'udp', 'port': '162', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SSH', 'description': 'Secure Shell', 'protocols': [
             {'proto': 'tcp', 'port': '22', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'TFTP', 'description': 'Trivial File Transfer Protocol', 'protocols': [
             {'proto': 'udp', 'port': '69', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'Rsync', 'description': '', 'protocols': [
-            {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
     ]
     for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp', 'gre', 'ipip'}:
         ug_services.append({

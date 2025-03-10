@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 3.7    04.02.2025
+# Версия 3.8    10.03.2025
 #
 
 import os, sys, json, uuid, time
@@ -1092,15 +1092,17 @@ def convert_url_lists(parent):
             parent.objects[key] = {'type': 'url', 'name': url_name}
 
             url_list = {
-                "name": url_name,
-                "description": f"Портировано с CheckPoint.\n{value.get('comments', '')}",
-                "type": "url",
-                "url": "",
-                "attributes": {
-                    'list_compile_type': 'case_sensitive'
+                'name': url_name,
+                'description': f'Портировано с CheckPoint.\n{value.get("comments", "")}',
+                'type': 'url',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {
+                    'list_compile_type': 'case_insensitive'
 #                    "threat_level": dict_risk.get(value['risk'], 5) if 'risk' in value else 3
                 },
-                "content": [{'value': url.translate(trans_url)} for url in value['url-list']]
+                'content': [{'value': url.translate(trans_url)} for url in value['url-list']]
             }
 
             json_file = os.path.join(current_path, f'{value["name"].translate(trans_filename)}.json')
@@ -1121,15 +1123,17 @@ def convert_url_lists(parent):
             url_list_name = func.get_restricted_name(value['name'])
             parent.objects[key] = {'type': 'dns-domain', 'value': ['urllist_id', url_list_name]}
             url_list = {
-                "name": url_list_name,
-                "description": f"Портировано с CheckPoint.\n{value.get('comments', '')}",
-                "type": "url",
-                "url": "",
-                "attributes": {
+                'name': url_list_name,
+                'description': f'Портировано с CheckPoint.\n{value.get("comments", "")}',
+                'type': 'url',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {
                     'list_compile_type': 'domain'
 #                    "threat_level": dict_risk.get(value['risk'], 5) if 'risk' in value else 3
                 },
-                "content": [{'value': url_list_name}]
+                'content': [{'value': url_list_name}]
             }
 
             json_file = os.path.join(current_path, f'{url_list_name.translate(trans_filename)}.json')

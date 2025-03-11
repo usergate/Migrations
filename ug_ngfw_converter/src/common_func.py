@@ -20,7 +20,7 @@
 #-----------------------------------------------------------------------------
 # common_func.py
 # Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 2.2  20.12.2024
+# Версия 2.3  12.03.2025
 #
 
 import os, json, pickle, uuid
@@ -213,22 +213,22 @@ def get_netroute(net):
         return 1, err
 
 
-def get_restricted_name(name, default_name=None):
+def get_restricted_name(name, default_name=f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'):
     """
     Получить имя объекта без запрещённых спецсимволов.
     Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
     """
     if isinstance(name, str):
         new_name = name.translate(trans_name).strip()
-        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'}
+        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.'}
         try:
             while new_name[0] in forbidden_values:
                 new_name = new_name[1:]
         except IndexError:
-            new_name = default_name if default_name else str(uuid.uuid4()).split('-')[4]
+            return default_name
         return new_name
     else:
-        return f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'
+        return default_name
 
 def get_restricted_userlogin(user_login):
     """

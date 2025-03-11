@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.3   11.03.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.4   12.03.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, time, copy, json
@@ -1215,6 +1215,8 @@ def import_dns_rules(parent, path):
         item.pop('position_layer', None)    # Удаляем если экспорт был из шаблона МС.
         if parent.version >= 6.0:
             item['position'] = 'last'
+
+        item['name'] = func.get_restricted_name(item['name'])
         if item['name'] in dns_rules:
             parent.stepChanged.emit(f'GRAY|    Правило DNS прокси "{item["name"]}" уже существует.')
         else:

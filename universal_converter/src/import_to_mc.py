@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.6   21.01.2025  (только для universal_converter)
+# Версия 3.7   10.03.2025  (только для universal_converter)
 #
 
 import os, sys, json, time
@@ -394,6 +394,11 @@ def import_ip_lists(parent, path):
 
         data['name'] = func.get_restricted_name(data['name'])
         parent.stepChanged.emit(f'BLACK|    Импортируем содержимое списка IP-адресов "{data["name"]}".')
+
+        if data['name'] not in ip_lists:
+            parent.stepChanged.emit(f'RED|       Не найден список IP-адресов "{data["name"]}". Содержимое не импортировано]')
+            error = 1
+            continue
 
         if parent.template_id == ip_lists[data['name']].template_id:
             if data['list_type_update'] == 'static':

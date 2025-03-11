@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.10   03.02.2025
+# Версия 2.11   18.02.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -29,10 +29,10 @@ class SelectAction(QWidget):
         super().__init__()
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации UserGate: NGFW, DCFW, MC</font></b>"
-        text2 = "Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7, 8</b>), <b>DCFW</b> и сохранение её в файлах json \
-    в каталоге <b>data</b> в текущей директории."
-        text3 = "Экспорт конфигурации из шаблона <b>UserGate Management Center</b> версии <b>7, 8</b> и сохранение её в файлах json в каталоге \
-<b>data</b> в текущей директории."
+        text2 = ("Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7, 8</b>), <b>DCFW</b> "
+                 "и сохранение её в файлах json в каталоге <b>data</b> в текущей директории.")
+        text3 = ("Экспорт группы шаблонов <b>UserGate Management Center</b> версии <b>7, 8</b> "
+                 "и сохранение в каталог <b>mc_templates/<i>Group_name</i></b> в текущей директории.")
         text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7, 8</b>) и <b>DCFW</b>."
         text5 = "Импорт файлов конфигурации из каталога <b>data</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
         label1 = QLabel(text1)
@@ -55,7 +55,7 @@ class SelectAction(QWidget):
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self.set_export_page)
 
-        self.btn_export_mc = QPushButton("Экспорт конфигурации из шаблона UG MC")
+        self.btn_export_mc = QPushButton("Экспорт группы шаблонов из\n UG Management Center")
         self.btn_export_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_export_mc.setFont(btn_font)
         self.btn_export_mc.setFixedWidth(280)
@@ -85,8 +85,8 @@ class SelectAction(QWidget):
         layout.addWidget(label4, 2, 1)
         layout.addWidget(self.btn_import_mc, 3, 0)
         layout.addWidget(label5, 3, 1)
-        layout.setHorizontalSpacing(20)
-        layout.setVerticalSpacing(20)
+        layout.setHorizontalSpacing(15)
+        layout.setVerticalSpacing(15)
         layout.setColumnStretch(1, 10)
 
         btn_exit = QPushButton("Выход")
@@ -115,7 +115,7 @@ class SelectAction(QWidget):
 
     def resize_window(self, e):
         if e == 0:
-            self.parent.resize(610, 350)
+            self.parent.resize(610, 356)
 
     def set_export_page(self):
         """Переходим на страницу экспорта конфигурации из NGFW. Номер в стеке 1."""
@@ -137,8 +137,8 @@ class SelectAction(QWidget):
     def enable_buttons(self):
         self.btn_export.setStyleSheet('color: forestgreen; background: white;')
         self.btn_export.setEnabled(True)
-#        self.btn_export_mc.setStyleSheet('color: forestgreen; background: white;')
-#        self.btn_export_mc.setEnabled(True)
+        self.btn_export_mc.setStyleSheet('color: forestgreen; background: white;')
+        self.btn_export_mc.setEnabled(True)
         self.btn_import.setStyleSheet('color: steelblue; background: white;')
         self.btn_import.setEnabled(True)
         self.btn_import_mc.setStyleSheet('color: steelblue; background: white;')
@@ -536,7 +536,7 @@ class SelectMcExportMode(QWidget):
                         json.dump({'device': 'MC', 'node name': self.utm.node_name, 'version': self.utm.version, 'admin': self.utm._login}, fh, indent=4)
                 self.groups = self.get_groups_templates()
                 if self.groups:
-                    print('groups', self.groups)
+#                    print('groups', self.groups)
                     self.tree.init_tree({key: [x for x in value.values()] for key, value in self.groups.items()})
                     self.tree.setHidden(False)
                     self.btn2.setStyleSheet('color: forestgreen; background: white;')
@@ -1634,6 +1634,7 @@ class MainTree(QTreeWidget):
             "HIDProfiles": "HID профили",
             "BfdProfiles": "Профили BFD",
             "UserIdAgentSyslogFilters": "Syslog фильтры UserID агента",
+            "Tags": "Тэги",
             "Notifications": "Оповещения",
             "AlertRules": "Правила оповещений",
             "SNMP": "SNMP",
@@ -1668,7 +1669,7 @@ class MainTree(QTreeWidget):
                 "Календари", "Полосы пропускания", "Профили АСУ ТП", "Шаблоны страниц", "Категории URL", "Изменённые категории URL",
                 "Приложения", "Профили приложений", "Группы приложений", "Почтовые адреса", "Номера телефонов", "Сигнатуры СОВ",
                 "Профили СОВ", "Профили оповещений", "Профили netflow", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Сценарии"
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Сценарии", "Тэги"
             ],
             "Оповещения": ["Правила оповещений", "Профили безопасности SNMP", "SNMP", "Параметры SNMP"],
         }
@@ -1684,11 +1685,14 @@ class MainTree(QTreeWidget):
             8.0: {
                 "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+            7.3: {
+                "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.2: {
-                "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
+                "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Tags",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.1: {
-                "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
+                "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Tags",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.0: {
                 "Профили пользовательских сертификатов",
@@ -1701,7 +1705,7 @@ class MainTree(QTreeWidget):
                 "Профили АСУ ТП",
                 "Профили приложений", "Приложения",
                 "Сигнатуры СОВ",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Tags",
                 "Параметры SNMP", "Профили безопасности SNMP",
             },
             6.1: {
@@ -1715,7 +1719,7 @@ class MainTree(QTreeWidget):
                 "Сигнатуры СОВ",
                 "Профили LLDP",
                 "Профили пересылки SSL",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Tags",
                 "Параметры SNMP", "Профили безопасности SNMP",
             },
             5.0: {
@@ -1728,7 +1732,7 @@ class MainTree(QTreeWidget):
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
-                "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
+                "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL", "Tags",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
             },

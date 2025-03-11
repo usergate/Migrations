@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.0   26.12.2024
+# Версия 3.1   21.02.2025
 # Общий класс для работы с xml-rpc для Management Center
 #
 # Коды возврата:
@@ -137,6 +137,7 @@ class McXmlRpc:
         upload_url = f'http://{self.server_ip}:4041{result["upload_url"]}'
         req = requests.post(upload_url, files={'data': open(upload_file, 'rb')})
         return 0, req.json()
+
 ############## Realm API module (API для области) ###########################################################
     def get_usercatalog_servers_status(self):
         """Получить статус всех серверов авторизации LDAP области"""
@@ -158,7 +159,7 @@ class McXmlRpc:
             return 1, f"Error mclib.get_usercatalog_ldap_servers: [{err.faultCode}] — {err.faultString}"
 
     def get_usercatalog_ldap_user_guid(self, ldap_id, user_name):
-        """Получить GUID пользователя LDAP по его имени"""
+        """Получить GUID пользователя LDAP по его имени или логину"""
         try:
             if self.float_version >= 7.1:
                 users = self._server.v1.usercatalogs.ldap.users.list(self._auth_token, ldap_id, user_name)
@@ -178,6 +179,30 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f"Error mclib.get_usercatalog_ldap_group_guid: [{err.faultCode}] — {err.faultString}"
         return 0, groups[0]['guid'] if groups else 0  # Возвращает или guid или 0
+
+    def get_devices_list(self, start=0, limit=1000, query={}):
+        """Получить список NGFW устройств области"""
+        try:
+            result = self._server.v1.ccdevices.devices.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение списка устройств NGFW [Error mclib.get_devices_list: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_devices_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей.
+
+    def get_object_names(self, query={}):
+        """
+        Получить имя объекта области по его ID. Пример query: {'user': ['e5c2fc4b-5d85-378d-a00d-af7200000458'], ...}
+        """
+        try:
+            result = self._server.v1.ccdevices.resolve.object.names(self._auth_token, query)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение имени объекта [Error mclib.get_object_names: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_object_names: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает словарь.
 
 ######## NGFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
     def get_device_templates_groups(self, start=0, limit=1000, query={}):
@@ -352,6 +377,22 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error mclib.set_template_settings: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает True
+
+    def get_template_admins_profiles(self, template_id, start=0, limit=10000, query={}):
+        """Получить список профилей администраторов шаблона"""
+        try:
+            result = self._server.v1.ccadministrators.administrator.profiles.list(self._auth_token, template_id, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_admins_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_template_admins(self, template_id, start=0, limit=10000, query={}):
+        """Получить список администраторов шаблона"""
+        try:
+            result = self._server.v1.ccadministrators.administrators.list(self._auth_token, template_id, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_admins: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
 
     def get_template_certificates_list(self, template_id, start=0, limit=500, query={}):
         """Получить список сертификатов шаблона"""
@@ -1648,7 +1689,7 @@ class McXmlRpc:
     def get_template_loadbalancing_rules(self, template_id, start=0, limit=100, query={}):
         """
         Получить список правил балансировки нагрузки шаблона.
-        query: {'query': 'type = reverse'} (Тип принимает значения: 'ipvs', 'icap', 'reverse')
+        query: {'query': 'type = rp'} (Тип принимает значения: 'ipvs', 'icap', 'rp')
         """
         try:
             result = self._server.v1.ccloadbalancing.rules.list(self._auth_token, template_id, start, limit, query)
@@ -2296,7 +2337,7 @@ class McXmlRpc:
             result = self._server.v1.ccsnmp.parameters.list(self._auth_token, template_id, start, limit, query)
         except rpc.Fault as err:
             return 1, f'Error mclib.gettemplate_snmp_parameters: [{err.faultCode}] — {err.faultString}'
-        return 0, result
+        return 0, result['items']
 
     def add_template_snmp_parameters(self, template_id, params):
         """Добавить параметры SNMP в шаблон"""

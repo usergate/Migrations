@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.6   26.12.2024  (только для ug_ngfw_converter)
+# Версия 3.7   11.03.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json, time
@@ -5944,6 +5944,9 @@ def import_dos_rules(parent, path):
 #-------------------------------------------------- WAF ----------------------------------------------------------
 def import_waf_custom_layers(parent, path):
     """Импортируем Персональные слои WAF"""
+    if parent.utm.float_version >= 7.3:
+        return
+
     json_file = os.path.join(path, 'config_waf_custom_layers.json')
     err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
@@ -5984,6 +5987,9 @@ def import_waf_custom_layers(parent, path):
 
 def import_waf_profiles(parent, path):
     """Импортируем профили WAF"""
+    if parent.utm.float_version >= 7.3:
+        return
+
     json_file = os.path.join(path, 'config_waf_profiles.json')
     err, data = func.read_json_file(parent, json_file, mode=2)
     if err:
@@ -6217,14 +6223,15 @@ def import_reverseproxy_rules(parent, path):
             return
     client_certs_profiles = parent.mc_data['client_certs_profiles']
 
-    if parent.utm.waf_license:  # Проверяем что есть лицензия на WAF
-        if not parent.mc_data['waf_profiles']:
-            if get_waf_profiles(parent): # Устанавливаем parent.mc_data['waf_profiles']
-                parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
-                return
-    else:
-        parent.stepChanged.emit('NOTE|    Нет лицензии на WAF. Защита приложений WAF будет выключена в правилах.')
-    waf_profiles = parent.mc_data['waf_profiles']
+    if parent.utm.float_version < 7.3:
+        if parent.utm.waf_license:  # Проверяем что есть лицензия на WAF
+            if not parent.mc_data['waf_profiles']:
+                if get_waf_profiles(parent): # Устанавливаем parent.mc_data['waf_profiles']
+                    parent.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
+                    return
+        else:
+            parent.stepChanged.emit('NOTE|    Нет лицензии на WAF. Защита приложений WAF будет выключена в правилах.')
+        waf_profiles = parent.mc_data['waf_profiles']
 
     err, result = parent.utm.get_template_reverseproxy_rules(parent.template_id)
     if err:
@@ -6304,19 +6311,22 @@ def import_reverseproxy_rules(parent, path):
                 item['enabled'] = False
                 error = 1
 
-        if item['waf_profile_id']:
-            if parent.utm.waf_license:
-                try:
-                    item['waf_profile_id'] = waf_profiles[item['waf_profile_id']].id
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF {err}. Импортируйте профили WAF и повторите попытку.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
+        if parent.utm.float_version < 7.3:
+            if item['waf_profile_id']:
+                if parent.utm.waf_license:
+                    try:
+                        item['waf_profile_id'] = waf_profiles[item['waf_profile_id']].id
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF {err}. Импортируйте профили WAF и повторите попытку.')
+                        item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
+                        item['waf_profile_id'] = 0
+                        item['enabled'] = False
+                        error = 1
+                else:
                     item['waf_profile_id'] = 0
-                    item['enabled'] = False
-                    error = 1
-            else:
-                item['waf_profile_id'] = 0
-                item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
+                    item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
+        else:
+            item.pop('waf_profile_id', None)
 
         if item['name'] in reverseproxy_rules:
             parent.stepChanged.emit(f'uGRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')

@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_ngfw_converter.py
-# Version 4.11  03.02.2025
+# Version 4.3  11.03.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys, json
@@ -32,10 +32,9 @@ import common_func as func
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.11)")
-        ico = QIcon("favicon.png")
+        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.3)")
+        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png"))  # Для PyInstaller
         self.setWindowIcon(ico)
-        self._base_path = os.getcwd()
         self._current_config_path = None    # Полный путь к каталогу с конфигурацией данного узла
 
         self.stacklayout = QStackedLayout()

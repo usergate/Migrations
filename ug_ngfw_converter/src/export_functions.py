@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.3  23.12.2024
+# Версия 3.4  11.03.2025
 #
 
 import os, sys, json
@@ -95,7 +95,7 @@ class ExportSelectedPoints(QThread):
 
 
 def export_general_settings(parent, path):
-    """Экспортируем раздел 'UserGate/Настройки/Настройки интерфейса'"""
+    """Экспортируем 1раздел 'UserGate/Настройки/Настройки интерфейса'"""
     parent.stepChanged.emit('BLUE|Экспорт раздела "UserGate/Настройки/Настройки интерфейса".')
     err, msg = func.create_dir(path)
     if err:
@@ -2814,6 +2814,7 @@ def export_reverseproxy_rules(parent, path):
                 parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте настроек интерфейса.')
                 return
 
+    if parent.utm.float_version < 7.3:
         waf_profiles = {}
         if parent.utm.waf_license:  # Проверяем что есть лицензия на WAF
             # Получаем список профилей WAF. Если err=2, значит лицензия истекла или нет прав на API.
@@ -2883,12 +2884,13 @@ def export_reverseproxy_rules(parent, path):
                 item['client_certificate_profile_id'] = 0
             else:
                 item['client_certificate_profile_id'] = parent.client_cert_profiles.get(item['client_certificate_profile_id'], 0)
-                try:
-                    item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
-                except KeyError as err:
-                    parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF {err}.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
-                    item['waf_profile_id'] = 0
+                if parent.utm.float_version < 7.3:
+                    try:
+                        item['waf_profile_id'] = waf_profiles[item['waf_profile_id']]
+                    except KeyError as err:
+                        parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF {err}.')
+                        item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
+                        item['waf_profile_id'] = 0
 
         json_file = os.path.join(path, 'config_reverseproxy_rules.json')
         with open(json_file, 'w') as fh:
@@ -2900,8 +2902,9 @@ def export_reverseproxy_rules(parent, path):
 #------------------------------------------------------- WAF ------------------------------------------------------------
 def export_waf_custom_layers(parent, path):
     """Экспортируем персональные WAF-слои. Для версии 7.1 и выше"""
-    if not parent.utm.waf_license:
+    if parent.utm.float_version >= 7.3 or not parent.utm.waf_license:
         return
+
     parent.stepChanged.emit('BLUE|Экспорт персональных слоёв WAF из раздела "WAF/Персональные WAF-слои".')
     error = 0
 
@@ -2935,8 +2938,9 @@ def export_waf_custom_layers(parent, path):
 
 def export_waf_profiles_list(parent, path):
     """Экспортируем профили WAF. Для версии 7.1 и выше"""
-    if not parent.utm.waf_license:
+    if parent.utm.float_version >= 7.3 or not parent.utm.waf_license:
         return
+
     parent.stepChanged.emit('BLUE|Экспорт профилей WAF из раздела "WAF/WAF-профили".')
     error = 0
 
@@ -3853,7 +3857,7 @@ def export_applications(parent, path):
 
     err, data = parent.utm.get_version71_apps(query={'query': 'owner = You'})
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте пользовательских приложений.')
         parent.error = 1
         return
@@ -3917,7 +3921,7 @@ def export_application_groups(parent, path):
 
     err, data = parent.utm.get_nlist_list('applicationgroup')
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп приложений.')
         parent.error = 1
         return
@@ -3974,7 +3978,7 @@ def export_email_groups(parent, path):
 
     err, data = parent.utm.get_nlist_list('emailgroup')
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп почтовых адресов.')
         parent.error = 1
         return
@@ -4023,7 +4027,7 @@ def export_phone_groups(parent, path):
 
     err, data = parent.utm.get_nlist_list('phonegroup')
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте групп телефонных номеров.')
         parent.error = 1
         return
@@ -4072,7 +4076,7 @@ def export_custom_idps_signatures(parent, path):
 
     err, data = parent.utm.get_idps_signatures_list(query={'query': 'owner = You'})
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте пользовательских сигнатур СОВ.')
         parent.error = 1
         return
@@ -4105,7 +4109,7 @@ def export_idps_profiles(parent, path):
     if parent.utm.float_version < 7.1:
         err, data = parent.utm.get_nlist_list('ipspolicy')
         if err:
-            parent.stepChanged.emit(f'iRED|{data}')
+            parent.stepChanged.emit(f'RED|{data}')
             parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей СОВ.')
             parent.error = 1
             return
@@ -4133,7 +4137,7 @@ def export_idps_profiles(parent, path):
     else:
         err, data = parent.utm.get_idps_profiles_list()
         if err:
-            parent.stepChanged.emit(f'iRED|{data}')
+            parent.stepChanged.emit(f'RED|{data}')
             parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей СОВ.')
             parent.error = 1
             return
@@ -4145,7 +4149,7 @@ def export_idps_profiles(parent, path):
             for app in item['overrides']:
                 err, result = parent.utm.get_idps_signature_fetch(app['id'])
                 if err:
-                    parent.stepChanged.emit(f'iRED|{result}')
+                    parent.stepChanged.emit(f'RED|{result}')
                     parent.stepChanged.emit('bRED|    Не переопределена сигнатура "{app}" для профиля СОВ "{item["name"]}".')
                     error = 1
                 else:
@@ -4175,7 +4179,7 @@ def export_notification_profiles(parent, path):
 
     err, data = parent.utm.get_notification_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей оповещений.')
         parent.error = 1
         return
@@ -4206,7 +4210,7 @@ def export_netflow_profiles(parent, path):
 
     err, data = parent.utm.get_netflow_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей netflow.')
         parent.error = 1
         return
@@ -4237,7 +4241,7 @@ def export_ssl_profiles(parent, path):
 
     err, data = parent.utm.get_ssl_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей SSL.')
         parent.error = 1
         return
@@ -4268,7 +4272,7 @@ def export_lldp_profiles(parent, path):
 
     err, data = parent.utm.get_lldp_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей LLDP.')
         parent.error = 1
         return
@@ -4299,7 +4303,7 @@ def export_ssl_forward_profiles(parent, path):
 
     err, data = parent.utm.get_ssl_forward_profiles()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей пересылки SSL.')
         parent.error = 1
         return
@@ -4330,7 +4334,7 @@ def export_hip_objects(parent, path):
 
     err, data = parent.utm.get_hip_objects_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте HIP объектов.')
         parent.error = 1
         return
@@ -4368,7 +4372,7 @@ def export_hip_profiles(parent, path):
 
     err, data = parent.utm.get_hip_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте HIP профилей.')
         parent.error = 1
         return
@@ -4400,7 +4404,7 @@ def export_bfd_profiles(parent, path):
 
     err, data = parent.utm.get_bfd_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей BFD.')
         parent.error = 1
         return
@@ -4430,7 +4434,7 @@ def export_useridagent_syslog_filters(parent, path):
 
     err, data = parent.utm.get_useridagent_filters_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте syslog фильтров UserID агента.')
         parent.error = 1
         return
@@ -4453,6 +4457,39 @@ def export_useridagent_syslog_filters(parent, path):
     else:
         parent.stepChanged.emit('GRAY|    Нет syslog фильтров UserID агента для экспорта.')
 
+#--------------------------------------------------- Tags ---------------------------------------------------------------
+def export_tags(parent, path):
+    """Экспортируем список тэгов"""
+    parent.stepChanged.emit('BLUE|Экспорт тэгов из раздела "Библиотеки/Тэги".')
+
+    if parent.utm.float_version < 7.3:
+        return
+
+    err, data = parent.utm.get_tags_list()
+    if err:
+        parent.stepChanged.emit(f'RED|{result}')
+        parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка тэгов.')
+        parent.error = 1
+        return
+
+    for item in data:
+        item.pop('id', None)
+        item.pop('cc', None)
+
+    if data:
+        err, msg = func.create_dir(path)
+        if err:
+            parent.stepChanged.emit(f'RED|    {msg}')
+            parent.error = 1
+            return
+
+        json_file = os.path.join(path, 'config_tags.json')
+        with open(json_file, 'w') as fh:
+            json.dump(data, fh, indent=4, ensure_ascii=False)
+        parent.stepChanged.emit(f'GREEN|    Тэги выгружены в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit('GRAY|    Нет тэгов для экспорта.')
+
 #--------------------------------------------------- Оповещения ---------------------------------------------------------
 def export_snmp_rules(parent, path):
     """Экспортируем список правил SNMP"""
@@ -4461,7 +4498,7 @@ def export_snmp_rules(parent, path):
     if parent.utm.float_version >= 7.1:
         err, result = parent.utm.get_snmp_security_profiles()
         if err:
-            parent.stepChanged.emit(f'iRED|{result}')
+            parent.stepChanged.emit(f'RED|{result}')
             parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил SNMP.')
             parent.error = 1
             return
@@ -4469,7 +4506,7 @@ def export_snmp_rules(parent, path):
 
     err, data = parent.utm.get_snmp_rules()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списка правил SNMP.')
         parent.error = 1
         return
@@ -4502,7 +4539,7 @@ def export_notification_alert_rules(parent, path):
 
     err, result = parent.utm.get_notification_profiles_list()
     if err:
-        parent.stepChanged.emit(f'iRED|{result}')
+        parent.stepChanged.emit(f'RED|{result}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.')
         parent.error = 1
         return
@@ -4510,7 +4547,7 @@ def export_notification_alert_rules(parent, path):
 
     err, result = parent.utm.get_nlist_list('emailgroup')
     if err:
-        parent.stepChanged.emit(f'iRED|{result}')
+        parent.stepChanged.emit(f'RED|{result}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.')
         parent.error = 1
         return
@@ -4518,7 +4555,7 @@ def export_notification_alert_rules(parent, path):
 
     err, result = parent.utm.get_nlist_list('phonegroup')
     if err:
-        parent.stepChanged.emit(f'iRED|{result}')
+        parent.stepChanged.emit(f'RED|{result}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.')
         parent.error = 1
         return
@@ -4526,7 +4563,7 @@ def export_notification_alert_rules(parent, path):
 
     err, data = parent.utm.get_notification_alert_rules()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте правил оповещений.')
         parent.error = 1
         return
@@ -4559,7 +4596,7 @@ def export_snmp_security_profiles(parent, path):
 
     err, data = parent.utm.get_snmp_security_profiles()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте профилей безопасности SNMP.')
         parent.error = 1
         return
@@ -4608,7 +4645,7 @@ def export_snmp_settings(parent, path):
 def export_snmp_engine(parent, path):
     err, data = parent.utm.get_snmp_engine()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте SNMP Engine ID.')
         return 1
 
@@ -4621,7 +4658,7 @@ def export_snmp_engine(parent, path):
 def export_snmp_sys_name(parent, path):
     err, data = parent.utm.get_snmp_sysname()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте значения SNMP SysName.')
         return 1
 
@@ -4634,7 +4671,7 @@ def export_snmp_sys_name(parent, path):
 def export_snmp_sys_location(parent, path):
     err, data = parent.utm.get_snmp_syslocation()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте значения SNMP SysLocation.')
         return 1
 
@@ -4647,7 +4684,7 @@ def export_snmp_sys_location(parent, path):
 def export_snmp_sys_description(parent, path):
     err, data = parent.utm.get_snmp_sysdescription()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте значения SNMP SysDescription.')
         return 1
 
@@ -4748,6 +4785,7 @@ export_funcs = {
     "HIDProfiles": export_hip_profiles,
     "BfdProfiles": export_bfd_profiles,
     "UserIdAgentSyslogFilters": export_useridagent_syslog_filters,
+    "Tags": export_tags,
     "AlertRules": export_notification_alert_rules,
     "SNMP": export_snmp_rules,
     "SNMPParameters": export_snmp_settings,
@@ -4902,7 +4940,7 @@ def set_scenarios_rules(parent):
     """Устанавливаем в parent значение атрибута: scenarios_rules"""
     err, result = parent.utm.get_scenarios_rules()
     if err:
-        parent.stepChanged.emit(f'iRED|{data}')
+        parent.stepChanged.emit(f'RED|{data}')
         return 1
     parent.scenarios_rules = {x['id']: x['name'].strip().translate(trans_name) for x in result}
     return 0

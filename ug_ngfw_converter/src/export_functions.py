@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.4  11.03.2025
+# Версия 3.5  12.03.2025
 #
 
 import os, sys, json
@@ -2494,8 +2494,8 @@ def export_mailsecurity_rules(parent, path):
         parent.error = 1
         error = 1
     else:
-        dnsbl['white_list'] = get_ips_name(parent, dnsbl['white_list'], item['name'])
-        dnsbl['black_list'] = get_ips_name(parent, dnsbl['black_list'], item['name'])
+        dnsbl['white_list'] = get_ips_name(parent, dnsbl['white_list'], 'DNSBL white_list')
+        dnsbl['black_list'] = get_ips_name(parent, dnsbl['black_list'], 'DNSBL black_list')
 
         json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
         with open(json_file, 'w') as fh:

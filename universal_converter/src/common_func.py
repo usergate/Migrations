@@ -20,7 +20,7 @@
 #-----------------------------------------------------------------------------
 # common_func.py
 # Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 2.2  20.12.2024
+# Версия 2.3  12.03.2025
 #
 
 import os, json, pickle, uuid
@@ -212,23 +212,47 @@ def get_netroute(net):
     except (IndexError, ValueError) as err:
         return 1, err
 
+def get_transformed_name(parent, name, err=0, descr='Имя объекта', default_name=f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'):
+    """
+    Получить имя объекта без запрещённых спецсимволов.
+    Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
+    Так же проверяется длина имени. Если оно более 64 символов, то обрезается до длины 64.
+    """
+    if isinstance(name, str):
+        new_name = name.translate(trans_name).strip()
+        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.'}
+        try:
+            while new_name[0] in forbidden_values:
+                new_name = new_name[1:]
+        except IndexError:
+            parent.stepChanged.emit(f'RED|    Error: {descr} "{name}" не конвертировано, так как содержит одни спец.символы.')
+            parent.stepChanged.emit(f'ORANGE|       Новое {descr.lower()}: "{new_name}".')
+            return 1, default_name
+        if len(new_name) > 64:
+            new_name = new_name[:64]
+            parent.stepChanged.emit(f'RED|    Error: {descr} "{name}" имеет длину более 64 символов. Имя обрезано до 64 символов.')
+            parent.stepChanged.emit(f'ORANGE|       Новое {descr.lower()}: "{new_name}".')
+            err = 1
+        return err, new_name
+    else:
+        return 1, default_name
 
-def get_restricted_name(name, default_name=None):
+def get_restricted_name(name, default_name=f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'):
     """
     Получить имя объекта без запрещённых спецсимволов.
     Удаляется первый символ если он является разрешённым спецсимволом, т.к. запрещается делать первый символ спецсимволом.
     """
     if isinstance(name, str):
         new_name = name.translate(trans_name).strip()
-        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.', '@'}
+        forbidden_values = {'_', '(', ')', ' ', '+', '-', ':', '/', ',', '.'}
         try:
             while new_name[0] in forbidden_values:
                 new_name = new_name[1:]
         except IndexError:
-            new_name = default_name if default_name else str(uuid.uuid4()).split('-')[4]
+            return default_name
         return new_name
     else:
-        return f'{str(uuid.uuid4()).split("-")[4]} (Original name not valid)'
+        return default_name
 
 def get_restricted_userlogin(user_login):
     """
@@ -261,25 +285,20 @@ def check_auth(parent):
 
 def create_ug_services():
     ug_services = [
-        {'name': 'DHCP', 'description': 'Dynamic Host Configuration Protocol', 'protocols': [
-            {'proto': 'udp', 'port': '67', 'app_proto': '', 'source_port': '', 'alg': ''},
-            {'proto': 'udp', 'port': '68', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'DNS', 'description': 'Domain Name Service', 'protocols': [
             {'proto': 'udp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
-            {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
-            {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'HTTP', 'description': 'Hypertext Transport Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'HTTPS', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
             {'proto': 'tcp', 'port': '443', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
+            {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
+            {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'IMAP', 'description': 'Internet Mail Access Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '143', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'IMAPS', 'description': 'Internet Mail Access Protocol over SSL', 'protocols': [
             {'proto': 'tcp', 'port': '993', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'MySQL', 'description': 'MySQL', 'protocols': [
-            {'proto': 'tcp', 'port': '3306', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'NTP', 'description': 'Network Time Protocol', 'protocols': [
             {'proto': 'udp', 'port': '123', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'POP3', 'description': 'Post Office Protocol', 'protocols': [
@@ -290,13 +309,9 @@ def create_ug_services():
             {'proto': 'tcp', 'port': '5432', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'RDP', 'description': 'Remote Desktop Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '3389', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'Rsync', 'description': '', 'protocols': [
-            {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SIP', 'description': 'Session Initiation Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '5060-5061', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'udp', 'port': '5060', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'SMB', 'description': 'Server Message Block', 'protocols': [
-            {'proto': 'tcp', 'port': '445', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SMTP', 'description': 'Simple Mail Transfer Protocol', 'protocols': [
             {'proto': 'smtp', 'port': '25', 'app_proto': 'smtp', 'source_port': '', 'alg': ''}]},
         {'name': 'SMTPS', 'description': 'Simple Mail Transfer Protocol over SSL', 'protocols': [
@@ -304,13 +319,12 @@ def create_ug_services():
         {'name': 'SNMP', 'description': 'Simple Network Management Protocol', 'protocols': [
             {'proto': 'tcp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''},
             {'proto': 'udp', 'port': '161', 'app_proto': '', 'source_port': '', 'alg': ''}]},
-        {'name': 'SNMPTRAP', 'description': 'Simple Network Management Protocol Trap', 'protocols': [
-            {'proto': 'tcp', 'port': '162', 'app_proto': '', 'source_port': '', 'alg': ''},
-            {'proto': 'udp', 'port': '162', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'SSH', 'description': 'Secure Shell', 'protocols': [
             {'proto': 'tcp', 'port': '22', 'app_proto': '', 'source_port': '', 'alg': ''}]},
         {'name': 'TFTP', 'description': 'Trivial File Transfer Protocol', 'protocols': [
             {'proto': 'udp', 'port': '69', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+        {'name': 'Rsync', 'description': '', 'protocols': [
+            {'proto': 'tcp', 'port': '873', 'app_proto': '', 'source_port': '', 'alg': ''}]},
     ]
     for item in {'tcp', 'udp', 'sctp', 'icmp', 'ipv6-icmp', 'gre', 'ipip'}:
         ug_services.append({

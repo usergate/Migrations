@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 2.1 18.10.2024
+# Версия 2.2 13.03.2025
 #
 
 import os, sys, json
@@ -46,6 +46,7 @@ class ConvertCiscoASAConfig(QThread):
         self.ip_lists = set()
         self.nat_rules = []
         self.vendor = 'Cisco ASA'
+        self.error_convert_config_file = 0
         self.error = 0
 
     def run(self):
@@ -55,6 +56,8 @@ class ConvertCiscoASAConfig(QThread):
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прервана.\n')
         else:
+            if self.error_convert_config_file:
+                self.error = 1
             json_file = os.path.join(self.current_asa_path, 'cisco_asa.json')
             err, data = func.read_json_file(self, json_file)
             if err:
@@ -197,7 +200,10 @@ def convert_config_file(parent, path):
                 num, tmp_block = get_block(config_data, num)
                 create_interface(data, tmp_block)
             case 'route':
-                create_route(data, x)
+                err, msg = create_route(data, x)
+                if err:
+                    parent.stepChanged.emit(msg)
+                    error = 1
             case 'telnet' | 'ssh'| 'http':
                 match x:
                     case ['telnet' | 'ssh', ip, mask, zone_name]:
@@ -322,7 +328,8 @@ def convert_config_file(parent, path):
         json.dump(data, fh, indent=4, ensure_ascii=False)
 
     if error:
-        parent.stepChanged.emit('ORANGE|    Ошибка экспорта конфигурации Cisco ASA в формат json.')
+        parent.error_convert_config_file = 1
+        parent.stepChanged.emit('ORANGE|    В процессе преобразования произошла ошибка. Некоторые параметры не будут конвертированы.')
     else:
         parent.stepChanged.emit(f'BLACK|    Конфигурация Cisco ASA в формате json выгружена в файл "{json_file}".')
 
@@ -399,6 +406,9 @@ def create_route(data, array):
         data['gateways'][gtw_name] = gateway
     else:
         network_dest = func.pack_ip_address(network, mask)
+        err, result = func.ip_isglobal(next_hop)
+        if err:
+            return 1, f'RED|    Error: Route "{' '.join(array)}" не конвертирован так как не указан gateway.'
         route = {
             "name": f"Route for {network_dest}",
             "dest": network_dest,
@@ -406,6 +416,7 @@ def create_route(data, array):
             "metric": int(other[0])
         }
         data['routes'].append(route)
+    return 0, 'ok'
 
 def create_auth_servers(data, x, data_block):
     """Конвертируем сервера авторизации"""

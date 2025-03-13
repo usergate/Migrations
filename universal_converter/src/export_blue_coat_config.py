@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Blue Coat в формат json NGFW UserGate.
-# Версия 1.1  10.03.2025
+# Версия 1.2  12.03.2025
 #
 
 import os, sys, json, re, time
@@ -50,9 +50,6 @@ class ConvertBlueCoatConfig(QThread):
     def run(self):
         self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации BlueCoat в формат UserGate NGFW.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
-
-#        self.stepChanged.emit(f'RED|\n\n\n{"ЭТО ПОКА НЕ РЕАЛИЗОВАНО.":>110}')
-#        return
 
         convert_config_file(self, self.current_vendor_path)
         
@@ -190,8 +187,7 @@ def make_firewall_rules(parent, data):
             for item in value['rules']:
                 n += 1
                 descr = pattern_descr.search(item)
-                name = func.get_restricted_name(key)
-                rule = {'name': f'{name}-{n}', 'description': descr.group().replace(']', '') if descr else '', 'ext_ips': ext_ips}
+                rule = {'name': f'{key}-{n}', 'description': descr.group().replace(']', '') if descr else '', 'ext_ips': ext_ips}
                 action = pattern_action.match(item).group().lower()
                 if action.startswith(';'):
                     action = action[1:]
@@ -233,13 +229,14 @@ def convert_ip_lists(parent, path, data):
     error = 0
 
     if (conditions := data.get('conditions', None)):
-        error = convert_ip_lists_from_conditions(parent, current_path, conditions)
+        error += convert_ip_lists_from_conditions(parent, current_path, conditions)
     if (rules := data.get('rules', None)):
-        error = convert_ip_lists_from_rules(parent, current_path, rules)
+        error += convert_ip_lists_from_rules(parent, current_path, rules)
 
     if parent.ip_lists:
         if error:
-            parent.stepChanged.emit('ORANGE|    Некоторые списки IP-адресов не выгружены из-за ошибок.')
+            parent.error = 1
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков IP-адресов.')
         else:
             parent.stepChanged.emit(f'GREEN|    Списки IP-адресов выгружены в каталог "{current_path}".')
     else:
@@ -251,8 +248,9 @@ def convert_ip_lists_from_conditions(parent, current_path, conditions):
     error = 0
     for key, value in conditions.items():
         if value['ip_list']:
+            error, iplist_name = func.get_transformed_name(parent, key, err=error, descr='Имя списка IP-адресов')
             ip_list = {
-                'name': func.get_restricted_name(key),
+                'name': iplist_name,
                 'description': f"Портировано с BlueCoat.\n{value.get('description', '')}",
                 'type': 'network',
                 'url': '',
@@ -287,17 +285,17 @@ def convert_ip_lists_from_rules(parent, current_path, rules):
         for mode in indicators:
             hash_value = hash(tuple(rule[mode]))
             if len(rule[mode]) == 1:
-                name = rule[mode][0]
+                iplist_name = rule[mode][0]
             else:
-                name = func.get_restricted_name(rule['name'])
-            if name in parent.ip_lists:
-                rule[mode] = [['list_id', name]]
+                error, iplist_name = func.get_transformed_name(parent, rule['name'], err=error, descr='Имя списка IP-адресов')
+            if iplist_name in parent.ip_lists:
+                rule[mode] = [['list_id', iplist_name]]
             elif hash_value in hash_dict:
                 rule[mode] = [['list_id', hash_dict[hash_value]]]
             else:
-                hash_dict[hash_value] = name
+                hash_dict[hash_value] = iplist_name
                 ip_list = {
-                    'name': name,
+                    'name': iplist_name,
                     'description': 'Портировано с BlueCoat.',
                     'type': 'network',
                     'url': '',
@@ -308,10 +306,10 @@ def convert_ip_lists_from_rules(parent, current_path, rules):
                     },
                     'content': [{'value': ip} for ip in rule[mode]]
                 }
-                parent.ip_lists.add(name)
-                rule[mode] = [['list_id', name]]
+                parent.ip_lists.add(iplist_name)
+                rule[mode] = [['list_id', iplist_name]]
 
-                json_file = os.path.join(current_path, f'{name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{iplist_name.translate(trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -332,13 +330,14 @@ def convert_url_lists(parent, path, data):
     error = 0
 
     if (conditions := data.get('conditions', None)):
-        error = convert_url_lists_from_conditions(parent, current_path, conditions)
+        error += convert_url_lists_from_conditions(parent, current_path, conditions)
     if (rules := data.get('rules', None)):
-        error = convert_url_lists_from_rules(parent, current_path, rules)
+        error += convert_url_lists_from_rules(parent, current_path, rules)
 
     if parent.url_lists:
         if error:
-            parent.stepChanged.emit('ORANGE|    Некоторые списки URL не выгружены из-за ошибок.')
+            parent.error = 1
+            parent.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте списков URL.')
         else:
             parent.stepChanged.emit(f'GREEN|    Списки URL выгружены в каталог "{current_path}".')
     else:
@@ -350,8 +349,9 @@ def convert_url_lists_from_conditions(parent, current_path, conditions):
     error = 0
     for key, value in conditions.items():
         if value['url_list']:
+            error, urllist_name = func.get_transformed_name(parent, key, err=error, descr='Имя списка URL')
             url_list = {
-                'name': func.get_restricted_name(key),
+                'name': urllist_name,
                 'description': f"Портировано с BlueCoat.\n{value.get('description', '')}",
                 'type': 'url',
                 'url': '',
@@ -380,16 +380,16 @@ def convert_url_lists_from_rules(parent, current_path, rules):
         if rule['dst_url']:
             hash_value = hash(tuple(rule['dst_url']))
             if len(rule['dst_url']) == 1:
-                name = func.get_restricted_name(rule['dst_url'][0])
+                error, urllist_name = func.get_transformed_name(parent, rule['dst_url'][0], err=error, descr='Имя списка URL')
             else:
-                name = func.get_restricted_name(rule['name'])
-            if name in parent.url_lists:
-                rule['dst_url'] = [['urllist_id', name]]
+                error, urllist_name = func.get_transformed_name(parent, rule['name'], err=error, descr='Имя списка URL')
+            if urllist_name in parent.url_lists:
+                rule['dst_url'] = [['urllist_id', urllist_name]]
             elif hash_value in hash_dict:
                 rule['dst_url'] = [['urllist_id', hash_dict[hash_value]]]
             else:
                 url_list = {
-                    'name': name,
+                    'name': urllist_name,
                     'description': 'Портировано с BlueCoat.',
                     'type': 'url',
                     'url': '',
@@ -400,11 +400,11 @@ def convert_url_lists_from_rules(parent, current_path, rules):
                     },
                     'content': [{'value': url} for url in rule['dst_url']]
                 }
-                hash_dict[hash_value] = name
-                parent.url_lists.add(name)
-                rule['dst_url'] = [['urllist_id', name]]
+                hash_dict[hash_value] = urllist_name
+                parent.url_lists.add(urllist_name)
+                rule['dst_url'] = [['urllist_id', urllist_name]]
 
-                json_file = os.path.join(current_path, f'{name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{urllist_name.translate(trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 parent.stepChanged.emit(f'BLACK|    Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -543,10 +543,6 @@ def convert_time_restrictions(parent, path, data):
                     time_set_names.add(schedule)
                 rule['time_restrictions'] = [schedule]
 
-#        json_file = os.path.join(parent.current_vendor_path, 'rules.json')
-#        with open(json_file, "w") as fh:
-#            json.dump(rules, fh, indent=4, ensure_ascii=False)
-
     if calendars:
         section_path = os.path.join(path, 'Libraries')
         current_path = os.path.join(section_path, 'TimeSets')
@@ -571,8 +567,10 @@ def convert_firewall_rules(parent, path, data):
         parent.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
         return
 
+    error = 0
     n = 0
     for item in data['rules']:
+        error, item['name'] = func.get_transformed_name(parent, item['name'], err=error, descr='Имя правила МЭ')
         item['description'] = f'Портировано с BlueCoat.\n{item["description"]}'
         item['scenario_rule_id'] = False
         item['src_zones'] = []
@@ -624,7 +622,12 @@ def convert_firewall_rules(parent, path, data):
     json_file = os.path.join(current_path, 'config_firewall_rules.json')
     with open(json_file, "w") as fh:
         json.dump(data['rules'], fh, indent=4, ensure_ascii=False)
-    parent.stepChanged.emit(f'GREEN|    Список правил межсетевого экрана выгружен в файл "{json_file}".')
+
+    if error:
+        parent.error = 1
+        parent.stepChanged.emit(f'ORANGE|    Конвертация правил МЭ прошла с ошибками. Список правил межсетевого экрана выгружен в файл "{json_file}".')
+    else:
+        parent.stepChanged.emit(f'GREEN|    Список правил межсетевого экрана выгружен в файл "{json_file}".')
 
 #####################################################################################################
 

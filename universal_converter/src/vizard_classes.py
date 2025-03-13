@@ -36,8 +36,8 @@ class SelectAction(QWidget):
         text2 = "Экспорт конфигурации из конфигурационных файлов <b>Blue Coat</b>, <b>Cisco ASA</b>, <b>Cisco FPR</b>, <b>Check Point</b>, \
 <b>Fortigate</b>, <b>Huawei</b>, <b>MikroTik</b>  и сохранение её в формате UserGate в каталоге <b>data_usergate</b> текущей директории. \
 После экспорта вы можете просмотреть результат и изменить содержимое файлов в соответствии с вашими потребностями."
-        text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7, 8</b>) и <b>DCFW</b>."
-        text4 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
+        text3 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b>."
+        text4 = "Импорт файлов конфигурации из каталога <b>data_usergate</b> в группу шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)

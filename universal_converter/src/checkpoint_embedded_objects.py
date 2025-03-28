@@ -35,6 +35,20 @@ embedded_objects = {
         "proto": "udp",
         "name": "dhcp-relay"
     },
+    "7e8246fb-cdc5-4896-b7cd-cb5c6ba85980": {
+        "type": "service",
+        "description": "DHCP relay agent",
+        "port": "67",
+        "proto": "udp",
+        "name": "dhcp-request"
+    },
+    "3ef69b0c-3ccc-4ac8-9dd0-d792dc1f34de": {
+        "type": "service",
+        "description": "DHCP relay agent",
+        "port": "68",
+        "proto": "udp",
+        "name": "dhcp-reply"
+    },
     "6e289c30-76d8-4823-b9f2-c767c2ad69c3": {
         "type": "service",
         "description": "",

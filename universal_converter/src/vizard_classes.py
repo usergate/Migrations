@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.10    03.02.2025
+# Версия 1.11    25.03.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -306,6 +306,7 @@ class SelectExportMode(QWidget):
         self.vendor_current_path = ''
         self.thread = None
         self.log_list = QListWidget()
+        self.tmp_list = []
         
         self.title = QLabel("<b><font color='green' size='+2'>Конвертация сторонней конфигурации в формат UserGate</font></b>")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -522,12 +523,26 @@ class SelectExportMode(QWidget):
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
-        self.add_item_log(message, color=color)
-        self.log_list.scrollToBottom()
+        i = QListWidgetItem(message)
+        i.setForeground(QColor(cs.color[color]))
+        if color in ('BLACK', 'NOTE'):
+            self.tmp_list.append(i)
+        else:
+            if color == 'RED':
+                self.log_list.addItem(i)
+                self.log_list.scrollToBottom()
+            else:
+                if self.tmp_list:
+                    for x in self.tmp_list:
+                        self.log_list.addItem(x)
+                    self.tmp_list.clear()
+                self.log_list.addItem(i)
+                self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
     def on_finished(self):
+        self.tmp_list.clear()
         self.thread = None
         self.enable_buttons()
         self.btn3.setStyleSheet('color: darkred; background: white;')
@@ -1656,6 +1671,7 @@ class MainTree(QTreeWidget):
             "HIDProfiles": "HID профили",
             "BfdProfiles": "Профили BFD",
             "UserIdAgentSyslogFilters": "Syslog фильтры UserID агента",
+            "Tags": "Тэги",
             "Notifications": "Оповещения",
             "AlertRules": "Правила оповещений",
             "SNMP": "SNMP",
@@ -1690,7 +1706,7 @@ class MainTree(QTreeWidget):
                 "Календари", "Полосы пропускания", "Профили АСУ ТП", "Шаблоны страниц", "Категории URL", "Изменённые категории URL",
                 "Приложения", "Профили приложений", "Группы приложений", "Почтовые адреса", "Номера телефонов", "Сигнатуры СОВ",
                 "Профили СОВ", "Профили оповещений", "Профили netflow", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Сценарии"
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Сценарии", "Тэги"
             ],
             "Оповещения": ["Правила оповещений", "Профили безопасности SNMP", "SNMP", "Параметры SNMP"],
         }
@@ -1708,13 +1724,14 @@ class MainTree(QTreeWidget):
                 "Маршруты", "OSPF", "BGP",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+            7.3: {
+                "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.2: {
-                "Маршруты", "OSPF", "BGP",
-                "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
+                "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.1: {
-                "Маршруты", "OSPF", "BGP",
-                "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
+                "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.0: {
                 "Профили пользовательских сертификатов",

@@ -18,21 +18,20 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.34    13.03.2025
+# Version 8.4    28.03.2025
 #--------------------------------------------------------------------------------------------------- 
 #
-import os, sys, json
-from PyQt6.QtCore import QSize, Qt, QObject
+import os, sys
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QStackedLayout, QFileDialog, QFrame
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
 import vizard_classes as vc
-import common_func as func
+from common_func import create_dir, message_alert
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.34)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.4)")
         ico = QIcon("favicon.png")
 #        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
         self.setWindowIcon(ico)
@@ -56,17 +55,17 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
 
         # Создаём базовые каталоги вендоров и UG в текущей директории. Если успешно, активируем кнопки экспорта/импорта.
-        err, msg = func.create_dir(self.base_ug_path, delete='no')
+        err, msg = create_dir(self.base_ug_path, delete='no')
         if err:
-            func.message_alert(self, msg, '')
+            message_alert(self, msg, '')
         else:
-            func.create_dir(self._base_bluecoat_path, delete='no')
-            func.create_dir(self._base_asa_path, delete='no')
-            func.create_dir(self._base_fpr_path, delete='no')
-            func.create_dir(self._base_cp_path, delete='no')
-            func.create_dir(self._base_fort_path, delete='no')
-            func.create_dir(self._base_huawei_path, delete='no')
-            func.create_dir(self._base_mikrotik_path, delete='no')
+            create_dir(self._base_bluecoat_path, delete='no')
+            create_dir(self._base_asa_path, delete='no')
+            create_dir(self._base_fpr_path, delete='no')
+            create_dir(self._base_cp_path, delete='no')
+            create_dir(self._base_fort_path, delete='no')
+            create_dir(self._base_huawei_path, delete='no')
+            create_dir(self._base_mikrotik_path, delete='no')
             self.stacklayout.widget(0).enable_buttons()
 
     @property

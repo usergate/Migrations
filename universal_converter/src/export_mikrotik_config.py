@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 2.0 28.03.2025
+# Версия 2.1 07.04.2025
 #
 
 import os, sys, json, re
@@ -32,7 +32,7 @@ from services import network_proto, ug_services, service_ports, trans_table, tra
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
-pattern = re.compile(r"[-\w]+='[-:!,/\.\w ]+'|[-\w]+=[-:!,/\.\w]+|rule='.+'")
+pattern = re.compile(r"[-\w]+='[-:!,/\.\*\w ]+'|[-\w]+=[-:!,/\.\*\w]+|rule='.+'")
 pattern_rf = re.compile(r"[\w]+=[-\w]+|\(.+\)|(?:accept|reject)")
 pattern_ip = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
@@ -202,7 +202,9 @@ class ConvertMikrotikConfig(QThread, MyConv):
         if 'interface list member' in data:
             new_members = {}
             for member in data['interface list member']:
+                _, member['list'] = self.get_transformed_name(member['list'], mode=0)
                 new_members[member['interface']] = member['list']
+                data['interface list'].append({'name': member['list']})
             data['interface list member'] = new_members
         else:
             data['interface list member'] = {}
@@ -289,8 +291,12 @@ class ConvertMikrotikConfig(QThread, MyConv):
             self.error = 1
             return
 
+        all_zones = set()
         zones = []
         for item in data['interface list']:
+            if item['name'] in all_zones:
+                continue
+            all_zones.add(item['name'])
             zone = {
                 'name': item['name'],
                 'description': 'Портировано с MikroTik.',
@@ -545,7 +551,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
             for ip in ips:
                 dns_servers.append({
                     'dns': ip,
-                    'is_bad': False if item['allow-remote-requests'] == 'yes' else True
+                    'is_bad': False if item.get('allow-remote-requests', 'no') == 'yes' else True
                 })
 
         if dns_servers:
@@ -617,38 +623,41 @@ class ConvertMikrotikConfig(QThread, MyConv):
         list_gateways = []
 
         for item in data['ip route']:
-            gateway = item['gateway']
+            try:
+                gateway = item['gateway']
+            except KeyError:
+                continue
             if gateway in data['ip address']:
                 err, gateway = self.get_netroute(data['ip address'][gateway])
                 if err:
                     self.stepChanged.emit(f'RED|    Error: Шлюз {gateway} не конвертирован [{gateway}].')
                     error = 1
                     continue
-            err, msg = self.ip_isglobal(gateway)
-            if err or not msg:
-                continue
-            else:
-                if gateway not in self.gateways:
-                    _, gw_name = self.get_transformed_name(f"{gateway} {item.get('comment', '')}", descr='Имя шлюза')
-                    try:
-                        list_gateways.append({
-                            'name': gw_name,
-                            'enabled': False,
-                            'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
-                            'ipv4': gateway,
-                            'vrf': 'default',
-                            'weight': int(item.get('distance', 1)),
-                            'multigate': False,
-                            'default': False,
-                            'iface': 'undefined',
-                            'is_automatic': False
-                        })
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: Шлюз {gateway} не конвертирован [{err}].')
-                        error = 1
-                    else:
-                        self.gateways.add(gateway)
-                        self.stepChanged.emit(f'BLACK|    Шлюз {gateway} конвертирован.')
+            if item['dst-address'] not in ('0.0.0.0/0', '0.0.0.0'):
+                err, msg = self.ip_isglobal(gateway)
+                if err or not msg:
+                    continue
+            if gateway not in self.gateways:
+                _, gw_name = self.get_transformed_name(f"{gateway} {item.get('comment', '')}", descr='Имя шлюза')
+                try:
+                    list_gateways.append({
+                        'name': gw_name,
+                        'enabled': False,
+                        'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
+                        'ipv4': gateway,
+                        'vrf': 'default',
+                        'weight': int(item.get('distance', 1)),
+                        'multigate': False,
+                        'default': False,
+                        'iface': 'undefined',
+                        'is_automatic': False
+                    })
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: Шлюз {gateway} не конвертирован [{err}].')
+                    error = 1
+                else:
+                    self.gateways.add(gateway)
+                    self.stepChanged.emit(f'BLACK|    Шлюз {gateway} конвертирован.')
 
         if list_gateways:
             current_path = os.path.join(self.current_ug_path, 'Network', 'Gateways')
@@ -681,7 +690,11 @@ class ConvertMikrotikConfig(QThread, MyConv):
         routes_list = []
 
         for item in data['ip route']:
-            gateway =  item['gateway']
+            try:
+                gateway =  item['gateway']
+            except KeyError:
+                self.stepChanged.emit(f'ORANGE|    Warning: Маршрут {item} не конвертирован так как не указан gateway.')
+                continue
             if item['dst-address'] != '0.0.0.0/0':
                 if gateway in data['ip address']:
                     err, gateway = self.get_netroute(data['ip address'][gateway])
@@ -968,7 +981,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                             'protocols': [{'proto': item['protocol'], 'port': '', 'app_proto': '', 'source_port': '', 'alg': ''}]
                         })
                         self.services[item['protocol']] = service_name
-                        self.stepChanged.emit(f'BLACK|    Создан сервис {service_name}".')
+                        self.stepChanged.emit(f'BLACK|    Создан сервис "{service_name}".')
                     item['services'].append(['service', self.services[item['protocol']]])
                 else:
                     port = ''
@@ -1012,7 +1025,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         })
                         self.services[service_name] = service_name
                     item['services'].append(['service', service_name])
-                    self.stepChanged.emit(f'BLACK|    Создан сервис {service_name}".')
+                    self.stepChanged.emit(f'BLACK|    Создан сервис "{service_name}".')
 
         return services_list
                 
@@ -1080,7 +1093,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         })
                         self.services[service_name] = service_name
                     item['services'].append(['service', service_name])
-                    self.stepChanged.emit(f'BLACK|    Создан сервис {service_name}".')
+                    self.stepChanged.emit(f'BLACK|    Создан сервис "{service_name}".')
 
         return services_list
                 

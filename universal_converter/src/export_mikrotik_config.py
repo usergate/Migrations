@@ -21,14 +21,14 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 2.1 07.04.2025
+# Версия 2.3  08.04.2025
 #
 
 import os, sys, json, re
 import ipaddress
-from common_func import MyConv
+from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import network_proto, ug_services, service_ports, trans_table, trans_filename
+from services import network_proto, ug_services, service_ports
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
@@ -154,24 +154,24 @@ class ConvertMikrotikConfig(QThread, MyConv):
             with open(config_file_path, "r") as fh:
                 line = fh.readline()
                 while line:
-                    line = line.translate(trans_table).rstrip().replace('"', "'")
+                    line = line.translate(self.trans_table).rstrip().replace('"', "'")
                     if line.startswith('#'):
                         line = fh.readline()
                         continue
                     if line.startswith('/'):
                         key = line[1:]
                         data[key] = []
-                        line = fh.readline().translate(trans_table).rstrip().replace('"', "'")
+                        line = fh.readline().translate(self.trans_table).rstrip().replace('"', "'")
                         while line[0] != '/':
                             config_block = line
                             if line[-1] == chr(92):
                                 config_block = line[:-1]
-                                line = fh.readline().translate(trans_table).rstrip().replace('"', "'")
+                                line = fh.readline().translate(self.trans_table).rstrip().replace('"', "'")
                                 while line[0] not in {'a', 's', '/'}:
                                     config_block += line[:-1].lstrip() if line[-1] == chr(92) else line.lstrip()
-                                    line = fh.readline().translate(trans_table).rstrip().replace('"', "'")
+                                    line = fh.readline().translate(self.trans_table).rstrip().replace('"', "'")
                             else:
-                                line = fh.readline().translate(trans_table).rstrip().replace('"', "'")
+                                line = fh.readline().translate(self.trans_table).rstrip().replace('"', "'")
                             data[key].append(config_block)
                             if not line:
                                 break
@@ -695,7 +695,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
             except KeyError:
                 self.stepChanged.emit(f'ORANGE|    Warning: Маршрут {item} не конвертирован так как не указан gateway.')
                 continue
-            if item['dst-address'] != '0.0.0.0/0':
+            if 'dst-address' in item and item['dst-address'] != '0.0.0.0/0':
                 if gateway in data['ip address']:
                     err, gateway = self.get_netroute(data['ip address'][gateway])
                     if err:
@@ -819,7 +819,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
         if ip_list:
             for key, value in ip_list.items():
                 self.ip_lists.add(value['name'])
-                json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{key.translate(self.trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(value, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
@@ -846,7 +846,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         },
                         'content': [{'value': item['dst-address']}]
                     }
-                    json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                     with open(json_file, "w") as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -867,7 +867,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         'content': [{'value': item['src-address']}]
                     }
                     self.ip_lists.add(ip_list['name'])
-                    json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                     with open(json_file, "w") as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -919,7 +919,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
 
             for key, value in url_list.items():
                 self.url_lists.add(value['name'])
-                json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{key.translate(self.trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(value, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список URL "{key}" выгружен в файл "{json_file}".')
@@ -1016,11 +1016,11 @@ class ConvertMikrotikConfig(QThread, MyConv):
                             'protocols': [
                                 {
                                     'proto': proto,
-                                    'port': port,
+                                    'port': x,
                                     'app_proto': app_proto,
                                     'source_port': source_port,
                                     'alg': ''
-                                }
+                                } for x in port.split(',')
                             ]
                         })
                         self.services[service_name] = service_name

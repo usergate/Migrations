@@ -538,8 +538,7 @@ class SelectExportMode(QWidget):
             for x in self.tmp_list:
                 self.log_list.addItem(x)
             self.tmp_list.clear()
-        self.log_list.addItem(i)
-        self.log_list.scrollToBottom()
+            self.log_list.scrollToBottom()
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
@@ -555,12 +554,8 @@ class SelectExportMode(QWidget):
                 self.log_list.scrollToBottom()
             else:
                 self.items_add_and_scroll()
-#                if self.tmp_list:
-#                    for x in self.tmp_list:
-#                        self.log_list.addItem(x)
-#                    self.tmp_list.clear()
-#                self.log_list.addItem(i)
-#                self.log_list.scrollToBottom()
+                self.log_list.addItem(i)
+                self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 

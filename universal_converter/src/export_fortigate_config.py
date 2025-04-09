@@ -21,13 +21,13 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 4.0 25.03.2024
+# Версия 4.1 03.04.2024
 #
 
 import os, sys, json, copy
-from common_func import MyConv
+from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import zone_services, trans_table, trans_filename, ug_services, ip_proto, GEOIP_CODE
+from services import zone_services, ug_services, ip_proto, GEOIP_CODE
 
 
 class ConvertFortigateConfig(QThread, MyConv):
@@ -1141,7 +1141,7 @@ class ConvertFortigateConfig(QThread, MyConv):
             if ip_list['content']:
                 n += 1
                 self.ip_lists.add(ip_list['name'])
-                file_name = ip_list['name'].translate(trans_filename)
+                file_name = ip_list['name'].translate(self.trans_filename)
 #                if file_name in file_names:
                 while file_name in file_names:
                     file_name = f'{file_name}-2'
@@ -1173,7 +1173,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 self.ip_lists.add(ip_list['name'])
                 n += 1
 
-                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1207,7 +1207,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 self.ip_lists.add(ip_list['name'])
                 n += 1
 
-                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       {n} - Список ip-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1246,7 +1246,7 @@ class ConvertFortigateConfig(QThread, MyConv):
             }
             self.ip_lists.add(ip_list['name'])
  
-            json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             self.stepChanged.emit(f'BLACK|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
@@ -1297,7 +1297,7 @@ class ConvertFortigateConfig(QThread, MyConv):
             if ip_list['content']:
                 self.ip_lists.add(ip_list['name'])
  
-                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Создан список групп IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
@@ -1357,7 +1357,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 n += 1
                 self.url_lists[url_list['name']] = url_list['content']
 
-                json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1379,7 +1379,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                     n += 1
                     self.url_lists[url_list['name']] = url_list['content']
 
-                    json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                     with open(json_file, 'w') as fh:
                         json.dump(url_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1405,7 +1405,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 n += 1
                 self.url_lists[url_list['name']] = url_list['content']
 
-                json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1428,7 +1428,7 @@ class ConvertFortigateConfig(QThread, MyConv):
             self.url_lists[url_list['name']] = url_list['content']
             n += 1
 
-            json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -1457,7 +1457,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 n += 1
                 self.url_lists[url_list['name']] = url_list['content']
 
-                json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')

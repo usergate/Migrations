@@ -21,13 +21,13 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Blue Coat в формат json NGFW UserGate.
-# Версия 1.4  18.03.2025
+# Версия 1.5  03.04.2025
 #
 
 import os, sys, json, re
-from common_func import MyConv
+from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import trans_table, trans_filename, ug_services, ServicePorts, service_ports
+from services import ug_services, ServicePorts, service_ports
 
 pattern_proxy = re.compile(r"<[Pp][Rr][Oo][Xx][Yy] +'(.+)'>(?: +condition=(.+)){0,1}")
 pattern_rule = re.compile(r"ALLOW|;ALLOW|DENY|;DENY", flags=re.IGNORECASE)
@@ -101,7 +101,7 @@ class ConvertBlueCoatConfig(QThread, MyConv):
             with open(config_file_path, "r") as fh:
                 line = fh.readline()
                 while line:
-                    line = line.translate(trans_table).strip().replace('"', "'")
+                    line = line.translate(self.trans_table).strip().replace('"', "'")
                     if line:
                         config_data.append(line)
                     line = fh.readline()
@@ -256,7 +256,7 @@ class ConvertBlueCoatConfig(QThread, MyConv):
                     'content': [{'value': ip} for ip in value['ip_list']]
                 }
                 self.ip_lists.add(ip_list['name'])
-                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -303,7 +303,7 @@ class ConvertBlueCoatConfig(QThread, MyConv):
                     self.ip_lists.add(iplist_name)
                     rule[mode] = [['list_id', iplist_name]]
 
-                    json_file = os.path.join(current_path, f'{iplist_name.translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{iplist_name.translate(self.trans_filename)}.json')
                     with open(json_file, "w") as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -357,7 +357,7 @@ class ConvertBlueCoatConfig(QThread, MyConv):
                     'content': [{'value': url} for url in value['url_list']]
                 }
                 self.url_lists.add(url_list['name'])
-                json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -398,7 +398,7 @@ class ConvertBlueCoatConfig(QThread, MyConv):
                     self.url_lists.add(urllist_name)
                     rule['dst_url'] = [['urllist_id', urllist_name]]
 
-                    json_file = os.path.join(current_path, f'{urllist_name.translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{urllist_name.translate(self.trans_filename)}.json')
                     with open(json_file, "w") as fh:
                         json.dump(url_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|    Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')

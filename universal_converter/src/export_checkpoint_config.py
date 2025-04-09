@@ -20,13 +20,13 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 4.2    18.03.2025
+# Версия 4.4    03.04.2025
 #
 
 import os, sys, json, uuid, copy
-from common_func import MyConv
+from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import trans_filename, trans_url, GEOIP_CODE
+from services import trans_url, GEOIP_CODE
 from checkpoint_embedded_objects import embedded_objects
 from applications import (app_compliance, appgroup_compliance, l7_category_compliance, url_category_compliance,
                           cp_app_category, url_categories, new_applicationgroup)
@@ -853,7 +853,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     'content': content
                 }
 
-                json_file = os.path.join(current_path, f'{ip_list_name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
                 try:
                     with open(json_file, 'w') as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
@@ -920,7 +920,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                         'content': content
                     }
 
-                    json_file = os.path.join(current_path, f'{ip_list_name.translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
                     try:
                         with open(json_file, 'w') as fh:
                             json.dump(ip_list, fh, indent=4, ensure_ascii=False)
@@ -982,7 +982,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     'content': content
                 }
 
-                json_file = os.path.join(current_path, f'{ip_list_name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
                 try:
                     with open(json_file, 'w') as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
@@ -1043,7 +1043,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     'content': content
                 }
 
-                json_file = os.path.join(current_path, f'{ip_list_name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
                 try:
                     with open(json_file, 'w') as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
@@ -1116,7 +1116,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     'content': content
                 }
 
-                json_file = os.path.join(current_path, f'{ip_list_name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
                 try:
                     with open(json_file, 'w') as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
@@ -1210,7 +1210,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     'content': [{'value': url.translate(trans_url)} for url in value['url-list']]
                 }
 
-                json_file = os.path.join(current_path, f'{url_name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_name.translate(self.trans_filename)}.json')
                 try:
                     with open(json_file, 'w') as fh:
                         json.dump(url_list, fh, indent=4, ensure_ascii=False)
@@ -1238,7 +1238,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     'content': [{'value': value['name'].translate(trans_url)}]
                 }
 
-                json_file = os.path.join(current_path, f'{url_name.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_name.translate(self.trans_filename)}.json')
                 try:
                     with open(json_file, 'w') as fh:
                         json.dump(url_list, fh, indent=4, ensure_ascii=False)
@@ -1565,9 +1565,10 @@ class ConvertCheckPointConfig(QThread, MyConv):
                 if item['type'] == 'access-rule':
                     if 'name' not in item or not item['name'] or item['name'].isspace():
                         item['name'] = str(uuid.uuid4()).split('-')[4]
-                    if item['name'] == 'Cleanup rule':
+                    elif item['name'] == 'Cleanup rule':
                         continue
-                    error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя access-rule')
+                    else:
+                        error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя access-rule')
                     item.pop('meta-info', None)
                     item.pop('vpn', None)
                     item.pop('domain', None)

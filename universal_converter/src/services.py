@@ -153,40 +153,6 @@ dict_risk = {
     'Unknown': 1,
 }
 
-trans_table = {
-    ord('\n'): None,
-    ord('\t'): None,
-    ord('\r'): None,
-}
-
-trans_filename = {
-    ord('\n'): None,
-    ord('\t'): None,
-    ord('\r'): None,
-    ord('#'): None,
-    ord('='): '_',
-    ord(':'): '_',
-    ord('"'): None,
-    ord("'"): None,
-    ord('!'): '_',
-    ord('?'): '_',
-    ord('@'): '_',
-    ord(';'): None,
-    ord('$'): None,
-    ord('%'): None,
-    ord('&'): None,
-    ord('^'): None,
-    ord('['): None,
-    ord(']'): None,
-    ord('{'): None,
-    ord('}'): None,
-    ord('<'): None,
-    ord('>'): None,
-    ord('|'): None,
-    ord('/'): '_',
-    ord('\\'): None,
-}
-
 character_map_for_name = {
     ord('\n'): None,
     ord('\t'): None,
@@ -215,33 +181,6 @@ character_map_for_name = {
     '\\': '_',
 }
 trans_name = str.maketrans(character_map_for_name)
-
-trans_userlogin = {
-    ord('"'): None,
-    ord("'"): None,
-    ord('!'): None,
-    ord('?'): None,
-    ord('@'): None,
-    ord(';'): None,
-    ord('$'): None,
-    ord('%'): None,
-    ord('&'): None,
-    ord('^'): None,
-    ord('['): None,
-    ord(']'): None,
-    ord('{'): None,
-    ord('}'): None,
-    ord('*'): None,
-    ord('<'): None,
-    ord('>'): None,
-    ord('+'): '_',
-    ord('-'): '_',
-    ord(' '): '_',
-    ord('.'): '_',
-    ord('|'): "_",
-    ord('/'): None,
-    ord('\\'): None,
-}
 
 trans_url = {
     ord('{'): None,

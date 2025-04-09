@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.6    08.04.2025
+# Version 8.7    09.04.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys
@@ -31,7 +31,7 @@ from common_func import create_dir, message_alert
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.6)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.7)")
         ico = QIcon("favicon.png")
 #        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
         self.setWindowIcon(ico)

@@ -20,30 +20,16 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
 # Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 1.5  28.01.2025    (идентично для ug_ngfw_converter и universal_converter)
+# Version 1.8  03.04.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
-import os, sys, json
-from dataclasses import dataclass
+import os, sys
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import default_urlcategorygroup
-from common_func import write_bin_file
+from common_classes import WriteBinFile, BaseObject
 
 
-@dataclass(kw_only=True, slots=True, frozen=True)
-class BaseObject:
-    id: str|int
-    template_id: str
-    template_name: str
-
-
-#@dataclass(kw_only=True, slots=True, frozen=True)
-#class BaseAppObject:
-#    id: str
-#    owner: str
-#    signature_id: str
-
-class GetImportTemporaryData(QThread):
+class ImportMcTemporaryData(QThread, WriteBinFile):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
     def __init__(self, utm, template_id, templates):
@@ -403,7 +389,6 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
-            return
         self.mc_data['url_categories'] = {x['name']: x['id'] for x in result}
 
         # Получаем список предопределённых категорий приложений l7
@@ -412,14 +397,13 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
-            return
         self.mc_data['l7_categories'] = {x['name']: x['id'] for x in result}
 
 
         if self.error:
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
         else:
-            if write_bin_file(self, self.mc_data):
+            if self.write_bin_file(self.mc_data):
                 self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Не удалось сохранить служебные структуры данных.')
             else:
                 self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')

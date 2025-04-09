@@ -21,15 +21,15 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 2.2 13.03.2025
+# Версия 2.3 03.04.2025
 #
 
 import os, sys, json
 import ipaddress, copy
-from common_func import MyConv
+from common_classes import MyConv
 from collections import deque
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import (trans_table, trans_filename, service_ports, ug_services,
+from services import (service_ports, ug_services,
                       zone_services, ip_proto, network_proto, MONTHS, TIME_ZONE)
 
 
@@ -169,7 +169,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
         for line in config_data:
             if line[:1] in {':', '!'}:
                 continue
-            x = line.translate(trans_table).rsplit(' ')
+            x = line.translate(self.trans_table).rsplit(' ')
             if x[0] == 'mtu':
                 data['zones'][x[1].translate(self.trans_object_name)] = int(x[2])
 
@@ -180,7 +180,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                 num += 1
                 continue
             tmp_block = []
-            x = line.translate(trans_table).rsplit(' ')
+            x = line.translate(self.trans_table).rsplit(' ')
             match x[0]:
                 case 'domain-name':
                     data['domain-name'] = x[1]
@@ -292,13 +292,13 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                 num += 1
                 continue
             tmp_block = []
-            x = line.translate(trans_table).rsplit(' ')
+            x = line.translate(self.trans_table).rsplit(' ')
             match x[0]:
                 case 'access-list':
                     match x[2]:
                         case 'remark':
                             line = config_data[num+1]
-                            y = line.translate(trans_table).rstrip().split(' ')
+                            y = line.translate(self.trans_table).rstrip().split(' ')
                             if y[1] == x[1]:
                                 remark.append(f'{" ".join(x[3:])}\n')
                         case 'extended':
@@ -341,7 +341,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
         block = []
         data_index = num + 1
         while config_data[data_index].startswith(' '):
-            block.append(config_data[data_index].translate(trans_table).strip().split(' '))
+            block.append(config_data[data_index].translate(self.trans_table).strip().split(' '))
             data_index += 1 
         return data_index - 1, block
 
@@ -1460,7 +1460,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                     case ['description', *content]:
                         ip_list['description'] = f"{ip_list['description']}\n{' '.join(content)}"
 
-            json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
             self.stepChanged.emit(f'BLACK|    Список IP-адресов {ip_list["name"]} выгружен в файл "{json_file}".')
@@ -1502,7 +1502,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                     case ['description', *content]:
                         url_list['description'] = f"{url_list['description']}\n{' '.join(content)}"
 
-            json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+            json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(url_list, fh, indent=4, ensure_ascii=False)
             self.stepChanged.emit(f'BLACK|    Список URL {url_list["name"]} выгружен в файл "{json_file}".')
@@ -1594,7 +1594,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                 ip_groups[key] = ip_list['content']
                 self.ip_lists.add(key)
                 data['ip_lists'][key] = []
-                json_file = os.path.join(ip_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(ip_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1602,7 +1602,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
             if url_list['content']:
                 url_groups[key] = url_list['content']
                 data['url_lists'][key] = []
-                json_file = os.path.join(url_path, f'{url_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(url_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
@@ -2634,7 +2634,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
             'attributes': {'list_compile_type': 'case_insensitive'},
             'content': [{'value': url}]
         }
-        json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+        json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
         with open(json_file, 'w') as fh:
             json.dump(url_list, fh, indent=4, ensure_ascii=False)
         self.stepChanged.emit(f'NOTE|    Создан список URL "{url_list["name"]}" и выгружен в файл "{json_file}".')

@@ -21,13 +21,13 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
-# Версия 1.8 21.03.2025
+# Версия 1.9 03.04.2025
 #
 
 import os, sys, json, re, copy
-from common_func import MyConv
+from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import network_proto, service_ports, trans_table, trans_filename, MONTHS
+from services import network_proto, service_ports, MONTHS
 
 
 revers_service_ports = {v: k for k, v in service_ports.items()}
@@ -161,7 +161,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 'vlan_id': 0,
             }
             while not line.startswith('!'):
-                y = line.translate(trans_table).strip().split(' ')
+                y = line.translate(self.trans_table).strip().split(' ')
                 if y[0] == 'vlan':
                     iface['kind'] = 'vlan'
                     iface['vlan_id'] = int(y[1])
@@ -192,7 +192,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 'content': []
             }
             line = fh.readline()
-            y = line.translate(trans_table).strip().split(' ')
+            y = line.translate(self.trans_table).strip().split(' ')
             if y[0] == 'subnet':
                 err, pack_ip = self.pack_ip_address(y[1], y[2])
                 if err:
@@ -239,7 +239,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 'content': []
             }
             line = fh.readline()
-            y = line.translate(trans_table).rstrip().split(' ')
+            y = line.translate(self.trans_table).rstrip().split(' ')
             while y[0] == '':
                 match y[1]:
                     case 'network-object':
@@ -270,7 +270,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                         ip_list['description'] = f"{ip_list['description']}\n{' '.join(y[2:])}"
                         url_list['description'] = f"{url_list['description']}\n{' '.join(y[2:])}"
                 line = fh.readline()
-                y = line.translate(trans_table).rstrip().split(' ')
+                y = line.translate(self.trans_table).rstrip().split(' ')
             if ip_list['content']:
                 data['ip_lists'][name] = ip_list
             if url_list['content']:
@@ -287,7 +287,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
             port = ''
             source_port = ''
             line = fh.readline()
-            y = line.translate(trans_table).strip().split(' ')
+            y = line.translate(self.trans_table).strip().split(' ')
             
             try:
                 i = y.index('source')
@@ -311,7 +311,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
             return line
 
         def convert_service_object_group(line, fh):
-            x = line.translate(trans_table).split(' ')
+            x = line.translate(self.trans_table).split(' ')
             service = {
                 'name': x[2],
                 'description': 'Портировано с Cisco FPR.',
@@ -322,7 +322,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
             source_port = ''
 
             line = fh.readline()
-            y = line.translate(trans_table).rstrip().split(' ')
+            y = line.translate(self.trans_table).rstrip().split(' ')
             try:
                 proto_array = x[3].split('-')
                 while y[0] == '':
@@ -356,7 +356,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                     elif y[1] == 'description':
                         service['description'] = f"{service['description']}\n{' '.join(y[2:])}"
                     line = fh.readline()
-                    y = line.translate(trans_table).rstrip().split(' ')
+                    y = line.translate(self.trans_table).rstrip().split(' ')
             except IndexError:
                 while y[0] == '':
                     if y[1] == 'service-object':
@@ -410,7 +410,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                         service['description'] = f"{service['description']}\n{' '.join(y[2:])}"
 
                     line = fh.readline()
-                    y = line.translate(trans_table).rstrip().split(' ')
+                    y = line.translate(self.trans_table).rstrip().split(' ')
 
             data['services'][x[2]] = service
             return line
@@ -452,7 +452,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
             }
 
             line = fh.readline()
-            x = line.translate(trans_table).rstrip().split(' ')
+            x = line.translate(self.trans_table).rstrip().split(' ')
             while x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'advanced':
                 service_name = ''
                 service = {
@@ -487,7 +487,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
 #                    service['protocols'][0]['proto'] = 'gre'
                 elif x[4] == '41':
                     line = fh.readline()
-                    x = line.translate(trans_table).rstrip().split(' ')
+                    x = line.translate(self.trans_table).rstrip().split(' ')
                     continue
                 if x[4] == 'object-group' and x[5] in data['services']:
                     fw_rule['services'].add(x[5])
@@ -555,7 +555,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                         data['services'][service_name] = service
 
                 line = fh.readline()
-                x = line.translate(trans_table).rstrip().split(' ')
+                x = line.translate(self.trans_table).rstrip().split(' ')
 
             fw_rule['src_zones'] = list(fw_rule['src_zones'])
             fw_rule['dst_zones'] = list(fw_rule['dst_zones'])
@@ -626,7 +626,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 if line.startswith(':'):
                     line = fh.readline()
                     continue
-                x = line.translate(trans_table).rsplit(' ')
+                x = line.translate(self.trans_table).rsplit(' ')
                 match x[0]:
                     case 'dns':
                         match x[1:]:
@@ -686,7 +686,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 if line.startswith(':'):
                     line = fh.readline()
                     continue
-                x = line.translate(trans_table).rsplit(' ')
+                x = line.translate(self.trans_table).rsplit(' ')
                 if x[0] == 'access-list' and x[1] == 'CSM_FW_ACL_' and x[2] == 'remark':
                     add_remark_to_fw_rules(int(x[4][:-1]), ' '.join(x[5:]))
                 line = fh.readline()
@@ -707,7 +707,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
         block = []
         line = fh.readline()
         while line.startswith(' '):
-            block.append(line.translate(trans_table).strip().split(' '))
+            block.append(line.translate(self.trans_table).strip().split(' '))
             line = fh.readline()
         return line, block
 
@@ -986,7 +986,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 return
 
             for key, value in list_ips.items():
-                json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{key.translate(self.trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(value, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список IP-адресов "{key}" выгружен в файл "{json_file}".')
@@ -1009,7 +1009,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                 return
 
             for key, value in list_urls.items():
-                json_file = os.path.join(current_path, f'{key.translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{key.translate(self.trans_filename)}.json')
                 with open(json_file, "w") as fh:
                     json.dump(value, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    Список URL "{key}" выгружен в файл "{json_file}".')

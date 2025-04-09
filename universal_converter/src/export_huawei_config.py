@@ -21,15 +21,15 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.8    20.01.2025
+# Версия 1.9  03.04.2025
 #
 
 import os, sys, json
 import copy, re
-from common_func import MyConv
+from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
 from applications import app_compliance, l7_categories, l7_categories_compliance
-from services import trans_table, trans_filename, zone_services, ug_services, ip_proto
+from services import zone_services, ug_services, ip_proto
 
 
 pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
@@ -116,19 +116,19 @@ class ConvertHuaweiConfig(QThread, MyConv):
         config_file = os.path.join(self.current_vendor_path, 'huawei.cfg')
         try:
             with open(config_file, "r") as fh:
-                line = fh.readline().translate(trans_table).strip()
+                line = fh.readline().translate(self.trans_table).strip()
                 if not line:
-                    line = fh.readline().translate(trans_table).strip()
+                    line = fh.readline().translate(self.trans_table).strip()
                 while line:
                     if line == '#':
                         config_block = []
-                        line = fh.readline().translate(trans_table).strip()
+                        line = fh.readline().translate(self.trans_table).strip()
                         while line != '#':
                             x = line.split(' ')
                             if x[0] == 'return':
                                 break
                             config_block.append(x)
-                            line = fh.readline().translate(trans_table).strip()
+                            line = fh.readline().translate(self.trans_table).strip()
                         else:
                             if config_block:
                                 key, value = self.make_block(config_block)
@@ -141,7 +141,7 @@ class ConvertHuaweiConfig(QThread, MyConv):
                                     else:
                                         data[key] = value
                     else:
-                        line = fh.readline().translate(trans_table).strip()
+                        line = fh.readline().translate(self.trans_table).strip()
                     
         except FileNotFoundError:
             self.stepChanged.emit(f'RED|    Error: Не найден файл "{config_file}" с конфигурацией Huawei.')
@@ -1078,7 +1078,7 @@ class ConvertHuaweiConfig(QThread, MyConv):
                         content.append(value)
                 ip_list['content'] = content
 
-                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1108,7 +1108,7 @@ class ConvertHuaweiConfig(QThread, MyConv):
                             error = 1
                 ip_list['content'] = content
 
-                json_file = os.path.join(current_path, f'{ip_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1131,7 +1131,7 @@ class ConvertHuaweiConfig(QThread, MyConv):
                     ip_list['name'] = f'firewall_{key1}_{key2}'
                     ip_list['content'] = [{'value': value} for value in val2 if '.' in value]
 
-                    json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(trans_filename)}.json')
+                    json_file = os.path.join(current_path, f'{ip_list["name"].strip().translate(self.trans_filename)}.json')
                     with open(json_file, 'w') as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
@@ -1172,7 +1172,7 @@ class ConvertHuaweiConfig(QThread, MyConv):
                 url_list['attributes'] = {'list_compile_type': 'case_insensitive'}
                 url_list['content'] = [{'value': value} for value in url_list['content']]
 
-                json_file = os.path.join(current_path, f'{url_list["name"].translate(trans_filename)}.json')
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(url_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|    {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')

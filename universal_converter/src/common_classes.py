@@ -20,7 +20,7 @@
 #-----------------------------------------------------------------------------
 # common_classes.py
 # Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 1.0  03.04.2025
+# Версия 1.1  09.04.2025
 #
 
 import os, json
@@ -80,7 +80,8 @@ class ReadWriteBinFile(WriteBinFile):
         return 0, data
 
 
-class MyMixedService():
+class TransformObjectName():
+    """Содержит метод для проверки имени объекта"""
     trans_object_name = {
         ord('\n'): None,
         ord('\t'): None,
@@ -109,6 +110,53 @@ class MyMixedService():
         65533: 'X',
     }
 
+
+    @staticmethod
+    def get_new_uuid():
+        """Получить уникальный идентификатор"""
+        return str(uuid.uuid4()).split('-')[4]
+
+
+    def get_transformed_name(self, name, err=0, descr='Имя объекта', default_name=f'{get_new_uuid()} (Original name not valid)', mode=1):
+        """
+        Получить имя объекта без запрещённых спецсимволов.
+        Удаляется первый символ если он является символом пуектуации, т.к. запрещается делать первый символ спецсимволом.
+        Так же проверяется длина имени. Если оно более 64 символов, то обрезается до длины 64.
+        """
+        message = ''
+        if isinstance(name, str):
+            error64 = 0
+            errorX = 0
+            new_name = name.lstrip(punctuation)
+            if not new_name:
+                if mode:
+                    message = f'RED|    Error: {descr} "{name}" не конвертировано, так как содержит одни спец.символы.\n'
+                    self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{default_name}".')
+                return 1, default_name
+            if chr(65533) in new_name:
+                errorX = 1
+            new_name = new_name.translate(self.trans_object_name).strip()
+            if len(new_name) > 64:
+                new_name = new_name[:64]
+                error64 = 1
+            if error64 or errorX:
+                if mode:
+                    message = f'RED|    Error: {descr} "{name}".\n'
+                    if error64:
+                        message = f'{message}       {descr} имеет длину более 64 символов. Имя обрезано до 64 символов.\n'
+                    if errorX:
+                        message = f'{message}       {descr} содержит символы отсутствующие в кодировке ascii. Они заменены на символ "X".\n'
+                    self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{new_name}".')
+                err = 1
+            return err, new_name
+        else:
+            if mode:
+                message = f'RED|    Error: {descr} "{name}". Имя имеет не корректный тип.\n'
+                self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{default_name}".')
+            return 1, default_name
+
+
+class MyMixedService(TransformObjectName):
     trans_userlogin = {
         ord('#'): None,
         ord('"'): None,
@@ -139,12 +187,6 @@ class MyMixedService():
         ord('\\'): None,
         65533: 'X',
     }
-
-
-    @staticmethod
-    def get_new_uuid():
-        """Получить уникальный идентификатор"""
-        return str(uuid.uuid4()).split('-')[4]
 
 
     @staticmethod
@@ -187,45 +229,6 @@ class MyMixedService():
                 self.stepChanged.emit(f'GRAY|    Файл "{json_file_path}" пуст.')
             return 3, f'GRAY|    Файл "{json_file_path}" пуст.'
         return 0, data
-
-
-    def get_transformed_name(self, name, err=0, descr='Имя объекта', default_name=f'{get_new_uuid()} (Original name not valid)', mode=1):
-        """
-        Получить имя объекта без запрещённых спецсимволов.
-        Удаляется первый символ если он является символом пуектуации, т.к. запрещается делать первый символ спецсимволом.
-        Так же проверяется длина имени. Если оно более 64 символов, то обрезается до длины 64.
-        """
-        message = ''
-        if isinstance(name, str):
-            error64 = 0
-            errorX = 0
-            new_name = name.lstrip(punctuation)
-            if not new_name:
-                if mode:
-                    message = f'RED|    Error: {descr} "{name}" не конвертировано, так как содержит одни спец.символы.\n'
-                    self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{default_name}".')
-                return 1, default_name
-            if chr(65533) in new_name:
-                errorX = 1
-            new_name = new_name.translate(self.trans_object_name).strip()
-            if len(new_name) > 64:
-                new_name = new_name[:64]
-                error64 = 1
-            if error64 or errorX:
-                if mode:
-                    message = f'RED|    Error: {descr} "{name}".\n'
-                    if error64:
-                        message = f'{message}       {descr} имеет длину более 64 символов. Имя обрезано до 64 символов.\n'
-                    if errorX:
-                        message = f'{message}       {descr} содержит символы отсутствующие в кодировке ascii. Они заменены на символ "X".\n'
-                    self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{new_name}".')
-                err = 1
-            return err, new_name
-        else:
-            if mode:
-                message = f'RED|    Error: {descr} "{name}". Имя имеет не корректный тип.\n'
-                self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{default_name}".')
-            return 1, default_name
 
 
     def get_transformed_userlogin(self, user_login):

@@ -538,7 +538,6 @@ class SelectExportMode(QWidget):
             for x in self.tmp_list:
                 self.log_list.addItem(x)
             self.tmp_list.clear()
-            self.log_list.scrollToBottom()
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
@@ -546,8 +545,9 @@ class SelectExportMode(QWidget):
         i.setForeground(QColor(cs.color[color]))
         if color in ('BLACK', 'NOTE', 'uGRAY'):
             self.tmp_list.append(i)
-            if len(self.tmp_list) > 20:
+            if len(self.tmp_list) > 30:
                 self.items_add_and_scroll()
+                self.log_list.scrollToBottom()
         else:
             if color == 'RED':
                 self.log_list.addItem(i)

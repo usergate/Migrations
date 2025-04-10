@@ -21,13 +21,13 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 2.3  08.04.2025
+# Версия 2.4  10.04.2025
 #
 
 import os, sys, json, re
 import ipaddress
-from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from services import network_proto, ug_services, service_ports
 
 
@@ -792,7 +792,12 @@ class ConvertMikrotikConfig(QThread, MyConv):
         error = 0
         ip_list = {}
         for item in address_list:
-            if not self.check_ip(item['address']):   # Проверяем что это IP-адрес а не строка символов.
+            err_item = 0
+            for ip_address in item['address'].split('-'):
+                if not self.check_ip(ip_address):   # Проверяем что это IP-адрес а не строка символов.
+                    err_item = 1
+                    break
+            if err_item:
                 continue
             try:
                 if item['list'] in ip_list:
@@ -831,11 +836,11 @@ class ConvertMikrotikConfig(QThread, MyConv):
         error = 0
         for item in firewall_filter:
             if 'dst-address' in item and item['dst-address']:
-                item['dst_ips'] = ['list_id', item['dst-address']]
-                if item['dst-address'] not in self.ip_lists:
-                    self.ip_lists.add(item['dst-address'])
+                new_ips = item['dst-address'].replace('!', '', 1)
+                item['dst_ips'] = ['list_id', new_ips]
+                if new_ips not in self.ip_lists:
                     ip_list = {
-                        'name': item['dst-address'],
+                        'name': new_ips,
                         'description': 'Портировано с MikroTik.',
                         'type': 'network',
                         'url': '',
@@ -844,18 +849,20 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         'attributes': {
                             'threat_level': 3
                         },
-                        'content': [{'value': item['dst-address']}]
+                        'content': [{'value': new_ips}]
                     }
+                    self.ip_lists.add(ip_list['name'])
                     json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
                     with open(json_file, "w") as fh:
                         json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                     self.stepChanged.emit(f'BLACK|    Список IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
 
             if 'src-address' in item and item['src-address']:
-                item['src_ips'] = ['list_id', item['src-address']]
-                if item['src-address'] not in self.ip_lists:
+                new_ips = item['src-address'].replace('!', '', 1)
+                item['src_ips'] = ['list_id', new_ips]
+                if new_ips not in self.ip_lists:
                     ip_list = {
-                        'name': item['src-address'],
+                        'name': new_ips,
                         'description': 'Портировано с MikroTik.',
                         'type': 'network',
                         'url': '',
@@ -864,7 +871,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         'attributes': {
                             'threat_level': 3
                         },
-                        'content': [{'value': item['src-address']}]
+                        'content': [{'value': new_ips}]
                     }
                     self.ip_lists.add(ip_list['name'])
                     json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
@@ -884,7 +891,12 @@ class ConvertMikrotikConfig(QThread, MyConv):
         url_list = {}
 
         for item in data['ip firewall address-list']:
-            if self.check_ip(item['address']):   # Проверяем что это IP-адрес а не строка символов.
+            err_item = 0
+            for ip_address in item['address'].split('-'):
+                if self.check_ip(ip_address):   # Проверяем что это IP-адрес а не строка символов.
+                    err_item = 1
+                    break
+            if err_item:
                 continue
             try:
                 if item['list'] in url_list:
@@ -1154,8 +1166,8 @@ class ConvertMikrotikConfig(QThread, MyConv):
                 'log_session_start': False,
                 'src_zones_nagate': False,
                 'dst_zones_nagate': False,
-                'src_ips_nagate': False,
-                'dst_ips_nagate': False,
+                'src_ips_nagate': True if item.get('src-address', '').startswith('!') else False,
+                'dst_ips_nagate': True if item.get('dst-address', '').startswith('!') else False,
                 'services_nagate': False,
                 'fragmented': 'ignore',
                 'time_restrictions': [],
@@ -1269,8 +1281,8 @@ class ConvertMikrotikConfig(QThread, MyConv):
                 'snat_target_ip': '',
                 'zone_in_nagate': False,
                 'zone_out_nagate': False,
-                'source_ip_nagate': False,
-                'dest_ip_nagate': False,
+                'source_ip_nagate': True if item.get('src-address', '').startswith('!') else False,
+                'dest_ip_nagate': True if item.get('dst-address', '').startswith('!') else False,
                 'port_mappings': port_mappings,
                 'direction': 'input',
                 'users': [],

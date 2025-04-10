@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 2.4  10.04.2025
+# Версия 2.5  10.04.2025
 #
 
 import os, sys, json, re
@@ -799,6 +799,9 @@ class ConvertMikrotikConfig(QThread, MyConv):
                     break
             if err_item:
                 continue
+            if item.get('disabled', False ) == 'yes':
+                self.ip_lists.add(self.create_ip_list(ips=[item['address']], descr=item.get('comment', None)))
+                continue
             try:
                 if item['list'] in ip_list:
                     ip_list[item['list']]['content'].append({'value': item['address']})
@@ -897,6 +900,17 @@ class ConvertMikrotikConfig(QThread, MyConv):
                     err_item = 1
                     break
             if err_item:
+                continue
+            if item.get('disabled', False ) == 'yes':
+                url_list[item['address']] = {
+                    'name': item['address'],
+                    'description': f"Портировано с MikroTik.\n{item.get('comment', '')}",
+                    'type': 'url', 'url': '', 'list_type_update': 'static', 'schedule': 'disabled',
+                    'attributes': {
+                        'list_complile_type': 'case_insensitive'
+                    },
+                    'content': [{'value': item['address']}]
+                }
                 continue
             try:
                 if item['list'] in url_list:

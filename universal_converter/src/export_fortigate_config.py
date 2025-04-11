@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 4.1 11.04.2024
+# Версия 4.2 11.04.2024
 #
 
 import os, sys, json, copy
@@ -333,7 +333,8 @@ class ConvertFortigateConfig(QThread, MyConv):
                 for line in fh:
                     if line.startswith('#'):
                         continue
-                    x = line.rstrip('\n').replace(',', '_').replace('" "', ',').replace('"', '')
+#                    x = line.rstrip('\n').replace(',', '_').replace('" "', ',').replace('"', '')
+                    x = line.rstrip('\n').replace('" "', ';').replace('"', '')
                     if x.startswith('config'):
                         key = x
                         config_block = []
@@ -707,7 +708,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 new_zone['description'] = f'Портировано с Fortigate.\n{value.get("comment", "")}.'
                 zones.append(copy.deepcopy(new_zone))
                 if (tmp_ifaces := value.get('interface', False)):
-                    tmp_ifaces = tmp_ifaces.split(',')
+                    tmp_ifaces = tmp_ifaces.split(';')
                     for iface in tmp_ifaces:
                         data['config system interface'][iface.strip()]['role'] = zone_name
         
@@ -1068,7 +1069,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 'attributes': {},
                 'content': []
             }
-            for item in value['member'].split(','):
+            for item in value['member'].split(';'):
                 service = copy.deepcopy(self.services.get(item, None))
                 if service:
                     for x in service['protocols']:
@@ -1192,7 +1193,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 'attributes': {'threat_level': 3},
                 'content': []
             }
-            for item in value['member'].split(','):
+            for item in value['member'].split(';'):
                 error, item = self.get_transformed_name(item, err=error, descr='Имя списка IP-адресов')
                 if item in self.ip_lists:
                     ip_list['content'].append({'list': item})
@@ -1285,7 +1286,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 'attributes': {'threat_level': 3},
                 'content': []
             }
-            for item in value['member'].split(','):
+            for item in value['member'].split(';'):
                 error, item = self.get_transformed_name(item, err=error, descr='Имя списка IP-адресов')
                 if item in self.ip_lists:
                     ip_list['content'].append({'list': item})
@@ -1349,7 +1350,7 @@ class ConvertFortigateConfig(QThread, MyConv):
             suffixes = self.work_with_rules(value['rules']) if 'rules' in value else []
 
             url_list['content'] = []
-            for domain_name in value.get('host-domain-name-suffix', '').split(','):
+            for domain_name in value.get('host-domain-name-suffix', '').split(';'):
                 if suffixes:
                     url_list['content'].extend([{'value': f'{domain_name}/{x}' if domain_name else x} for x in suffixes])
                 else:
@@ -1398,7 +1399,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 'attributes': {'list_compile_type': 'case_insensitive'},
                 'content': []
             }
-            for url in value['member'].split(','):
+            for url in value['member'].split(';'):
                 error, url = self.get_transformed_name(url, err=error, descr='Имя списка URL')
                 if url in self.url_lists:
                     url_list['content'].extend(self.url_lists[url])
@@ -1447,7 +1448,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 'attributes': {'list_compile_type': 'case_insensitive'},
                 'content': []
             }
-            for url in value['member'].split(','):
+            for url in value['member'].split(';'):
                 error, url = self.get_transformed_name(url, err=error, descr='Имя списка URL')
                 if url in self.url_lists:
                     url_list['content'].extend(self.url_lists[url])
@@ -1678,7 +1679,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 if 'name' not in value or not value['name'] or value['name'].isspace():
                     rule_name = self.get_new_uuid()
                 else:
-                    error, rule_name = self.get_transformed_name(f'{key}-{value["name"]}', err=error, descr='Имя календаря')
+                    error, rule_name = self.get_transformed_name(f'{key}-{value["name"]}', err=error, descr='Имя правила')
 
                 if value.get('traffic-shaper', None):
                     rule['name'] = rule_name
@@ -1834,7 +1835,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                     }
 
             for key, value in data['config user group'].items():
-                users_in_group = [x for x in value['member'].split(',') if x in self.local_users] if 'member' in value else []
+                users_in_group = [x for x in value['member'].split(';') if x in self.local_users] if 'member' in value else []
                 for user in users_in_group:
                     self.local_users[user]['groups'].append(key)
 
@@ -1873,7 +1874,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                     'description': 'Портировано с Fortigate.',
                     'is_ldap': False,
                     'is_transient': False,
-                    'users': [x for x in value['member'].split(',') if x in self.local_users] if 'member' in value else []
+                    'users': [x for x in value['member'].split(';') if x in self.local_users] if 'member' in value else []
                 })
                 self.local_groups.add(key)
 
@@ -2110,9 +2111,16 @@ class ConvertFortigateConfig(QThread, MyConv):
         error = 0
         n = 0
         rules = []
+        subset = {'nat', 'ippool', 'poolname'}
         for key, value in data['config firewall policy'].items():
+
+            if subset.issubset(set(value.keys())):
+#                print('Имя -', value.get('name', 'Нет имени'), 'nat - ', value['nat'], 'ippool - ', value['ippool'], 'dstaddr - ', value['dstaddr'])
+                continue
+
+            error, rule_name = self.get_transformed_name(f'{value.get("name", key)}', err=error, descr='Имя правила МЭ')
             rule = {
-                'name': value.get("name", key),
+                'name': rule_name,
                 'description': f"Портировано с Fortigate.\nFortigate UUID: {value.get('uuid', 'Отсутствует')}\n{value.get('comments', '')}",
                 'action': value['action'] if value.get('action', None) else 'drop',
                 'position': 'last',
@@ -2463,7 +2471,7 @@ class ConvertFortigateConfig(QThread, MyConv):
         Если списки не найдены, то они создаются или пропускаются, если невозможно создать."""
         if src_ips:
             new_rule_ips = []
-            for item in src_ips.split(','):
+            for item in src_ips.split(';'):
                 if item in ('all', '0.0.0.0'):
                     continue
                 if item in GEOIP_CODE:
@@ -2471,7 +2479,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                     continue
                 err, item = self.get_transformed_name(item, descr='Имя списка IP-адресов')
                 if err:
-                    self.stepChanged.emit(f'RED|    Error: Правило "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
+                    self.stepChanged.emit(f'RED|       Error: Правило "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
                 if item in self.ip_lists:
                     new_rule_ips.append(['list_id', item])
                 elif item in self.url_lists:
@@ -2486,12 +2494,12 @@ class ConvertFortigateConfig(QThread, MyConv):
             rule['src_ips'] = new_rule_ips
         if dst_ips:
             new_rule_ips = []
-            for item in dst_ips.split(','):
+            for item in dst_ips.split(';'):
                 if item in ('all', '0.0.0.0'):
                     continue
                 err, item = self.get_transformed_name(item, descr='Имя списка IP-адресов')
                 if err:
-                    self.stepChanged.emit(f'RED|    Error: Правило "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
+                    self.stepChanged.emit(f'RED|       Error: Правило "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')
                 if item in self.ip_lists:
                     new_rule_ips.append(['list_id', item])
                 elif item in self.url_lists:
@@ -2510,7 +2518,7 @@ class ConvertFortigateConfig(QThread, MyConv):
         """Получить список сервисов"""
         new_service_list = []
         if rule_services:
-            for service in rule_services.split(','):
+            for service in rule_services.split(';'):
                 if service.upper() in ('ALL', 'ANY'):
                     continue
                 _, service = self.get_transformed_name(service, descr='Имя ceрвиса', mode=0)
@@ -2529,7 +2537,7 @@ class ConvertFortigateConfig(QThread, MyConv):
         """Получить список зон для правила"""
         new_zones = []
         if intf:
-            for item in intf.split(','):
+            for item in intf.split(';'):
                 if item == 'any':
                     continue
                 err, item = self.get_transformed_name(item.strip(), descr='Имя зоны')
@@ -2541,7 +2549,7 @@ class ConvertFortigateConfig(QThread, MyConv):
     def get_users_and_groups(self, users, rule):
         """Получить имена групп и пользователей."""
         new_users_list = []
-        for item in users.split(','):
+        for item in users.split(';'):
             if item in self.local_users:
                 new_users_list.append(['user', item])
             elif item in self.local_groups:
@@ -2556,7 +2564,7 @@ class ConvertFortigateConfig(QThread, MyConv):
     def get_time_restrictions(self, time_restrictions, rule):
         """Получить значение календаря."""
         new_schedule = []
-        for item in time_restrictions.split(','):
+        for item in time_restrictions.split(';'):
             err, schedule_name = self.get_transformed_name(item, descr='Имя календаря')
             if err:
                 self.stepChanged.emit(f'RED|    Error: Преобразовано имя календаря "{item}" для правила "{rule["name"]}" uuid: "{rule.get("uuid", "Отсутствует")}".')

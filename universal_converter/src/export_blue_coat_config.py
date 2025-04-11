@@ -25,8 +25,8 @@
 #
 
 import os, sys, json, re
-from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from services import ug_services, ServicePorts, service_ports
 
 pattern_proxy = re.compile(r"<[Pp][Rr][Oo][Xx][Yy] +'(.+)'>(?: +condition=(.+)){0,1}")

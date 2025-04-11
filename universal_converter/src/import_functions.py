@@ -24,7 +24,7 @@
 #
 
 import os, sys, copy, json
-from datetime import datetime as dt
+#from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import ReadWriteBinFile, MyMixedService
 from services import zone_services
@@ -79,6 +79,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             'BfdProfiles': self.import_bfd_profiles,
             'UserIdAgentSyslogFilters': self.import_useridagent_syslog_filters,
             'Scenarios': self.import_scenarios,
+            'Tags': self.import_tags,
             'Zones': self.import_zones,
             'Interfaces': self.import_interfaces,
             'Gateways': self.import_gateways,
@@ -6274,6 +6275,46 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сценариев.')
         else:
             self.stepChanged.emit('GREEN|    Импорт списка сценариев завершён.')
+
+
+    def import_tags(self, path):
+        """Импортируем Тэги"""
+        json_file = os.path.join(path, 'config_tags.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт тэгов в раздел "Библиотеки/Тэги".')
+        error = 0
+        err, result = self.utm.get_tags_list()
+        if err:
+            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте тэгов.')
+            self.error = 1
+            return
+        tags = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            if item['name'] in tags:
+                self.stepChanged.emit(f'GRAY|    Тэг "{item["name"]}" уже существует.')
+                err, result = self.utm.update_tag(tags[item['name']], item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|       {result}  [Тэг: {item["name"]}]')
+                else:
+                    self.stepChanged.emit(f'BLACK|       Тэг "{item["name"]}" обновлён.')
+            else:
+                err, result = self.utm.add_tag(item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|    {result}  [Тэг: "{item["name"]}" не импортирован]')
+                else:
+                    tags[item['name']] = result
+                    self.stepChanged.emit(f'BLACK|    Тэг "{item["name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте Тэгов.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт тэгов завершён.')
 
 
     #---------------------------------------- Оповещения ------------------------------------

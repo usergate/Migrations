@@ -26,8 +26,8 @@
 
 import os, sys, json
 import copy, re
-from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from applications import app_compliance, l7_categories, l7_categories_compliance
 from services import zone_services, ug_services, ip_proto
 

@@ -21,12 +21,12 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 4.1 03.04.2024
+# Версия 4.1 11.04.2024
 #
 
 import os, sys, json, copy
-from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from services import zone_services, ug_services, ip_proto, GEOIP_CODE
 
 
@@ -63,6 +63,8 @@ class ConvertFortigateConfig(QThread, MyConv):
         self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Fortigate в формат UserGate NGFW.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
+#        return
+
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
         else:
@@ -331,7 +333,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 for line in fh:
                     if line.startswith('#'):
                         continue
-                    x = line.rstrip('\n').replace('" "', ',').replace('"', '')
+                    x = line.rstrip('\n').replace(',', '_').replace('" "', ',').replace('"', '')
                     if x.startswith('config'):
                         key = x
                         config_block = []
@@ -351,7 +353,7 @@ class ConvertFortigateConfig(QThread, MyConv):
             config_fortigate.pop(item, None)
 
 #        Это оставлено для тестирования.
-#        with open(os.path.join(path, 'tmp_fort.json'), 'w') as fh:
+#        with open(os.path.join(self.current_fg_path, 'tmp_fort.json'), 'w') as fh:
 #            json.dump(config_fortigate, fh, indent=4, ensure_ascii=False)
 
         for key, value in config_fortigate.items():
@@ -1363,7 +1365,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
 
         for list_name, value in data.get('config firewall address', {}).items():
-            if 'type' in value and value['type'] == 'fqdn':
+            if 'type' in value and value['type'] in ('fqdn', 'wildcard-fqdn'):
                 error, list_name = self.get_transformed_name(list_name, err=error, descr='Имя списка URL')
                 url_list = {
                     'name': list_name,
@@ -1373,7 +1375,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                     'list_type_update': 'static',
                     'schedule': 'disabled',
                     'attributes': {'list_compile_type': 'case_insensitive'},
-                    'content': [{'value': value['fqdn']}]
+                    'content': [{'value': value['fqdn'] if 'fqdn' in value else value['wildcard-fqdn']}]
                 }
                 if url_list['content']:
                     n += 1
@@ -2462,7 +2464,7 @@ class ConvertFortigateConfig(QThread, MyConv):
         if src_ips:
             new_rule_ips = []
             for item in src_ips.split(','):
-                if item == 'all':
+                if item in ('all', '0.0.0.0'):
                     continue
                 if item in GEOIP_CODE:
                     new_rule_ips.append(['geoip_code', GEOIP_CODE[item]])
@@ -2485,7 +2487,7 @@ class ConvertFortigateConfig(QThread, MyConv):
         if dst_ips:
             new_rule_ips = []
             for item in dst_ips.split(','):
-                if item == 'all':
+                if item in ('all', '0.0.0.0'):
                     continue
                 err, item = self.get_transformed_name(item, descr='Имя списка IP-адресов')
                 if err:

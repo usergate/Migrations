@@ -25,8 +25,8 @@
 #
 
 import os, sys, json, re, copy
-from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from services import network_proto, service_ports, MONTHS
 
 

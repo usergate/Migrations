@@ -26,9 +26,9 @@
 
 import os, sys, json
 import ipaddress, copy
-from common_classes import MyConv
 from collections import deque
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from services import (service_ports, ug_services,
                       zone_services, ip_proto, network_proto, MONTHS, TIME_ZONE)
 
@@ -335,8 +335,7 @@ class ConvertCiscoASAConfig(QThread, MyConv):
             self.stepChanged.emit(f'GREEN|    Конфигурация Cisco ASA в формате json выгружена в файл "{json_file}".')
 
 
-    @staticmethod
-    def get_block(config_data, num):
+    def get_block(self, config_data, num):
         """Читаем файл и создаём блок записей для раздела конфигурации"""
         block = []
         data_index = num + 1

@@ -289,7 +289,7 @@ class MyConv(MyMixedService):
         ord('<'): None,
         ord('>'): None,
         ord('|'): None,
-        ord('/'): None,
+        ord('/'): '_',
         ord('\\'): None,
     }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 4.0   25.12.2024
+# Версия 4.2   09.04.2025
 # Общий класс для работы с xml-rpc для NGFW и DCFW
 #
 # Коды возврата:
@@ -2794,11 +2794,44 @@ class UtmXmlRpc:
         return 0, result   # Возвращает ID
 
     def update_waf_profile(self, profile_id, profile):
-        """Добавить профиль WAF"""
+        """Обновить профиль WAF"""
         try:
             result = self._server.v1.waf.profile.update(self._auth_token, profile_id, profile)
         except rpc.Fault as err:
             return 1, f'Error utm.update_waf_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает True
+
+################################### TAGS ##########################################################
+    def get_tags_list(self, start=0, limit=10000):
+        """Получить список тэгов"""
+        try:
+            result = self._server.v1.tags.tags.list(self._auth_token, start, limit, '', [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_tags_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_tags_by_objects(self, guids_list, object_type):
+        """Получить список тэгов для выбранных объектов по типу объекта"""
+        try:
+            result = self._server.v1.tags.fetch.tags.by.object.type(self._auth_token, guids_list, object_type)
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_tags_by_objects: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_tag(self, tag):
+        """Добавить тэг"""
+        try:
+            result = self._server.v1.tags.tag.add(self._auth_token, tag)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_tag: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает ID
+
+    def update_tag(self, tag_id, tag):
+        """Обновить тэг"""
+        try:
+            result = self._server.v1.tags.tag.update(self._auth_token, tag_id, tag)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_tag: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
 ################################### L7 для версии 7.1 и выше #######################################

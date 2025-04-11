@@ -24,8 +24,8 @@
 #
 
 import os, sys, json, uuid, copy
-from common_classes import MyConv
 from PyQt6.QtCore import QThread, pyqtSignal
+from common_classes import MyConv
 from services import trans_url, GEOIP_CODE
 from checkpoint_embedded_objects import embedded_objects
 from applications import (app_compliance, appgroup_compliance, l7_category_compliance, url_category_compliance,

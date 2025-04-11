@@ -1139,11 +1139,11 @@ class ConvertMikrotikConfig(QThread, MyConv):
         n = 0
         for item in data['ip firewall filter']:
             if item.get('connection-state', False):
-                self.stepChanged.emit(f'RED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит "connection-state".')
+                self.stepChanged.emit(f'RED|    Error: Правило межсетевого экрана "{item}" не конвертировано так как содержит "connection-state".')
                 error = 1
                 continue
             if isinstance(item['services'], str):
-                self.stepChanged.emit(f'RED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит не поддерживаемый сервис.')
+                self.stepChanged.emit(f'RED|    Error: Правило межсетевого экрана "{item}" не конвертировано так как содержит не поддерживаемый сервис.')
                 error = 1
                 continue
             send_host_icmp = ''
@@ -1155,7 +1155,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                 elif item['action'] == 'accept':
                     action = 'accept'
                 else:
-                    self.stepChanged.emit(f'RED|    Правило межсетевого экрана "{item}" не конвертировано так как содержит действие "{item["action"]}".')
+                    self.stepChanged.emit(f'RED|    Error: Правило межсетевого экрана "{item}" не конвертировано так как содержит действие "{item["action"]}".')
                     error = 1
                     continue
             else:

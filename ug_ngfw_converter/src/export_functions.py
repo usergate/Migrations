@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.5  12.03.2025
+# Версия 3.6  16.04.2025
 #
 
 import os, sys, json
@@ -91,6 +91,7 @@ class ExportSelectedPoints(QThread):
             else:
                 self.error = 1
                 self.stepChanged.emit(f'RED|Не найдена функция для экспорта {point}!')
+
         self.stepChanged.emit('iORANGE|Экспорт конфигурации прошёл с ошибками!\n' if self.error else 'iGREEN|Экспорт конфигурации прошёл успешно.\n')
 
 
@@ -559,7 +560,10 @@ def export_interfaces_list(parent, path):
     else:
         iface_name = translate_iface_name(parent.utm.float_version, path, data)     # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
+        id_list = []
         for item in data:
+            item['full_id'] = item['id']
+            id_list.append(item['full_id'])
             item['id'], _ = item['id'].split(':')
             item.pop('link_info', None)
             item.pop('speed', None)
@@ -621,6 +625,7 @@ def export_interfaces_list(parent, path):
                         item['dhcp_relay'].pop('iface_id', None)
 
         data.sort(key=lambda x: x['name'])
+        add_tags_for_rules(parent, data, id_list, object_type='interfaces')
 
         json_file = os.path.join(path, 'config_interfaces.json')
         with open(json_file, 'w') as fh:
@@ -1669,13 +1674,14 @@ def export_firewall_rules(parent, path):
                 return
             hip_profiles = {x['id']: x['name'] for x in result}
 
-    duplicate = {}
     err, data = parent.utm.get_firewall_rules()
     if err:
         parent.stepChanged.emit(f'RED|    {data}')
         parent.error = 1
         error = 1
     else:
+        id_list = []
+        duplicate = {}
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
             if item['name'] in duplicate.keys():
@@ -1685,7 +1691,7 @@ def export_firewall_rules(parent, path):
                 item['name'] = f"{item['name']} {num}"
             else:
                 duplicate[item['name']] = 0
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             item.pop('rownumber', None)
             item.pop('active', None)
@@ -1716,6 +1722,8 @@ def export_firewall_rules(parent, path):
             else:
                 if 'hip_profiles' in item:
                     item['hip_profiles'] = [hip_profiles[x] for x in item['hip_profiles']]
+
+        add_tags_for_rules(parent, data, id_list, object_type='fw_rules')
 
         json_file = os.path.join(path, 'config_firewall_rules.json')
         with open(json_file, 'w') as fh:
@@ -1756,8 +1764,9 @@ def export_nat_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('cc', None)
             item.pop('guid', None)
             item['name'] = item['name'].strip().translate(trans_name)
@@ -1782,6 +1791,8 @@ def export_nat_rules(parent, path):
                 item['position_layer'] = 'local'
                 item['time_created'] = ''
                 item['time_updated'] = ''
+
+        add_tags_for_rules(parent, data, id_list, object_type='traffic_rule')
 
         json_file = os.path.join(path, 'config_nat_rules.json')
         with open(json_file, 'w') as fh:
@@ -1928,8 +1939,9 @@ def export_shaper_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('rownumber', None)
             item.pop('guid', None)
             item.pop('deleted_users', None)
@@ -1953,6 +1965,8 @@ def export_shaper_rules(parent, path):
                 item['limit_burst'] = 5
                 item['log'] = False
                 item['log_session_start'] = True
+
+        add_tags_for_rules(parent, data, id_list, object_type='shaper_rule')
 
         json_file = os.path.join(path, 'config_shaper_rules.json')
         with open(json_file, 'w') as fh:
@@ -2014,6 +2028,7 @@ def export_content_rules(parent, path):
         error = 1
     else:
         data.pop()    # удаляем последнее правило (защищённое).
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
             if item['name'] in duplicate.keys():
@@ -2023,7 +2038,7 @@ def export_content_rules(parent, path):
                 item['name'] = f"{item['name']} {num}"
             else:
                 duplicate[item['name']] = 0
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('rownumber', None)
             item.pop('guid', None)
             item.pop('deleted_users', None)
@@ -2066,6 +2081,8 @@ def export_content_rules(parent, path):
                 else:
                     item['time_updated'] = ''
 
+        add_tags_for_rules(parent, data, id_list, object_type='content_rules')
+
         json_file = os.path.join(path, 'config_content_rules.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
@@ -2090,8 +2107,9 @@ def export_safebrowsing_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('rownumber', None)
             item.pop('guid', None)
             item.pop('deleted_users', None)
@@ -2124,6 +2142,8 @@ def export_safebrowsing_rules(parent, path):
                 else:
                     item['time_updated'] = ''
 
+        add_tags_for_rules(parent, data, id_list, object_type='content_fo_rules')
+
         json_file = os.path.join(path, 'config_safebrowsing_rules.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
@@ -2148,14 +2168,17 @@ def export_tunnel_inspection_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             item['name'] = item['name'].strip().translate(trans_name)
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
             item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
             item['dst_zones'] = get_zones_name(parent, item['dst_zones'], item['name'])
             item['dst_ips'] = get_ips_name(parent, item['dst_ips'], item['name'])
+
+        add_tags_for_rules(parent, data, id_list, object_type='tunnel_inspection_rules')
 
         json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
         with open(json_file, 'w') as fh:
@@ -2191,9 +2214,10 @@ def export_ssldecrypt_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('rownumber', None)
             item.pop('guid', None)
             item.pop('deleted_users', None)
@@ -2230,6 +2254,8 @@ def export_ssldecrypt_rules(parent, path):
                 except ValueError:
                     item['time_updated'] = ''
 
+        add_tags_for_rules(parent, data, id_list, object_type='content_https_rules')
+
         json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
         with open(json_file, 'w') as fh:
             json.dump(data, fh, indent=4, ensure_ascii=False)
@@ -2254,9 +2280,10 @@ def export_sshdecrypt_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('rownumber', None)
             item.pop('guid', None)
             item.pop('active', None)
@@ -2284,6 +2311,8 @@ def export_sshdecrypt_rules(parent, path):
                     item['time_updated'] = dt.strptime(item['time_updated'].value, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     item['time_updated'] = ''
+
+        add_tags_for_rules(parent, data, id_list, object_type='content_ssh_rules')
 
         json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
         with open(json_file, 'w') as fh:
@@ -2457,9 +2486,10 @@ def export_mailsecurity_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             item.pop('deleted_users', None)
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
@@ -2482,6 +2512,8 @@ def export_mailsecurity_rules(parent, path):
             item['envelope_to'] = [[x[0], email[x[1]]] for x in item['envelope_to']]
             if parent.utm.float_version < 7.1:
                 item['rule_log'] = False
+
+        add_tags_for_rules(parent, data, id_list, object_type='mailsecurity_rule')
 
         json_file = os.path.join(path, 'config_mailsecurity_rules.json')
         with open(json_file, 'w') as fh:
@@ -2545,9 +2577,10 @@ def export_icap_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             for server in item['servers']:
                 if server[0] == 'lbrule':
@@ -2577,6 +2610,8 @@ def export_icap_rules(parent, path):
             else:
                 item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
                 item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+
+        add_tags_for_rules(parent, data, id_list, object_type='icap_rules')
 
         json_file = os.path.join(path, 'config_icap_rules.json')
         with open(json_file, 'w') as fh:
@@ -2676,9 +2711,10 @@ def export_dos_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             item.pop('active', None)
             item.pop('rownumber', None)
@@ -2695,6 +2731,8 @@ def export_dos_rules(parent, path):
                 item['scenario_rule_id'] = parent.scenarios_rules[item['scenario_rule_id']]
             if parent.utm.float_version < 6:
                 item['position_layer'] = 'local'
+
+        add_tags_for_rules(parent, data, id_list, object_type='dos_rules')
 
         json_file = os.path.join(path, 'config_dos_rules.json')
         with open(json_file, 'w') as fh:
@@ -2834,9 +2872,10 @@ def export_reverseproxy_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             item['src_zones'] = get_zones_name(parent, item['src_zones'], item['name'])
             item['src_ips'] = get_ips_name(parent, item['src_ips'], item['name'])
@@ -2891,6 +2930,8 @@ def export_reverseproxy_rules(parent, path):
                         parent.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найден профиль WAF {err}.')
                         item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
                         item['waf_profile_id'] = 0
+
+        add_tags_for_rules(parent, data, id_list, object_type='reverseproxy_rules')
 
         json_file = os.path.join(path, 'config_reverseproxy_rules.json')
         with open(json_file, 'w') as fh:
@@ -3169,9 +3210,10 @@ def export_vpn_client_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('connection_time', None)
             item.pop('last_error', None)
             item.pop('status', None)
@@ -3181,6 +3223,8 @@ def export_vpn_client_rules(parent, path):
                 item['protocol'] = 'l2tp'
                 item['subnet1'] = ''
                 item['subnet2'] = ''
+
+        add_tags_for_rules(parent, data, id_list, object_type='vpn_client_rules')
 
         json_file = os.path.join(path, 'config_vpn_client_rules.json')
         with open(json_file, 'w') as fh:
@@ -3223,9 +3267,10 @@ def export_vpn_server_rules(parent, path):
         parent.error = 1
         error = 1
     else:
+        id_list = []
         for item in data:
             item['name'] = item['name'].strip().translate(trans_name)
-            item.pop('id', None)
+            id_list.append(item['id'])
             item.pop('guid', None)
             item.pop('rownumber', None)
             item.pop('cc', None)
@@ -3243,6 +3288,8 @@ def export_vpn_server_rules(parent, path):
             item['auth_profile_id'] = parent.ngfw_data['auth_profiles'].get(item['auth_profile_id'], False)
             if parent.utm.float_version >= 7.1:
                 item.pop('allowed_auth_methods', None)
+
+        add_tags_for_rules(parent, data, id_list, object_type='vpn_server_rules')
 
         json_file = os.path.join(path, 'config_vpn_server_rules.json')
         with open(json_file, 'w') as fh:
@@ -4936,6 +4983,7 @@ def get_apps(parent, array_apps, rule_name):
                 parent.stepChanged.emit(f'bRED|    Возможно нет лицензии и UTM не получил список приложений l7. Установите лицензию и повторите попытку.')
     return new_app_list
 
+
 def set_scenarios_rules(parent):
     """Устанавливаем в parent значение атрибута: scenarios_rules"""
     err, result = parent.utm.get_scenarios_rules()
@@ -4944,6 +4992,7 @@ def set_scenarios_rules(parent):
         return 1
     parent.scenarios_rules = {x['id']: x['name'].strip().translate(trans_name) for x in result}
     return 0
+
 
 def set_client_certificate_profiles(parent):
     """Устанавливаем в parent значение атрибута: client_cert_profiles"""
@@ -4956,6 +5005,7 @@ def set_client_certificate_profiles(parent):
         return 1
     parent.client_cert_profiles = {x['id']: x['name'] for x in result}
     return 0
+
 
 def translate_iface_name(ngfw_version, path, data):
     """Преобразуем имена интерфейсов для версии 5 (eth меняется на port, так же меняются имена vlan)"""
@@ -4977,4 +5027,21 @@ def translate_iface_name(ngfw_version, path, data):
     else:
         iface_name = {x['name']: x['name'] for x in data}
     return iface_name
+
+
+def add_tags_for_rules(parent, data, list_ids, object_type=None):
+    if parent.utm.float_version >= 7.3:
+        err, result = parent.utm.get_tags_by_objects(list_ids, object_type)
+        if err:
+            parent.stepChanged.emit(f'RED|    {result}')
+            parent.error = 1
+            return
+        for item in data:
+            if object_type == 'interfaces':
+                item_id = item.pop('full_id', '')
+            else:
+                item_id = str(item.pop('id', ''))
+            if item_id in result:
+                item['tags'] = [parent.ngfw_data['tags'][x] for x in result[item_id]]
+
 

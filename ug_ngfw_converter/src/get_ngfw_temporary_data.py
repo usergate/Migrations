@@ -20,22 +20,22 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_temporary_data.py
 # Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 1.8  20.12.2024    (идентично ug_ngfw_converter и universal_converter)
+# Version 2.0  09.04.2025    (идентично ug_ngfw_converter и universal_converter)
 #
 
 import os, sys
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import trans_name, default_urlcategorygroup
-from common_func import write_bin_file
+from services import default_urlcategorygroup
+from common_classes import WriteBinFile, TransformObjectName
 
 
-class GetExportTemporaryData(QThread):
+class GetExportTemporaryData(QThread, WriteBinFile, TransformObjectName):
     """Получаем конфигурационные данные с NGFW для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
     def __init__(self, utm):
         super().__init__()
         self.utm = utm
-
+        self.ngfw_data = {}
 
     def run(self):
         """Заполняем служебные структуры данных"""
@@ -47,7 +47,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['zones'] = {x['id']: x['name'].strip().translate(trans_name)  for x in result}
+        self.ngfw_data['zones'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1]  for x in result}
 
         # Получаем список сертификатов
         self.stepChanged.emit(f'BLACK|    Получаем список сертификатов')
@@ -55,7 +55,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['certs'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['certs'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
         self.ngfw_data['certs'][-1] = 0
 
         # Получаем список профилей аутентификации
@@ -64,7 +64,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['auth_profiles'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['auth_profiles'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список локальных групп
         self.stepChanged.emit(f'BLACK|    Получаем список локальных групп')
@@ -72,7 +72,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['local_groups'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['local_groups'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список локальных пользователей
         self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей')
@@ -80,7 +80,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['local_users'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['local_users'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список профилей SSL
         if self.utm.float_version > 5:
@@ -89,7 +89,7 @@ class GetExportTemporaryData(QThread):
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 return
-            self.ngfw_data['ssl_profiles'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+            self.ngfw_data['ssl_profiles'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов')
@@ -97,7 +97,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['ip_lists'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['ip_lists'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список URL-листов
         self.stepChanged.emit(f'BLACK|    Получаем список URL-листов')
@@ -105,7 +105,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['url_lists'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['url_lists'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список групп категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL')
@@ -113,7 +113,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['url_categorygroups'] = {x['id']: default_urlcategorygroup.get(x['name'], x['name'].strip().translate(trans_name)) for x in result}
+        self.ngfw_data['url_categorygroups'] = {x['id']: default_urlcategorygroup.get(x['name'], self.get_transformed_name(x['name'], mode=1)[1]) for x in result}
 
         # Получаем список категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список категорий URL')
@@ -129,7 +129,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['calendars'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['calendars'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список сервисов')
@@ -137,7 +137,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['services'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['services'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список групп сервисов
         if self.utm.float_version >= 7:
@@ -146,7 +146,7 @@ class GetExportTemporaryData(QThread):
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 return
-            self.ngfw_data['service_groups'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+            self.ngfw_data['service_groups'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список типов контента
         if self.utm.product != 'dcfw':
@@ -155,7 +155,7 @@ class GetExportTemporaryData(QThread):
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 return
-            self.ngfw_data['mime'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+            self.ngfw_data['mime'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений')
@@ -163,7 +163,7 @@ class GetExportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['application_groups'] = {x['id']: x['name'].strip().translate(trans_name) for x in result}
+        self.ngfw_data['application_groups'] = {x['id']: self.get_transformed_name(x['name'], mode=1)[1] for x in result}
 
         # Получаем список категорий приложений
         self.stepChanged.emit(f'BLACK|    Получаем список категорий приложений')
@@ -191,13 +191,13 @@ class GetExportTemporaryData(QThread):
             self.ngfw_data['tags'] = {x['id']: x['name'] for x in result}
 
 
-        if write_bin_file(self, self.ngfw_data):
+        if self.write_bin_file(self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации экспорта! Не удалось сохранить служебные структуры данных.')
         else:
             self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')
 
 
-class GetImportTemporaryData(QThread):
+class GetImportTemporaryData(QThread, WriteBinFile, TransformObjectName):
     """Получаем конфигурационные данные с NGFW для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
     def __init__(self, utm):
@@ -215,7 +215,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['zones'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['zones'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список сертификатов
         self.stepChanged.emit(f'BLACK|    Получаем список сертификатов')
@@ -223,7 +223,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['certs'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['certs'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
         self.ngfw_data['certs'][-1] = -1
         self.ngfw_data['certs'][0] = 0
 
@@ -233,7 +233,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['auth_profiles'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['auth_profiles'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
         self.ngfw_data['auth_profiles'][False] = False
 
         # Получаем список локальных групп
@@ -242,7 +242,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['local_groups'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['local_groups'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список локальных пользователей
         self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей')
@@ -250,7 +250,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['local_users'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['local_users'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список профилей SSL
         if self.utm.float_version > 5:
@@ -259,7 +259,7 @@ class GetImportTemporaryData(QThread):
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 return
-            self.ngfw_data['ssl_profiles'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+            self.ngfw_data['ssl_profiles'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов')
@@ -267,7 +267,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['ip_lists'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['ip_lists'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список URL-листов
         self.stepChanged.emit(f'BLACK|    Получаем список URL-листов')
@@ -275,7 +275,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['url_lists'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['url_lists'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список групп категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL')
@@ -283,7 +283,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['url_categorygroups'] = {default_urlcategorygroup.get(x['name'], x['name'].strip().translate(trans_name)): x['id'] for x in result}
+        self.ngfw_data['url_categorygroups'] = {default_urlcategorygroup.get(x['name'], self.get_transformed_name(x['name'], mode=1)[1]): x['id'] for x in result}
 
         # Получаем список категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список категорий URL')
@@ -299,7 +299,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['calendars'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['calendars'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список сервисов')
@@ -307,7 +307,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['services'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['services'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список групп сервисов
         if self.utm.float_version >= 7:
@@ -316,7 +316,7 @@ class GetImportTemporaryData(QThread):
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 return
-            self.ngfw_data['service_groups'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+            self.ngfw_data['service_groups'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список типов контента
         if self.utm.product != 'dcfw':
@@ -325,7 +325,7 @@ class GetImportTemporaryData(QThread):
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 return
-            self.ngfw_data['mime'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+            self.ngfw_data['mime'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений')
@@ -333,7 +333,7 @@ class GetImportTemporaryData(QThread):
         if err:
             self.stepChanged.emit(f'iRED|{result}')
             return
-        self.ngfw_data['application_groups'] = {x['name'].strip().translate(trans_name): x['id'] for x in result}
+        self.ngfw_data['application_groups'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
 
         # Получаем список категорий приложений
         self.stepChanged.emit(f'BLACK|    Получаем список категорий приложений')
@@ -361,7 +361,7 @@ class GetImportTemporaryData(QThread):
             self.ngfw_data['tags'] = {x['name']: x['id'] for x in result}
 
 
-        if write_bin_file(self, self.ngfw_data):
+        if self.write_bin_file(self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Не удалось сохранить служебные структуры данных.')
         else:
             self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')

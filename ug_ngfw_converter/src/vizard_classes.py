@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.11   18.02.2025
+# Версия 2.2   16.04.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -17,7 +17,7 @@ import export_functions as ef
 import import_functions as tf
 import export_from_mc as expmc
 import import_to_mc as mc
-import get_temporary_data as gtd
+import get_ngfw_temporary_data as gtd
 import get_mc_temporary_data as mctd
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
@@ -29,12 +29,12 @@ class SelectAction(QWidget):
         super().__init__()
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации UserGate: NGFW, DCFW, MC</font></b>"
-        text2 = ("Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7, 8</b>), <b>DCFW</b> "
+        text2 = ("Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b> "
                  "и сохранение её в файлах json в каталоге <b>data</b> в текущей директории.")
-        text3 = ("Экспорт группы шаблонов <b>UserGate Management Center</b> версии <b>7, 8</b> "
+        text3 = ("Экспорт группы шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b> "
                  "и сохранение в каталог <b>mc_templates/<i>Group_name</i></b> в текущей директории.")
-        text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7, 8</b>) и <b>DCFW</b>."
-        text5 = "Импорт файлов конфигурации из каталога <b>data</b> в группу шаблонов <b>UserGate Management Center</b> версий <b>7 и 8</b>."
+        text4 = "Импорт файлов конфигурации из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b>."
+        text5 = "Импорт файлов конфигурации из каталога <b>data</b> в группу шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -726,9 +726,9 @@ class SelectImportMode(SelectMode):
                 self.thread = tf.ImportSelectedPoints(
                     self.utm,
                     self.parent.get_config_path(),
-                    self.current_path,
-                    self.selected_points,
-                    arguments
+                    arguments,
+                    selected_path=self.current_path,
+                    selected_points=self.selected_points
                 )
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
@@ -766,7 +766,7 @@ class SelectImportMode(SelectMode):
 
         if self.thread is None:
             self.disable_buttons()
-            self.thread = tf.ImportAll(self.utm, self.parent.get_config_path(), all_points, arguments)
+            self.thread = tf.ImportSelectedPoints(self.utm, self.parent.get_config_path(), arguments, all_points=all_points)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()

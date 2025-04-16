@@ -18,25 +18,22 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_ngfw_converter.py
-# Version 4.5  12.03.2025
+# Version 4.6  16.04.2025
 #--------------------------------------------------------------------------------------------------- 
 #
-import os, sys, json
+import os, sys
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import QSize, Qt, QObject
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QStackedLayout
 import vizard_classes as vc
-import common_func as func
+from common_func import create_dir, message_alert
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.5)")
-
+        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.6)")
         ico = QIcon("favicon.png")
 #        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png"))  # Для PyInstaller
-
         self.setWindowIcon(ico)
         self._current_config_path = None    # Полный путь к каталогу с конфигурацией данного узла
 
@@ -52,13 +49,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
 
         # Создаём базовые каталоги в текущей директории. Если успешно, активируем кнопки экспорта/импорта.
-        err, msg = func.create_dir(self.ngfw_base_path, delete='no')
+        err, msg = create_dir(self.ngfw_base_path, delete='no')
         if err:
-            func.message_alert(self, msg, '')
+            message_alert(self, msg, '')
         else:
-            err, msg = func.create_dir(self.mc_base_path, delete='no')
+            err, msg = create_dir(self.mc_base_path, delete='no')
             if err:
-                func.message_alert(self, msg, '')
+                message_alert(self, msg, '')
             else:
                 self.stacklayout.widget(0).enable_buttons()
 
@@ -73,15 +70,15 @@ class MainWindow(QMainWindow):
         return 'mc_templates'
 
     def get_config_path(self):
-        """Получаем путь к каталогу с конфигурацией данного узла NGFW"""
+        """Получаем путь к каталогу с конфигурацией данного узла"""
         return self._current_config_path
 
     def set_config_path(self, directory):
-        """Запоминаем путь к каталогу с конфигурацией данного узла NGFW"""
+        """Запоминаем путь к каталогу с конфигурацией данного узла"""
         self._current_config_path = os.path.join(self.ngfw_base_path, directory)
 
     def del_config_path(self):
-        """Удаляем путь к каталогу с конфигурацией данного узла NGFW"""
+        """Удаляем путь к каталогу с конфигурацией данного узла"""
         self._current_config_path = None
 
     def closeEvent(self, event):

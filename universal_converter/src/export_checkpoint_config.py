@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 4.4    03.04.2025
+# Версия 4.5    21.04.2025
 #
 
 import os, sys, json, uuid, copy
@@ -450,7 +450,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
         if service['name'] not in self.services:
             self.services[service['name']] = {
                 'name': service['name'],
-                'description': f'Портировано с CheckPoint.\n{service.get("description", '')}',
+                'description': f'Портировано с CheckPoint.\n{service.get("description", "")}',
                 'protocols': [
                     {
                         'proto': service['proto'],
@@ -495,7 +495,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
                                 content = []
                                 self.service_groups[service['name']] = {
                                     'name': service['name'],
-                                    'description': f'Портировано с CheckPoint.\n{service.get("description", '')}',
+                                    'description': f'Портировано с CheckPoint.\n{service.get("description", "")}',
                                     'type': 'servicegroup',
                                     'url': '',
                                     'list_type_update': 'static',

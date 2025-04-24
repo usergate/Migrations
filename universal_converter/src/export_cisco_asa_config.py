@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 2.3 03.04.2025
+# Версия 2.4 24.04.2025
 #
 
 import os, sys, json
@@ -2602,6 +2602,8 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                         iplist_name = self.create_ip_list(ips=[ip], name=f'subnet {ip}', descr='Портировано с Cisco ASA.')
                         data['ip_lists'][iplist_name] = []
                         rule[ips_mode].append(['list_id', iplist_name])
+                else:
+                    self.stepChanged.emit(f'RED|    Error: [Правило МЭ "{rule["name"]}"] Не корректный IP-адрес "{address}"')
 
 
     def create_url_list(self, url, name, rule_name, error):

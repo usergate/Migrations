@@ -526,9 +526,7 @@ class SelectExportMode(QWidget):
         self.parent.stacklayout.setCurrentIndex(0)
 
     def add_item_log(self, message, color='BLACK'):
-        """
-        Добавляем запись лога в log_list.
-        """
+        """Добавляем запись лога в log_list."""
         i = QListWidgetItem(message)
         i.setForeground(QColor(cs.color[color]))
         self.log_list.addItem(i)
@@ -644,7 +642,6 @@ class SelectImportMode(SelectMode):
                     self.utm,
                     self.parent.get_ug_config_path(),
                     arguments,
-                    all_points=None,
                     selected_path=self.current_ug_path,
                     selected_points=self.selected_points
                 )

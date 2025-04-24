@@ -1,5 +1,5 @@
 <h2 align="center">Перенос конфигурации сторонних вендоров на UserGate NGFW, DCFW и MC</h2>
-<h3 align="center">(Версия 8.13)</h3>
+<h3 align="center">(Версия 8.14)</h3>
 
 Программа предназначена для переноса конфигурации с Blue Coat, Cisco ASA, Cisco FPR, Check Point, Fortigate, Huawei, MikroTik на NGFW
 (версий 5, 6, 7), DCFW и Management Center версии 7.1 и выше.
@@ -395,6 +395,7 @@ Fortigate не существуют на UserGate NGFW.<br>
 3. <b>qt.qpa.xcb: could not connect to display</b> - попытка запустить конвертер без графического окружения.
 установите GNOME, KDE, XFCE и т.д.<br>
 
+24.04.2025  Исправлена ошибка экспорта в случае IP-адреса IPv6 в правилах МЭ для Cisco ASA.<br>
 21.04.2025  Исправлены синтаксические ошибки экспорта для CheckPoint.<br>
 11.04.2025  Исправлены ошибки экспорта для Fortigate.<br>
 11.04.2025  Исправлена ошибка экспорта для Cisco ASA.<br>

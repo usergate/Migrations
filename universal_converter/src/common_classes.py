@@ -20,7 +20,7 @@
 #-----------------------------------------------------------------------------
 # common_classes.py
 # Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 1.1  09.04.2025
+# Версия 1.3  24.04.2025
 #
 
 import os, json
@@ -188,6 +188,63 @@ class MyMixedService(TransformObjectName):
         65533: 'X',
     }
 
+    trans_filename = {
+        ord('\n'): None,
+        ord('\t'): None,
+        ord('\r'): None,
+        ord('#'): None,
+        ord('='): '_',
+        ord(':'): '_',
+        ord('"'): None,
+        ord("'"): None,
+        ord('!'): '_',
+        ord('?'): '_',
+        ord('@'): '_',
+        ord(';'): None,
+        ord('$'): None,
+        ord('%'): None,
+        ord('&'): None,
+        ord('^'): None,
+        ord('['): None,
+        ord(']'): None,
+        ord('{'): None,
+        ord('}'): None,
+        ord('<'): None,
+        ord('>'): None,
+        ord('|'): None,
+        ord('/'): '_',
+        ord('\\'): None,
+    }
+
+
+    @staticmethod
+    def create_dir(path, delete='yes'):
+        if not os.path.isdir(path):
+            try:
+                os.makedirs(path)
+            except Exception as err:
+                return 1, f'Ошибка создания каталога: {path} [{err}].'
+            return 0, f'Создан каталог "{path}".'
+        else:
+            if delete == 'yes':
+                for file_name in os.listdir(path):
+                    os.remove(os.path.join(path, file_name))
+            return 0, f'Каталог "{path}" уже существует.'
+
+
+    @staticmethod
+    def pack_ip_address(ip, mask):
+        """Получаем ip и маску (24, 255.255.255.0). Выдаём упакованный IP-адрес."""
+        if ip == '0':
+            ip = '0.0.0.0'
+        if mask == '0':
+            mask = '0.0.0.0'
+        try:
+            interface = ipaddress.ip_interface(f'{ip}/{mask}')
+        except ValueError as err:
+            return 1, err
+        return 0, f'{ip}/{interface.network.prefixlen}'
+
 
     @staticmethod
     def unpack_ip_address(iface):
@@ -265,49 +322,6 @@ class MyConv(MyMixedService):
         ord('\r'): None,
     }
 
-    trans_filename = {
-        ord('\n'): None,
-        ord('\t'): None,
-        ord('\r'): None,
-        ord('#'): None,
-        ord('='): '_',
-        ord(':'): '_',
-        ord('"'): None,
-        ord("'"): None,
-        ord('!'): '_',
-        ord('?'): '_',
-        ord('@'): '_',
-        ord(';'): None,
-        ord('$'): None,
-        ord('%'): None,
-        ord('&'): None,
-        ord('^'): None,
-        ord('['): None,
-        ord(']'): None,
-        ord('{'): None,
-        ord('}'): None,
-        ord('<'): None,
-        ord('>'): None,
-        ord('|'): None,
-        ord('/'): '_',
-        ord('\\'): None,
-    }
-
-    @staticmethod
-    def create_dir(path, delete='yes'):
-        if not os.path.isdir(path):
-            try:
-                os.makedirs(path)
-            except Exception as err:
-                return 1, f'Ошибка создания каталога: {path} [{err}].'
-            return 0, f'Создан каталог "{path}".'
-        else:
-            if delete == 'yes':
-                for file_name in os.listdir(path):
-                    os.remove(os.path.join(path, file_name))
-            return 0, f'Каталог "{path}" уже существует.'
-
-
     def create_ip_list(self, ips=[], name=None, descr=None):
         """
         Создаём IP-лист для правила. Возвращаем имя ip-листа.
@@ -351,23 +365,12 @@ class MyConv(MyMixedService):
         """
         try:
             interface = ipaddress.ip_interface(ip)
-            return f'{ip}/{interface.network.prefixlen}'
+            if isinstance(interface, ipaddress.IPv4Interface):
+                return f'{ip}/{interface.network.prefixlen}'
+            else:
+                return False
         except ValueError as err:
             return False
-
-
-    @staticmethod
-    def pack_ip_address(ip, mask):
-        """Получаем ip и маску (24, 255.255.255.0). Выдаём упакованный IP-адрес."""
-        if ip == '0':
-            ip = '0.0.0.0'
-        if mask == '0':
-            mask = '0.0.0.0'
-        try:
-            interface = ipaddress.ip_interface(f'{ip}/{mask}')
-        except ValueError as err:
-            return 1, err
-        return 0, f'{ip}/{interface.network.prefixlen}'
 
 
     @staticmethod

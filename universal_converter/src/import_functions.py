@@ -20,11 +20,10 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.5   09.04.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.6   16.04.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
-#from datetime import datetime as dt
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import ReadWriteBinFile, MyMixedService
 from services import zone_services
@@ -718,6 +717,16 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.import_vlans(path, list_netflow, list_lldp)
         if 'vpn' in kinds:
             self.import_vpn_interfaces(path, data, list_netflow, list_lldp, ngfw_ifaces)
+
+        # Устанавливаем тэги на интерфейсы
+        tag_relations = {}
+        if self.utm.float_version >= 7.3:
+            for item in data:
+                if 'tags' in item:
+                    tag_relations[f'{item["id"]}:{self.utm.node_name}'] = item['tags']
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'interfaces'):
+                error = 1
 
 
     def import_ipip_interfaces(self, path, data, ngfw_ifaces):
@@ -2314,6 +2323,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         firewall_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
         error = 0
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -2415,6 +2425,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     firewall_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило МЭ "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[firewall_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'fw_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
@@ -2453,6 +2470,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         nat_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -2505,6 +2523,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
             if item['action'] == 'route':
                 self.stepChanged.emit(f'LBLUE|       [Правило "{item["name"]}"] Проверьте шлюз для правила ПБР. В случае отсутствия, установите вручную.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[nat_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'traffic_rule'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил NAT.')
@@ -2718,6 +2743,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         shaper_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -2776,6 +2802,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     shaper_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило пропускной способности "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[shaper_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'shaper_rule'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.')
@@ -2827,6 +2860,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         content_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             if self.utm.float_version < 7.1:
                 item.pop('layer', None)
@@ -2918,6 +2952,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     content_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило контентной фильтрации "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[content_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'content_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
@@ -2942,6 +2983,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         safebrowsing_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -2974,6 +3016,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     safebrowsing_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило веб-безопасности "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[safebrowsing_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'content_fo_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил веб-безопасности.')
@@ -2998,6 +3047,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         tunnel_inspect_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -3027,6 +3077,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     tunnel_inspect_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило инспектирования туннелей "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[tunnel_inspect_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'tunnel_inspection_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования туннелей.')
@@ -3061,6 +3118,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         ssldecrypt_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -3119,6 +3177,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     ssldecrypt_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило инспектирования SSL "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[ssldecrypt_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'content_https_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSL.')
@@ -3143,6 +3208,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         sshdecrypt_rules = {x['name']: x['id'] for x in rules}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -3180,6 +3246,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     sshdecrypt_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило инспектирования SSH "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[sshdecrypt_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'content_ssh_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSH.')
@@ -3375,6 +3448,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         mailsecurity_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -3434,6 +3508,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     mailsecurity_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[mailsecurity_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'mailsecurity_rule'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты почтового трафика.')
@@ -3551,6 +3632,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         icap_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -3613,6 +3695,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     icap_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    ICAP-правило "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[icap_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'icap_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил ICAP.')
@@ -3692,6 +3781,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         dos_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -3740,6 +3830,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     dos_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило защиты DoS "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[dos_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'dos_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты DoS.')
@@ -3918,6 +4015,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         reverseproxy_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -4024,6 +4122,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     reverseproxy_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Правило reverse-прокси "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[reverseproxy_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'reverseproxy_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
@@ -4440,6 +4545,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         vpn_client_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             try:
@@ -4488,6 +4594,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     vpn_client_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Клиентское правило VPN "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[vpn_client_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'vpn_client_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских правил VPN.')
@@ -4530,6 +4643,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         vpn_server_rules = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
 
+        tag_relations = {}
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('position_layer', None)
@@ -4585,6 +4699,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     vpn_server_rules[item['name']] = result
                     self.stepChanged.emit(f'BLACK|    Серверное правило VPN "{item["name"]}" импортировано.')
+
+            if self.utm.float_version >= 7.3 and 'tags' in item:
+                tag_relations[vpn_server_rules[item['name']]] = item['tags']
+
+        if tag_relations:
+            if self.add_tags_for_objects(tag_relations, 'vpn_server_rules'):
+                error = 1
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверных правил VPN.')
@@ -6983,6 +7104,26 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         return 0
 
 
+    def add_tags_for_objects(self, data, object_type):
+        """Добавляем тэги к объектам определённой группы"""
+        error = 0
+        tag_relations = []
+        for object_id, tags in data.items():
+            for tag in tags:
+                try:
+                    tag_relations.append({
+                        'tag_id': self.ngfw_data['tags'][tag],
+                        'object_id': object_id,
+                        'object_type': object_type
+                    })
+                except KetError as err:
+                    self.parent.stepChanged.emit(f'RED|    Error: Не найден тэг {err}.')
+                    error = 1
+        err, result = self.utm.set_tags_in_objects(tag_relations)
+        if err or error:
+            self.parent.stepChanged.emit(f'RED|    Error: Произошла ошибка при импорте тэгов для {object_type}.')
+
+
 class Zone:
     def __init__(self, parent, zone):
         self.parent = parent
@@ -7131,5 +7272,4 @@ class Zone:
             self.sessions_limit_exclusions = new_sessions_limit_exclusions
             if not self.sessions_limit_exclusions:
                 self.sessions_limit_enabled = False
-
 

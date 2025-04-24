@@ -181,6 +181,15 @@ class GetExportTemporaryData(QThread, WriteBinFile, TransformObjectName):
             return
         self.ngfw_data['l7_apps'] = result
 
+        # Получаем список тэгов
+        if self.utm.float_version >= 7.3:
+            self.stepChanged.emit(f'BLACK|    Получаем список тэгов')
+            err, result = self.utm.get_tags_list()
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.ngfw_data['tags'] = {x['id']: x['name'] for x in result}
+
 
         if self.write_bin_file(self.ngfw_data):
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации экспорта! Не удалось сохранить служебные структуры данных.')
@@ -341,6 +350,15 @@ class GetImportTemporaryData(QThread, WriteBinFile, TransformObjectName):
             self.stepChanged.emit(f'iRED|{result}')
             return
         self.ngfw_data['l7_apps'] = {value: key for key, value in result.items()}
+
+        # Получаем список тэгов
+        if self.utm.float_version >= 7.3:
+            self.stepChanged.emit(f'BLACK|    Получаем список тэгов')
+            err, result = self.utm.get_tags_list()
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                return
+            self.ngfw_data['tags'] = {x['name']: x['id'] for x in result}
 
 
         if self.write_bin_file(self.ngfw_data):

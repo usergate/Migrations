@@ -361,6 +361,22 @@ class McXmlRpc:
             return 1, f'Error mclib.get_realm_services_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает лист сервисов (список словарей).
 
+    def get_realm_idps_signatures(self, start=0, limit=50000, query={}):
+        """Получить список сигнатур IDPS всех шаблонов области"""
+        try:
+            result = self._server.v2.ccidps.realm.signatures.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_idps_signatures: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_realm_l7_signatures(self, start=0, limit=50000, query={}):
+        """Получить список приложений l7 всех шаблонов области"""
+        try:
+            result = self._server.v1.ccl7.realm.signatures.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_realm_l7_signatures: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
 ######## Settings ###########################################################################################
     def get_template_general_settings(self, template_id):
         """Get NGFW general setting value"""

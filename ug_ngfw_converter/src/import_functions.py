@@ -29,7 +29,7 @@ from common_classes import ReadWriteBinFile, MyMixedService
 from services import zone_services
 
 
-class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
+class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     """Импортируем разделы конфигурации на NGFW"""
     stepChanged = pyqtSignal(str)
 
@@ -179,7 +179,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('iGREEN|Импорт конфигурации завершён.\n')
 
 
-    #------------------------------------------ UserGate -------------------------------------------------------
+    #------------------------------------------ UserGate -------------------------------------------
     def import_certificates(self, path):
         """Импортируем сертификаты"""
         self.stepChanged.emit('BLUE|Импорт сертификатов в раздел "UserGate/Сертификаты".')

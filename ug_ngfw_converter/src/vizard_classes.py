@@ -7,18 +7,18 @@
 import os, json, ipaddress
 from datetime import datetime as dt
 from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
-from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog)
 import common_func as func
 import config_style as cs
-import export_functions as ef
-import import_functions as tf
+import export_from_ngfw as ef
 import export_from_mc as expmc
-import import_to_mc as mc
 import get_ngfw_temporary_data as gtd
-import get_mc_temporary_data as mctd
+from get_mc_temporary_data import GetMcTemporaryData
+from import_to_mc import ImportMcSelectedPoints
+from import_functions import ImportNgfwSelectedPoints
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
 
@@ -69,7 +69,7 @@ class SelectAction(QWidget):
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
 
-        self.btn_import_mc = QPushButton("Импорт конфигурации в группу шаблонов\nUG Management Center")
+        self.btn_import_mc = QPushButton("Импорт конфигурации NGFW в группу\nшаблонов UG Management Center")
         self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import_mc.setFont(btn_font)
         self.btn_import_mc.setFixedWidth(280)
@@ -79,12 +79,12 @@ class SelectAction(QWidget):
         layout = QGridLayout()
         layout.addWidget(self.btn_export, 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(label2, 0, 1)
-        layout.addWidget(self.btn_export_mc, 1, 0)
-        layout.addWidget(label3, 1, 1)
-        layout.addWidget(self.btn_import, 2, 0)
-        layout.addWidget(label4, 2, 1)
-        layout.addWidget(self.btn_import_mc, 3, 0)
-        layout.addWidget(label5, 3, 1)
+        layout.addWidget(self.btn_import, 1, 0)
+        layout.addWidget(label4, 1, 1)
+        layout.addWidget(self.btn_import_mc, 2, 0)
+        layout.addWidget(label5, 2, 1)
+        layout.addWidget(self.btn_export_mc, 3, 0)
+        layout.addWidget(label3, 3, 1)
         layout.setHorizontalSpacing(15)
         layout.setVerticalSpacing(15)
         layout.setColumnStretch(1, 10)
@@ -156,6 +156,7 @@ class SelectMode(QWidget):
         self.product = 'NGFW'
         self.thread = None
         self.log_list = QListWidget()
+        self.tmp_list = []
         
         self.title = QLabel()
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -309,12 +310,23 @@ class SelectMode(QWidget):
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
-        self.add_item_log(message, color=color)
-        self.log_list.scrollToBottom()
+        if color == 'RED':
+            self.add_item_log(message, color=color)
+            self.log_list.scrollToBottom()
+        elif color in ('BLACK', 'NOTE'):
+            self.tmp_list.append((message, color))
+        else:
+            if self.tmp_list:
+                for x in self.tmp_list:
+                    self.add_item_log(x[0], color=x[1])
+                self.tmp_list.clear()
+            self.add_item_log(message, color=color)
+            self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
     def on_finished(self):
+        self.tmp_list.clear()
         self.thread = None
         self.enable_buttons()
 
@@ -373,7 +385,12 @@ class SelectExportMode(SelectMode):
         if self.selected_points:
             self.disable_buttons()
             if self.thread is None:
-                self.thread = ef.ExportSelectedPoints(self.utm, self.parent.get_config_path(), self.current_path, self.selected_points)
+                self.thread = ef.ExportSelectedPoints(
+                    self.utm,
+                    self.parent.get_config_path(),
+                    selected_path=self.current_path,
+                    selected_points=self.selected_points
+                )
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -394,7 +411,7 @@ class SelectExportMode(SelectMode):
 
         self.disable_buttons()
         if self.thread is None:
-            self.thread = ef.ExportAll(self.utm, self.parent.get_config_path(), all_points)
+            self.thread = ef.ExportSelectedPoints(self.utm, self.parent.get_config_path(), all_points=all_points)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
@@ -723,7 +740,7 @@ class SelectImportMode(SelectMode):
                 if not func.check_auth(self):
                     self.run_page_0()
 
-                self.thread = tf.ImportSelectedPoints(
+                self.thread = ImportNgfwSelectedPoints(
                     self.utm,
                     self.parent.get_config_path(),
                     arguments,
@@ -766,7 +783,7 @@ class SelectImportMode(SelectMode):
 
         if self.thread is None:
             self.disable_buttons()
-            self.thread = tf.ImportSelectedPoints(self.utm, self.parent.get_config_path(), arguments, all_points=all_points)
+            self.thread = ImportNgfwSelectedPoints(self.utm, self.parent.get_config_path(), arguments, all_points=all_points)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
@@ -890,7 +907,7 @@ class SelectMcImportMode(SelectMode):
         """
         if self.thread is None:
             self.disable_buttons()
-            self.thread = mctd.GetImportTemporaryData(self.utm, self.template_id, self.templates)
+            self.thread = GetMcTemporaryData(self.utm, self.template_id, self.templates)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
@@ -984,14 +1001,16 @@ class SelectMcImportMode(SelectMode):
                     self.set_arguments(node_name, arguments)
             if self.thread is None:
                 self.disable_buttons()
-                self.thread = mc.ImportSelectedPoints(self.utm,
-                                                      self.parent.get_config_path(),
-                                                      self.current_path,
-                                                      self.selected_points,
-                                                      self.template_id,
-                                                      self.templates,
-                                                      arguments,
-                                                      node_name)
+                self.thread = ImportMcSelectedPoints(
+                    self.utm,
+                    self.parent.get_config_path(),
+                    self.template_id,
+                    self.templates,
+                    arguments,
+                    node_name,
+                    selected_path = self.current_path,
+                    selected_points = self.selected_points
+                )
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -1027,13 +1046,15 @@ class SelectMcImportMode(SelectMode):
 
         if self.thread is None:
             self.disable_buttons()
-            self.thread = mc.ImportAll(self.utm,
-                                       self.parent.get_config_path(),
-                                       all_points,
-                                       self.template_id,
-                                       self.templates,
-                                       arguments,
-                                       node_name)
+            self.thread = ImportMcSelectedPoints(
+                            self.utm,
+                            self.parent.get_config_path(),
+                            self.template_id,
+                            self.templates,
+                            arguments,
+                            node_name,
+                            all_points=all_points
+                            )
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()

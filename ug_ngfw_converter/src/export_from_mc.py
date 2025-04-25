@@ -19,18 +19,18 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы экспорта конфигурации из шаблона UserGate Management Center.
-# Версия 1.1  11.03.2025
+# Версия 1.2  21.04.2025
 #
 
-import os, sys, json, time
-import common_func as func
+import os, sys, json
 from datetime import datetime as dt
 from xmlrpc.client import DateTime as class_DateTime
 from PyQt6.QtCore import QThread, pyqtSignal
-from services import trans_filename, default_urlcategorygroup
+from common_classes import MyMixedService
+from services import default_urlcategorygroup
 
 
-class ExportAll(QThread):
+class ExportAll(QThread, MyMixedService):
     """Экспортируем все шаблоны из данной группы шаблонов МС"""
     stepChanged = pyqtSignal(str)
     
@@ -250,13 +250,9 @@ class ExportAll(QThread):
                 self.stepChanged.emit(f'NOTE|Экспорт раздела "{item}" в настоящее время не реализован.')
 
         if self.error:
-            self.stepChanged.emit('ORANGE| ')
             self.stepChanged.emit(f'iORANGE|Экспорт группы шаблонов "{self.group_name}" прошёл с ошибками!\n')
-            self.stepChanged.emit('ORANGE| ')
         else:
-            self.stepChanged.emit('GREEN| ')
-            self.stepChanged.emit(f'iGREEN|Экспорт группы шаблонов "{self.group_name}" завершён.')
-            self.stepChanged.emit('GREEN| ')
+            self.stepChanged.emit(f'iGREEN|Экспорт группы шаблонов "{self.group_name}" завершён.\n')
 
 
     #----------------------------------------------- Библиотека --------------------------------------------------------
@@ -294,7 +290,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Morphology')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -331,7 +327,7 @@ class ExportAll(QThread):
                     item.pop('template_id')
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Services')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -381,7 +377,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/ServicesGroups')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -415,7 +411,7 @@ class ExportAll(QThread):
             self.stepChanged.emit(f'sGREEN|    Экспорт из шаблона "{template_name}".')
             if data:
                 path = os.path.join(self.group_path, template_name, 'Libraries/IPAddresses')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -447,12 +443,12 @@ class ExportAll(QThread):
                     item['content'] = result
                 item.pop('id', None)
 
-                file_name = item['name'].strip().translate(trans_filename)
+                file_name = item['name'].strip().translate(self.trans_filename)
                 json_file = os.path.join(path, f'{file_name}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(item, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       Список IP-адресов "{item["name"]}" выгружен в файл "{json_file}".')
-                time.sleep(0.02)
+                self.msleep(3)
 
             if error:
                 self.stepChanged.emit(f'ORANGE|    [Шаблон "{template_name}"] Произошла ошибка при экспорте списков IP-адресов. Списки IP-адресов выгружены в каталог "{path}".')
@@ -496,7 +492,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Useragents')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -549,7 +545,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/ContentTypes')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -583,7 +579,7 @@ class ExportAll(QThread):
             self.stepChanged.emit(f'sGREEN|    Экспорт из шаблона "{template_name}".')
             if data:
                 path = os.path.join(self.group_path, template_name, 'Libraries/URLLists')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -611,12 +607,12 @@ class ExportAll(QThread):
                     item['content'] = result
                 item.pop('id', None)
 
-                file_name = item['name'].strip().translate(trans_filename)
+                file_name = item['name'].strip().translate(self.trans_filename)
                 json_file = os.path.join(path, f'{file_name}.json')
                 with open(json_file, 'w') as fh:
                     json.dump(item, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       Список URL "{item["name"]}" выгружен в файл "{json_file}".')
-                time.sleep(0.02)
+                self.msleep(3)
 
             if error:
                 self.stepChanged.emit(f'ORANGE|    [Шаблон "{template_name}"] Произошла ошибка при экспорте списков URL. Списки URL выгружены в каталог "{path}".')
@@ -660,7 +656,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/TimeSets')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -697,7 +693,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/BandwidthPools')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -727,7 +723,7 @@ class ExportAll(QThread):
 
             if data:
                 path = os.path.join(self.group_path, template_name, 'Libraries/ResponcePages')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -790,7 +786,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/URLCategories')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -831,7 +827,7 @@ class ExportAll(QThread):
                         item['categories'] = [self.mc_data['url_categories'][x] for x in item['categories']]
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/OverURLCategories')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -865,7 +861,7 @@ class ExportAll(QThread):
                     item['l7categories'] = [self.mc_data['l7_categories'][x[1]] for x in item['l7categories']]
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Applications')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -895,11 +891,17 @@ class ExportAll(QThread):
                     self.mc_data['app_profiles'][item['id']] = item['name']
                     item.pop('id', None)
                     item.pop('template_id', None)
+                    new_overrides = []
                     for app in item['overrides']:
-                        app['id'] = self.mc_data['l7_apps'][app['id']]
+                        try:
+                            app['id'] = self.mc_data['l7_apps'][app['id']]
+                            new_overrides.append(app)
+                        except KeyError:
+                            pass            # После обновления сигнатур некоторые могут отсутствовать.
+                    item['overrides'] = new_overrides
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/ApplicationProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -953,7 +955,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/ApplicationGroups')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1006,7 +1008,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Emails')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1059,7 +1061,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Phones')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1096,7 +1098,7 @@ class ExportAll(QThread):
                     item.pop('attributes', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/IDPSSignatures')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1138,7 +1140,7 @@ class ExportAll(QThread):
                         app.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/IDPSProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1176,7 +1178,7 @@ class ExportAll(QThread):
                     item.pop('cc', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/NotificationProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1209,7 +1211,7 @@ class ExportAll(QThread):
                     item.pop('cc', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/NetflowProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1242,7 +1244,7 @@ class ExportAll(QThread):
                     item.pop('cc', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/LLDPProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1275,7 +1277,7 @@ class ExportAll(QThread):
                     item.pop('cc', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/SSLProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1308,7 +1310,7 @@ class ExportAll(QThread):
                     item.pop('cc', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/SSLForwardingProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1340,7 +1342,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/HIPObjects')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1383,7 +1385,7 @@ class ExportAll(QThread):
                     item['hip_objects'] = new_hip_objects
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/HIPProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1420,7 +1422,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/BfdProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1454,7 +1456,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/BfdProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1501,7 +1503,7 @@ class ExportAll(QThread):
                             condition['content_types'] = new_content_types
 
                 path = os.path.join(self.group_path, template_name, 'Libraries/Scenarios')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     return 1
@@ -1621,7 +1623,7 @@ class ExportAll(QThread):
                     zone['services_access'] = new_services_access
 
                 zones_path = os.path.join(self.group_path, template_name, 'Network/Zones')
-                err, msg = func.create_dir(zones_path)
+                err, msg = self.create_dir(zones_path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте зон.')
@@ -1683,7 +1685,7 @@ class ExportAll(QThread):
 
                     new_ipv4 = []
                     for ips in item['ipv4']:
-                        err, result = func.pack_ip_addr(ips['ip'], ips['mask'])
+                        err, result = self.pack_ip_address(ips['ip'], ips['mask'])
                         if err:
                             self.stepChanged.emit(f'RED|    Error [Шаблон "{template_name}"]. Не удалось преобразовать IP: "{ips}" для интерфейса "{item["name"]}".')
                             item['description'] = f'{item["description"]}\nError: Не удалось преобразовать IP: "{ips}".'
@@ -1695,7 +1697,7 @@ class ExportAll(QThread):
                 data.sort(key=lambda x: x['name'])
 
                 ifaces_path = os.path.join(self.group_path, template_name, 'Network/Interfaces')
-                err, msg = func.create_dir(ifaces_path)
+                err, msg = self.create_dir(ifaces_path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error: Произошла ошибка при экспорте интерфейсов.')
@@ -1721,7 +1723,7 @@ class ExportAll(QThread):
 
         for template_id, template_name in self.templates.items():
             gateways_path = os.path.join(self.group_path, template_name, 'Network/Gateways')
-            err, msg = func.create_dir(gateways_path)
+            err, msg = self.create_dir(gateways_path)
             if err:
                 self.stepChanged.emit(f'RED|    {msg}')
                 self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте шлюзов.')
@@ -1784,7 +1786,7 @@ class ExportAll(QThread):
                     item.pop('_cc_node_name', None)
 
                 path = os.path.join(self.group_path, template_name, 'Network/DHCP')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error: Произошла ошибка при экспорте настроек DHCP.')
@@ -1805,7 +1807,7 @@ class ExportAll(QThread):
 
         for template_id, template_name in self.templates.items():
             dns_path = os.path.join(self.group_path, template_name, 'Network/DNS')
-            err, msg = func.create_dir(dns_path)
+            err, msg = self.create_dir(dns_path)
             if err:
                 self.stepChanged.emit(f'RED|    {msg}')
                 self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте настроек DNS.')
@@ -1940,7 +1942,7 @@ class ExportAll(QThread):
                     item['pimsm'].pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'Network/VRF')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте настроек VRF.')
@@ -1991,7 +1993,7 @@ class ExportAll(QThread):
                     item['routers'] = new_routers
 
                 path = os.path.join(self.group_path, template_name, 'Network/WCCP')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте списка правил WCCP.')
@@ -2049,7 +2051,7 @@ class ExportAll(QThread):
 
                     # Для каждого сертификата создаём свой каталог.
                     path_cert = os.path.join(certs_path, item['name'])
-                    err, msg = func.create_dir(path_cert)
+                    err, msg = self.create_dir(path_cert)
                     if err:
                         self.stepChanged.emit(f'RED|          {msg}')
                         self.stepChanged.emit(f'ORANGE|          Error: Не удалось создать каталог для сертификата "{item["name"]}".')
@@ -2163,7 +2165,7 @@ class ExportAll(QThread):
                         return 1
 
                 path = os.path.join(self.group_path, template_name, 'UserGate/UserCertificateProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта профилей пользовательских сертификатов.')
@@ -2211,7 +2213,7 @@ class ExportAll(QThread):
                     item.pop('all_users', None)
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/Groups')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта списка локальных групп.')
@@ -2260,7 +2262,7 @@ class ExportAll(QThread):
                     item.pop('id', None)
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/Users')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта списка локальных пользователей.')
@@ -2309,7 +2311,7 @@ class ExportAll(QThread):
                         return 1
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/MFAProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта списка MFA профилей.')
@@ -2339,7 +2341,7 @@ class ExportAll(QThread):
 
             if result:
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/AuthServers')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|       {msg}')
                     self.stepChanged.emit(f'ORANGE|       Произошла ошибка при экспорте списка серверов аутентификации.')
@@ -2446,7 +2448,7 @@ class ExportAll(QThread):
                                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/AuthProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта профилей аутентификации.')
@@ -2513,7 +2515,7 @@ class ExportAll(QThread):
                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/CaptiveProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта Captive-профилей.')
@@ -2568,7 +2570,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/CaptivePortal')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил Captive-портала.')
@@ -2605,7 +2607,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/TerminalServers')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта списка терминальных серверов.')
@@ -2661,7 +2663,7 @@ class ExportAll(QThread):
                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/UserIDagent')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта свойств агента UserID.')
@@ -2717,7 +2719,7 @@ class ExportAll(QThread):
 #                            error = 1
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/UserIDagent')
-                err, msg = func.create_dir(path, delete='no')
+                err, msg = self.create_dir(path, delete='no')
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта UserID агент коннекторов.')
@@ -2751,7 +2753,7 @@ class ExportAll(QThread):
 
             self.stepChanged.emit(f'sGREEN|    Экспорт из шаблона {template_name}.')
             path = os.path.join(self.group_path, template_name, 'UserGate/GeneralSettings')
-            err, msg = func.create_dir(path)
+            err, msg = self.create_dir(path)
             if err:
                 self.stepChanged.emit(f'RED|    {msg}')
                 self.stepChanged.emit(f'RED|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта настроек.')
@@ -3061,7 +3063,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'UserGate/Administrators')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|       {msg}')
                     self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта настроек Администраторов.')
@@ -3162,7 +3164,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
 
                 path = os.path.join(self.group_path, template_name, 'NetworkPolicies/Firewall')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил МЭ.')
@@ -3220,7 +3222,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
 
                 path = os.path.join(self.group_path, template_name, 'NetworkPolicies/NATandRouting')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил NAT.')
@@ -3258,7 +3260,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/ICAPServers')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта серверов ICAP.')
@@ -3292,7 +3294,7 @@ class ExportAll(QThread):
                     item.pop('grid_position', None)
 
                 path = os.path.join(self.group_path, template_name, 'GlobalPortal/ReverseProxyServers')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта серверов reverse-прокси.')
@@ -3313,7 +3315,7 @@ class ExportAll(QThread):
 
         for template_id, template_name in self.templates.items():
             path = os.path.join(self.group_path, template_name, 'NetworkPolicies/LoadBalancing')
-            err, msg = func.create_dir(path)
+            err, msg = self.create_dir(path)
             if err:
                 self.stepChanged.emit(f'RED|    {msg}')
                 self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил балансировки нагрузки.')
@@ -3459,7 +3461,7 @@ class ExportAll(QThread):
                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'NetworkPolicies/TrafficShaping')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил пропускной способности.')
@@ -3549,7 +3551,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/ContentFiltering')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил фильтрации контента.')
@@ -3597,7 +3599,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/SafeBrowsing')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил веб-безопасности.')
@@ -3641,7 +3643,7 @@ class ExportAll(QThread):
                     error, item['cc_network_devices'] = self.get_network_devices(item['cc_network_devices'], item['name'], error, template_name)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/TunnelInspection')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил инспектирования туннелей.')
@@ -3699,7 +3701,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/SSLInspection')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил инспектирования SSL.')
@@ -3750,7 +3752,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/SSHInspection')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|    Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил инспектирования SSH.')
@@ -3789,7 +3791,7 @@ class ExportAll(QThread):
             error, data['black_list'] = self.get_ips_name('black_list', data['black_list'], 'antispam DNSBL', error, template_name)
 
             path = os.path.join(self.group_path, template_name, 'SecurityPolicies/MailSecurity')
-            err, msg = func.create_dir(path)
+            err, msg = self.create_dir(path)
             if err:
                 self.stepChanged.emit(f'RED|       {msg}')
                 self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил защиты почтового трафика.')
@@ -3901,7 +3903,7 @@ class ExportAll(QThread):
                     item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/ICAPRules')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил ICAP.')
@@ -3939,7 +3941,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/DoSProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта профилей DoS.')
@@ -3992,7 +3994,7 @@ class ExportAll(QThread):
                             error = 1
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/DoSRules')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил защиты DoS.')
@@ -4039,7 +4041,7 @@ class ExportAll(QThread):
                         error, item['mapping_url_certificate_id'] = self.get_certificate_name(item['mapping_url_certificate_id'], item['name'], error, template_name)
 
                 path = os.path.join(self.group_path, template_name, 'GlobalPortal/WebPortal')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта ресурсов веб-портала.')
@@ -4110,7 +4112,7 @@ class ExportAll(QThread):
                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'GlobalPortal/ReverseProxyRules')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил reverse-прокси.')
@@ -4151,7 +4153,7 @@ class ExportAll(QThread):
                         error, item['certificate_id'] = self.get_certificate_name(item['certificate_id'], item['name'], error, template_name)
 
                 path = os.path.join(self.group_path, template_name, 'VPN/ClientSecurityProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта клиентских профилей безопасности VPN.')
@@ -4198,7 +4200,7 @@ class ExportAll(QThread):
                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'VPN/ServerSecurityProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта серверных профилей безопасности VPN.')
@@ -4258,7 +4260,7 @@ class ExportAll(QThread):
                                 error = 1
 
                 path = os.path.join(self.group_path, template_name, 'VPN/VPNNetworks')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта сетей VPN.')
@@ -4305,7 +4307,7 @@ class ExportAll(QThread):
                         error = 1
 
                 path = os.path.join(self.group_path, template_name, 'VPN/ClientRules')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта клиентских правил VPN.')
@@ -4369,7 +4371,7 @@ class ExportAll(QThread):
                             error = 1
 
                 path = os.path.join(self.group_path, template_name, 'VPN/ServerRules')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта серверных правил VPN.')
@@ -4419,7 +4421,7 @@ class ExportAll(QThread):
                         error, item['phones'] = self.get_phone_groups(item['phones'], item['name'], error, template_name)
 
                 path = os.path.join(self.group_path, template_name, 'Notifications/AlertRules')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил оповещений.')
@@ -4459,7 +4461,7 @@ class ExportAll(QThread):
                     item.pop('readonly', None)
 
                 path = os.path.join(self.group_path, template_name, 'Notifications/SNMPSecurityProfiles')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта профилей безопасности SNMP.')
@@ -4499,7 +4501,7 @@ class ExportAll(QThread):
                             error = 1
 
                 path = os.path.join(self.group_path, template_name, 'Notifications/SNMP')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил SNMP.')
@@ -4535,7 +4537,7 @@ class ExportAll(QThread):
                     item.pop('template_id', None)
             
                 path = os.path.join(self.group_path, template_name, 'Notifications/SNMPParameters')
-                err, msg = func.create_dir(path)
+                err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
                     self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта параметров SNMP.')

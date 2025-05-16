@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.6   16.04.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.7   16.05.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -46,6 +46,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.new_vlans = arguments['new_vlans']
         self.ngfw_ports = arguments['ngfw_ports']
         self.dhcp_settings = arguments['dhcp_settings']
+        self.adapter_ports = arguments['adapter_ports']
         self.error = 0
         self.import_funcs = {
             'Morphology': self.import_morphology_lists,
@@ -682,8 +683,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN" и "VPN" в раздел "Сеть/Интерфейсы".')
 
         kinds = {item['kind'] for item in data}
-        if kinds.isdisjoint({'tunnel', 'vlan', 'vpn'}):
-            self.stepChanged.emit('GRAY|    Нет интерфейсов "TUNNEL", "VLAN", "VPN" для импорта.')
+        if kinds.isdisjoint({'tunnel', 'vlan', 'vpn', 'bond'}):
+            self.stepChanged.emit('GRAY|    Нет интерфейсов "TUNNEL", "VLAN", "VPN", "BOND" для импорта.')
             return
 
         err, result = self.utm.get_interfaces_list()
@@ -713,6 +714,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         if 'tunnel' in kinds:
             self.import_ipip_interfaces(path, data, ngfw_ifaces)
+        if 'bond' in kinds:
+            self.import_bonds(list_netflow, list_lldp, ngfw_ifaces)
         if 'vlan' in kinds:
             self.import_vlans(path, list_netflow, list_lldp)
         if 'vpn' in kinds:
@@ -778,6 +781,84 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('ORANGE|       Произошла ошибка при импорте интерфейсов GRE/IPIP/VXLAN.')
         else:
             self.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
+
+
+    def import_bonds(self, list_netflow, list_lldp, ngfw_ifaces):
+        """Импортируем интерфесы BOND. Нельзя использовать интерфейсы Management и slave."""
+        self.stepChanged.emit('BLUE|    Импорт интерфейсов bond в раздел "Сеть/Интерфейсы".')
+        error = 0
+        if not self.adapter_ports:
+            self.stepChanged.emit('ORANGE|       Нет свободных адаптеров для импорта bond-интерфейсов.')
+            self.error = 1
+            return
+
+        for item in self.iface_settings:
+            if 'kind' in item and item['kind'] == 'bond':
+                if item['name'] in ngfw_ifaces:
+                    self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на NGFW.')
+                    continue
+                item.pop('id', None)
+                item.pop('mac', None)
+                item.pop('master', None)
+                item.pop('running', None)
+                item.pop('kind', None)
+                
+                new_slaves = []
+                for port in item['bonding']['slaves']:
+                    if port in self.adapter_ports:
+                        self.adapter_ports.remove(port)
+                        new_slaves.append(port)
+                    else:
+                        self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] порт "{port}" занят или не существует на NGFW.')
+                        error = 1
+                if not new_slaves:
+                    self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] Нет интерфейсов. Bond не импортирован')
+                    error = 1
+                    continue
+                item['bonding']['slaves'] = new_slaves
+
+                if item['zone_id']:
+                    try:
+                        item['zone_id'] = self.ngfw_data['zones'][item['zone_id']]
+                    except KeyError as err:
+                        self.stepChanged.emit(f'RED|       Error: Для интерфейса "{item["name"]}" не найдена зона "{item["zone_id"]}". Импортируйте зоны и повторите попытку.')
+                        item['zone_id'] = 0
+                        error = 1
+
+                if self.utm.float_version < 7.1:
+                    item.pop('ifalias', None)
+                    item.pop('flow_control', None)
+                if self.utm.float_version < 7.0:
+                    item.pop('lldp_profile', None)
+                else:
+                    try:
+                        item['lldp_profile'] = list_lldp[item['lldp_profile']]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|       Error: Для интерфейса "{item["name"]}" не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили lldp.')
+                        item['lldp_profile'] = 'undefined'
+                        error = 1
+                try:
+                    item['netflow_profile'] = list_netflow[item['netflow_profile']]
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: Для интерфейса "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
+                    item['netflow_profile'] = 'undefined'
+                    error = 1
+
+                err, result = self.utm.add_interface_bond(item)
+                if err == 1:
+                    self.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["name"]}" не импортирован]')
+                    error = 1
+                elif err == 2:
+                    self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
+                else:
+                    ngfw_ifaces[item['name']] = 'bond'
+                    self.stepChanged.emit(f'BLACK|       Интерфейс "{item["name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|       Произошла ошибка при импорте интерфейса BOND.')
+        else:
+            self.stepChanged.emit('GREEN|       Импорт интерфейсов bond завершён.')
+
 
 
     def import_vlans(self, path, list_netflow, list_lldp):
@@ -1012,13 +1093,12 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_dhcp_subnets(self, path):
         """Импортируем настойки DHCP"""
+        self.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
         if isinstance(self.ngfw_ports, int):
+            self.stepChanged.emit(self.dhcp_settings)
             if self.ngfw_ports == 1:
-                self.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
-                self.stepChanged.emit(self.dhcp_settings)
                 self.error = 1
             return
-        self.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
         error = 0
 
         err, result = self.utm.get_dhcp_list()

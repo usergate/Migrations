@@ -19,10 +19,10 @@ import export_fortigate_config as fg
 import export_huawei_config as huawei
 import export_checkpoint_config as cp
 import export_mikrotik_config as mikrotik
-import import_functions as tf
 import import_to_mc
-import get_temporary_data as gtd
-from get_mc_temporary_data import ImportMcTemporaryData
+import get_ngfw_temporary_data as gtd
+from get_mc_temporary_data import GetMcTemporaryData
+from import_functions import ImportNgfwSelectedPoints # as tf
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
 
@@ -580,7 +580,7 @@ class SelectImportMode(SelectMode):
 
     def init_temporary_data(self):
         """
-        Запускаем в потоке gtd.GetTemporaryData() для получения часто используемых данных с NGFW.
+        Запускаем в потоке gtd.GetImportTemporaryData() для получения часто используемых данных с NGFW.
         """
         if self.thread is None:
             self.disable_buttons()
@@ -638,7 +638,7 @@ class SelectImportMode(SelectMode):
                 if not func.check_auth(self):
                     self.run_page_0()
 
-                self.thread = tf.ImportSelectedPoints(
+                self.thread = ImportNgfwSelectedPoints(
                     self.utm,
                     self.parent.get_ug_config_path(),
                     arguments,
@@ -682,7 +682,7 @@ class SelectImportMode(SelectMode):
 
         if self.thread is None:
             self.disable_buttons()
-            self.thread = tf.ImportSelectedPoints(self.utm, self.parent.get_ug_config_path(), arguments, all_points=all_points)
+            self.thread = ImportNgfwSelectedPoints(self.utm, self.parent.get_ug_config_path(), arguments, all_points=all_points)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
@@ -802,11 +802,11 @@ class SelectMcImportMode(SelectMode):
 
     def init_temporary_data(self):
         """
-        Запускаем в потоке ImportMcTemporaryData() для получения часто используемых данных с MC.
+        Запускаем в потоке GetMcTemporaryData() для получения часто используемых данных с MC.
         """
         if self.thread is None:
             self.disable_buttons()
-            self.thread = ImportMcTemporaryData(self.utm, self.template_id, self.templates)
+            self.thread = GetMcTemporaryData(self.utm, self.template_id, self.templates)
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()

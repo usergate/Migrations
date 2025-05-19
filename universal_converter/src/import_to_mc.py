@@ -165,13 +165,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 current_path = os.path.join(self.selected_path, point)
                 if point in self.import_funcs:
                     self.import_funcs[point](current_path)
-                else:
-                    self.error = 1
-                    self.stepChanged.emit(f'RED|Не найдена функция для импорта {point}!')
-#        try:
-#        except Exception as err:
-#            self.error = 1
-#            self.stepChanged.emit(f'RED|Ошибка функции "{self.import_funcs[point].__name__}":  {err}')
+#                else:
+#                    self.error = 1
+#                    self.stepChanged.emit(f'RED|Не найдена функция для импорта {point}!')
 
         # Сохраняем бинарный файл библиотечных данных после изменений во время работы.
         if self.write_bin_file(self.mc_data):
@@ -184,7 +180,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('iGREEN|Импорт конфигурации завершён.\n')
 
 
-    #------------------------------------------ Библиотека ----------------------------------------------------
+    #--------------------------------------- Библиотека -------------------------------------------------
     def import_morphology_lists(self, path):
         """Импортируем списки морфологии"""
         json_file = os.path.join(path, 'config_morphology_lists.json')
@@ -199,12 +195,10 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if self.get_morphology_list():        # Заполняем self.mc_data['morphology']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков морфологии.')
                 return
-
         morphology = self.mc_data['morphology']
 
         for item in data:
-            error, checked_name = self.get_transformed_name(item['name'], err=error, descr='Имя списка морфологии')
-            item['name'] = checked_name
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -243,11 +237,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.stepChanged.emit(f'RED|       {result2}  [Список морфологии "{item["name"]}"]')
                             error = 1
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Список морфологии "{item["name"]}" не найден в шаблоне "{morphology[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Список морфологии "{item["name"]}" не найден в шаблоне "{morphology[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         else:
@@ -278,8 +269,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         services = self.mc_data['services']
 
         for item in data:
-            error, checked_name = self.get_transformed_name(item['name'], err=error, descr='Имя сервиса')
-            item['name'] = checked_name
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервиса')
             if item['name'] in services:
                 if self.template_id == services[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Сервис "{item["name"]}" уже существует в текущем шаблоне.')
@@ -295,12 +285,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     services[item['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|    Сервис "{item["name"]}" импортирован.')
-#            self.msleep(10)
+            self.msleep(3)
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при добавлении сервисов.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт списков сервисов завершён.')
+            self.stepChanged.emit('GREEN|    Импорт списка сервисов завершён')
 
 
     def import_services_groups(self, path):
@@ -317,8 +307,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         servicegroups = self.mc_data['service_groups']
     
         for item in data:
-            error, checked_name = self.get_transformed_name(item['name'], err=error, descr='Имя группы сервисов')
-            item['name'] = checked_name
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -371,11 +360,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.stepChanged.emit(f'RED|       {result2}  [Группа сервисов "{item["name"]}"]')
                             error = 1
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Группа сервисов "{item["name"]}" не найдена в шаблоне "{servicegroups[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Группа сервисов "{item["name"]}" не найдена в шаблоне "{servicegroups[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         else:
@@ -384,7 +370,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'GRAY|       Нет содержимого в группе сервисов "{item["name"]}".')
             else:
                 self.stepChanged.emit(f'GRAY|       Содержимое группы сервисов "{item["name"]}" не обновлено так как она обновляется удалённо.')
-#            self.msleep(10)
+            self.msleep(1)
 
         if error:
             self.error = 1
@@ -416,8 +402,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
-            error, checked_name = self.get_transformed_name(data['name'], err=error, descr='Имя списка IP-адресов')
-            data['name'] = checked_name
+            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка')
             content = data.pop('content')
             data.pop('last_update', None)
 
@@ -446,8 +431,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
-            error, checked_name = self.get_transformed_name(data['name'], err=error, descr='Имя списка IP-адресов')
-            data['name'] = checked_name
+            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка')
             self.stepChanged.emit(f'BLACK|    Импортируем содержимое списка IP-адресов "{data["name"]}".')
 
             if data['name'] not in ip_lists:
@@ -461,29 +445,29 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         new_content = []
                         for item in data['content']:
                             if 'list' in item:
-                                error, checked_name = self.get_transformed_name(item['list'], err=error, descr='Имя списка IP-адресов')
-                                item_value = f'IP-лист "{checked_name}"'
+                                item_list = self.get_transformed_name(item['list'], descr='Имя списка')[1]
+                                item_value = f'IP-лист "{item_list}"'
                                 try:
-                                    item['list'] = ip_lists[checked_name].id
+                                    item['list'] = ip_lists[item_list].id
                                     new_content.append(item)
                                 except KeyError:
-                                    self.stepChanged.emit(f'RED|       Error: {item_value} не добавлен в список так как не найден в данной группе шаблонов.')
+                                    self.stepChanged.emit(f'RED|       Error: [Список IP-адресов "{data["name"]}"] {item_value} не добавлен в список так как не найден в данной группе шаблонов. ')
                                     error = 1
                             else:
                                 new_content.append(item)
-#                            item_value = f'IP-адрес "{item["value"]}"'
+#                                item_value = f'IP-адрес "{item["value"]}"'
                         if not new_content:
                             self.stepChanged.emit(f'uGRAY|       Список "{data["name"]}" не имеет содержимого.')
                             continue
 
-#                        err, result = self.utm.add_template_nlist_item(self.template_id, iplist['id'], item)
-#                        if err == 1:
-#                            self.stepChanged.emit(f'RED|       {result} [{item_value}] не добавлен в список IP-адресов "{data["name"]}"')
-#                            error = 1
-#                        elif err == 3:
-#                            self.stepChanged.emit(f'uGRAY|       {item_value} уже существует.')
-#                        else:
-#                            self.stepChanged.emit(f'BLACK|       Добавлен {item_value}.')
+#                            err, result = self.utm.add_template_nlist_item(self.template_id, iplist['id'], item)
+#                            if err == 1:
+#                                self.stepChanged.emit(f'RED|       {result} [{item_value}] не добавлен в список IP-адресов "{data["name"]}"')
+#                                error = 1
+#                            elif err == 3:
+#                                self.stepChanged.emit(f'uGRAY|       {item_value} уже существует.')
+#                            else:
+#                                self.stepChanged.emit(f'BLACK|       Добавлен {item_value}.')
                         err, result = self.utm.add_template_nlist_items(self.template_id, ip_lists[data['name']].id, new_content)
                         if err == 1:
                             self.stepChanged.emit(f'RED|       {result} [Список IP-адресов "{data["name"]}" содержимое не импортировано]')
@@ -496,7 +480,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'GRAY|       Содержимое списка IP-адресов "{data["name"]}" не обновлено так как он обновляется удалённо.')
             else:
                 self.stepChanged.emit(f'sGREEN|       Содержимое списка IP-адресов "{data["name"]}" не обновлено так как он находится в другом шаблоне.')
-#            self.msleep(10)
+            self.msleep(2)
 
         if error:
             self.error = 1
@@ -519,12 +503,10 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if self.get_useragent_list():        # Заполняем self.mc_data['useragents']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков Useragent браузеров.')
                 return
-
         useragents = self.mc_data['useragents']
 
         for item in data:
-            error, checked_name = self.get_transformed_name(item['name'], err=error, descr='Имя списка Useragent')
-            item['name'] = checked_name
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -587,8 +569,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         mimes = self.mc_data['mime']
 
         for item in data:
-            error, checked_name = self.get_transformed_name(item['name'], err=error, descr='Имя списка Useragent')
-            item['name'] = checked_name
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -641,7 +622,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_url_lists(self, path):
         """Импортировать списки URL в шаблон МС"""
-        self.stepChanged.emit('BLUE|Импорт списков URL в раздел "Библиотеки/Списки URL".')
+        self.stepChanged.emit('BLUE|Импорт списков URL раздела "Библиотеки/Списки URL".')
         
         if not os.path.isdir(path):
             self.stepChanged.emit('GRAY|    Нет списков URL для импорта.')
@@ -662,8 +643,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
-            error, checked_name = self.get_transformed_name(data['name'], err=error, descr='Имя списка URL')
-            data['name'] = checked_name
+            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка')
             content = data.pop('content')
             data.pop('last_update', None)
             if not data['attributes'] or 'threat_level' in data['attributes']:
@@ -712,7 +692,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'GRAY|       Содержимое списка URL "{data["name"]}" не импортировано так как он обновляется удалённо.')
             else:
                 self.stepChanged.emit(f'sGREEN|       Содержимое списка URL "{data["name"]}" не обновлено так как он находится в другом шаблоне.')
-#            self.msleep(10)
+            self.msleep(1)
 
         if error:
             self.error = 1
@@ -766,11 +746,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         elif err2 == 3:
                             self.stepChanged.emit(f'GRAY|       TimeSet "{value["name"]}" уже существует.')
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Календарь "{item["name"]}" не найден в шаблоне "{calendars[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Календарь "{item["name"]}" не найден в шаблоне "{calendars[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         else:
@@ -796,11 +773,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         self.stepChanged.emit('BLUE|Импорт списка "Полосы пропускания" в раздел "Библиотеки/Полосы пропускания".')
         error = 0
-
-        if not self.mc_data['shapers']:
-            if self.get_shapers_list():        # Заполняем self.mc_data['shapers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка "Полосы пропускания".')
-                return
 
         shapers = self.mc_data['shapers']
 
@@ -849,63 +821,59 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         error = 0
         html_files = os.listdir(path)
 
-        if not self.mc_data['response_pages']:
-            if self.get_response_pages():    # Заполняем self.mc_data['response_pages']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка шаблонов страниц.')
-                return
-
         response_pages = self.mc_data['response_pages']
 
-        n = 0
+#        n = 0
         for item in data:
-            if f"{item['name']}.html" in html_files:
-                n += 1
-                if item['name'] in response_pages:
-                    if self.template_id == response_pages[item['name']].template_id:
-                        self.stepChanged.emit(f'uGRAY|    Шаблон страницы "{item["name"]}" уже существует в текущем шаблоне.')
-                        err, result = self.utm.update_template_responsepage(self.template_id, response_pages[item['name']].id, item)
-                        if err:
-                            self.stepChanged.emit(f'RED|    {result}  [Шаблон страницы "{item["name"]}"]')
-                            error = 1
-                            continue
-                        else:
-                            self.stepChanged.emit(f'uGRAY|    Шаблон страницы "{item["name"]}" обновлён.')
-                    else:
-                        self.stepChanged.emit(f'sGREEN|    Шаблон страницы "{item["name"]}" уже существует в шаблоне "{response_pages[item["name"]].template_name}".')
-                        continue
-                else:
-                    err, result = self.utm.add_template_responsepage(self.template_id, item)
+#            if f"{item['name']}.html" in html_files:
+#                n += 1
+            if item['name'] in response_pages:
+                if self.template_id == response_pages[item['name']].template_id:
+                    self.stepChanged.emit(f'uGRAY|    Шаблон страницы "{item["name"]}" уже существует в текущем шаблоне.')
+                    err, result = self.utm.update_template_responsepage(self.template_id, response_pages[item['name']].id, item)
                     if err:
                         self.stepChanged.emit(f'RED|    {result}  [Шаблон страницы "{item["name"]}" не импортирован]')
                         error = 1
                         continue
                     else:
-                        response_pages[item['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
-                        self.stepChanged.emit(f'BLACK|    Шаблон страницы "{item["name"]}" импортирован.')
+                        self.stepChanged.emit(f'uGRAY|    Шаблон страницы "{item["name"]}" обновлён.')
+                else:
+                    self.stepChanged.emit(f'sGREEN|    Шаблон страницы "{item["name"]}" уже существует в шаблоне "{response_pages[item["name"]].template_name}".')
+                    continue
+            else:
+                err, result = self.utm.add_template_responsepage(self.template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result}  [Шаблон страницы "{item["name"]}" не импортирован]')
+                    error = 1
+                    continue
+                else:
+                    response_pages[item['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
+                    self.stepChanged.emit(f'BLACK|    Шаблон страницы "{item["name"]}" импортирован.')
 
+            if f"{item['name']}.html" in html_files:
                 upload_file = os.path.join(path, f"{item['name']}.html")
                 err, result = self.utm.get_realm_upload_session(upload_file)
                 if err:
                     self.stepChanged.emit(f'RED|       {result}')
-                    self.error = 1
+                    error = 1
                 elif result['success']:
                     err2, result2 = self.utm.set_template_responsepage_data(self.template_id, response_pages[item['name']].id, result['storage_file_uid'])
                     if err2:
                         self.stepChanged.emit(f'RED|       {result2} [Страница "{item["name"]}.html" не импортирована]')
-                        self.error = 1
+                        error = 1
                     else:
                         self.stepChanged.emit(f'BLACK|       Страница "{item["name"]}.html" импортирована.')
                 else:
-                    self.error = 1
+                    error = 1
                     self.stepChanged.emit(f'ORANGE|       Error: Не удалось импортировать страницу "{item["name"]}.html".')
-        if not n:
-            self.stepChanged.emit('GRAY|    Нет шаблонов страниц у которых есть HTML-файл страницы.')
+#        if not n:
+#            self.stepChanged.emit('GRAY|    Нет шаблонов страниц у которых есть HTML-файл страницы.')
 
         if error:
             self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка шаблонов страниц.')
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шаблонов страниц.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт списка шаблонов страниц завершён.')
+            self.stepChanged.emit('GREEN|    Импорт шаблонов страниц завершён.')
 
 
     def import_url_categories(self, path):
@@ -921,7 +889,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         url_category_groups = self.mc_data['url_categorygroups']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы URL категорий')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы')
             content = item.pop('content')
             item.pop('last_update', None)
             item.pop('guid', None)
@@ -954,11 +922,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.stepChanged.emit(f'RED|       {result2}  [Категория "{category["name"]}"]')
                             error = 1
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Группа URL категорий "{item["name"]}" не найдена в шаблоне "{url_category_groups[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Группа URL категорий "{item["name"]}" не найдена в шаблоне "{url_category_groups[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         else:
@@ -988,12 +953,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for uid, name in self.templates.items():
             err, result = self.utm.get_template_custom_url_list(uid)
             if err:
-                self.stepChanged.emit('RED|    Произошла ошибка при импорте изменённых категорий URL.\n    {result}')
+                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте изменённых категорий URL.')
                 self.error = 1
                 return
             for x in result:
                 if x['name'] in custom_url:
-                    self.stepChanged.emit('RED|    Категория для URL "{x["name"]}" изменена в нескольких шаблонах группы. Запись из шаблона "{name}" не будет испольована.')
+                    self.stepChanged.emit('ORANGE|    Warning: Категория для URL "{x["name"]}" изменена в нескольких шаблонах группы. Запись из шаблона "{name}" не будет испольована.')
                 else:
                     custom_url[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
@@ -1002,6 +967,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item['categories'] = [self.mc_data['url_categories'][x] for x in item['categories']]
             except KeyError as err:
                 self.stepChanged.emit(f'RED|    Error: В правиле "{item["name"]}" обнаружена несуществующая категория {err}. Правило  не добавлено.')
+                error = 1
                 continue
 
             if item['name'] in custom_url:
@@ -1041,17 +1007,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         error = 0
 
         users_apps = {}
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_app_signatures(uid, query={'query': 'owner = You'})
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return
-            for x in result:
-                if x['name'] in users_apps:
-                    self.stepChanged.emit(f'RED|    Пользовательское приложение "{x["name"]}" обнаружено в нескольких шаблонах группы. Приложение из шаблона "{name}" не будет использовано.')
-                else:
-                    users_apps[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+        err, result = self.utm.get_realm_l7_signatures(query={'query': 'owner = You'})
+        if err:
+            self.stepChanged.emit(f'RED|    {result}')
+            self.error = 1
+            return
+        for x in result:
+            users_apps[x['name']] = BaseObject(id=x['id'], template_id=x['template_id'], template_name=self.templates.get(x['template_id'], None))
 
         for item in data:
             item.pop('signature_id', None)
@@ -1061,7 +1023,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 try:
                     new_l7categories.append(self.mc_data['l7_categories'][category])
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Категория {err} не существует. Категория не добавлена.')
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Категория {err} не существует. Категория не добавлена.')
                     error = 1
             item['l7categories'] = new_l7categories
 
@@ -1075,7 +1037,10 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     else:
                         self.stepChanged.emit(f'uGRAY|       Пользовательское приложение "{item["name"]}" обновлено.')
                 else:
-                    self.stepChanged.emit(f'sGREEN|    Пользовательское приложение "{item["name"]}" уже существует в шаблоне "{users_apps[item["name"]].template_name}".')
+                    if users_apps[item['name']].template_name:
+                        self.stepChanged.emit(f'sGREEN|    Пользовательское приложение "{item["name"]}" уже существует в шаблоне "{users_apps[item["name"]].template_name}".')
+                    else:
+                        self.stepChanged.emit(f'sGREEN|    Пользовательское приложение "{item["name"]}" уже существует в шаблоне, отсутствующем в данной группе шаблонов.')
             else:
                 err, result = self.utm.add_template_app_signature(self.template_id, item)
                 if err:
@@ -1084,7 +1049,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     users_apps[item['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|    Приложение "{item["name"]}" импортировано.')
-#            self.msleep(10)
+            self.msleep(1)
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских приложений.')
@@ -1121,7 +1086,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     app['id'] = l7_apps[app['id']].id
                     new_overrides.append(app)
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error [Правило "{item["name"]}"]. Не найдено приложение {err}. Приложение не добавлено.')
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найдено приложение {err}. Приложение не добавлено.')
                     error = 1
             item['overrides'] = new_overrides
 
@@ -1144,7 +1109,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     l7_profiles[item['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|    Профиль приложений "{item["name"]}" импортирован.')
-#            self.msleep(10)
+            self.msleep(1)
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей приложений.')
@@ -1171,7 +1136,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         error = 0
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы приложений')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -1197,13 +1162,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 if content:
                     for app in content:
                         if 'name' not in app:   # Так бывает при некорректном добавлении приложения через API
-                            self.stepChanged.emit(f'RED|       Error: Приложение "{app}" не добавлено, так как не содержит имя.')
+                            self.stepChanged.emit(f'RED|       Error: [Группа приложений "{item["name"]}"] Приложение "{app}" не добавлено, так как не содержит имя.')
                             error = 1
                             continue
                         try:
                             app['value'] = l7_apps[app['name']].signature_id
                         except KeyError as err:
-                            self.stepChanged.emit(f'RED|       Error: Приложение "{app["name"]}" не импортировано. Такого приложения нет на UG MC.')
+                            self.stepChanged.emit(f'RED|       Error: [Группа приложений "{item["name"]}"] Приложение "{app["name"]}" не импортировано. Такого приложения нет на UG MC.')
                             error = 1
                             continue
 
@@ -1212,11 +1177,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.stepChanged.emit(f'RED|       {result2}  [Группа приложений "{item["name"]}"]')
                             error = 1
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Группа приложений "{item["name"]}" не найдена в шаблоне "{apps_groups[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Группа приложений "{item["name"]}" не найдена в шаблоне "{apps_groups[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         elif err2 == 3:
@@ -1248,11 +1210,10 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if self.get_email_groups():        # Заполняем self.mc_data['email_groups']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте групп почтовых адресов.')
                 return
-
         email_groups = self.mc_data['email_groups']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы почтовых адресов')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -1284,11 +1245,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         elif err2 == 3:
                             self.stepChanged.emit(f'GRAY|       Адрес "{email["value"]}" уже существует.')
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Группа почтовых адресов "{item["name"]}" не найдена в шаблоне "{email_groups[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Группа почтовых адресов "{item["name"]}" не найдена в шаблоне "{email_groups[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         else:
@@ -1323,7 +1281,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         phone_groups = self.mc_data['phone_groups']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы телефонных номеров')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -1355,11 +1313,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         elif err2 == 3:
                             self.stepChanged.emit(f'GRAY|       Номер "{number["value"]}" уже существует.')
                         elif err2 == 7:
-                            message = (
-                                f'       Error: Группа телефонных номеров "{item["name"]}" не найдена в шаблоне "{phone_groups[item["name"]].template_name}".\n'
-                                '          Error: Импорт прерван. Перелогиньтесь в МС и повторите попытку.'
-                            )
-                            self.stepChanged.emit(f'RED|{message}')
+                            message = f'       Error: Группа телефонных номеров "{item["name"]}" не найдена в шаблоне "{phone_groups[item["name"]].template_name}".'
+                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
                             self.error = 1
                             return
                         else:
@@ -1386,32 +1341,36 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('BLUE|Импорт пользовательских сигнатур СОВ в раздел "Библиотеки/Сигнатуры СОВ".')
         error = 0
 
-        if not self.users_signatures:
-            if self.get_idps_users_signatures():        # Заполняем атрибут self.users_signatures
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских сигнатур СОВ.')
+        if not self.mc_data['realm_users_signatures']:
+            if self.get_idps_realm_users_signatures():        # Заполняем атрибут self.mc_data['realm_users_signatures']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте импорте пользовательских сигнатур СОВ.')
                 return
-            
+        users_signatures = self.mc_data['realm_users_signatures']
+
         for item in data:
-            if item['msg'] in self.users_signatures:
-                if self.template_id == self.users_signatures[item['msg']].template_id:
+            if item['msg'] in users_signatures:
+                if self.template_id == users_signatures[item['msg']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Сигнатура СОВ "{item["msg"]}" уже существует в текущем шаблоне.')
-                    err, result = self.utm.update_template_idps_signature(self.template_id, self.users_signatures[item['msg']].id, item)
+                    err, result = self.utm.update_template_idps_signature(self.template_id, users_signatures[item['msg']].id, item)
                     if err:
                         self.stepChanged.emit(f'RED|       {result}  [Сигнатура СОВ "{item["msg"]}"]')
                         error = 1
                     else:
                         self.stepChanged.emit(f'uGRAY|       Сигнатура СОВ "{item["msg"]}" обновлена.')
                 else:
-                    self.stepChanged.emit(f'sGREEN|    Сигнатура СОВ "{item["msg"]}" уже существует в шаблоне "{self.users_signatures[item["msg"]].template_name}".')
+                    if users_signatures[item['msg']].template_name:
+                        self.stepChanged.emit(f'sGREEN|    Сигнатура СОВ "{item["msg"]}" уже существует в шаблоне "{users_signatures[item["msg"]].template_name}".')
+                    else:
+                        self.stepChanged.emit(f'sGREEN|    Сигнатура СОВ "{item["msg"]}" существует в шаблоне, отсутствующем в данной группе.')
             else:
                 err, result = self.utm.add_template_idps_signature(self.template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Сигнатура СОВ "{item["msg"]}" не импортирована]')
                     error = 1
                 else:
-                    self.users_signatures[item['msg']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
+                    users_signatures[item['msg']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|    Сигнатура СОВ "{item["msg"]}" импортирована.')
-#            self.msleep(10)
+            self.msleep(1)
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте пользовательских сигнатур СОВ.')
@@ -1430,25 +1389,24 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         error = 0
 
         # Получаем пользовательские сигнатуры СОВ.
-        if not self.users_signatures:
-            if self.get_idps_users_signatures():        # Заполняем атрибут self.users_signatures
+        if not self.mc_data['realm_users_signatures']:
+            if self.get_idps_realm_users_signatures():        # Заполняем атрибут self.mc_data['realm_users_signatures']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей СОВ.')
                 return
 
         self.stepChanged.emit(f'NOTE|    Получаем список сигнатур СОВ с МС, это может быть долго...')
         err, result = self.utm.get_template_idps_signatures_list(self.template_id)
         if err:
-            self.stepChanged.emit(f'RED|    Произошла ошибка при импорте профилей СОВ.\n    {result}')
+            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте профилей СОВ.')
             self.error = 1
             return
         idps_signatures = {x['msg']: BaseObject(id=x['id'], template_id=self.template_id, template_name=self.templates[self.template_id]) for x in result}
-        idps_signatures.update(self.users_signatures) # Добавляем пользовательские сигнатуры к стандартным.
+        idps_signatures.update(self.mc_data['realm_users_signatures'])
 
         if not self.mc_data['idps_profiles']:
             if self.get_idps_profiles():        # Заполняем self.mc_data['idps_profiles']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей СОВ.')
                 return
-
         idps_profiles = self.mc_data['idps_profiles']
 
         for item in data:
@@ -1464,7 +1422,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     signature['id'] = idps_signatures[signature['msg']].id
                     new_overrides.append(signature)
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error [Профиль СОВ "{item["name"]}"]. Не найдена сигнатура СОВ: {err}.')
+                    self.stepChanged.emit(f'RED|    Error: [Профиль СОВ "{item["name"]}"] Не найдена сигнатура СОВ: {err}.')
                     error = 1
             item['overrides'] = new_overrides
 
@@ -1511,7 +1469,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         notification_profiles = self.mc_data['notification_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля оповещения')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in notification_profiles:
                 if self.template_id == notification_profiles[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Профиль оповещения "{item["name"]}" уже существует в текущем шаблоне.')
@@ -1557,7 +1515,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         netflow_profiles = self.mc_data['netflow_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля netflow')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in netflow_profiles:
                 if self.template_id == netflow_profiles[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Профиль netflow "{item["name"]}" уже существует в текущем шаблоне.')
@@ -1601,7 +1559,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         lldp_profiles = self.mc_data['lldp_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля LLDP')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in lldp_profiles:
                 if self.template_id == lldp_profiles[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Профиль LLDP "{item["name"]}" уже существует в текущем шаблоне.')
@@ -1642,7 +1600,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in data:
             if 'supported_groups' not in item:
                 item['supported_groups'] = []
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля SSL')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
 
             if item['name'] in ssl_profiles:
                 if self.template_id == ssl_profiles[item['name']].template_id:
@@ -1687,7 +1645,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         ssl_forward_profiles = self.mc_data['ssl_forward_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля пересылки SSL')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in ssl_forward_profiles:
                 if self.template_id == ssl_forward_profiles[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Профиль пересылки SSL "{item["name"]}" уже существует в текущем шаблоне.')
@@ -1906,7 +1864,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         self.stepChanged.emit('BLUE|Импорт списка сценариев в раздел "Библиотеки/Сценарии".')
         error = 0
-
         scenarios = self.mc_data['scenarios']
 
         for item in data:
@@ -1920,8 +1877,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             elif x[0] == 'group':
                                 x[1] = self.mc_data['apps_groups'][x[1]].id
                         except KeyError as err:
-                            self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа приложений "{err}". Загрузите группы приложений и повторите попытку.')
-                            item['description'] = f'{item["description"]}\nError: Не найдена группа приложений "{err}".'
+                            self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа приложений {err}. Загрузите группы приложений и повторите попытку.')
+                            item['description'] = f'{item["description"]}\nError: Не найдена группа приложений {err}.'
                             condition['apps'] = []
                             error = 1
                             break
@@ -1929,8 +1886,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     try:
                         condition['content_types'] = [self.mc_data['mime'][x].id for x in condition['content_types']]
                     except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найден тип контента "{err}". Загрузите типы контента и повторите попытку.')
-                        item['description'] = f'{item["description"]}\nError: Не найден тип контента "{err}".'
+                        self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найден тип контента {err}. Загрузите типы контента и повторите попытку.')
+                        item['description'] = f'{item["description"]}\nError: Не найден тип контента {err}.'
                         condition['content_types'] = []
                         error = 1
                 elif condition['kind'] == 'url_category':
@@ -1941,8 +1898,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             elif x[0] == 'category_id':
                                 x[1] = self.mc_data['url_categories'][x[1]]
                         except KeyError as err:
-                            self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа URL категорий "{err}". Загрузите категории URL и повторите попытку.')
-                            item['description'] = f'{item["description"]}\nError: Не найдена группа URL категорий "{err}".'
+                            self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа URL категорий {err}. Загрузите категории URL и повторите попытку.')
+                            item['description'] = f'{item["description"]}\nError: Не найдена группа URL категорий {err}.'
                             condition['url_categories'] = []
                             error = 1
                             break
@@ -1973,7 +1930,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт списка сценариев завершён.')
 
 
-    #-------------------------------------------- Сеть ------------------------------------------------------------
+    #----------------------------------------- Сеть ------------------------------------------------
     def import_zones(self, path):
         """Импортируем зоны на NGFW, если они есть."""
         json_file = os.path.join(path, 'config_zones.json')
@@ -2022,14 +1979,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_interfaces(self, path):
-        """Импортируем интерфесы Tunnel и Vlan."""
+        """Импортируем интерфейсы."""
         json_file = os.path.join(path, 'config_interfaces.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
         self.stepChanged.emit(f'BLUE|Импорт интерфейсов на узел кластера "{self.node_name}"')
-
         if not self.mc_data['interfaces']:
             if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
@@ -2049,10 +2005,191 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in data:
             kinds.add(item['kind'])
 
+        if 'adapter' in kinds:
+            self.import_adapter_interfaces(path, data)
+        if kinds.intersection({'bond', 'bridge'}):
+            self.import_bond_interfaces(path, data)
         if 'tunnel' in kinds:
             self.import_ipip_interfaces(path, data)
+        if 'vpn' in kinds:
+            self.import_vpn_interfaces(path, data)
         if 'vlan' in kinds:
-            self.import_vlans(path)
+            self.import_vlan_interfaces(path, data)
+
+
+    def import_adapter_interfaces(self, path, data):
+        """Импортируем интерфесы типа ADAPTER."""
+        self.stepChanged.emit('BLUE|    Импорт сетевых адаптеров в раздел "Сеть/Интерфейсы"')
+        error = 0
+
+        mc_ifaces = self.mc_data['interfaces']
+        netflow_profiles = self.mc_data['netflow_profiles']
+        lldp_profiles = self.mc_data['lldp_profiles']
+
+        for item in data:
+            if 'kind' in item and item['kind'] == 'adapter':
+                if 'node_name' in item:
+                     if item['node_name'] != self.node_name:
+                        continue
+                else:
+                    item['node_name'] = self.node_name
+
+                iface_name = f'{item["name"]}:{self.node_name}'
+                if iface_name in mc_ifaces:
+                    if self.template_id == mc_ifaces[iface_name].template_id:
+                        self.stepChanged.emit(f'uGRAY|       Интерфейс "{item["name"]}" уже существует в текущем шаблоне на узле кластера "{self.node_name}".')
+                    else:
+                        self.stepChanged.emit(f'sGREEN|       Интерфейс "{item["name"]}" уже существует в шаблоне "{mc_ifaces[iface_name].template_name}" на узле кластера "{self.node_name}".')
+                    continue
+                if item['name'] == 'port0':
+                    self.stepChanged.emit(f'LBLUE|       Интерфейс "{item["name"]}" не может быть импортирован в шаблон МС.')
+                    continue
+
+                item.pop('running', None)
+                item.pop('master', None)
+                item.pop('mac', None)
+                item.pop('id', None)
+
+                if 'config_on_device' not in item:
+                    item['config_on_device'] = False
+
+                if item['zone_id']:
+                    try:
+                        item['zone_id'] = self.mc_data['zones'][item['zone_id']].id
+                    except KeyError as err:
+                        self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найдена зона {err}. Импортируйте зоны и повторите попытку.')
+                        item['zone_id'] = 0
+                        error = 1
+
+                new_ipv4 = []
+                for ip in item['ipv4']:
+                    err, result = self.unpack_ip_address(ip)
+                    if err:
+                        self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не удалось преобразовать IP: "{ip}". IP-адрес использован не будет. {result}')
+                        error = 1
+                    else:
+                        new_ipv4.append(result)
+                if not new_ipv4:
+                    item['mode'] = 'manual'
+                item['ipv4'] = new_ipv4
+
+                try:
+                    item['lldp_profile'] = lldp_profiles[item['lldp_profile']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили LLDP и повторите попытку.')
+                    item['lldp_profile'] = 'undefined'
+                    error = 1
+                try:
+                    item['netflow_profile'] = netflow_profiles[item['netflow_profile']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow и повторите попытку.')
+                    item['netflow_profile'] = 'undefined'
+                    error = 1
+
+                err, result = self.utm.add_template_interface(self.template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
+                    error = 1
+                else:
+                    mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
+                    self.stepChanged.emit(f'BLACK|       Сетевой адаптер "{item["name"]}" импортирован на узел кластера "{self.node_name}".')
+
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании сетевых адаптеров.')
+        else:
+            self.stepChanged.emit('GREEN|       Импорт сетевых адаптеров завершён.')
+
+
+    def import_bond_interfaces(self, path, data):
+        """Импортируем Бонд-интерфесы."""
+        self.stepChanged.emit('BLUE|    Импорт агрегированных интерфейсов в раздел "Сеть/Интерфейсы"')
+        error = 0
+
+        mc_ifaces = self.mc_data['interfaces']
+        netflow_profiles = self.mc_data['netflow_profiles']
+        lldp_profiles = self.mc_data['lldp_profiles']
+
+        for item in data:
+            if 'kind' in item and item['kind'] in ('bond', 'bridge'):
+                if 'node_name' in item:
+                     if item['node_name'] != self.node_name:
+                        continue
+                else:
+                    item['node_name'] = self.node_name
+
+                iface_name = f'{item["name"]}:{self.node_name}'
+                if iface_name in mc_ifaces:
+                    if self.template_id == mc_ifaces[iface_name].template_id:
+                        self.stepChanged.emit(f'uGRAY|       Интерфейс "{item["name"]}" уже существует в текущем шаблоне на узле кластера "{self.node_name}".')
+                    else:
+                        self.stepChanged.emit(f'sGREEN|       Интерфейс "{item["name"]}" уже существует в шаблоне "{mc_ifaces[iface_name].template_name}" на узле кластера "{self.node_name}".')
+                    continue
+                if item['kind'] == 'bond':
+                    if 'port0' in item['bonding']['slaves']:
+                        self.stepChanged.emit(f'RED|       Error: Интерфейс "{item["name"]}" не импортирован в шаблон МС так как содержит "port0".')
+                        error = 1
+                        continue
+                elif item['kind'] == 'bridge':
+                    if 'port0' in item['bridging']['ports']:
+                        self.stepChanged.emit(f'RED|       Error: Интерфейс "{item["name"]}" не импортирован в шаблон МС так как содержит "port0".')
+                        error = 1
+                        continue
+
+                item.pop('running', None)
+#                item.pop('master', None)
+                item.pop('mac', None)
+                item.pop('id', None)
+
+                if 'config_on_device' not in item:
+                    item['config_on_device'] = False
+
+                if item['zone_id']:
+                    try:
+                        item['zone_id'] = self.mc_data['zones'][item['zone_id']].id
+                    except KeyError as err:
+                        self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найдена зона {err}. Импортируйте зоны и повторите попытку.')
+                        item['zone_id'] = 0
+                        error = 1
+
+                new_ipv4 = []
+                for ip in item['ipv4']:
+                    err, result = self.unpack_ip_address(ip)
+                    if err:
+                        self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не удалось преобразовать IP: "{ip}". IP-адрес использован не будет. {result}')
+                        error = 1
+                    else:
+                        new_ipv4.append(result)
+                if not new_ipv4:
+                    item['mode'] = 'manual'
+                item['ipv4'] = new_ipv4
+
+                try:
+                    item['lldp_profile'] = lldp_profiles[item['lldp_profile']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили LLDP и повторите попытку.')
+                    item['lldp_profile'] = 'undefined'
+                    error = 1
+                try:
+                    item['netflow_profile'] = netflow_profiles[item['netflow_profile']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow и повторите попытку.')
+                    item['netflow_profile'] = 'undefined'
+                    error = 1
+
+                err, result = self.utm.add_template_interface(self.template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
+                    error = 1
+                else:
+                    mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
+                    self.stepChanged.emit(f'BLACK|       Интерфейс "{item["name"]}" импортирован на узел кластера "{self.node_name}".')
+
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании агрегированных интерфейсов.')
+        else:
+            self.stepChanged.emit('GREEN|       Импорт агрегированных интерфейсов завершён.')
 
 
     def import_ipip_interfaces(self, path, data):
@@ -2129,9 +2266,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
 
 
-    def import_vlans(self, path):
-        """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
-        self.stepChanged.emit('BLUE|    Импорт VLAN в раздел "Сеть/Интерфейсы"')
+    def import_vpn_interfaces(self, path, data):
+        """Импортируем интерфесы VPN."""
+        self.stepChanged.emit('BLUE|    Импорт интерфейсов VPN в раздел "Сеть/Интерфейсы"')
         error = 0
         if isinstance(self.ngfw_vlans, int):
             self.stepChanged.emit(self.new_vlans)
@@ -2211,7 +2348,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         if error:
             self.error = 1
-            self.stepChanged.emit('ORANGE|       Произошла ошибка при создания интерфейсов VLAN.')
+            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов VLAN.')
         else:
             self.stepChanged.emit('GREEN|       Импорт интерфейсов VLAN завершён.')
 
@@ -2273,10 +2410,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             # Создаём новый VRF если такого ещё нет для этого узла кластера с интерфейсами, которые используются в шлюзах.
             vrf_name = f'{item["vrf"]}:{self.node_name}'
             if vrf_name not in mc_vrf:
-                err, result = self.add_empty_vrf(item['vrf'], gateways_vrf[item['vrf']], self.node_name)
+                err, result = self.add_empty_vrf(item['vrf'], gateways_vrf[item['vrf']])
                 if err:
-                    message = f'    Error: Для шлюза "{item["name"]}" не удалось добавить VRF "{item["vrf"]}". Установлен VRF по умолчанию.'
-                    self.stepChanged.emit(f'RED|    {result}\n{message}')
+                    self.stepChanged.emit(f'RED|    {result}\n    Error: Для шлюза "{item["name"]}" не удалось добавить VRF "{item["vrf"]}". Установлен VRF по умолчанию.')
                     item['vrf'] = 'default'
                     item['default'] = False
                     error = 1
@@ -3645,7 +3781,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         profiles_2fa = self.mc_data['profiles_2fa']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля MFA')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in profiles_2fa:
                 if self.template_id == profiles_2fa[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Профиль MFA "{item["name"]}" уже существует в текущем шаблоне.')
@@ -3711,7 +3847,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         }
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля аутентификации')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['2fa_profile_id']:
                 try:
                     item['2fa_profile_id'] = profiles_2fa[item['2fa_profile_id']].id
@@ -3768,10 +3904,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('BLUE|Импорт Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
         error = 0
 
-        if not self.mc_data['response_pages']:
-            if self.get_response_pages():              # Устанавливаем self.mc_data['response_pages']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте Captive-профилей.')
-                return
         response_pages = self.mc_data['response_pages']
 
         if not self.mc_data['notification_profiles']:
@@ -3793,7 +3925,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         captive_profiles = self.mc_data['captive_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя Captive-профиля')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             item['captive_template_id'] = response_pages[item['captive_template_id']].id
             try:
                 item['user_auth_profile_id'] = self.mc_data['auth_profiles'][item['user_auth_profile_id']].id
@@ -3878,15 +4010,18 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 return
         captive_profiles = self.mc_data['captive_profiles']
 
-        err, result = self.utm.get_template_captive_portal_rules(self.template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил Captive-портала.')
-            self.error = 1
-            return
-        captive_portal_rules = {x['name']: x['id'] for x in result}
+        captive_portal_rules = {}
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_captive_portal_rules(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил Captive-портала.')
+                self.error = 1
+                return
+            for x in result:
+                captive_portal_rules[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя Captive-портала')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item.pop('time_created', None)
             item.pop('time_updated', None)
             if item['profile_id']:
@@ -3910,13 +4045,16 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 error = 1
 
             if item['name'] in captive_portal_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило Captive-портала "{item["name"]}" уже существует в текущем шаблоне.')
-                err, result = self.utm.update_template_captive_portal_rule(self.template_id, captive_portal_rules[item['name']], item)
-                if err:
-                    self.stepChanged.emit(f'RED|       {result}  [Captive-portal "{item["name"]}"]')
-                    error = 1
+                if self.template_id == captive_portal_rules[item['name']].template_id:
+                    self.stepChanged.emit(f'uGRAY|    Правило Captive-портала "{item["name"]}" уже существует в текущем шаблоне.')
+                    err, result = self.utm.update_template_captive_portal_rule(self.template_id, captive_portal_rules[item['name']].id, item)
+                    if err:
+                        self.stepChanged.emit(f'RED|       {result}  [Captive-portal "{item["name"]}"]')
+                        error = 1
+                    else:
+                        self.stepChanged.emit(f'uGRAY|       Правило Captive-портала "{item["name"]}" обновлено.')
                 else:
-                    self.stepChanged.emit(f'uGRAY|       Правило Captive-портала "{item["name"]}" обновлено.')
+                    self.stepChanged.emit(f'sGREEN|    Правило Captive-портала "{item["name"]}" уже существует в шаблоне "{captive_portal_rules[item["name"]].template_name}".')
             else:
                 err, result = self.utm.add_template_captive_portal_rule(self.template_id, item)
                 if err:
@@ -3955,7 +4093,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     terminal_servers[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя терминального сервера')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
             if item['name'] in terminal_servers:
                 if self.template_id == terminal_servers[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Терминальный сервер "{item["name"]}" уже существует в текущем шаблоне.')
@@ -4049,7 +4187,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         err, source_version = self.read_json_file(json_file, mode=2)
         if err:
             if err == 1:
-                self.stepChanged.emit(f'{source_version}\n    Проблема с файлом {json_file} при импорте свойств агента UserID.')
+                self.stepChanged.emit(f'RED|Error: Проблема с файлом {json_file} при импорте свойств агента UserID.\n{source_version}')
                 self.error = 1
                 return
             source_version = {'device': 'NGFW', 'float_version': 7.1}
@@ -4168,10 +4306,10 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         for item in data:
             if item['type'] == 'radius':
-                self.stepChanged.emit(f'NOTE|    Warning: Коннектор UserID агент "{item["name"]}" не импортирован так как RADIUS поддерживается тоько в версии МС-7.2 и выше.')
+                self.stepChanged.emit(f'NOTE|    Warning: Коннектор UserID агент "{item["name"]}" не импортирован так как RADIUS поддерживается только в версии МС-7.2 и выше.')
                 continue
             item.pop('expiration_time', None)
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя агента UserID')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя UserID')
 
             if item['name'] in useridagent_servers:
                 if self.template_id == useridagent_servers[item['name']].template_id:
@@ -4215,7 +4353,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте агентов UserID.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт Агентов UserID завершён.')
+            self.stepChanged.emit('GREEN|    Импорт агентов UserID завершён.')
 
 
     def import_agent_servers(self, path):
@@ -4229,14 +4367,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit(f'LBLUE|    Фильтры для коннеторов Syslog Агентов UserID в этой версии МС не переносятся. Необходимо добавить их руками.')
         error = 0
 
-#        В версии 7.1 это не работает!!!!!!
-#        err, result = self.utm.get_template_useridagent_filters_list(self.template_id)
-#        if err:
-#            self.stepChanged.emit(f'RED|    {result}')
-#            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте агентов UserID.')
-#            self.error = 1
-#            return
-#        useridagent_filters = {x['name']: x['id'] for x in result}
+# В версии 7.1 это не работает!!!!!!
+#    err, result = self.utm.get_template_useridagent_filters_list(self.template_id)
+#    if err:
+#        self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте агентов UserID.')
+#        self.error = 1
+#        return
+#    useridagent_filters = {x['name']: x['id'] for x in result}
 
         useridagent_servers = {}
         for uid, name in self.templates.items():
@@ -4253,7 +4390,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     useridagent_servers[srv_name] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя агента UserID')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя')
             item['node_name'] = self.node_name
             srv_name = f'{item["name"]}:{self.node_name}'
             if srv_name in useridagent_servers:
@@ -4305,10 +4442,10 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте агентов UserID.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт Агентов UserID завершён.')
+            self.stepChanged.emit('GREEN|    Импорт раздела "Агенты UserID" завершён.')
 
 
-    #-------------------------------------- Политики сети ------------------------------------------------
+#-------------------------------------- Политики сети ---------------------------------------------------------
     def import_firewall_rules(self, path):
         """Импортируем правила межсетевого экрана"""
         json_file = os.path.join(path, 'config_firewall_rules.json')
@@ -4350,7 +4487,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             item.pop('apps', None)
             item.pop('apps_negate', None)
 
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила МЭ')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item['position_layer'] = 'pre'
             if item['scenario_rule_id']:
                 try:
@@ -4456,7 +4593,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in data:
             item.pop('time_created', None)
             item.pop('time_updated', None)
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила NAT')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item['position_layer'] = 'pre'
             item['zone_in'] = self.get_zones_id('src', item['zone_in'], item)
             item['zone_out'] = self.get_zones_id('dst', item['zone_out'], item)
@@ -4478,7 +4615,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден шлюз "{item["gateway"]}" для правила ПБР в группе шаблонов.')
                     item['description'] = f'{item["description"]}\nError: Не найден шлюз "{item["gateway"]}" для правила ПБР в группе шаблонов.'
                     item['gateway'] = ''
-                    error = 1
+                    item['error'] = True
 
             if item['scenario_rule_id']:
                 try:
@@ -4555,7 +4692,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item['enabled'] = False
                 error = 1
 
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя балансировщика')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             if item['name'] in tcpudp_rules:
                 self.stepChanged.emit(f'uGRAY|       Правило балансировки TCP/UDP "{item["name"]}" уже существует.')
                 err, result = self.utm.update_template_loadbalancing_rule(self.template_id, tcpudp_rules[item['name']], item)
@@ -4581,7 +4718,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_loadbalancing_icap(self, path, balansing_servers):
         """Импортируем балансировщики ICAP"""
-        self.stepChanged.emit('BLUE|    Импорт балансировщиков ICAP.')
         json_file = os.path.join(path, 'config_loadbalancing_icap.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err in (2, 3):
@@ -4590,6 +4726,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         elif err == 1:
             return
 
+        self.stepChanged.emit('BLUE|    Импорт балансировщиков ICAP.')
         error = 0
 
         if not self.mc_data['icap_servers']:
@@ -4607,13 +4744,13 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 try:
                     new_profiles.append(icap_servers[profile].id)
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|       Error [Правило "{item["name"]}"]: Не найден сервер ICAP "{profile}" в группе шаблонов. Импортируйте серверы ICAP и повторите попытку.')
+                    self.stepChanged.emit(f'RED|       Error: [Правило "{item["name"]}"] Не найден сервер ICAP "{profile}" в группе шаблонов. Импортируйте серверы ICAP и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден сервер ICAP "{profile}".'
                     item['enabled'] = False
                     error = 1
             item['profiles'] = new_profiles
 
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя балансировщика')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             if item['name'] in icap_loadbalancing:
                 self.stepChanged.emit(f'uGRAY|       Правило балансировки ICAP "{item["name"]}" уже существует.')
                 err, result = self.utm.update_template_loadbalancing_rule(self.template_id, icap_loadbalancing[item['name']], item)
@@ -4639,7 +4776,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_loadbalancing_reverse(self, path, balansing_servers):
         """Импортируем балансировщики reverse-proxy"""
-        self.stepChanged.emit('BLUE|    Импорт балансировщиков Reverse-proxy.')
         json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err in (2, 3):
@@ -4648,6 +4784,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         elif err == 1:
             return
 
+        self.stepChanged.emit('BLUE|    Импорт балансировщиков Reverse-proxy.')
         error = 0
 
         if not self.mc_data['reverseproxy_servers']:
@@ -4671,7 +4808,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     error = 1
             item['profiles'] = new_profiles
 
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя балансировщика')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             if item['name'] in reverse_rules:
                 self.stepChanged.emit(f'uGRAY|       Правило балансировки reverse-proxy "{item["name"]}" уже существует.')
                 err, result = self.utm.update_template_loadbalancing_rule(self.template_id, reverse_rules[item['name']], item)
@@ -4705,11 +4842,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('BLUE|Импорт правил пропускной способности в раздел "Политики сети/Пропускная способность".')
         error = 0
 
-        if not self.mc_data['shapers']:
-            if self.get_shapers_list():            # Устанавливаем self.mc_data['shapers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил пропускной способности.')
-                return
-
         err, result = self.utm.get_template_shaper_rules(self.template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил пропускной способности.')
@@ -4728,6 +4860,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
                     item['scenario_rule_id'] = False
                     item['error'] = True
+
             item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
             item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
             item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
@@ -4741,8 +4874,8 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             except KeyError as err:
                 self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найдена полоса пропускания "{item["pool"]}". Импортируйте полосы пропускания и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найдена полоса пропускания "{item["pool"]}".'
-                item['error'] = True
                 item['pool'] = 1
+                item['error'] = True
 
             if item.pop('error', False):
                 item['enabled'] = False
@@ -4773,7 +4906,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил пропускной способности завершён.')
 
 
-    #-------------------------------------------- Политики безопасности --------------------------------------------------
+    #------------------------------------- Политики безопасности ------------------------------------------
     def import_content_rules(self, path):
         """Импортировать список правил фильтрации контента"""
         json_file = os.path.join(path, 'config_content_rules.json')
@@ -4783,11 +4916,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         self.stepChanged.emit('BLUE|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
         error = 0
-
-        if not self.mc_data['response_pages']:
-            if self.get_response_pages():    # Устанавливаем self.mc_data['response_pages']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
-                return
 
         if not self.mc_data['morphology']:
             if self.get_morphology_list():    # Устанавливаем self.mc_data['morphology']
@@ -4811,7 +4939,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in data:
             item.pop('time_created', None)
             item.pop('time_updated', None)
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила КФ')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item['position_layer'] = 'pre'
             try:
                 item['blockpage_template_id'] = self.mc_data['response_pages'][item['blockpage_template_id']].id
@@ -5249,10 +5377,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         err, batv = self.read_json_file(json_file, mode=1)
         if err:
             data['enabled'] = False
-            self.stepChanged.emit('ORANGE|       В настройках антиспама BATV будет отключён.')
+            self.stepChanged.emit('ORANGE|       В настройках антиспама BATV будет отключено.')
         else:
             data['enabled'] = batv['enabled']
-
 
         data['white_list'] = self.get_ips_id('white_list', data['white_list'], {'name': 'antispam DNSBL'})
         data['black_list'] = self.get_ips_id('black_list', data['black_list'], {'name': 'antispam DNSBL'})
@@ -5282,7 +5409,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         icap_servers = self.mc_data['icap_servers']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера ICAP')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
             if item['name'] in icap_servers:
                 if self.template_id == icap_servers[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    ICAP-сервер "{item["name"]}" уже существует в текущем шаблоне.')
@@ -5425,7 +5552,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         dos_profiles = self.mc_data['dos_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля DoS')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in dos_profiles:
                 if self.template_id == dos_profiles[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Профиль DoS "{item["name"]}" уже существует в текущем шаблоне.')
@@ -5530,9 +5657,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил защиты DoS завершён.')
 
 
-    #-------------------------------------------------- WAF ---------------------------------------------------
+    #---------------------------------------- WAF -------------------------------------------------
     def import_waf_custom_layers(self, path):
         """Импортируем Персональные слои WAF"""
+        if self.utm.float_version >= 7.3:
+            return
+
         json_file = os.path.join(path, 'config_waf_custom_layers.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -5573,6 +5703,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_waf_profiles(self, path):
         """Импортируем профили WAF"""
+        if self.utm.float_version >= 7.3:
+            return
+
         json_file = os.path.join(path, 'config_waf_profiles.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -5607,7 +5740,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         waf_profiles = self.mc_data['waf_profiles']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля WAF')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
             if item['name'] in waf_profiles and self.template_id != waf_profiles[item['name']].template_id:
                 self.stepChanged.emit(f'sGREEN|    Профиль WAF "{item["name"]}" уже существует в шаблоне "{waf_profiles[item["name"]].template_name}".')
                 continue
@@ -5689,8 +5822,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль SSL {err}. Загрузите профили SSL и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден профиль SSL {err}.'
                 item['mapping_url_ssl_profile_id'] = 0
-                item['enabled'] = False
-                error = 1
+                item['error'] = True
             try:
                 if item['mapping_url_certificate_id']:
                     item['mapping_url_certificate_id'] = self.mc_data['certs'][item['mapping_url_certificate_id']].id
@@ -5698,6 +5830,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сертификат {err}. Создайте сертификат и повторите попытку.')
                 item['description'] = f'{item["description"]}\nError: Не найден сертификат {err}.'
                 item['mapping_url_certificate_id'] = 0
+                item['error'] = True
+
+            if item.pop('error', False):
                 item['enabled'] = False
                 error = 1
 
@@ -5793,7 +5928,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         reverseproxy_servers = self.mc_data['reverseproxy_servers']
 
         if not self.mc_data['useragents']:
-            if self.get_useragent_list():      # Устанавливаем sel.mc_data['useragents']
+            if self.get_useragent_list():      # Устанавливаем self.mc_data['useragents']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
                 return
         useragent_list = self.mc_data['useragents']
@@ -5804,14 +5939,15 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 return
         client_certs_profiles = self.mc_data['client_certs_profiles']
 
-        if self.utm.waf_license:  # Проверяем что есть лицензия на WAF
-            if not self.mc_data['waf_profiles']:
-                if self.get_waf_profiles(): # Устанавливаем self.mc_data['waf_profiles']
-                    self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
-                    return
-        else:
-            self.stepChanged.emit('NOTE|    Нет лицензии на WAF. Защита приложений WAF будет выключена в правилах.')
-        waf_profiles = self.mc_data['waf_profiles']
+        if self.utm.float_version < 7.3:
+            if self.utm.waf_license:  # Проверяем что есть лицензия на WAF
+                if not self.mc_data['waf_profiles']:
+                    if self.get_waf_profiles(): # Устанавливаем self.mc_data['waf_profiles']
+                        self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
+                        return
+            else:
+                self.stepChanged.emit('NOTE|    Нет лицензии на WAF. Защита приложений WAF будет выключена в правилах.')
+            waf_profiles = self.mc_data['waf_profiles']
 
         err, result = self.utm.get_template_reverseproxy_rules(self.template_id)
         if err:
@@ -5888,18 +6024,21 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     item['client_certificate_profile_id'] = 0
                     item['error'] = True
 
-            if item['waf_profile_id']:
-                if self.utm.waf_license:
-                    try:
-                        item['waf_profile_id'] = waf_profiles[item['waf_profile_id']].id
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль WAF {err}. Импортируйте профили WAF и повторите попытку.')
-                        item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
+            if self.utm.float_version < 7.3:
+                if item['waf_profile_id']:
+                    if self.utm.waf_license:
+                        try:
+                            item['waf_profile_id'] = waf_profiles[item['waf_profile_id']].id
+                        except KeyError as err:
+                            self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль WAF {err}. Импортируйте профили WAF и повторите попытку.')
+                            item['description'] = f'{item["description"]}\nError: Не найден профиль WAF {err}.'
+                            item['waf_profile_id'] = 0
+                            item['error'] = True
+                    else:
                         item['waf_profile_id'] = 0
-                        item['error'] = True
-                else:
-                    item['waf_profile_id'] = 0
-                    item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
+                        item['description'] = f'{item["description"]}\nError: Нет лицензии на модуль WAF. Профиль WAF "{item["waf_profile_id"]}" не импортирован в правило.'
+            else:
+                item.pop('waf_profile_id', None)
 
             if item.pop('error', False):
                 item['enabled'] = False
@@ -5930,7 +6069,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
 
 
-    #------------------------------------------ VPN ----------------------------------------------------------
+    #-------------------------------------- VPN -------------------------------------------------
     def import_vpnclient_security_profiles(self, path):
         """Импортируем клиентские профилей безопасности VPN"""
         json_file = os.path.join(path, 'config_vpnclient_security_profiles.json')
@@ -5980,7 +6119,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте клиентских профилей безопасности VPN.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт клиентских профили безопасности завершён.')
+            self.stepChanged.emit('GREEN|    Импорт клиентских профилей безопасности завершён.')
 
 
     def import_vpnserver_security_profiles(self, path):
@@ -6010,7 +6149,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 try:
                     item['certificate_id'] = self.mc_data['certs'][item['certificate_id']].id
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сертификат {err}. Импортируйте сертификаты и повторите попытку.')
+                    self.stepChanged.emit(f'RED|    Error: [Профиль "{item["name"]}"] Не найден сертификат {err}. Импортируйте сертификаты и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден сертификат {err}.'
                     item['certificate_id'] = 0
                     error = 1
@@ -6018,7 +6157,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 try:
                     item['client_certificate_profile_id'] = client_certs_profiles[item['client_certificate_profile_id']].id
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль сертификата пользователя {err}. Импортируйте профили пользовательских сертификатов и повторите попытку.')
+                    self.stepChanged.emit(f'RED|    Error: [Профиль "{item["name"]}"] Не найден профиль сертификата пользователя {err}. Импортируйте профили пользовательских сертификатов и повторите попытку.')
                     item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя {err}.'
                     item['client_certificate_profile_id'] = 0
                     error = 1
@@ -6049,6 +6188,18 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт серверных профилей безопасности завершён.')
 
 
+    def get_networks(self, networks, rule):
+        new_networks = []
+        for x in networks:
+            try:
+                new_networks.append(['list_id', self.mc_data['ip_lists'][x[1]].id]  if x[0] == 'list_id' else x)
+            except KeyError as err:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден список IP-адресов {err}. Импортируйте списки IP-адресов и повторите попытку.')
+                rule['description'] = f'{rule["description"]}\nError: Не найден список IP-адресов {err}.'
+                rule['error'] = True
+        return new_networks
+
+
     def import_vpn_networks(self, path):
         """Импортируем список сетей VPN"""
         json_file = os.path.join(path, 'config_vpn_networks.json')
@@ -6066,7 +6217,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         vpn_networks = self.mc_data['vpn_networks']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сети')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сети VPN')
             item['networks'] = self.get_networks(item['networks'], item)
             item['ep_routes_include'] = self.get_networks(item['ep_routes_include'], item)
             item['ep_routes_exclude'] = self.get_networks(item['ep_routes_exclude'], item)
@@ -6097,18 +6248,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сетей VPN.')
         else:
             self.stepChanged.emit('GREEN|    Импорт списка сетей VPN завершён.')
-
-
-    def get_networks(self, networks, rule):
-        new_networks = []
-        for x in networks:
-            try:
-                new_networks.append(['list_id', self.mc_data['ip_lists'][x[1]].id]  if x[0] == 'list_id' else x)
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден список IP-адресов {err}. Импортируйте списки IP-адресов и повторите попытку.')
-                rule['description'] = f'{rule["description"]}\nError: Не найден список IP-адресов {err}.'
-                rule['error'] = True
-        return new_networks
 
 
     def import_vpn_client_rules(self, path):
@@ -6221,7 +6360,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             item['source_ips'] = self.get_ips_id('src', item['source_ips'], item)
             item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
             item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            message = '       Error: Правило "{item["name"]}" не импортировано.'
+            message = '       Правило "{item["name"]}" не импортировано.'
             if f'{item["iface_id"]}:cluster' not in self.mc_data['interfaces']:
                 self.stepChanged.emit(f'RED|    Eror: [Правило "{item["name"]}"] Не найден интерфейс VPN "{item["iface_id"]}" в группе шаблонов.\n{message}')
                 error = 1
@@ -6275,7 +6414,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт серверных правил VPN завершён.')
 
 
-    #---------------------------------------------- Оповещения -----------------------------------------------------
+    #------------------------------------------- Оповещения ----------------------------------------------
     def import_notification_alert_rules(self, path):
         """Импортируем список правил оповещений"""
         json_file = os.path.join(path, 'config_alert_rules.json')
@@ -6313,7 +6452,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item['notification_profile_id'] = self.mc_data['notification_profiles'][item['notification_profile_id']].id
             except KeyError as err:
                 message = f'Error: [Правило "{item["name"]}"] Не найден профиль оповещений {err}. Импортируйте профили оповещений и повторите попытку.'
-                self.stepChanged.emit(f'RED|    {message}\n       Error: Правило "{item["name"]}" не импортировано.')
+                self.stepChanged.emit(f'RED|    {message}\n       Правило "{item["name"]}" не импортировано.')
                 error = 1
                 continue
 
@@ -6446,7 +6585,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         elif err == 3:
             self.stepChanged.emit(f'GRAY|    {result}')
         else:
-            self.stepChanged.emit('GREEN|    Параметры SNMP импортированы.')
+            self.stepChanged.emit('GREEN|    Импорт параметров SNMP завершён.')
 
 
     def import_snmp_rules(self, path):
@@ -6516,7 +6655,11 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил SNMP завершён.')
 
 
-    ######################################### Служебные функции ################################################
+    def pass_function(self, path):
+        """Функция заглушка"""
+        self.stepChanged.emit(f'GRAY|Импорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
+
+    ###################################### Служебные функции ############################################
     def get_ips_id(self, mode, rule_ips, rule):
         """
         Получить UID-ы списков IP-адресов. Если список IP-адресов не существует на MC, то он пропускается.
@@ -6569,12 +6712,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     try:
                         ldap_domain, _, user_name = item[1].partition("\\")
                     except IndexError:
-                        self.stepChanged.emit(f'NOTE|    Error: [Правило "{rule["name"]}"] Не указано имя пользователя в {item}.')
+                        self.stepChanged.emit(f'ORANGE|    Warning: [Правило "{rule["name"]}"] Не указано имя пользователя в {item}.')
                     if user_name:
                         try:
                             ldap_id = self.mc_data['ldap_servers'][ldap_domain.lower()]
                         except KeyError:
-                            self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Пользователь "{item[1]}" не добавлен. Нет LDAP-коннектора для домена "{ldap_domain}".')
+                            self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Нет LDAP-коннектора для домена "{ldap_domain}".')
                             rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
                             rule['error'] = True
                         else:
@@ -6601,12 +6744,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     try:
                         ldap_domain, _, group_name = item[1].partition("\\")
                     except IndexError:
-                        self.stepChanged.emit(f'NOTE|    Error: [Правило "{rule["name"]}"] Не указано имя группы в {item}')
+                        self.stepChanged.emit(f'ORANGE|    Warning: [Правило "{rule["name"]}"] Не указано имя группы в {item}')
                     if group_name:
                         try:
                             ldap_id = self.mc_data['ldap_servers'][ldap_domain.lower()]
                         except KeyError:
-                            self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Доменная группа "{item[1]}" не добавлена. Нет LDAP-коннектора для домена "{ldap_domain}"')
+                            self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Нет LDAP-коннектора для домена "{ldap_domain}"')
                             rule['description'] = f'{rule["description"]}\nError: Нет LDAP-коннектора для домена "{ldap_domain}".'
                             rule['error'] = True
                         else:
@@ -6779,42 +6922,9 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         return 0
 
 
-    def get_shapers_list(self):
-        """Получаем полосы пропускания и устанавливаем значение self.mc_data['shapers']"""
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_shapers_list(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['shapers']:
-                    self.stepChanged.emit(f'ORANGE|    Полоса пропускания "{x["name"]}" обнаружена в нескольких шаблонах группы. Полоса из шаблона "{name}" не будет использована.')
-                else:
-                    self.mc_data['shapers'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
-    def get_response_pages(self):
-        """Получаем список шаблонов страниц и устанавливаем значение self.mc_data['response_pages']"""
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_responsepages_list(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['response_pages']:
-                    self.stepChanged.emit(f'ORANGE|    Шаблон страницы "{x["name"]}" обнаружен в нескольких шаблонах группы. Страница из шаблона "{name}" не будет использована.')
-                else:
-                    self.mc_data['response_pages'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['response_pages'][-1] = BaseObject(id=-1, template_id=uid, template_name=name)
-        return 0
-
-
     def get_app_signatures(self):
         """Получаем список приложений l7 MC и устанавливаем значение self.mc_data['l7_apps']"""
-        err, result = self.utm.get_template_app_signatures(self.template_id)
+        err, result = self.utm.get_realm_l7_signatures()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -6838,7 +6948,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     self.mc_data['l7_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
         return 0
-
 
     def get_email_groups(self):
         """Получаем список групп почтовых адресов группы шаблонов и устанавливаем значение self.mc_data['email_groups']"""
@@ -6872,19 +6981,15 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         return 0
 
 
-    def get_idps_users_signatures(self):
-        """Получаем список пользовательских сигнатур СОВ группы шаблонов и устанавливаем значение self.users_signatures"""
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_idps_signatures_list(uid, query={'query': 'owner = You'})
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['msg'] in self.users_signatures:
-                    self.stepChanged.emit(f'ORANGE|    Пользовательская сигнатура "{x["msg"]}" обнаружена в нескольких шаблонах группы. Сигнатура из шаблона "{name}" не будет использована.')
-                else:
-                    self.users_signatures[x['msg']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+    def get_idps_realm_users_signatures(self):
+        """Получаем список пользовательских сигнатур СОВ всех шаблонов и устанавливаем значение self.mc_data['users_signatures']"""
+        err, result = self.utm.get_realm_idps_signatures(query={'query': 'owner = You'})
+        if err:
+            self.stepChanged.emit(f'RED|    {result}')
+            self.error = 1
+            return 1
+        for x in result:
+            self.mc_data['realm_users_signatures'][x['msg']] = BaseObject(id=x['id'], template_id=x['template_id'], template_name=self.templates.get(x['template_id'], None))
         return 0
 
 
@@ -6923,6 +7028,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def get_netflow_profiles(self):
         """Получаем список профилей netflow группы шаблонов и устанавливаем значение self.mc_data['netflow_profiles']"""
+        self.mc_data['netflow_profiles']['undefined'] = BaseObject(id='undefined', template_id='', template_name='')
         for uid, name in self.templates.items():
             err, result = self.utm.get_template_netflow_profiles(uid)
             if err:
@@ -6934,12 +7040,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'ORANGE|    Профиль netflow "{x["name"]}" обнаружен в нескольких шаблонах группы. Профиль из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['netflow_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['netflow_profiles']['undefined'] = BaseObject(id='undefined', template_id='', template_name='')
         return 0
 
 
     def get_lldp_profiles(self):
         """Получаем список профилей lldp группы шаблонов и устанавливаем значение self.mc_data['lldp_profiles']"""
+        self.mc_data['lldp_profiles']['undefined'] = BaseObject(id='undefined', template_id='', template_name='')
         for uid, name in self.templates.items():
             err, result = self.utm.get_template_lldp_profiles(uid)
             if err:
@@ -6951,7 +7057,6 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'ORANGE|    Профиль lldp "{x["name"]}" обнаружен в нескольких шаблонах группы. Профиль из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['lldp_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['lldp_profiles']['undefined'] = BaseObject(id='undefined', template_id='', template_name='')
         return 0
 
 
@@ -7092,9 +7197,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def get_client_certificate_profiles(self):
         """
-        Получаем список всех профилей клиентских сертификатов в группе шаблонов и
-        устанавливаем значение атрибута self.client_certificate_profiles
-        """
+        Получаем список профилей клиентских сертификатов в группе шаблонов и устанавливаем значение self.mc_data['client_cert_profiles']"""
         for uid, name in self.templates.items():
             err, result = self.utm.get_template_client_certificate_profiles(uid)
             if err:
@@ -7247,6 +7350,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'ORANGE|    Сеть VPN "{x["name"]}" обнаружена в нескольких шаблонах группы шаблонов. Сеть VPN из шаблона "{name}" не будет использована.')
                 else:
                     self.mc_data['vpn_networks'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+        self.mc_data['vpn_networks'][False] = BaseObject(id=False, template_id=uid, template_name=name)
         return 0
 
 
@@ -7266,12 +7370,12 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         return 0
 
 
-    def add_empty_vrf(self, vrf_name, ports, node_name):
+    def add_empty_vrf(self, vrf_name, ports):
         """Добавляем пустой VRF"""
         vrf = {
             'name': vrf_name,
             'description': '',
-            'node_name': node_name,
+            'node_name': self.node_name,
             'interfaces': ports if vrf_name != 'default' else [],
             'routes': [],
             'ospf': {},
@@ -7285,9 +7389,23 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         return 0, result    # Возвращаем ID добавленного VRF
 
 
-    def pass_function(self, path):
-        """Функция заглушка"""
-        self.stepChanged.emit(f'GRAY|Импорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
+    def add_new_nlist(self, name, nlist_type, content):
+        """Добавляем в библиотеку новый nlist с содержимым"""
+        nlist = {
+            'name': name,
+            'description': '',
+            'type': nlist_type,
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'threat_level': 3},
+        }
+        err, list_id = self.utm.add_template_nlist(self.template_id, nlist)
+        if err:
+            return err, list_id
+        err, result = self.utm.add_template_nlist_items(self.template_id, list_id, content)
+        if err:
+            return err, result
+        return 0, list_id
 
 
 class Zone:
@@ -7353,19 +7471,41 @@ class Zone:
                     self.error = 1
                     continue
                 # Приводим список разрешённых адресов сервиса к спискам IP-листов.
-                if service['allowed_ips'] and isinstance(service['allowed_ips'][0], list):
-                    allowed_ips = []
-                    for item in service['allowed_ips']:
-                        if item[0] == 'list_id':
-                            try:
-                                item[1] = self.parent.mc_data['ip_lists'][item[1]].id
-                            except KeyError as err:
-                                self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В контроле доступа "{service_name}" не найден список IP-адресов {err}.')
-                                self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не найден список IP-адресов {err}.'
+                if service['allowed_ips']:
+                    if isinstance(service['allowed_ips'][0], list):
+                        allowed_ips = []
+                        for item in service['allowed_ips']:
+                            if item[0] == 'list_id':
+                                try:
+                                    item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                                except KeyError as err:
+                                    self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В контроле доступа "{service_name}" не найден список IP-адресов {err}.')
+                                    self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не найден список IP-адресов {err}.'
+                                    self.error = 1
+                                    continue
+                            allowed_ips.append(item)
+                        service['allowed_ips'] = allowed_ips
+                    else:
+                        nlist_name = f'Zone {self.name} (service access: {service_name})'
+                        if nlist_name in self.parent.mc_data['ip_lists']:
+                            service['allowed_ips'] = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
+                        else:
+                            content = [{'value': ip} for ip in service['allowed_ips']]
+                            err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
+                            if err == 1:
+                                self.parent.stepChanged.emit(f'RED|    {list_id}')
+                                self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в контроле доступа "{service_name}".')
+                                self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не создан список IP-адресов.'
                                 self.error = 1
                                 continue
-                        allowed_ips.append(item)
-                    service['allowed_ips'] = allowed_ips
+                            elif err == 3:
+                                self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}" уже существует.')
+                                self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                                continue
+                            else:
+                                self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" для зоны "{self.name}".')
+                                service['allowed_ips'] = [['list_id', list_id]]
+                                self.parent.mc_data['ip_lists'][nlist_name] = BaseObject(id=list_id, template_id=self.parent.template_id, template_name=self.parent.templates[self.parent.template_id])
 
                 new_services_access.append(service)
         self.services_access = new_services_access
@@ -7373,19 +7513,43 @@ class Zone:
 
     def check_networks(self):
         """Обрабатываем защиту от IP-спуфинга"""
-        if self.networks and isinstance(self.network[0], list):
-            new_networks = []
-            for item in self.networks:
-                if item[0] == 'list_id':
-                    try:
-                        item[1] = self.parent.mc_data['ip_lists'][item[1]].id
-                    except KeyError as err:
-                        self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
-                        self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
+        if self.networks:
+            if isinstance(self.networks[0], list):
+                new_networks = []
+                for item in self.networks:
+                    if item[0] == 'list_id':
+                        try:
+                            item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                        except KeyError as err:
+                            self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
+                            self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
+                            self.error = 1
+                            continue
+                    new_networks.append(item)
+                self.networks = new_networks
+            else:
+                nlist_name = f'Zone {self.name} (IP-spufing)'
+                if nlist_name in self.parent.mc_data['ip_lists']:
+                    self.networks = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
+                else:
+                    content = [{'value': ip} for ip in self.networks]
+                    err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
+                    if err == 1:
+                        self.parent.stepChanged.emit(f'RED|    {list_id}')
+                        self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
+                        self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
+                        self.networks = []
                         self.error = 1
-                        continue
-                new_networks.append(item)
-            self.networks = new_networks
+                    elif err == 3:
+                        self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" в защите от IP-спуфинга зоны "{self.name}" уже существует.')
+                        self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                    else:
+                        self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" в защите от IP-спуфинга для зоны "{self.name}".')
+                        self.networks = [['list_id', list_id]]
+                        self.parent.mc_data['ip_lists'][nlist_name] = BaseObject(id=list_id, template_id=self.parent.template_id, template_name=self.parent.templates[self.parent.template_id])
+        if not self.networks:
+            self.enable_antispoof = False
+            self.antispoof_invert = False
 
 
     def check_sessions_limit(self):

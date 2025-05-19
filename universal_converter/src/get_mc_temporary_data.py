@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
 # Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 1.8  03.04.2025    (идентично для ug_ngfw_converter и universal_converter)
+# Version 1.9  25.04.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
 import os, sys
@@ -29,7 +29,7 @@ from services import default_urlcategorygroup
 from common_classes import WriteBinFile, BaseObject
 
 
-class ImportMcTemporaryData(QThread, WriteBinFile):
+class GetMcTemporaryData(QThread, WriteBinFile):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
     def __init__(self, utm, template_id, templates):
@@ -92,6 +92,7 @@ class ImportMcTemporaryData(QThread, WriteBinFile):
             'snmp_security_profiles': {},
             'url_categories': {},
             'l7_categories': {},
+            'realm_users_signatures': {},
             'ug_morphology': ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
                 'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
                 'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
@@ -154,34 +155,6 @@ class ImportMcTemporaryData(QThread, WriteBinFile):
         if not self.mc_data['ldap_servers']:
             self.stepChanged.emit('NOTE|       Нет доступных LDAP-серверов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
 
-        # Получаем список зон
-        self.stepChanged.emit(f'BLACK|    Получаем список зон группы шаблонов.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_zones_list(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['zones']:
-                    self.stepChanged.emit(f'ORANGE|       Зона "{x["name"]}" обнаружена в нескольких шаблонах группы. Зона из шаблона "{name}" не будет использована.')
-                else:
-                    self.mc_data['zones'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        # Получаем список сервисов
-        self.stepChanged.emit(f'BLACK|    Получаем список сервисов группы шаблонов.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_services_list(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['services']:
-                    self.stepChanged.emit(f'ORANGE|       Сервис "{x["name"]}" обнаружен в нескольких шаблонах группы. Сервис из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['services'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
         # Получаем список групп сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов группы шаблонов.')
         for uid, name in self.templates.items():
@@ -242,35 +215,6 @@ class ImportMcTemporaryData(QThread, WriteBinFile):
         for item in self.ug_url_lists:
             self.mc_data['url_lists'][item] = BaseObject(id=f'id-{item}', template_id='', template_name='')
 
-        # Получаем список календарей
-        self.stepChanged.emit(f'BLACK|    Получаем список календарей.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'timerestrictiongroup')
-            if err:
-                self.stepChanged.emit(f'iRED|{result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['calendars']:
-                    self.stepChanged.emit(f'ORANGE|       Календарь "{x["name"]}" обнаружен в нескольких шаблонах группы. Календарь из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['calendars'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        # Получаем список групп категорий URL
-        self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'urlcategorygroup')
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['url_categorygroups']:
-                    self.stepChanged.emit(f'ORANGE|       Календарь "{x["name"]}" обнаружен в нескольких шаблонах группы. Календарь из шаблона "{name}" не будет использован.')
-                else:
-                    category_name = default_urlcategorygroup.get(x['name'], x['name'])
-                    self.mc_data['url_categorygroups'][category_name] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений.')
         for uid, name in self.templates.items():
@@ -284,21 +228,6 @@ class ImportMcTemporaryData(QThread, WriteBinFile):
                     self.stepChanged.emit(f'ORANGE|       Группа приложений "{x["name"]}" обнаружена в нескольких шаблонах группы шаблонов. Группа из шаблона "{name}" не будет использована.')
                 else:
                     self.mc_data['apps_groups'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        # Получаем список профилей SSL
-        self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_ssl_profiles(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['ssl_profiles']:
-                    self.stepChanged.emit(f'ORANGE|       Профиль SSL "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['ssl_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['ssl_profiles'][-1] = BaseObject(id=-1, template_id='', template_name='')
 
         # Получаем список сценариев шаблона
         self.stepChanged.emit(f'BLACK|    Получаем список сценариев.')
@@ -373,16 +302,6 @@ class ImportMcTemporaryData(QThread, WriteBinFile):
                 else:
                     self.mc_data['local_users'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список приложений l7 в МС
-#        self.stepChanged.emit(f'BLACK|    Получаем список приложений.')
-#        err, result = self.utm.get_template_app_signatures(self.template_id)
-#        if err:
-#            self.stepChanged.emit(f'RED|    {result}')
-#            self.error = 1
-#            return
-#        for x in result:
-#            self.mc_data['l7_apps'][x['name']] = BaseAppObject(id=x['id'], owner=x['attributes']['owner'], signature_id=x['signature_id'])
-
         # Получаем список предопределённых категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список категорий URL.')
         err, result = self.utm.get_url_categories()
@@ -400,6 +319,120 @@ class ImportMcTemporaryData(QThread, WriteBinFile):
         self.mc_data['l7_categories'] = {x['name']: x['id'] for x in result}
 
 
+        # Получаем ID шаблона "UserGate Libraries template" и добавляем его в список шаблонов.
+        # Далее получаем данные с учётом этого шаблона.
+        err, result = self.utm.get_device_templates()
+        if err:
+            self.stepChanged.emit(f'RED|    {result}')
+            self.error = 1
+        else:
+            for item in result:
+                if item['name'] == 'UserGate Libraries template':
+                    self.templates[item['id']] = item['name']
+                    break
+
+        # Получаем список зон
+        self.stepChanged.emit(f'BLACK|    Получаем список зон группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_zones_list(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['zones']:
+                    self.stepChanged.emit(f'ORANGE|       Зона "{x["name"]}" обнаружена в нескольких шаблонах группы. Зона из шаблона "{name}" не будет использована.')
+                else:
+                    self.mc_data['zones'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+
+        # Получаем список сервисов
+        self.stepChanged.emit(f'BLACK|    Получаем список сервисов группы шаблонов.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_services_list(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['services']:
+                    self.stepChanged.emit(f'ORANGE|       Сервис "{x["name"]}" обнаружен в нескольких шаблонах группы. Сервис из шаблона "{name}" не будет использован.')
+                else:
+                    self.mc_data['services'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+
+        # Получаем список календарей
+        self.stepChanged.emit(f'BLACK|    Получаем список календарей.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'timerestrictiongroup')
+            if err:
+                self.stepChanged.emit(f'iRED|{result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['calendars']:
+                    self.stepChanged.emit(f'ORANGE|       Календарь "{x["name"]}" обнаружен в нескольких шаблонах группы. Календарь из шаблона "{name}" не будет использован.')
+                else:
+                    self.mc_data['calendars'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+
+        # Получаем список групп категорий URL
+        self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_nlists_list(uid, 'urlcategorygroup')
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['url_categorygroups']:
+                    self.stepChanged.emit(f'ORANGE|       Календарь "{x["name"]}" обнаружен в нескольких шаблонах группы. Календарь из шаблона "{name}" не будет использован.')
+                else:
+                    category_name = default_urlcategorygroup.get(x['name'], x['name'])
+                    self.mc_data['url_categorygroups'][category_name] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+
+        # Получаем список профилей SSL
+        self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_ssl_profiles(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['ssl_profiles']:
+                    self.stepChanged.emit(f'ORANGE|       Профиль SSL "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль из шаблона "{name}" не будет использован.')
+                else:
+                    self.mc_data['ssl_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+        self.mc_data['ssl_profiles'][-1] = BaseObject(id=-1, template_id='', template_name='')
+
+        # Получаем список шаблонов страниц
+        self.stepChanged.emit(f'BLACK|    Получаем список шаблонов страниц.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_responsepages_list(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['response_pages']:
+                    self.stepChanged.emit(f'ORANGE|       Шаблон страницы "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Страница из шаблона "{name}" не будет использована.')
+                else:
+                    self.mc_data['response_pages'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+        self.mc_data['response_pages'][-1] = BaseObject(id=-1, template_id='', template_name='')
+
+        # Получаем полосы пропускания
+        self.stepChanged.emit(f'BLACK|    Получаем полосы пропускания.')
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_template_shapers_list(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                break
+            for x in result:
+                if x['name'] in self.mc_data['shapers']:
+                    self.stepChanged.emit(f'ORANGE|       Полоса пропускания "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Полоса из шаблона "{name}" не будет использована.')
+                else:
+                    self.mc_data['shapers'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+
+                    
         if self.error:
             self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
         else:

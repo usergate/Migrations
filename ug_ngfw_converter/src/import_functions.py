@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.7   16.05.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 2.8   19.05.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -7186,6 +7186,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def add_tags_for_objects(self, data, object_type):
         """Добавляем тэги к объектам определённой группы"""
+        if self.utm.product == 'dcfw':
+            return 0
         error = 0
         tag_relations = []
         for object_id, tags in data.items():
@@ -7196,12 +7198,14 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         'object_id': object_id,
                         'object_type': object_type
                     })
-                except KetError as err:
+                except KeyError as err:
                     self.parent.stepChanged.emit(f'RED|    Error: Не найден тэг {err}.')
                     error = 1
         err, result = self.utm.set_tags_in_objects(tag_relations)
         if err or error:
             self.parent.stepChanged.emit(f'RED|    Error: Произошла ошибка при импорте тэгов для {object_type}.')
+            error = 1
+        return error
 
 
 class Zone:

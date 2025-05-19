@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.8  21.04.2025
+# Версия 3.9  19.05.2025
 #
 
 import os, sys, json
@@ -5081,7 +5081,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def add_tags_for_rules(self, data, list_ids, object_type=None):
-        if self.utm.float_version >= 7.3:
+        if self.utm.float_version >= 7.3 and self.utm.product != 'dcfw':
             err, result = self.utm.get_tags_by_objects(list_ids, object_type)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')

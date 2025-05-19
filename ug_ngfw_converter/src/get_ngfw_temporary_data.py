@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_temporary_data.py
 # Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 2.0  09.04.2025    (идентично ug_ngfw_converter и universal_converter)
+# Version 2.1  19.05.2025    (идентично ug_ngfw_converter и universal_converter)
 #
 
 import os, sys
@@ -182,7 +182,7 @@ class GetExportTemporaryData(QThread, WriteBinFile, TransformObjectName):
         self.ngfw_data['l7_apps'] = result
 
         # Получаем список тэгов
-        if self.utm.float_version >= 7.3:
+        if self.utm.float_version >= 7.3 and self.utm.product != 'dcfw':
             self.stepChanged.emit(f'BLACK|    Получаем список тэгов')
             err, result = self.utm.get_tags_list()
             if err:
@@ -352,7 +352,7 @@ class GetImportTemporaryData(QThread, WriteBinFile, TransformObjectName):
         self.ngfw_data['l7_apps'] = {value: key for key, value in result.items()}
 
         # Получаем список тэгов
-        if self.utm.float_version >= 7.3:
+        if self.utm.float_version >= 7.3 and self.utm.product != 'dcfw':
             self.stepChanged.emit(f'BLACK|    Получаем список тэгов')
             err, result = self.utm.get_tags_list()
             if err:

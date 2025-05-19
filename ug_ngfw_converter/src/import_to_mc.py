@@ -369,7 +369,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'GRAY|       Нет содержимого в группе сервисов "{item["name"]}".')
             else:
                 self.stepChanged.emit(f'GRAY|       Содержимое группы сервисов "{item["name"]}" не обновлено так как она обновляется удалённо.')
-            self.sleep(0)
+            self.msleep(1)
 
         if error:
             self.error = 1
@@ -397,7 +397,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('LBLUE|    Импортируем списки IP-адресов без содержимого.')
         for file_name in files_list:
             json_file = os.path.join(path, file_name)
-            err, data = self.read_json_file(json_file)
+            err, data = self.read_json_file(json_file, mode=2)
             if err:
                 continue
 
@@ -432,6 +432,11 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
             error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка')
             self.stepChanged.emit(f'BLACK|    Импортируем содержимое списка IP-адресов "{data["name"]}".')
+
+            if data['name'] not in ip_lists:
+                self.stepChanged.emit(f'RED|       Не найден список IP-адресов "{data["name"]}". Содержимое не импортировано]')
+                error = 1
+                continue
 
             if self.template_id == ip_lists[data['name']].template_id:
                 if data['list_type_update'] == 'static':
@@ -615,7 +620,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_url_lists(self, path):
-        """Импортировать списки URL на UTM"""
+        """Импортировать списки URL в шаблон МС"""
         self.stepChanged.emit('BLUE|Импорт списков URL раздела "Библиотеки/Списки URL".')
         
         if not os.path.isdir(path):
@@ -633,7 +638,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('LBLUE|    Импортируем списки URL без содержимого.')
         for file_name in files_list:
             json_file = os.path.join(path, file_name)
-            err, data = self.read_json_file(json_file)
+            err, data = self.read_json_file(json_file, mode=2)
             if err:
                 continue
 
@@ -668,7 +673,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
-            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка')
+            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка URL')
             self.stepChanged.emit(f'BLACK|    Импортируем содержимое списка URL "{data["name"]}".')
 
             if self.template_id == url_lists[data['name']].template_id:
@@ -708,7 +713,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         calendars = self.mc_data['calendars']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя календаря')
             content = item.pop('content')
             item.pop('last_update', None)
 
@@ -771,7 +776,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         shapers = self.mc_data['shapers']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя Полосы пропускания')
             if item['name'] in shapers:
                 if self.template_id == shapers[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Полоса пропускания "{item["name"]}" уже существует в текущем шаблоне.')
@@ -826,7 +831,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'uGRAY|    Шаблон страницы "{item["name"]}" уже существует в текущем шаблоне.')
                     err, result = self.utm.update_template_responsepage(self.template_id, response_pages[item['name']].id, item)
                     if err:
-                        self.stepChanged.emit(f'RED|    {result}  [Шаблон страницы "{item["name"]}"]')
+                        self.stepChanged.emit(f'RED|    {result}  [Шаблон страницы "{item["name"]}" не импортирован]')
                         error = 1
                         continue
                     else:
@@ -987,7 +992,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте изменённых категорий URL.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт изменённых категории URL завершён.')
+            self.stepChanged.emit('GREEN|    Импорт изменённых категорий URL завершён.')
 
 
     def import_application_signature(self, path):
@@ -1874,6 +1879,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа приложений {err}. Загрузите группы приложений и повторите попытку.')
                             item['description'] = f'{item["description"]}\nError: Не найдена группа приложений {err}.'
                             condition['apps'] = []
+                            error = 1
                             break
                 elif condition['kind'] == 'mime_types':
                     try:
@@ -1882,6 +1888,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найден тип контента {err}. Загрузите типы контента и повторите попытку.')
                         item['description'] = f'{item["description"]}\nError: Не найден тип контента {err}.'
                         condition['content_types'] = []
+                        error = 1
                 elif condition['kind'] == 'url_category':
                     for x in condition['url_categories']:
                         try:
@@ -1893,6 +1900,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа URL категорий {err}. Загрузите категории URL и повторите попытку.')
                             item['description'] = f'{item["description"]}\nError: Не найдена группа URL категорий {err}.'
                             condition['url_categories'] = []
+                            error = 1
                             break
 
             if item['name'] in scenarios:
@@ -1970,7 +1978,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_interfaces(self, path):
-        """Импортируем интерфесы."""
+        """Импортируем интерфейсы."""
         json_file = os.path.join(path, 'config_interfaces.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -2400,7 +2408,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
                 err, result = self.utm.add_template_interface(self.template_id, item)
                 if err:
-                    self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
+                    self.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                     error = 1
                 else:
                     mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
@@ -4240,6 +4248,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         if err:
             return
 
+        self.stepChanged.emit('BLUE|Импорт свойств агента UserID в раздел "Пользователи и устройства/Агент UserID".')
         json_file = os.path.join(self.config_path, 'version.json')
         err, source_version = self.read_json_file(json_file, mode=2)
         if err:
@@ -4249,7 +4258,6 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 return
             source_version = {'device': 'NGFW', 'float_version': 7.1}
 
-        self.stepChanged.emit('BLUE|Импорт свойств агента UserID в раздел "Пользователи и устройства/Агент UserID".')
         error = 0
         
         useridagent_config = {}
@@ -4472,7 +4480,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 #                    try:
 #                        new_filters.append(useridagent_filters[filter_name])
 #                    except KeyError:
-#                        self.stepChanged.emit(f'RED|    Error [UserID агент "{item["name"]}"]. Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
+#                        self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
 #                        item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
 #                        error = 1
                 item['filters'] = new_filters
@@ -4595,7 +4603,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
             item['services'] = self.get_services(item['services'], item)
             item['time_restrictions'] = self.get_time_restrictions(item)
-        
+
             if item.pop('error', False):
                 item['enabled'] = False
                 error = 1
@@ -4729,6 +4737,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_loadbalancing_tcpudp(self, path, balansing_servers):
         """Импортируем балансировщики TCP/UDP"""
+        self.stepChanged.emit('BLUE|    Импорт балансировщиков TCP/UDP.')
         json_file = os.path.join(path, 'config_loadbalancing_tcpudp.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err in (2, 3):
@@ -4737,7 +4746,6 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         elif err == 1:
             return
 
-        self.stepChanged.emit('BLUE|    Импорт балансировщиков TCP/UDP.')
         tcpudp_rules = {x['name']: x['id'] for x in balansing_servers if x['type'] == 'ipvs'}
         error = 0
 
@@ -6418,16 +6426,15 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             item['source_ips'] = self.get_ips_id('src', item['source_ips'], item)
             item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
             item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
+            message = '       Правило "{item["name"]}" не импортировано.'
             if f'{item["iface_id"]}:cluster' not in self.mc_data['interfaces']:
-                message = f'       Правило "{item["name"]}" не импортировано.'
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден интерфейс VPN "{item["iface_id"]}" в группе шаблонов.\n{message}')
+                self.stepChanged.emit(f'RED|    Eror: [Правило "{item["name"]}"] Не найден интерфейс VPN "{item["iface_id"]}" в группе шаблонов.\n{message}')
                 error = 1
                 continue
             try:
                 item['security_profile_id'] = security_profiles[item['security_profile_id']].id
             except KeyError as err:
-                message = f'Error: [Правило "{item["name"]}"] Не найден профиль безопасности VPN {err}. Загрузите профили безопасности VPN и повторите попытку.'
-                self.stepChanged.emit(f'RED|    {message}\n       Правило "{item["name"]}" не импортировано.')
+                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль безопасности VPN {err}. Загрузите профили безопасности VPN и повторите попытку.\n{message}')
                 error = 1
                 continue
             try:
@@ -6913,7 +6920,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             except KeyError:
                 self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден календарь "{name}" в группе шаблонов.')
                 rule['description'] = f'{rule["description"]}\nError: Не найден календарь "{name}".'
-                rule['eror'] = True
+                rule['error'] = True
         return new_schedules
 
 
@@ -7007,7 +7014,6 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     self.mc_data['l7_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
         return 0
-
 
     def get_email_groups(self):
         """Получаем список групп почтовых адресов группы шаблонов и устанавливаем значение self.mc_data['email_groups']"""

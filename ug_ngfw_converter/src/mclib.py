@@ -424,7 +424,7 @@ class McXmlRpc:
             result = self._server.v1.cccertificates.certificate.details(self._auth_token, template_id, cert_id)
         except rpc.Fault as err:
             return 1, f"Error utm.get_template_certificate_details: [{err.faultCode}] — {err.faultString}"
-        except http.client.RemoteDisconnected:
+        except Exception:
             return 1, f"Error utm.get_template_certificate_details: Ошибка выгрузки детальной информации сертификата."
         return 0, result
 

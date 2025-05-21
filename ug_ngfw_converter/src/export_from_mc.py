@@ -2567,7 +2567,7 @@ class ExportAll(QThread, MyMixedService):
                     error, item['time_restrictions'] = self.get_time_restrictions_name(item['time_restrictions'], item['name'], error, template_name)
                     error, item['cc_network_devices'] = self.get_network_devices(item['cc_network_devices'], item['name'], error, template_name)
                     item['time_created'] = item['time_created'].replace('T', ' ').replace('Z', '')
-                    item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
+                    item['time_updated'] = item.get('time_updated', '').replace('T', ' ').replace('Z', '')
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/CaptivePortal')
                 err, msg = self.create_dir(path)
@@ -3161,7 +3161,7 @@ class ExportAll(QThread, MyMixedService):
                                 error = 1
                         item['hip_profiles'] = new_hip_profiles
                     item['time_created'] = item['time_created'].replace('T', ' ').replace('Z', '')
-                    item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
+                    item['time_updated'] = item.get('time_updated', '').replace('T', ' ').replace('Z', '')
 
                 path = os.path.join(self.group_path, template_name, 'NetworkPolicies/Firewall')
                 err, msg = self.create_dir(path)
@@ -3219,7 +3219,7 @@ class ExportAll(QThread, MyMixedService):
                         error, item['cc_network_devices'] = self.get_network_devices(item['cc_network_devices'], item['name'], error, template_name)
 
                     item['time_created'] = item['time_created'].replace('T', ' ').replace('Z', '')
-                    item['time_updated'] = item['time_updated'].replace('T', ' ').replace('Z', '')
+                    item['time_updated'] = item.get('time_updated', '').replace('T', ' ').replace('Z', '')
 
                 path = os.path.join(self.group_path, template_name, 'NetworkPolicies/NATandRouting')
                 err, msg = self.create_dir(path)
@@ -3548,7 +3548,7 @@ class ExportAll(QThread, MyMixedService):
                     item['user_agents'] = user_agents
 
                     item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
-                    item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+                    item['time_updated'] = item.get('time_updated', '').rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/ContentFiltering')
                 err, msg = self.create_dir(path)
@@ -3596,7 +3596,7 @@ class ExportAll(QThread, MyMixedService):
                     error, item['url_list_exclusions'] = self.get_urls_name(item['url_list_exclusions'], item['name'], error, template_name)
                     error, item['cc_network_devices'] = self.get_network_devices(item['cc_network_devices'], item['name'], error, template_name)
                     item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
-                    item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+                    item['time_updated'] = item.get('time_updated', '').rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/SafeBrowsing')
                 err, msg = self.create_dir(path)
@@ -3698,7 +3698,7 @@ class ExportAll(QThread, MyMixedService):
                         item['ssl_forward_profile_id'] = -1
                         error = 1
                     item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
-                    item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+                    item['time_updated'] = item.get('time_updated', '').rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/SSLInspection')
                 err, msg = self.create_dir(path)
@@ -3749,7 +3749,7 @@ class ExportAll(QThread, MyMixedService):
                     error, item['protocols'] = self.get_services(item['protocols'], item['name'], error)
 
                     item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
-                    item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+                    item['time_updated'] = item.get('time_updated', '').rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/SSHInspection')
                 err, msg = self.create_dir(path)
@@ -3900,7 +3900,7 @@ class ExportAll(QThread, MyMixedService):
                     item['content_types'] = content_types
 
                     item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
-                    item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+                    item['time_updated'] = item.get('time_updated', '').rstrip('Z').replace('T', ' ', 1)
 
                 path = os.path.join(self.group_path, template_name, 'SecurityPolicies/ICAPRules')
                 err, msg = self.create_dir(path)

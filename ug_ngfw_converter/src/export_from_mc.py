@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы экспорта конфигурации из шаблона UserGate Management Center.
-# Версия 1.2  21.04.2025
+# Версия 1.3  21.05.2025
 #
 
 import os, sys, json
@@ -2081,7 +2081,7 @@ class ExportAll(QThread, MyMixedService):
                     err, details_info = self.utm.get_template_certificate_details(template_id, item['id'])
                     if err:
                         self.stepChanged.emit(f'RED|          {details_info}')
-                        self.stepChanged.emit(f'ORANGE|          Error: Не удалось выгрузить детальную информацию сертификата.')
+                        self.stepChanged.emit(f'ORANGE|          Error: [Сертификат "{item["name"]}"] Не удалось выгрузить детальную информацию сертификата.')
                         error = 1
                     else:
                         if isinstance(details_info['notBefore'], class_DateTime):

@@ -41,7 +41,7 @@
 11.3. Запустите на CheckPoint команду <b>save configuration config_cp.txt</b><br>
 11.4. Файл <b>config_cp.txt</b> поместите в тот же каталог: data_checkpoint/<i><имя_которое_вы_задали_на_предыдущем_шаге></i>.<br>
 12. <b>Для Check Point версии 77.30:</b><br>
-12.1. Выгрузите из каталога <b>/opt/CPsuite-R77/fw1/conf/<i>"hostname"</i></b> Check Point файлы <b>objects_5_0.C</b> и <b>rulebases_5_0.fes</b><br>
+12.1. Выгрузите из каталога <b>/opt/CPsuite-R77/fw1/conf/<i>"hostname"</i></b> Check Point файлы <b>objects_5_0.C</b> и <b>rulebases_5_0.fws</b><br>
 12.2. Скопируйте эти файлы в каталог data_checkpoint_old/<i><имя_которое_вы_задали_на_предыдущем_шаге></i>.<br>
 13. <b>Для Fortigate:</b><br>
 13.1. Переименуйте файл конфигурации Fortigate в <b>fortigate.cfg</b> и скопируйте его в каталог data_fortigate/<i><имя_которое_вы_задали_на_предыдущем_шаге></i><br>

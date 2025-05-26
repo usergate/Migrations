@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 #
-# export_cisco_asa_config.py (convert configuration from Cisco ASA to NGFW UserGate).
-#
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
 # License: GPLv3
@@ -20,6 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
+# export_cisco_asa_config.py (convert configuration from Cisco ASA to NGFW UserGate).
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
 # Версия 2.4 24.04.2025
 #

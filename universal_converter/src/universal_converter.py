@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.15    19.05.2025
+# Version 8.16    26.05.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys
@@ -31,7 +31,7 @@ from common_func import create_dir, message_alert
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.15)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.16)")
         ico = QIcon("favicon.png")
 #        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
         self.setWindowIcon(ico)
@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         self._base_asa_path = 'data_cisco_asa'
         self._base_fpr_path = 'data_cisco_fpr'
         self._base_cp_path = 'data_checkpoint'
+        self._base_cp_old_path = 'data_checkpoint_old'
         self._base_fort_path = 'data_fortigate'
         self._base_huawei_path = 'data_huawei'
         self._base_mikrotik_path = 'data_mikrotik'
@@ -63,6 +64,7 @@ class MainWindow(QMainWindow):
             create_dir(self._base_asa_path, delete='no')
             create_dir(self._base_fpr_path, delete='no')
             create_dir(self._base_cp_path, delete='no')
+            create_dir(self._base_cp_old_path, delete='no')
             create_dir(self._base_fort_path, delete='no')
             create_dir(self._base_huawei_path, delete='no')
             create_dir(self._base_mikrotik_path, delete='no')
@@ -84,6 +86,8 @@ class MainWindow(QMainWindow):
                 return self._base_fpr_path
             case 'Check Point':
                 return self._base_cp_path
+            case 'Check Point (old)':
+                return self._base_cp_old_path
             case 'Fortigate':
                 return self._base_fort_path
             case 'Huawei':

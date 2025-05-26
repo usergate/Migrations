@@ -374,6 +374,20 @@ class MyConv(MyMixedService):
 
 
     @staticmethod
+    def get_network_by_ipaddress(ip, mask):
+        """Получаем ip и маску (24, 255.255.255.0). Выдаём network."""
+        if ip == '0':
+            ip = '0.0.0.0'
+        if mask == '0':
+            mask = '0.0.0.0'
+        try:
+            interface = ipaddress.ip_interface(f'{ip}/{mask}')
+        except ValueError as err:
+            return 1, err
+        return 0, f'{interface.network}'
+
+
+    @staticmethod
     def ip_isglobal(ip):
         """
         Получаем ip-адрес и проверяем что он в глобальном адресном пространстве.

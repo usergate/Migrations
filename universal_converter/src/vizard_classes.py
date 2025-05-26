@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.11    25.03.2025
+# Версия 1.12    21.05.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -21,8 +21,9 @@ import export_checkpoint_config as cp
 import export_mikrotik_config as mikrotik
 import import_to_mc
 import get_ngfw_temporary_data as gtd
+from export_checkpoint_old_config import ConvertOldCheckPointConfig
 from get_mc_temporary_data import GetMcTemporaryData
-from import_functions import ImportNgfwSelectedPoints # as tf
+from import_functions import ImportNgfwSelectedPoints
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
 
@@ -345,9 +346,9 @@ class SelectExportMode(QWidget):
         frame_nodeinfo.setLayout(hbox_nodeinfo)
 
         list_item_font = QFont("Serif", pointSize=14, weight=600)
-        vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Fortigate', 'Huawei', 'MikroTik']
+        vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Check Point (old)', 'Fortigate', 'Huawei', 'MikroTik']
         self.vendor_list = QListWidget()
-        self.vendor_list.setMaximumWidth(150)
+        self.vendor_list.setMaximumWidth(180)
         for vendor in vendors:
             new_item = QListWidgetItem()
             new_item.setText(vendor)
@@ -420,6 +421,34 @@ class SelectExportMode(QWidget):
         """
         self.selected_point = selected_item
         self.vendor_base_path = self.parent.get_vendor_base_path(selected_item)
+        match self.selected_point:
+            case 'Check Point (old)':
+                self.log_list.clear()
+                message = f'{"Конвертация конфигурации CheckPoint версии 77.30":>70}'
+                self.add_item_log(message, color='BLUE')
+                message = (
+                    '\n   Для конвертации необходимо с устройства CheckPoint выгрузить файлы "objects_5_0.C"\n'
+                    '   и "rulebases_5_0.fws" из /opt/CPsuite-R77/fw1/conf/"hostname" и скопировать их в каталог\n'
+                    '   "data_checkpoint_old/<имя_заданное_вами_для_данного_устройства>"\n'
+                )
+                self.add_item_log(message)
+                message = (
+                    '   Переносятся настройки:\n'
+                    '       1. Списки IP-адресов\n'
+                    '       2. Списки групп IP-адресов\n'
+                    '       3. Сетевые сервисы\n'
+                    '       4. Группы сетевых сервисов\n'
+                    '       5. Шлюзы\n'
+                    '       6. Статические маршруты\n'
+                    '       7. Правила межсетевого экрана\n'
+                )
+                self.add_item_log(message, color='BLUE')
+            case 'Check Point':
+                self.log_list.clear()
+                message = f'{"Конвертация конфигурации CheckPoint версии 80.40 и выше":>70}'
+                self.add_item_log(message, color='BLUE')
+            case _:
+                self.log_list.clear()
 
     def export_selected_vendor(self):
         """
@@ -455,6 +484,8 @@ class SelectExportMode(QWidget):
                             return
                         self.label_version.setText(f'{self.selected_point} - {msg}')
                         self.thread = cp.ConvertCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path(), msg)
+                    case 'Check Point (old)':
+                        self.thread = ConvertOldCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Fortigate':
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Huawei':

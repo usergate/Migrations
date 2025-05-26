@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 #
-# asa_convert_config (convert Cisco ASA configuration to NGFW UserGate).
-#
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
 # License: GPLv3

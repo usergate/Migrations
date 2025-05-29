@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.9  19.05.2025
+# Версия 3.10  29.05.2025
 #
 
 import os, sys, json
@@ -1607,7 +1607,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('id', None)
                 item.pop('position_layer', None)
                 item.pop('deleted_users', None)
-                _, item['users'] = self.get_names_users_and_groups(item['users'], item['name'])
+                item['users'] = self.get_names_users_and_groups(item['users'], item['name'])
 
             err, msg = self.create_dir(path)
             if err:

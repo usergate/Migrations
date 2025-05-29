@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # ug_ngfw_converter.py
-# Version 4.10  21.05.2025
+# Version 4.11  21.05.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys
@@ -31,7 +31,7 @@ from common_func import create_dir, message_alert
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.10)")
+        self.setWindowTitle("Экспорт/Импорт конфигурации продуктов UserGate (version 4.11)")
         ico = QIcon("favicon.png")
 #        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png"))  # Для PyInstaller
         self.setWindowIcon(ico)
@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
         self.stacklayout.addWidget(vc.SelectMcExportMode(self))
         self.stacklayout.addWidget(vc.SelectImportMode(self))
         self.stacklayout.addWidget(vc.SelectMcImportMode(self))
+        self.stacklayout.addWidget(vc.SelectMcTemplateGroupImport(self))
 
         main_widget = QWidget()
         main_widget.setLayout(self.stacklayout)
@@ -89,7 +90,7 @@ class MainWindow(QMainWindow):
         """
         if os.path.isfile('temporary_data.bin'):
             os.remove('temporary_data.bin')
-        for i in (1, 2, 3, 4):
+        for i in (1, 2, 3, 4, 5):
             if self.stacklayout.widget(i).utm:
                 self.stacklayout.widget(i).utm.logout()
                 break

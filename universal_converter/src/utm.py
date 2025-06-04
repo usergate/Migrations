@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 4.3   15.04.2025
+# Версия 4.4   04.06.2025
 # Общий класс для работы с xml-rpc для NGFW и DCFW
 #
 # Коды возврата:
@@ -60,7 +60,6 @@ class UtmXmlRpc:
         else:
             self._auth_token = result.get('auth_token')
             self.node_name =  result.get('node')
-            self.product = result.get('product', None)
             self.version = result.get('version')
             tmp = self.version.split(".")
             self.version_hight = int(tmp[0])
@@ -68,6 +67,10 @@ class UtmXmlRpc:
             self.version_low = int(''.join(n for n in tmp[2] if n.isdecimal()))
             self.version_other = tmp[3]
             self.float_version = float(f'{tmp[0]}.{tmp[1]}')
+            if self.version_hight == 8:
+                self.product = 'dcfw'
+            else:
+                self.product = result.get('product', None)
             self.waf_license = False    # При новом логине сбрасываем значение
             try:
                 result = self._server.v2.core.license.info(self._auth_token)

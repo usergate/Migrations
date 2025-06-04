@@ -10,7 +10,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
-                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog)
+                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog, QRadioButton, QButtonGroup)
 import common_func as func
 import config_style as cs
 import export_from_ngfw as ef
@@ -19,6 +19,7 @@ import get_ngfw_temporary_data as gtd
 from get_mc_temporary_data import GetMcTemporaryData
 from import_to_mc import ImportMcSelectedPoints
 from import_functions import ImportNgfwSelectedPoints
+from import_mc_to_mc import ImportMcSelectedTemplates
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
 
@@ -32,10 +33,10 @@ class SelectAction(QWidget):
         text2 = ("Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b> "
                  "и сохранение её в файлах json в каталоге <b>data</b> в текущей директории.")
         text3 = ("Экспорт группы шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b> "
-                 "и сохранение в каталог <b>mc_templates/<i>Group_name</i></b> в текущей директории.")
+                 "и сохранение в каталог <b>mc_templates</b> в текущей директории.")
         text4 = "Импорт файлов конфигурации NGFW из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b>."
         text5 = "Импорт файлов конфигурации NGFW из каталога <b>data</b> в группу шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b>."
-        text6 = "Импорт из каталога <b>mc_templates/<i>Group_name</i></b> ранее экспортированной группы шаблонов в административную область <b>UserGate Management Center</b> версии <b>7</b>."
+        text6 = "Импорт из каталога <b>mc_templates</b> ранее экспортированной группы шаблонов в административную область <b>UserGate Management Center</b> версии <b>7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -84,7 +85,7 @@ class SelectAction(QWidget):
         self.btn_import_mc_template.setFont(btn_font)
         self.btn_import_mc_template.setFixedWidth(280)
         self.btn_import_mc_template.setEnabled(False)
-#        self.btn_import_mc_template.clicked.connect(self.set_import_mc_template)
+        self.btn_import_mc_template.clicked.connect(self.set_import_mc_template)
         
         layout = QGridLayout()
         layout.addWidget(self.btn_export, 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
@@ -127,7 +128,7 @@ class SelectAction(QWidget):
 
     def resize_window(self, e):
         if e == 0:
-            self.parent.resize(630, 390)
+            self.parent.resize(1000, 300)
 
     def set_export_page(self):
         """Переходим на страницу экспорта конфигурации из NGFW. Номер в стеке 1."""
@@ -439,14 +440,14 @@ class SelectExportMode(SelectMode):
 
 
 class SelectMcExportMode(QWidget):
-    """Класс для экспорта конфигурации из группы шаблонов MC. Номер в стеке 2."""
+    """Класс для экспорта конфигурации NGFW из группы шаблонов MC. Номер в стеке 2."""
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
         self.utm = None
-        self.base_path = None
+        self.groups = {}
+        self.base_path = {}
         self.group_path = None
-        self.groups = None
         self.selected_group = None
         self.thread = None
 
@@ -552,7 +553,7 @@ class SelectMcExportMode(QWidget):
         if e == 2:
             self.parent.resize(980, 750)
             if self.get_auth():
-                self.label_node_name.setText(f'  {self.utm.node_name}')
+                self.label_node_name.setText(f'  {self.utm.node_name}/{self.utm._login.split("/")[1]}')
                 self.label_version.setText(f'MC (версия {self.utm.version})')
                 if self.utm.float_version < 7.1:
                     message = f'Экспорт шаблонов Management Center версии мене чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
@@ -561,30 +562,46 @@ class SelectMcExportMode(QWidget):
                     self.run_page_0()
                     return
 
-                self.base_path = os.path.join(self.parent.mc_base_path, self.utm._login.split('/')[1])
-                err, msg = func.create_dir(self.base_path, delete='no')
-                if err:
-                    func.message_alert(self, msg, '')
-                    self.run_page_0()
-                    return
-                else:
-                    with open(os.path.join(self.base_path, 'version.json'), 'w') as fh:
+                dialog = SelectConfigDirectoryWindow(self.parent, mode='export', device_type='MC')
+                result = dialog.exec()
+                if result == QDialog.DialogCode.Accepted:
+                    err, msg = self.create_all_dirs()
+                    if err:
+                        func.message_alert(self, msg, '')
+                        self.run_page_0()
+                        return
+
+                    with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'w') as fh:
                         json.dump({'device': 'MC', 'node name': self.utm.node_name, 'version': self.utm.version, 'admin': self.utm._login}, fh, indent=4)
-                self.groups = self.get_groups_templates()
-                if self.groups:
-#                    print('groups', self.groups)
-                    self.tree.init_tree({key: [x for x in value.values()] for key, value in self.groups.items()})
+                    self.groups['NGFW'] = self.get_ngfw_groups_templates()
+                    self.groups['DCFW'] = {}
+                    self.groups['EndPoint'] = self.get_endpoint_groups_templates()
+                    self.groups['LogAn'] = {}
+                    
+                    tree_dirs = {key: {key1: [y for y in val1.values()] for key1, val1 in value.items()} for key, value in self.groups.items()}
+                    self.tree.init_tree(tree_dirs)
                     self.tree.setHidden(False)
-                    self.btn2.setStyleSheet('color: forestgreen; background: white;')
-                    self.btn2.setEnabled(True)
                 else:
-                    func.message_inform(self, 'Проблема..', 'Нет групп шаблонов в области.\nШаблоны не входящие в группу шаблонов не экспортируются.')
                     self.run_page_0()
             else:
                 self.run_page_0()
 
-    def get_groups_templates(self):
-        """Получаем группы шаблонов области и шаблоны каждой группы."""
+    def create_all_dirs(self):
+        """"""
+        self.base_path['NGFW'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'NGFW')
+        self.base_path['DCFW'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'DCFW')
+        self.base_path['EndPoint'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'EndPoint')
+        self.base_path['LogAn'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'LogAn')
+        try:
+            for path in self.base_path.values():
+                if not os.path.isdir(path):
+                    os.makedirs(path)
+        except Exception as err:
+            return 1, f'Ошибка создания каталога: "{path}" [{err}]'
+        return 0, 'Ok'
+
+    def get_ngfw_groups_templates(self):
+        """Для NGFW. Получаем группы шаблонов области и шаблоны каждой группы."""
         groups = {}
         err, result = self.utm.get_device_templates()
         if err:
@@ -600,14 +617,37 @@ class SelectMcExportMode(QWidget):
                     groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['device_templates']}
         return groups
 
+    def get_endpoint_groups_templates(self):
+        """Для EndPoint. Получаем группы шаблонов области и шаблоны каждой группы."""
+        groups = {}
+        err, result = self.utm.get_endpoint_templates()
+        if err:
+            func.message_alert(self, 'Не удалось получить список шаблонов', result)
+        else:
+            realm_templates = {x['id']: x['name'] for x in result}
+
+            err, result = self.utm.get_endpoint_templates_groups()
+            if err:
+                func.message_alert(self, 'Не удалось получить список групп шаблонов', result)
+            else:
+                for item in result:
+                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['endpoint_templates']}
+        return groups
+
     def get_selected_item(self, selected_item):
         """Получаем выбранную группу шаблонов"""
-        self.group_path = os.path.join(self.base_path, selected_item)
-        self.label_config_directory.setText(f'{self.group_path}  ')
-        self.selected_group = selected_item
-        self.log_list.clear()
-        self.btn3.setEnabled(False)
-        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+        self.device = selected_item
+        if self.tree.selected_path:
+            self.selected_group = self.tree.selected_path['group']
+            self.group_path = os.path.join(self.base_path[self.device], self.selected_group)
+            self.label_config_directory.setText(f'{self.group_path}  ')
+            self.btn2.setStyleSheet('color: forestgreen; background: white;')
+            self.btn2.setEnabled(True)
+        else:
+            self.label_config_directory.setText(f'{self.base_path[self.device]}  ')
+            self.btn2.setStyleSheet('color: gray; background: gainsboro;')
+            self.btn2.setEnabled(False)
+
 
     def export_selected_group(self):
         """
@@ -619,10 +659,17 @@ class SelectMcExportMode(QWidget):
             self.run_page_0()
 
         if self.selected_group:
-            title = f'Экспорт конфигурации из группы шаблонов "{self.selected_group}" МС версии {self.utm.version} в каталог "{self.group_path}".'
-            self.add_item_log(f'{title:>100}', color='GREEN')
-            self.add_item_log(f'{"="*100}', color='ORANGE')
-            templates = self.groups[self.selected_group]
+            self.log_list.clear()
+            if self.device in ('DCFW', 'EndPoint', 'LogAn'):
+                message = f'Экспорт шаблонов "{self.device}" из Management Center пока не реализован.'
+                self.add_item_log(message, color='ORANGE')
+                func.message_inform(self, 'Внимание', message)
+                return
+
+            title = f'Экспорт группы шаблонов "{self.selected_group}" из МС версии {self.utm.version} в каталог "{self.group_path}".'
+            self.add_item_log(f'{title:>160}', color='GREEN')
+            self.add_item_log(f'{"="*160}', color='ORANGE')
+            templates = self.groups[self.device][self.selected_group]
             if templates:
                 err, msg = func.create_dir(self.group_path, delete='no')
                 if err:
@@ -665,9 +712,9 @@ class SelectMcExportMode(QWidget):
         if self.utm:
             self.utm.logout()
         self.utm = None
-        self.base_path = None
+        self.base_path.clear()
         self.group_path = None
-        self.groups = None
+        self.groups.clear()
         self.selected_group = None
         self.label_node_name.setText('')
         self.label_version.setText('')
@@ -1144,11 +1191,14 @@ class SelectMcTemplateGroupImport(QWidget):
         super().__init__()
         self.parent = parent
         self.utm = None
+        self.device_type = 'NGFW'
+        self.base_path = {}
         self.current_realm_name = None
         self.current_realm_config = {}
         self.selected_group = None
         self.selected_templates = []
         self.thread = None
+        self.tmp_list = []
 
         self.title = QLabel("<b><font color='green' size='+2'>Импорт группы шаблонов МС на UserGate Management Center</font></b>")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1205,8 +1255,28 @@ class SelectMcTemplateGroupImport(QWidget):
         self.btn4.setEnabled(False)
         self.btn4.clicked.connect(lambda: self._save_logs('import.log'))
 
+        self.btn_ngfw = QRadioButton('NGFW')
+        self.btn_ngfw.setChecked(True)
+        self.btn_dcfw = QRadioButton('DCFW')
+        self.btn_dcfw.setEnabled(False)
+        self.btn_endpoint = QRadioButton('EndPoint')
+        self.btn_endpoint.setEnabled(False)
+        self.btn_logan = QRadioButton('LogAn')
+        self.btn_logan.setEnabled(False)
+        self.button_group = QButtonGroup()
+        self.button_group.addButton(self.btn_ngfw)
+        self.button_group.addButton(self.btn_dcfw)
+        self.button_group.addButton(self.btn_endpoint)
+        self.button_group.addButton(self.btn_logan)
+        self.button_group.buttonClicked.connect(self._radio_button_clicked)
+
         hbox_btn = QHBoxLayout()
         hbox_btn.addWidget(self.btn1)
+        hbox_btn.addStretch()
+        hbox_btn.addWidget(self.btn_ngfw)
+        hbox_btn.addWidget(self.btn_dcfw)
+        hbox_btn.addWidget(self.btn_endpoint)
+        hbox_btn.addWidget(self.btn_logan)
         hbox_btn.addStretch()
         hbox_btn.addWidget(self.btn2)
         hbox_btn.addStretch()
@@ -1241,6 +1311,18 @@ class SelectMcTemplateGroupImport(QWidget):
         self.btn3.setEnabled(True)
 
 
+    def _radio_button_clicked(self, button):
+        self.device_type = button.text()
+        self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.device_type}  ')
+        tmp_string = 'шаблонов' if len(self.selected_templates) > 1 else 'шаблона'
+        title = f'Импорт {tmp_string} "{'", "'.join(self.selected_templates)}" группы шаблонов "{self.selected_group}" на МС.'
+        title1 = f'Область: "{self.current_realm_name}" группа устройств: "{self.device_type}".'
+        self.log_list.clear()
+        self.add_item_log(f'{title:>100}', color='GREEN')
+        self.add_item_log(f'{title1:>100}', color='GREEN')
+        self.add_item_log(f'{"="*100}', color='ORANGE')
+
+
     def get_auth(self):
         """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
         if self.utm:
@@ -1261,56 +1343,69 @@ class SelectMcTemplateGroupImport(QWidget):
         """
         if e == 5:
             self.parent.resize(980, 750)
-            realms_groups = {}
-            realms = sorted(os.listdir(self.parent.mc_base_path))
-            for realm in realms:
-                realm_path = os.path.join(self.parent.mc_base_path, realm)
-                if os.path.isdir(realm_path):
-                    realm_groups = sorted(os.listdir(realm_path))
-                    realms_groups[realm] = {}
-                    for group in realm_groups:
-                        group_path = os.path.join(realm_path, group)
-                        if os.path.isdir(group_path):
-                            realms_groups[realm][group] = sorted(os.listdir(group_path))
-            if realms_groups:
-                if self.get_auth():
-                    self.current_realm_name = self.utm._login.split('/')[1]
-                    self.label_base_path.setText(f'  Input: ./{self.parent.mc_base_path}/{self.current_realm_name}')
-                    self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}  ')
-                    self.label_version.setText(f'MC (версия {self.utm.version})')
-                    if self.utm.float_version < 7.1:
-                        message = f'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
-                        self.add_item_log(message, color='RED')
-                        func.message_inform(self, 'Внимание!', message)
-                        self.run_page_0()
-                        return
-                    if realms_groups.get(self.current_realm_name, False):
-                        self.current_realm_config = realms_groups[self.current_realm_name]
-                        self.tree.init_tree(self.current_realm_config)
-                        self.tree.setHidden(False)
-                    else:
-                        message = f'Error: В каталоге "{self.parent.mc_base_path}" нет групп шаблонов для области "{self.current_realm}".'
-                        self.add_item_log(message, color='RED')
-                        func.message_inform(self, 'Внимание', message)
-                else:
-                    self.run_page_0()
+            dialog = SelectDirectoryAndRealm(self.parent)
+            result = dialog.exec()
+            if result == QDialog.DialogCode.Accepted:
+                print(self.parent.get_config_path())
+
+                self.base_path['NGFW'] = os.listdir(self.parent.get_config_path())
+
+#                realms_groups = {}
+#                realms = sorted(os.listdir(self.parent.get_config_path()))
+#                for realm in realms:
+#                    realm_path = os.path.join(self.parent.get_config_path(), realm)
+#                    if os.path.isdir(realm_path):
+#                        realm_groups = sorted(os.listdir(realm_path))
+#                        realms_groups[realm] = {}
+#                        for group in realm_groups:
+#                            group_path = os.path.join(realm_path, group)
+#                            if os.path.isdir(group_path):
+#                                realms_groups[realm][group] = sorted(os.listdir(group_path))
+#                print(realms_groups)
+#                return
             else:
-                message = f'Error: В каталоге "{self.parent.mc_base_path}" нет групп шаблонов для экспорта.'
-                self.add_item_log(message, color='RED')
-                func.message_inform(self, 'Внимание', message)
                 self.run_page_0()
+
+#            if realms_groups:
+#                if self.get_auth():
+#                    self.current_realm_name = self.utm._login.split('/')[1]
+#                    self.label_base_path.setText(f'  Input: ./{self.parent.mc_base_path}/{self.current_realm_name}')
+#                    self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.device_type}  ')
+#                    self.label_version.setText(f'MC (версия {self.utm.version})')
+#                    if self.utm.float_version < 7.1:
+#                        message = f'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
+#                        self.add_item_log(message, color='RED')
+#                        func.message_inform(self, 'Внимание!', message)
+#                        self.run_page_0()
+#                        return
+#                    if realms_groups.get(self.current_realm_name, False):
+#                        self.current_realm_config = realms_groups[self.current_realm_name]
+#                        self.tree.init_tree(self.current_realm_config)
+#                        self.tree.setHidden(False)
+#                    else:
+#                        message = f'Error: В каталоге "{self.parent.mc_base_path}" нет групп шаблонов для области "{self.current_realm}".'
+#                        self.add_item_log(message, color='RED')
+#                        func.message_inform(self, 'Внимание', message)
+#                else:
+#                    self.run_page_0()
+#            else:
+#                message = f'Error: В каталоге "{self.parent.mc_base_path}" нет групп шаблонов для экспорта.'
+#                self.add_item_log(message, color='RED')
+#                func.message_inform(self, 'Внимание', message)
+#                self.run_page_0()
 
 
     def get_selected_item(self, selected_item):
         """Получаем группу шаблонов и шаблоны в этой группе"""
         self.selected_group = self.tree.selected_path['group']
         self.selected_templates = self.tree.selected_path['points']
-        print(self.selected_group, '-', self.selected_templates, '\n')
         self.enable_buttons()
         tmp_string = 'шаблонов' if len(self.selected_templates) > 1 else 'шаблона'
         title = f'Импорт {tmp_string} "{'", "'.join(self.selected_templates)}" группы шаблонов "{self.selected_group}" на МС.'
+        title1 = f'Область: "{self.current_realm_name}" группа устройств: "{self.device_type}".'
         self.log_list.clear()
         self.add_item_log(f'{title:>100}', color='GREEN')
+        self.add_item_log(f'{title1:>100}', color='GREEN')
         self.add_item_log(f'{"="*100}', color='ORANGE')
 
 
@@ -1321,25 +1416,21 @@ class SelectMcTemplateGroupImport(QWidget):
         """
         if not func.check_auth(self):
             self.run_page_0()
-
-        if self.selected_templates:
-            if self.thread is None:
-                self.disable_buttons()
-                self.thread = ImportMcSelectedPoints(
-                    self.utm,
-                    realm_config = None,
-                    realm_path = os.path.join(self.parent.mc_base_path, self.current_realm_name),
-                    selected_group = self.selected_group,
-                    templates = self.selected_templates
-                )
-                self.thread.stepChanged.connect(self.on_step_changed)
-                self.thread.finished.connect(self.on_finished)
-                self.thread.start()
-            else:
-                func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
-
+        if self.thread is None:
+            self.disable_buttons()
+            self.thread = ImportMcSelectedTemplates(
+                self.utm,
+                device_type = self.device_type,
+                realm_config = None,
+                realm_path = os.path.join(self.parent.mc_base_path, self.current_realm_name),
+                selected_group = self.selected_group,
+                templates = self.selected_templates
+            )
+            self.thread.stepChanged.connect(self.on_step_changed)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
         else:
-            func.message_inform(self, "Внимание", f'В группе шаблонов "{self.selected_group}" нет шаблонов для импорта.')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
 
     def import_all(self):
@@ -1350,33 +1441,15 @@ class SelectMcTemplateGroupImport(QWidget):
         if not func.check_auth(self):
             self.run_page_0()
 
-        node_name = 'node_1'
-        node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
-        if not ok:
-            func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
-            return
-
-        all_points = self.tree.select_all_items()
-        arguments = {
-            'ngfw_ports': [],
-            'dhcp_settings': [],
-            'ngfw_vlans': '',
-            'new_vlans': '',
-            'iface_settings': '',
-        }
-        self.tree.set_current_item()
-
         if self.thread is None:
             self.disable_buttons()
-            self.thread = ImportMcSelectedPoints(
-                            self.utm,
-                            self.parent.get_config_path(),
-                            self.template_id,
-                            self.templates,
-                            arguments,
-                            node_name,
-                            all_points=all_points
-                            )
+            self.thread = ImportMcSelectedTemplates(
+                self.utm,
+                realm_config = self.current_realm_config,
+                realm_path = os.path.join(self.parent.mc_base_path, self.current_realm_name),
+                selected_group = None,
+                templates = None
+            )
             self.thread.stepChanged.connect(self.on_step_changed)
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
@@ -1389,19 +1462,20 @@ class SelectMcTemplateGroupImport(QWidget):
         if self.utm:
             self.utm.logout()
         self.utm = None
-        self.base_path = None
+        self.base_path.clear()
         self.current_realm = None
         self.realms_groups = {}
         self.selected_group = None
         self.selected_templates = []
+        self.device_type = 'NGFW'
         self.label_base_path.setText(f'  Input: ./{self.parent.mc_base_path}')
         self.label_node_name.setText('')
         self.label_version.setText('')
         self.log_list.clear()
         self.tree.clear()
         self.tree.setHidden(True)
-#        if os.path.isfile('temporary_data.bin'):
-#            os.remove('temporary_data.bin')
+        if os.path.isfile('temporary_data.bin'):
+            os.remove('temporary_data.bin')
         self.parent.stacklayout.setCurrentIndex(0)
 
 
@@ -1421,6 +1495,30 @@ class SelectMcTemplateGroupImport(QWidget):
             print(*list_items, sep='\n', file=fh)
             fh.write('\n')
         func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
+
+
+    def on_step_changed(self, msg):
+        color, _, message = msg.partition('|')
+        if color == 'RED':
+            self.add_item_log(message, color=color)
+            self.log_list.scrollToBottom()
+        elif color in ('BLACK', 'NOTE'):
+            self.tmp_list.append((message, color))
+        else:
+            if self.tmp_list:
+                for x in self.tmp_list:
+                    self.add_item_log(x[0], color=x[1])
+                self.tmp_list.clear()
+            self.add_item_log(message, color=color)
+            self.log_list.scrollToBottom()
+        if color in ('iORANGE', 'iGREEN', 'iRED'):
+            func.message_inform(self, 'Внимание!', message)
+
+
+    def on_finished(self):
+        self.thread = None
+        self.enable_buttons()
+        self.tree.setEnabled(True)
 
 
 class SelectMcGroupTemplates(QDialog):
@@ -1568,24 +1666,33 @@ class SelectMcDestinationTemplate(QDialog):
 
 class SelectConfigDirectoryWindow(QDialog):
     """Диалоговое окно выбора каталога для экспорта/импорта конфигурации"""
-    def __init__(self, parent, mode):
+    def __init__(self, parent, mode, device_type='NGFW'):
         super().__init__(parent)
         self.main_window = parent
+        self.device_type = device_type
         self.setWindowTitle("Выбор каталога")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
+        self.base_path = None
 
-        list_dir = os.listdir(self.main_window.ngfw_base_path)
+        match self.device_type:
+            case 'NGFW':
+                self.base_path = self.main_window.ngfw_base_path
+            case 'MC':
+                self.base_path = self.main_window.mc_base_path
+        list_dir = os.listdir(self.base_path)
         self.config_directory = QComboBox()
         self.config_directory.addItems(sorted(list_dir))
         if mode == 'export':
             self.setFixedHeight(160)
             self.config_directory.setEditable(True)
-            text = "<b><font color='green'>Введите название каталога для экспорта конфигурации.<br> \
-Каталог будет создан в текущей директории в каталоге data.<br>Или выберите из уже существующих.</font></b>"
+            text = (
+                '<b><font color="green">Введите название каталога для экспорта конфигурации.<br> '
+                f'Каталог будет создан в текущей директории в каталоге {self.base_path}.<br>Или выберите из уже существующих.</font></b>'
+            )
         else:
             self.setFixedHeight(120)
             self.config_directory.setEditable(False)
-            text = "<b><font color='green'>Выберите каталог с импортируемой конфигурацией.<br>"
+            text = "<b><font color='green'>Выберите каталог с импортируемой конфигурацией.</b><br>"
 
         title = QLabel(text)
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1613,7 +1720,7 @@ class SelectConfigDirectoryWindow(QDialog):
         
     def _send_accept(self):
         if self.config_directory.currentText():
-            self.main_window.set_config_path(self.config_directory.currentText())
+            self.main_window.set_config_path(self.base_path, self.config_directory.currentText())
             err, msg = func.create_dir(self.main_window.get_config_path(), delete='no')
             if err:
                 self.main_window.del_config_path()
@@ -1622,49 +1729,59 @@ class SelectConfigDirectoryWindow(QDialog):
                 self.accept()
 
 
-#class SelectTemplateGroupDirectory(QDialog):
-#    """Диалоговое окно выбора каталога для экспорта/импорта конфигурации"""
-#    def __init__(self, parent):
-#        super().__init__(parent)
-#        self.main_window = parent
-#        self.config_path = None
-#        self.setWindowTitle("Выбор группы шаблонов")
-#        self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
-#
-#        list_dir = os.listdir(self.main_window.mc_base_path)
-#        self.config_directory = QComboBox()
-#        self.config_directory.addItems(sorted(list_dir))
-#        self.setFixedHeight(120)
-#        self.config_directory.setEditable(False)
-#
-#        title = QLabel("<b><font color='green'>Выберите группу шаблонов для импорта.<br>")
-#        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-#
-#        btn_enter = QPushButton("Ввод")
-#        btn_enter.setStyleSheet('color: steelblue; background: white;')
-#        btn_enter.setFixedWidth(80)
-#        btn_enter.clicked.connect(self._send_accept)
-#        btn_exit = QPushButton("Отмена")
-#        btn_exit.setStyleSheet('color: darkred;')
-#        btn_exit.setFixedWidth(80)
-#        btn_exit.clicked.connect(self.reject)
-#
-#        btn_hbox = QHBoxLayout()
-#        btn_hbox.addWidget(btn_enter)
-#        btn_hbox.addStretch()
-#        btn_hbox.addWidget(btn_exit)
-#
-#        layout = QVBoxLayout()
-#        layout.addWidget(title)
-#        layout.addWidget(self.config_directory)
-#        layout.addSpacerItem(QSpacerItem(1, 8))
-#        layout.addLayout(btn_hbox)
-#        self.setLayout(layout)
-#        
-#    def _send_accept(self):
-#        if self.config_directory.currentText():
-#            self.config_path = self.config_directory.currentText()
-#            self.accept()
+class SelectDirectoryAndRealm(QDialog):
+    """
+    Диалоговое окно выбора каталога и области в каталоге для импорта групп шаблонов в МС.
+    Используется в SelectMcTemplateGroupImport.
+    """
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.main_window = parent
+        self.setWindowTitle("Выбор каталога и области")
+        self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
+
+        title = QLabel("<b><font color='green'>Выберите каталог и область МС в каталоге.")
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        list_dir = os.listdir(self.main_window.mc_base_path)
+        self.config_dir = QComboBox()
+        self.config_dir.addItems(sorted(list_dir))
+        self.config_dir.setEditable(False)
+
+        if self.config_dir.currentText():
+            list_realm = os.listdir(os.path.join(self.main_window.mc_base_path, self.config_dir.currentText()))
+        self.config_realm = QComboBox()
+        self.config_realm.addItems(sorted(list_realm))
+        self.config_realm.setEditable(False)
+        
+        btn_enter = QPushButton("Ввод")
+        btn_enter.setStyleSheet('color: steelblue; background: white;')
+        btn_enter.setFixedWidth(80)
+        btn_enter.clicked.connect(self._send_accept)
+        btn_exit = QPushButton("Отмена")
+        btn_exit.setStyleSheet('color: darkred;')
+        btn_exit.setFixedWidth(80)
+        btn_exit.clicked.connect(self.reject)
+
+        btn_hbox = QHBoxLayout()
+        btn_hbox.addWidget(btn_enter)
+        btn_hbox.addStretch()
+        btn_hbox.addWidget(btn_exit)
+
+        layout = QVBoxLayout()
+        layout.addWidget(title)
+        layout.addSpacerItem(QSpacerItem(1, 8))
+        layout.addWidget(self.config_dir)
+        layout.addWidget(self.config_realm)
+        layout.addSpacerItem(QSpacerItem(1, 8))
+        layout.addLayout(btn_hbox)
+        self.setLayout(layout)
+
+    def _send_accept(self):
+        if self.config_dir.currentText() and self.config_realm.currentText():
+            self.config_path = os.path.join(self.config_dir.currentText(), self.config_realm.currentText())
+            self.main_window.set_config_path(self.main_window.mc_base_path, self.config_path)
+            self.accept()
 
 
 class LoginWindow(QDialog):
@@ -1905,7 +2022,7 @@ class TreeGroupTemplates(QTreeWidget):
         self.setHidden(True)
         self.child_status = child_disabled
         self.child_color = QColor('#556682') if self.child_status else QColor('#2f4f4f')
-        self.selected_path = None
+        self.selected_path = {}
         self.itemSelectionChanged.connect(self.select_item)
 
     def init_tree(self, data):
@@ -1913,13 +2030,17 @@ class TreeGroupTemplates(QTreeWidget):
         items = []
         for key, values in data.items():
             item = QTreeWidgetItem([key])
-            item.setForeground(0, Qt.GlobalColor.darkBlue)
+            item.setForeground(0, Qt.GlobalColor.darkRed)
             item.setFont(0, tree_head_font)
-            for value in values:
-                child = QTreeWidgetItem([value])
-                child.setDisabled(self.child_status)
-                child.setForeground(0, self.child_color)
-                item.addChild(child)
+            for key1, val1 in values.items():
+                child1 = QTreeWidgetItem([key1])
+                child1.setForeground(0, Qt.GlobalColor.darkBlue)
+                item.addChild(child1)
+                for val2 in val1:
+                    child2 = QTreeWidgetItem([val2])
+                    child2.setDisabled(self.child_status)
+                    child2.setForeground(0, self.child_color)
+                    child1.addChild(child2)
             items.append(item)
         self.insertTopLevelItems(0, items)
         self.expandAll()
@@ -1931,8 +2052,10 @@ class TreeGroupTemplates(QTreeWidget):
             selected_item = self.selectedItems()[0]
             if selected_item.parent():
                 parent = selected_item.parent().text(0)
-                self.selected_path = {'group': parent, 'points': [selected_item.text(0)]}
-            else:
+                if parent in {'NGFW', 'DCFW', 'EndPoint', 'LogAn'}:
+                    device = parent
+                else:
+                    device = selected_item.parent().parent().text(0)
                 item_childs = []
                 for i in range(selected_item.childCount()):
                     try:
@@ -1941,8 +2064,15 @@ class TreeGroupTemplates(QTreeWidget):
                             item_childs.append(child_text)
                     except KeyError:
                         pass
-                self.selected_path = {'group': selected_item.text(0), 'points': item_childs}
-            self.itemSelected.emit(self.selectedItems()[0].text(0))
+                if parent == device:
+                    self.selected_path = {'group': selected_item.text(0), 'points': item_childs}
+                else:
+                    item_childs.append(selected_item.text(0))
+                    self.selected_path = {'group': parent, 'points': item_childs}
+            else:
+                device = selected_item.text(0)
+                self.selected_path.clear()
+            self.itemSelected.emit(device)
 
 
 class MainTree(QTreeWidget):
@@ -2094,7 +2224,7 @@ class MainTree(QTreeWidget):
                 "СОВ", "Правила АСУ ТП", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила", "Профили DoS",
                 "Правила защиты DoS", "Глобальный портал", "Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси",
                 "Профили безопасности VPN", "Профили АСУ ТП", "Морфология", "Useragent браузеров", "Типы контента", "Категории URL",
-                "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии"},
+                "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии", "Тэги"},
             8.0: {
                 "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},

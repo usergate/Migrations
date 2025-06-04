@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.1   21.02.2025
+# Версия 3.2   29.05.2025
 # Общий класс для работы с xml-rpc для Management Center
 #
 # Коды возврата:
@@ -204,6 +204,44 @@ class McXmlRpc:
                 return 1, f'Error mclib.get_object_names: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает словарь.
 
+######## EndPoint API module, выполняются только под администраторами областей (realm_admin/SF)#########
+    def get_endpoint_templates_groups(self, start=0, limit=1000, query={}):
+        """Получить для EndPoint список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
+        try:
+            result = self._server.v1.epdevices.endpoint.templates.groups.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_endpoint_templates_groups: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_endpoint_templates_groups: [{err.faultCode}] — {err.faultString}'
+        for group in result['items']:
+            group['endpoint_templates'] = [x[0] for x in group['endpoint_templates'] if x[1]]
+        return 0, result['items']   # Возвращает [{id: str, name: str, endpoint_templates: [id_1, id_2, ...]}, ...]
+
+    def add_endpoint_templates_group(self, group_info):
+        """Для EndPoint создать новую группу шаблонов. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
+        try:
+            result = self._server.v1.epdevices.endpoint.templates.group.add(self._auth_token, group_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_endpoint_templates_group: {err.faultString}].'
+            elif err.faultCode == 9:
+                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_device_template: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.add_endpoint_templates_group: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID созданной группы шаблонов.
+
+    def get_endpoint_templates(self, start=0, limit=1000, query={}):
+        """Получить список шаблонов EndPoint области"""
+        try:
+            result = self._server.v1.epdevices.endpoint.templates.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_endpoint_templates: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_endpoint_templates: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей.
+
 ######## NGFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
     def get_device_templates_groups(self, start=0, limit=1000, query={}):
         """Получить список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
@@ -211,12 +249,25 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.templates.groups.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
+                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_device_templates_groups: [{err.faultCode}] — {err.faultString}'
         for group in result['items']:
             group['device_templates'] = [x[0] for x in group['device_templates'] if x[1]]
         return 0, result['items']   # Возвращает [{id: str, name: str, device_templates: [id_1, id_2, ...]}, ...]
+
+    def add_device_templates_group(self, group_info):
+        """Создать новую группу шаблонов в области. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
+        try:
+            result = self._server.v1.ccdevices.templates.group.add(self._auth_token, group_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_device_template: {err.faultString}].'
+            elif err.faultCode == 9:
+                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_device_template: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.add_device_templates_group: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID созданной группы шаблонов.
 
     def get_device_templates(self, start=0, limit=1000, query={}):
         """Получить список шаблонов устройств области"""

@@ -2130,7 +2130,7 @@ class ExportAll(QThread, MyMixedService):
                     json_file = os.path.join(path_cert, 'certificate_list.json')
                     with open(json_file, 'w') as fh:
                         json.dump(item, fh, indent=4, ensure_ascii=False)
-                    self.stepChanged.emit(f'BLACK|          Сертификат {item["name"]} экспортирован в каталог {path_cert}.')
+                    self.stepChanged.emit(f'BLACK|          Сертификат "{item["name"]}" экспортирован в каталог {path_cert}.')
 
                 if error:
                     self.stepChanged.emit(f'ORANGE|       [Шаблон "{template_name}"] Произошла ошибка при экспорте сертификатов.')

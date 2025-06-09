@@ -7307,7 +7307,7 @@ class Zone:
                     new_networks = []
                     for item in self.networks:
                         if item[0] == 'list_id':
-                                _, list_name = self.parent.get_transformed_name(item[1], err=0, descr='Имя списка', mode=0)
+                            _, list_name = self.parent.get_transformed_name(item[1], err=0, descr='Имя списка', mode=0)
                             try:
                                 item[1] = self.parent.ngfw_data['ip_lists'][list_name]
                             except KeyError as err:

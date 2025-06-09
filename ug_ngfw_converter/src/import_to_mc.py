@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.8   25.04.2025  (только для ug_ngfw_converter)
+# Версия 3.9   09.06.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -7542,8 +7542,9 @@ class Zone:
                         allowed_ips = []
                         for item in service['allowed_ips']:
                             if item[0] == 'list_id':
+                                _, list_name = self.parent.get_transformed_name(item[1], err=0, descr='Имя списка', mode=0)
                                 try:
-                                    item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                                    item[1] = self.parent.mc_data['ip_lists'][list_name].id
                                 except KeyError as err:
                                     self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В контроле доступа "{service_name}" не найден список IP-адресов {err}.')
                                     self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не найден список IP-адресов {err}.'
@@ -7557,16 +7558,16 @@ class Zone:
                             service['allowed_ips'] = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
                         else:
                             content = [{'value': ip} for ip in service['allowed_ips']]
-                            err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
+                            err, list_id = self.parent.add_new_nlist(nlist_name, 'network', content)
                             if err == 1:
-                                self.parent.stepChanged.emit(f'RED|    {list_id}')
-                                self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в контроле доступа "{service_name}".')
+                                message = f'Error: [Зона "{self.name}"] Не создан список IP-адресов в контроле доступа "{service_name}".'
+                                self.parent.stepChanged.emit(f'RED|    {list_id}\n       {message}')
                                 self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не создан список IP-адресов.'
                                 self.error = 1
                                 continue
                             elif err == 3:
-                                self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}" уже существует.')
-                                self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                                message = f'Warning: Список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}" уже существует.'
+                                self.parent.stepChanged.emit('ORANGE|    {message}\n       Перезапустите конвертер и повторите попытку.')
                                 continue
                             else:
                                 self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" для зоны "{self.name}".')
@@ -7584,8 +7585,9 @@ class Zone:
                 new_networks = []
                 for item in self.networks:
                     if item[0] == 'list_id':
+                        _, list_name = self.parent.get_transformed_name(item[1], err=0, descr='Имя списка', mode=0)
                         try:
-                            item[1] = self.parent.mc_data['ip_lists'][item[1]].id
+                            item[1] = self.parent.mc_data['ip_lists'][list_name].id
                         except KeyError as err:
                             self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.')
                             self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не найден список IP-адресов {err}.'
@@ -7599,16 +7601,16 @@ class Zone:
                     self.networks = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
                 else:
                     content = [{'value': ip} for ip in self.networks]
-                    err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
+                    err, list_id = self.parent.add_new_nlist(nlist_name, 'network', content)
                     if err == 1:
-                        self.parent.stepChanged.emit(f'RED|    {list_id}')
-                        self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
+                        message = f'Error: [Зона "{self.name}"] Не создан список IP-адресов в защите от IP-спуфинга.'
+                        self.parent.stepChanged.emit(f'RED|    {list_id}\n       {message}')
                         self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
                         self.networks = []
                         self.error = 1
                     elif err == 3:
-                        self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" в защите от IP-спуфинга зоны "{self.name}" уже существует.')
-                        self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
+                        message = f'Warning: Список IP-адресов "{nlist_name}" в защите от IP-спуфинга зоны "{self.name}" уже существует.'
+                        self.parent.stepChanged.emit('ORANGE|    {message}\n       Перезапустите конвертер и повторите попытку.')
                     else:
                         self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" в защите от IP-спуфинга для зоны "{self.name}".')
                         self.networks = [['list_id', list_id]]

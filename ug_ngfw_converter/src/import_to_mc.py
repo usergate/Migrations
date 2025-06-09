@@ -430,7 +430,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
-            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка')
+            _, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка', mode=0)
             self.stepChanged.emit(f'BLACK|    Импортируем содержимое списка IP-адресов "{data["name"]}".')
 
             if data['name'] not in ip_lists:
@@ -444,7 +444,7 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         new_content = []
                         for item in data['content']:
                             if 'list' in item:
-                                item_list = self.get_transformed_name(item['list'], descr='Имя списка')[1]
+                                item_list = self.get_transformed_name(item['list'], descr='Имя списка', mode=0)[1]
                                 item_value = f'IP-лист "{item_list}"'
                                 try:
                                     item['list'] = ip_lists[item_list].id

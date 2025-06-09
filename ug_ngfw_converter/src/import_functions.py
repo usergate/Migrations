@@ -5024,7 +5024,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
-            error, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка', mode=0)
+            _, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка', mode=0)
             try:
                 list_id = self.ngfw_data['ip_lists'][data['name']]
             except KeyError:
@@ -5037,8 +5037,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 for item in data['content']:
                     if 'list' in item:
                         if self.utm.float_version >= 7:
+                            item_list = self.get_transformed_name(item['list'], descr='Имя списка', mode=0)[1]
                             try:
-                                item['list'] = self.ngfw_data['ip_lists'][item['list']]
+                                item['list'] = self.ngfw_data['ip_lists'][item_list]
                                 new_content.append(item)
                             except KeyError:
                                 message = f'    Error: Нет IP-листа "{item["list"]}" в списках IP-адресов NGFW.'

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.12    21.05.2025
+# Версия 1.16    09.06.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -664,8 +664,10 @@ class SelectImportMode(SelectMode):
                     'ngfw_vlans': '',
                     'new_vlans': '',
                     'iface_settings': '',
+                    'adapter_ports': set()
                 }
-                self.set_arguments(arguments)
+                if not {'DHCP', 'Interfaces'}.isdisjoint(self.selected_points):
+                    self.set_arguments(arguments)
                 if not func.check_auth(self):
                     self.run_page_0()
 
@@ -704,11 +706,13 @@ class SelectImportMode(SelectMode):
             'ngfw_vlans': '',
             'new_vlans': '',
             'iface_settings': '',
+            'adapter_ports': set()
         }
         for item in all_points:
             self.current_ug_path = os.path.join(self.parent.get_ug_config_path(), item['path'])
             self.selected_points = item['points']
-            self.set_arguments(arguments)
+            if not {'DHCP', 'Interfaces'}.isdisjoint(self.selected_points):
+                self.set_arguments(arguments)
         self.tree.set_current_item()
 
         if self.thread is None:

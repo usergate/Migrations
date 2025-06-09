@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
-# Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
+# Класс GetMcTemporaryData - для получения часто используемых данных.
 # Version 1.9  25.04.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
@@ -32,10 +32,11 @@ from common_classes import WriteBinFile, BaseObject
 class GetMcTemporaryData(QThread, WriteBinFile):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
-    def __init__(self, utm, template_id, templates):
+#    def __init__(self, utm, template_id, templates):
+    def __init__(self, utm, templates):
         super().__init__()
         self.utm = utm
-        self.template_id = template_id
+#        self.template_id = template_id
         self.templates = templates    # структура {template_id: template_name}
         self.mc_data = {
             'ldap_servers': {},     # LDAP-сервера в каталогах пользователей области

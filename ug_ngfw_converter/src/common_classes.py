@@ -20,10 +20,10 @@
 #-----------------------------------------------------------------------------
 # common_classes.py
 # Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 1.3  24.04.2025
+# Версия 1.4  09.06.2025
 #
 
-import os, json
+import os, json, re
 import ipaddress, pickle, uuid
 from string import punctuation
 from dataclasses import dataclass
@@ -127,6 +127,7 @@ class TransformObjectName():
         if isinstance(name, str):
             error64 = 0
             errorX = 0
+            errorRus = 0
             new_name = name.lstrip(punctuation)
             if not new_name:
                 if mode:
@@ -139,13 +140,18 @@ class TransformObjectName():
             if len(new_name) > 64:
                 new_name = new_name[:64]
                 error64 = 1
-            if error64 or errorX:
+            if bool(re.search('[а-яА-ЯёЁ]', new_name)):
+                new_name = re.sub('[а-яА-ЯёЁ]', 'X', new_name)
+                errorRus = 1
+            if error64 or errorX or errorRus:
                 if mode:
                     message = f'RED|    Error: {descr} "{name}".\n'
                     if error64:
                         message = f'{message}       {descr} имеет длину более 64 символов. Имя обрезано до 64 символов.\n'
                     if errorX:
                         message = f'{message}       {descr} содержит символы отсутствующие в кодировке ascii. Они заменены на символ "X".\n'
+                    if errorRus:
+                        message = f'{message}       {descr} содержит символы в русской кодировке. Они заменены на символ "X".\n'
                     self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{new_name}".')
                 err = 1
             return err, new_name
@@ -371,6 +377,20 @@ class MyConv(MyMixedService):
                 return False
         except ValueError as err:
             return False
+
+
+    @staticmethod
+    def get_network_by_ipaddress(ip, mask):
+        """Получаем ip и маску (24, 255.255.255.0). Выдаём network."""
+        if ip == '0':
+            ip = '0.0.0.0'
+        if mask == '0':
+            mask = '0.0.0.0'
+        try:
+            interface = ipaddress.ip_interface(f'{ip}/{mask}')
+        except ValueError as err:
+            return 1, err
+        return 0, f'{interface.network}'
 
 
     @staticmethod

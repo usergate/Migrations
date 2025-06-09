@@ -1,5 +1,5 @@
 <h2 align="center">Экспорт/импорт конфигурации UserGate NGFW и DCFW</h2>
-<h3 align="center">(Версия 4.12)</h3>
+<h3 align="center">(Версия 4.13)</h3>
 
 Программа предназначена для переноса конфигурации из DCFW и NGFW версий 5, 6, 7 на DCFW и NGFW версий 5, 6, 7 и
 МС версии 7.1 и выше.
@@ -178,6 +178,7 @@ ip-адрес на каждом интерфейсе.<br>
 2. На виртуальных машинах возможна ошибка: "libEGL.so.1: cannot open shared object file: No such file or directory"<br>
 Может помочь: <b>apt update && apt install -y libopencv-dev && apt clean && rm -rf /var/lib/apt/lists/*</b>
 
+09.06.2025 Исправлена ошибка импорта зон на NGFW.<br>
 04.06.2025 Сделана совместимость с DCFW beta 8.0.0.154928R.<br>
 29.05.2025 Исправлен экспорт политик BYOD для NGFW версий 5 и 6.<br>
 21.05.2025 Исправлены ошибки экспорта шаблонов МС.<br>

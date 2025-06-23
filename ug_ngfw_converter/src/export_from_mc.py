@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы экспорта конфигурации из шаблона UserGate Management Center.
-# Версия 1.3  21.05.2025
+# Версия 1.4  18.06.2025
 #
 
 import os, sys, json
@@ -240,6 +240,8 @@ class ExportAll(QThread, MyMixedService):
         else:
             self.stepChanged.emit(f'GREEN|Служебные структуры данных заполнены.\n')
 
+        self.export_ngfw_devices()
+
         for item in self.export_funcs:
             if self.export_funcs[item]:
                 err = self.export_funcs[item]()
@@ -253,6 +255,47 @@ class ExportAll(QThread, MyMixedService):
             self.stepChanged.emit(f'iORANGE|Экспорт группы шаблонов "{self.group_name}" прошёл с ошибками!\n')
         else:
             self.stepChanged.emit(f'iGREEN|Экспорт группы шаблонов "{self.group_name}" завершён.\n')
+
+
+    def export_ngfw_devices(self):
+        """Экспортируем устройства NGFW"""
+        self.stepChanged.emit('BLUE|Экспорт устройств NGFW из раздела "NGFW/Устройства".')
+        error = 0
+
+        err, data = self.utm.get_devices_list()
+        if err:
+            self.stepChanged.emit(f'RED|    {data}')
+            self.stepChanged.emit(f'ORANGE|    Error: Произошла ошибка при экспорте устройств NGFW. Устройства не будут добавлены в правила.')
+            self.error = 1
+            return
+
+        err, result = self.utm.get_device_templates_groups()
+        if err:
+            self.stepChanged.emit(f'ORANGE|    Error: Произошла ошибка при экспорте устройств NGFW. Устройства не будут добавлены в правила.')
+            self.error = 1
+            return
+        groups = {x['id']: x['name'] for x in result}
+
+        devices_list = []
+        for item in data:
+            self.mc_data['devices_list'][item['id']] = item['name']
+            devices_list.append({
+                'name': item['name'],
+                'description': item['description'],
+                'enabled': item['enabled'],
+                'device_templates_group': groups[item['device_templates_group']]
+            })
+
+        path = self.group_path[:self.group_path.rindex('/')]
+        json_file = os.path.join(path, 'config_devices_list.json')
+        with open(json_file, 'w') as fh:
+            json.dump(devices_list, fh, indent=4, ensure_ascii=False)
+
+        if error:
+            self.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте устройств NGFW. Устройства NGFW выгружены в файл "{json_file}".')
+            self.error = 1
+        else:
+            self.stepChanged.emit(f'GREEN|    Устройства NGFW выгружены в файл "{json_file}".')
 
 
     #----------------------------------------------- Библиотека --------------------------------------------------------
@@ -2884,6 +2927,7 @@ class ExportAll(QThread, MyMixedService):
 
         data['auth_captive'].pop('template_id', None)
         data['logout_captive'].pop('template_id', None)
+        data['cert_captive'].pop('template_id', None)
         data['block_page_domain'].pop('template_id', None)
         data['ftpclient_captive'].pop('template_id', None)
         data['ftp_proxy_enabled'].pop('template_id', None)
@@ -2891,6 +2935,7 @@ class ExportAll(QThread, MyMixedService):
         params = {
             'auth_captive': data['auth_captive'],
             'logout_captive': data['logout_captive'],
+            'cert_captive': data.get('cert_captive', {}),
             'block_page_domain': data['block_page_domain'],
             'ftpclient_captive': data['ftpclient_captive'],
             'ftp_proxy_enabled': data['ftp_proxy_enabled'],
@@ -4876,10 +4921,10 @@ class ExportAll(QThread, MyMixedService):
             self.mc_data['l7_categories'] = {x['id']: x['name'] for x in result}
 
         # Получаем список устройств NGFW области
-        self.stepChanged.emit(f'BLACK|    Получаем список NGFW устройств области.')
-        err, result = self.utm.get_devices_list()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            return 1
-        else:
-            self.mc_data['devices_list'] = {x['id']: x['name'] for x in result}
+#        self.stepChanged.emit(f'BLACK|    Получаем список NGFW устройств области.')
+#        err, result = self.utm.get_devices_list()
+#        if err:
+#            self.stepChanged.emit(f'RED|    {result}')
+#            return 1
+#        else:
+#            self.mc_data['devices_list'] = {x['id']: x['name'] for x in result}

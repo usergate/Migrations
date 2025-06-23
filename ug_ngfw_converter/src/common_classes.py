@@ -127,7 +127,7 @@ class TransformObjectName():
         if isinstance(name, str):
             error64 = 0
             errorX = 0
-            errorRus = 0
+#            errorRus = 0
             new_name = name.lstrip(punctuation)
             if not new_name:
                 if mode:
@@ -140,18 +140,18 @@ class TransformObjectName():
             if len(new_name) > 64:
                 new_name = new_name[:64]
                 error64 = 1
-            if bool(re.search('[а-яА-ЯёЁ]', new_name)):
-                new_name = re.sub('[а-яА-ЯёЁ]', 'X', new_name)
-                errorRus = 1
-            if error64 or errorX or errorRus:
+#            if bool(re.search('[а-яА-ЯёЁ]', new_name)):
+#                new_name = re.sub('[а-яА-ЯёЁ]', 'X', new_name)
+#                errorRus = 1
+            if error64 or errorX:
                 if mode:
                     message = f'RED|    Error: {descr} "{name}".\n'
                     if error64:
                         message = f'{message}       {descr} имеет длину более 64 символов. Имя обрезано до 64 символов.\n'
                     if errorX:
                         message = f'{message}       {descr} содержит символы отсутствующие в кодировке ascii. Они заменены на символ "X".\n'
-                    if errorRus:
-                        message = f'{message}       {descr} содержит символы в русской кодировке. Они заменены на символ "X".\n'
+#                    if errorRus:
+#                        message = f'{message}       {descr} содержит символы в русской кодировке. Они заменены на символ "X".\n'
                     self.stepChanged.emit(f'{message}       Новое {descr.lower()}: "{new_name}".')
                 err = 1
             return err, new_name

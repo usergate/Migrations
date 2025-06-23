@@ -8,8 +8,8 @@ color = {
     'RED': "#8b0000",
     'iRED': "#8b0000",
     'bRED': "#b5675a",
-    'ORANGE': "#cf6e30",
-    'iORANGE': "#cf6e30",
+    'ORANGE': "#ff8c00",
+    'iORANGE': '#ff8c00',
     'LBLUE': "#1e90ff",
     'BLUE': "#00008b",
     'GRAY': "#696969",
@@ -20,7 +20,11 @@ color = {
     'sGREEN': '#008080',
     'rNOTE': "#7a5b47",
     'NOTE': "#556682",
+    'TEST': '#8b4513',
 }
+#TEST: '#ff4500'
+#'ORANGE': "#cf6e30",
+#'iORANGE': "#cf6e30",
 
 class Style(str, Enum):
     Test = ("""

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.3   16.05.2025
+# Версия 2.4   23.06.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -159,8 +159,8 @@ class SelectAction(QWidget):
         self.btn_import.setEnabled(True)
         self.btn_import_mc.setStyleSheet('color: steelblue; background: white;')
         self.btn_import_mc.setEnabled(True)
-#        self.btn_import_mc_template.setStyleSheet('color: steelblue; background: white;')
-#        self.btn_import_mc_template.setEnabled(True)
+        self.btn_import_mc_template.setStyleSheet('color: steelblue; background: white;')
+        self.btn_import_mc_template.setEnabled(True)
 
 
 class SelectMode(QWidget):
@@ -1255,7 +1255,7 @@ class SelectMcTemplateGroupImport(QWidget):
         self.btn_ngfw = QRadioButton('NGFW')
         self.btn_ngfw.setChecked(True)
         self.btn_dcfw = QRadioButton('DCFW')
-#        self.btn_dcfw.setEnabled(False)
+        self.btn_dcfw.setEnabled(False)
         self.button_group = QButtonGroup()
         self.button_group.addButton(self.btn_ngfw)
         self.button_group.addButton(self.btn_dcfw)
@@ -1422,7 +1422,7 @@ class SelectMcTemplateGroupImport(QWidget):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт выбранной группы шаблонов (все шаблоны группы) или отдельного шаблона группы.
         """
-        if self.new_device in ('EndPoint', 'LogAn'):
+        if self.new_device in ('EndPoint', 'LogAn', 'DCFW'):
             message = f'Импорт раздела "{self.new_device}" пока не реализован.'
             func.message_inform(self, 'Внимание!', message)
         elif self.new_device == 'DCFW' and self.utm.float_version < 7.4:
@@ -2258,8 +2258,8 @@ class MainTree(QTreeWidget):
                 "Правила защиты DoS", "Глобальный портал", "Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси",
                 "Профили безопасности VPN", "Профили АСУ ТП", "Морфология", "Useragent браузеров", "Типы контента", "Категории URL",
                 "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии", "Тэги"},
-            8.0: {
-                "Маршруты", "OSPF", "BGP", "Системные WAF-правила",
+            7.4: {
+                "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.3: {
                 "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",

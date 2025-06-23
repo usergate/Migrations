@@ -384,7 +384,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                 break
             for x in result:
                 if x['name'] in self.mc_data['url_categorygroups']:
-                    self.stepChanged.emit(f'ORANGE|       Календарь "{x["name"]}" обнаружен в нескольких шаблонах группы. Календарь из шаблона "{name}" не будет использован.')
+                    self.stepChanged.emit(f'ORANGE|       Категория URL "{x["name"]}" обнаружена в нескольких шаблонах группы. Категория из шаблона "{name}" не будет использована.')
                 else:
                     category_name = default_urlcategorygroup.get(x['name'], x['name'])
                     self.mc_data['url_categorygroups'][category_name] = BaseObject(id=x['id'], template_id=uid, template_name=name)

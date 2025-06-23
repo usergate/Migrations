@@ -191,6 +191,17 @@ class McXmlRpc:
                 return 1, f'Error mclib.get_devices_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей.
 
+    def add_ngfw_device(self, device_info):
+        """Создать устройство NGFW"""
+        try:
+            result = self._server.v1.ccdevices.device.add(self._auth_token, device_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на создание устройства NGFW [Error mclib.get_devices_list: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_devices_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возврает ID созданного устройства.
+
     def get_object_names(self, query={}):
         """
         Получить имя объекта области по его ID. Пример query: {'user': ['e5c2fc4b-5d85-378d-a00d-af7200000458'], ...}
@@ -249,7 +260,7 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.templates.groups.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
+                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_device_templates_groups: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_device_templates_groups: [{err.faultCode}] — {err.faultString}'
         for group in result['items']:
@@ -262,12 +273,23 @@ class McXmlRpc:
             result = self._server.v1.ccdevices.templates.group.add(self._auth_token, group_info)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_device_template: {err.faultString}].'
+                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_device_templates_group: {err.faultString}].'
             elif err.faultCode == 9:
-                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_device_template: {err.faultString}].'
+                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_device_templates_group: {err.faultString}].'
             else:
                 return 1, f'Error mclib.add_device_templates_group: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданной группы шаблонов.
+
+    def update_device_templates_group(self, group_id, group_info):
+        """Обновить группу шаблонов в области."""
+        try:
+            result = self._server.v1.ccdevices.templates.group.update(self._auth_token, group_id, group_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на обновление группы шаблонов [Error mclib.update_device_templates_group: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.update_device_templates_group: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
 
     def get_device_templates(self, start=0, limit=1000, query={}):
         """Получить список шаблонов устройств области"""
@@ -421,7 +443,7 @@ class McXmlRpc:
         return 0, result['items']
 
     def get_realm_l7_signatures(self, start=0, limit=50000, query={}):
-        """Получить список приложений l7 всех шаблонов области"""
+        """Получить список приложений l7 всех шаблонов области раздела NGFW"""
         try:
             result = self._server.v1.ccl7.realm.signatures.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:

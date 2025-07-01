@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.10   23.06.2025  (только для ug_ngfw_converter)
+# Версия 3.13   01.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -28,7 +28,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import ReadWriteBinFile, MyMixedService, BaseObject, BaseAppObject
 
 
-class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
+class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     """Импортируем разделы конфигурации в шаблон МС"""
     stepChanged = pyqtSignal(str)
 
@@ -45,9 +45,6 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.node_name = node_name
         self.ngfw_ports = arguments['ngfw_ports']
         self.dhcp_settings = arguments['dhcp_settings']
-        self.ngfw_vlans = arguments['ngfw_vlans']
-        self.new_vlans = arguments['new_vlans']
-        self.iface_settings = arguments['iface_settings']
 
         self.waf_custom_layers = {}
         self.users_signatures = {}
@@ -1818,9 +1815,6 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('BLUE|Импорт syslog фильтров UserID агента в раздел "Библиотеки/Syslog фильтры UserID агента".')
         error = 0
 
-        self.stepChanged.emit('bRED|    Импорт syslog фильтров UserID агента в настоящее время не возможен, так как соответствующие API не работают.')
-        return
-
         if not self.mc_data['userid_filters']:
             if self.get_useridagent_filters():        # Заполняем self.mc_data['userid_filters']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
@@ -2786,6 +2780,21 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             error = 1
 
             if item['ospf']:
+                if 'metric' in item['ospf']:
+                    if isinstance(item['ospf']['default_originate'], bool):
+                        item['ospf']['default_originate'] = {
+                            'enabled': item['ospf']['default_originate'],
+                            'always': False,
+                            'metric': item['ospf']['metric']
+                        }
+                item['ospf'].pop('metric', None)
+                item['ospf']['routemaps'] = item['ospf'].get('routemaps', [])
+
+                if item['ospf']['redistribute'] and isinstance(item['ospf']['redistribute'][0], str):
+                    self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Route redistribution удалено из настроек OSPF так как структура не соответствует версии МС.')
+                    item['ospf']['redistribute'] = []
+                    error = 1
+
                 ids = set()
                 new_interfaces = []
                 for iface in item['ospf']['interfaces']:
@@ -4433,13 +4442,11 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit(f'LBLUE|    Фильтры для коннеторов Syslog Агентов UserID в этой версии МС не переносятся. Необходимо добавить их руками.')
         error = 0
 
-# В версии 7.1 это не работает!!!!!!
-#    err, result = self.utm.get_template_useridagent_filters_list(self.template_id)
-#    if err:
-#        self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте агентов UserID.')
-#        self.error = 1
-#        return
-#    useridagent_filters = {x['name']: x['id'] for x in result}
+        if not self.mc_data['userid_filters']:
+            if self.get_useridagent_filters():      # Заполняем self.mc_data['userid_filters']
+                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте агентов UserID.')
+                return
+        userid_filters = self.mc_data['userid_filters']
 
         useridagent_servers = {}
         for uid, name in self.templates.items():
@@ -4474,15 +4481,13 @@ class ImportMcSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 error = 1
             if 'filters' in item:
                 new_filters = []
-                self.stepChanged.emit(f'rNOTE|    Warning: [UserID агент "{item["name"]}"] Не импортированы Syslog фильтры. В вашей версии МС API для этого не работает.')
                 for filter_name in item['filters']:
-                    item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
-#                    try:
-#                        new_filters.append(useridagent_filters[filter_name])
-#                    except KeyError:
-#                        self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
-#                        item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
-#                        error = 1
+                    try:
+                        new_filters.append(userid_filters[filter_name].id)
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
+                        item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
+                        error = 1
                 item['filters'] = new_filters
 
             if srv_name in useridagent_servers:

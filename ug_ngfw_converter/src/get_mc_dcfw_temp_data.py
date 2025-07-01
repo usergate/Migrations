@@ -19,8 +19,8 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
-# Класс GetMcTemporaryData - для получения часто используемых данных.
-# Version 1.9  25.04.2025    (идентично для ug_ngfw_converter и universal_converter)
+# Класс GetMcDcfwTemporaryData - для получения часто используемых данных.
+# Version 0.1  24.06.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
 import os, sys
@@ -29,18 +29,15 @@ from services import default_urlcategorygroup
 from common_classes import WriteBinFile, BaseObject
 
 
-class GetMcTemporaryData(QThread, WriteBinFile):
-    """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
+class GetMcDcfwTemporaryData(QThread, WriteBinFile):
+    """Получаем конфигурационные данные с MC для заполнения служебных структур данных DCFW."""
     stepChanged = pyqtSignal(str)
-#    def __init__(self, utm, template_id, templates):
     def __init__(self, utm, templates):
         super().__init__()
         self.utm = utm
-#        self.template_id = template_id
         self.templates = templates    # структура {template_id: template_name}
         self.mc_data = {
             'ldap_servers': {},     # LDAP-сервера в каталогах пользователей области
-            'morphology': {},
             'services': {},
             'service_groups': {},
             'ip_lists': {
@@ -48,12 +45,18 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                 'BANKS_IP_LIST': BaseObject(id='id-BANKS_IP_LIST', template_id='', template_name=''),
                 'ZAPRET_INFO_BLACK_LIST_IP': BaseObject(id='id-ZAPRET_INFO_BLACK_LIST_IP', template_id='', template_name=''),
             },
-            'useragents': {},
-            'mime': {},
-            'url_lists': {},
+            'url_lists': {
+                'ENTENSYS_WHITE_LIST': BaseObject(id='id-ENTENSYS_WHITE_LIST', template_id='', template_name=''),
+                'ENTENSYS_BLACK_LIST': BaseObject(id='id-ENTENSYS_BLACK_LIST', template_id='', template_name=''),
+                'BAD_SEARCH_BLACK_LIST': BaseObject(id='id-BAD_SEARCH_BLACK_LIST', template_id='', template_name=''),
+                'ENTENSYS_KAZ_BLACK_LIST': BaseObject(id='id-ENTENSYS_KAZ_BLACK_LIST', template_id='', template_name=''),
+                'FISHING_BLACK_LIST': BaseObject(id='id-FISHING_BLACK_LIST', template_id='', template_name=''),
+                'ZAPRET_INFO_BLACK_LIST': BaseObject(id='id-ZAPRET_INFO_BLACK_LIST', template_id='', template_name=''),
+                'ZAPRET_INFO_BLACK_LIST_DOMAIN': BaseObject(id='id-ZAPRET_INFO_BLACK_LIST_DOMAIN', template_id='', template_name=''),
+            },
             'calendars': {},
             'shapers': {},
-            'response_pages': {},
+            'response_pages': {-1: BaseObject(id=-1, template_id='', template_name='')},
             'url_categorygroups': {},
             'l7_apps': {},
             'l7_profiles': {},
@@ -64,29 +67,25 @@ class GetMcTemporaryData(QThread, WriteBinFile):
             'notification_profiles': {},
             'netflow_profiles': {},
             'lldp_profiles': {},
-            'ssl_profiles': {},
+            'ssl_profiles': {-1: BaseObject(id=-1, template_id='', template_name='')},
             'ssl_forward_profiles': {},
-            'hip_objects': {},
-            'hip_profiles': {},
             'bfd_profiles': {},
             'userid_filters': {},
-            'scenarios': {},
             'zones': {},
-            'gateways': {},
             'interfaces': {},
+            'gateways': {},
             'vrf': {},
-            'certs': {},
+            'certs': {-1: BaseObject(id=-1, template_id='', template_name='')},
             'client_certs_profiles': {},
-            'auth_profiles': {},
             'local_groups': {},
             'local_users': {},
             'auth_servers': {},
-            'profiles_2fa': {},
+            'auth_profiles': {
+                -1: BaseObject(id=-1, template_id='', template_name=''),
+                False: BaseObject(id=False, template_id='', template_name=''),
+            },
             'captive_profiles': {},
-            'icap_servers': {},
-            'reverseproxy_servers': {},
-            'dos_profiles': {},
-            'waf_profiles': {},
+            'profiles_2fa': {},
             'vpn_client_security_profiles': {},
             'vpn_server_security_profiles': {},
             'vpn_networks': {},
@@ -94,37 +93,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
             'url_categories': {},
             'l7_categories': {},
             'realm_users_signatures': {},
-            'ug_morphology': ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
-                'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
-                'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
-                'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS'),
-            'ug_useragents': (
-                'USERAGENT_ANDROID',
-                'USERAGENT_APPLE',
-                'USERAGENT_BLACKBERRY',
-                'USERAGENT_CHROMEGENERIC',
-                'USERAGENT_CHROMEOS',
-                'USERAGENT_CHROMIUM',
-                'USERAGENT_EDGE',
-                'USERAGENT_FFGENERIC',
-                'USERAGENT_IE',
-                'USERAGENT_IOS',
-                'USERAGENT_LINUX',
-                'USERAGENT_MACOS',
-                'USERAGENT_MOBILESAFARI',
-                'USERAGENT_OPERA',
-                'USERAGENT_SAFARIGENERIC',
-                'USERAGENT_SPIDER',
-                'USERAGENT_UCBROWSER',
-                'USERAGENT_WIN',
-                'USERAGENT_WINPHONE',
-                'USERAGENT_YABROWSER'
-            )
         }
-        self.ug_url_lists = ('ENTENSYS_WHITE_LIST', 'BAD_SEARCH_BLACK_LIST', 'ENTENSYS_BLACK_LIST',
-            'ENTENSYS_KAZ_BLACK_LIST', 'FISHING_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST', 'ZAPRET_INFO_BLACK_LIST_DOMAIN')
-        self.ug_mime = ('MIME_CAT_APPLICATIONS', 'MIME_CAT_DOCUMENTS', 'MIME_CAT_IMAGES',
-            'MIME_CAT_JAVASCRIPT', 'MIME_CAT_SOUNDS', 'MIME_CAT_VIDEO')
         self.error = 0
 
     def run(self):
@@ -159,9 +128,9 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список групп сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов группы шаблонов.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'servicegroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'dcfw_servicegroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} ["dcfw_servicegroup"]')
                 self.error = 1
                 break
             for x in result:
@@ -173,9 +142,9 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список IP-листов
         self.stepChanged.emit(f'BLACK|    Получаем список IP-листов группы шаблонов.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'network')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'network')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} ["network"]')
                 self.error = 1
                 break
             for x in result:
@@ -184,28 +153,12 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                 else:
                     self.mc_data['ip_lists'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список типов контента
-        self.stepChanged.emit(f'BLACK|    Получаем список типов контента.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'mime')
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['mime']:
-                    self.stepChanged.emit(f'ORANGE|       Список типов контента "{x["name"]}" обнаружен в нескольких шаблонах группы. Список из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['mime'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        for item in self.ug_mime:
-            self.mc_data['mime'][item] = BaseObject(id=f'id-{item}', template_id='', template_name='')
-
         # Получаем список URL-листов
         self.stepChanged.emit(f'BLACK|    Получаем список URL-листов.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'url')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'url')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} ["url"]')
                 self.error = 1
                 break
             for x in result:
@@ -213,15 +166,13 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                     self.stepChanged.emit(f'ORANGE|       Список URL "{x["name"]}" обнаружен в нескольких шаблонах группы. Список из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['url_lists'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        for item in self.ug_url_lists:
-            self.mc_data['url_lists'][item] = BaseObject(id=f'id-{item}', template_id='', template_name='')
 
         # Получаем список групп приложений
         self.stepChanged.emit(f'BLACK|    Получаем список групп приложений.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'applicationgroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'applicationgroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} ["applicationgroup"]')
                 self.error = 1
                 break
             for x in result:
@@ -230,24 +181,10 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                 else:
                     self.mc_data['apps_groups'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список сценариев шаблона
-        self.stepChanged.emit(f'BLACK|    Получаем список сценариев.')
-        for uid, name in self.templates.items():
-            err, result = self.utm.get_template_scenarios_rules(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['scenarios']:
-                    self.stepChanged.emit(f'ORANGE|       Сценарий "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Сценарий из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['scenarios'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
         # Получаем список сертификатов
         self.stepChanged.emit(f'BLACK|    Получаем список сертификатов группы шаблонов')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_certificates_list(uid)
+            err, result = self.utm.get_dcfw_template_certificates(uid)
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 self.error = 1
@@ -257,12 +194,11 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                     self.stepChanged.emit(f'ORANGE|       Сертификат "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Сертификат из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['certs'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['certs'][-1] = BaseObject(id=-1, template_id='', template_name='')
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации группы шаблонов')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_auth_profiles(uid)
+            err, result = self.utm.get_dcfw_template_auth_profiles(uid)
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 self.error = 1
@@ -272,13 +208,11 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                     self.stepChanged.emit(f'ORANGE|       Ппрофиль аутентификации "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['auth_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['auth_profiles'][-1] = BaseObject(id=-1, template_id='', template_name='')
-        self.mc_data['auth_profiles'][False] = BaseObject(id=False, template_id='', template_name='')
 
         # Получаем список локальных групп
         self.stepChanged.emit(f'BLACK|    Получаем список групп пользователей группы шаблонов')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_groups_list(uid)
+            err, result = self.utm.get_dcfw_template_groups(uid)
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 self.error = 1
@@ -292,7 +226,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список локальных пользователей
         self.stepChanged.emit(f'BLACK|    Получаем список локальных пользователей группы шаблонов')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_users_list(uid)
+            err, result = self.utm.get_dcfw_template_users(uid)
             if err:
                 self.stepChanged.emit(f'iRED|{result}')
                 self.error = 1
@@ -313,7 +247,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
 
         # Получаем список предопределённых категорий приложений l7
         self.stepChanged.emit(f'BLACK|    Получаем список категорий приложений.')
-        err, result = self.utm.get_l7_categories()
+        err, result = self.utm.get_dcfw_l7_categories()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -322,7 +256,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
 
         # Получаем ID шаблона "UserGate Libraries template" и добавляем его в список шаблонов.
         # Далее получаем данные с учётом этого шаблона.
-        err, result = self.utm.get_device_templates()
+        err, result = self.utm.get_dcfw_device_templates()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -335,7 +269,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список зон
         self.stepChanged.emit(f'BLACK|    Получаем список зон группы шаблонов.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_zones_list(uid)
+            err, result = self.utm.get_dcfw_template_zones(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -349,7 +283,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список сервисов группы шаблонов.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_services_list(uid)
+            err, result = self.utm.get_dcfw_template_services(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -363,9 +297,9 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список календарей
         self.stepChanged.emit(f'BLACK|    Получаем список календарей.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'timerestrictiongroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'timerestrictiongroup')
             if err:
-                self.stepChanged.emit(f'iRED|{result}')
+                self.stepChanged.emit(f'RED|    {result} ["timerestrictiongroup"]')
                 self.error = 1
                 break
             for x in result:
@@ -377,9 +311,9 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список групп категорий URL
         self.stepChanged.emit(f'BLACK|    Получаем список групп категорий URL.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_nlists_list(uid, 'urlcategorygroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'urlcategorygroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} ["urlcategorygroup"]')
                 self.error = 1
                 break
             for x in result:
@@ -392,7 +326,7 @@ class GetMcTemporaryData(QThread, WriteBinFile):
         # Получаем список профилей SSL
         self.stepChanged.emit(f'BLACK|    Получаем список профилей SSL.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_ssl_profiles(uid)
+            err, result = self.utm.get_dcfw_template_ssl_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -402,12 +336,11 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                     self.stepChanged.emit(f'ORANGE|       Профиль SSL "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['ssl_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['ssl_profiles'][-1] = BaseObject(id=-1, template_id='', template_name='')
 
         # Получаем список шаблонов страниц
         self.stepChanged.emit(f'BLACK|    Получаем список шаблонов страниц.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_responsepages_list(uid)
+            err, result = self.utm.get_dcfw_template_responsepages(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -417,12 +350,11 @@ class GetMcTemporaryData(QThread, WriteBinFile):
                     self.stepChanged.emit(f'ORANGE|       Шаблон страницы "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Страница из шаблона "{name}" не будет использована.')
                 else:
                     self.mc_data['response_pages'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        self.mc_data['response_pages'][-1] = BaseObject(id=-1, template_id='', template_name='')
 
         # Получаем полосы пропускания
         self.stepChanged.emit(f'BLACK|    Получаем полосы пропускания.')
         for uid, name in self.templates.items():
-            err, result = self.utm.get_template_shapers_list(uid)
+            err, result = self.utm.get_dcfw_template_shapers(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1

@@ -124,14 +124,6 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 return
             self.mc_data['realm_templates'] = {x['id']: x['name'] for x in result}
 
-        print('config_path: ', self.config_path)
-        print('all_points: ', self.all_points)
-        print('self.selected_path: ', self.selected_path)
-        print('selected_points: ', self.selected_points)
-        print('template_id: ', self.template_id)
-        print('templates: ', self.templates)
-        print('realm_templates: ', self.mc_data['realm_templates'], '\n')
-
         if self.all_points:
             """Импортируем всё в пакетном режиме"""
             path_dict = {}

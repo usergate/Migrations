@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 1.0   01.07.2025  (только для ug_ngfw_converter)
+# Версия 1.1   03.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -3890,6 +3890,9 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
                         error = 1
                 item['filters'] = new_filters
+
+            if item['type'] == 'radius' and 'server_secret' not in item:
+                item['server_secret'] = 123
 
             if srv_name in useridagent_servers:
                 err, result = self.utm.update_dcfw_template_useridagent_server(self.template_id, useridagent_servers[srv_name].id, item)

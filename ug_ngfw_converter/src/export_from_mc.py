@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы экспорта конфигурации из шаблона UserGate Management Center.
-# Версия 1.4  18.06.2025
+# Версия 1.5  02.07.2025
 #
 
 import os, sys, json
@@ -1482,8 +1482,6 @@ class ExportAll(QThread, MyMixedService):
     def export_useridagent_syslog_filters(self):
         """Экспортируем syslog фильтры UserID агента"""
         self.stepChanged.emit('BLUE|Экспорт syslog фильтров UserID агента из раздела "Библиотеки/Syslog фильтры UserID агента".')
-        self.stepChanged.emit('bRED|    Экспорт syslog фильтров UserID агента в настоящее время не возможен, так как соответствующие API не работают.')
-        return 0
 
         for template_id, template_name in self.templates.items():
             err, data = self.utm.get_template_useridagent_filters(template_id)
@@ -1498,7 +1496,7 @@ class ExportAll(QThread, MyMixedService):
                     item.pop('id', None)
                     item.pop('template_id', None)
 
-                path = os.path.join(self.group_path, template_name, 'Libraries/BfdProfiles')
+                path = os.path.join(self.group_path, template_name, 'Libraries/UserIdAgentSyslogFilters')
                 err, msg = self.create_dir(path)
                 if err:
                     self.stepChanged.emit(f'RED|    {msg}')
@@ -2753,13 +2751,12 @@ class ExportAll(QThread, MyMixedService):
                         item['auth_profile_id'] = 'Example user auth profile'
                         error = 1
                     if 'filters' in item:
-                        self.stepChanged.emit(f'ORANGE|    Warning [Шаблон "{template_name}"]. Не конвертированы фильтры в коннекторе "{item["name"]}". В вашей версии МС соответствующие API не работают.')
-#                        try:
-#                            item['filters'] = [self.mc_data['userid_agents_syslog_filters'][x] for x in item['filters']]
-#                        except KeyError:
-#                            self.stepChanged.emit(f'RED|    Error [Шаблон "{template_name}"]. Не найден фильтр для коннектора "{item["name"]}".')
-#                            item['filters'] = []
-#                            error = 1
+                        try:
+                            item['filters'] = [self.mc_data['userid_agents_syslog_filters'][x] for x in item['filters']]
+                        except KeyError:
+                            self.stepChanged.emit(f'RED|    Error [Шаблон "{template_name}"]. Не найден фильтр для коннектора "{item["name"]}".')
+                            item['filters'] = []
+                            error = 1
 
                 path = os.path.join(self.group_path, template_name, 'UsersAndDevices/UserIDagent')
                 err, msg = self.create_dir(path, delete='no')

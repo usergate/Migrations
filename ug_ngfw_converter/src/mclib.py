@@ -255,7 +255,7 @@ class McXmlRpc:
 
 ######## NGFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
     def get_device_templates_groups(self, start=0, limit=1000, query={}):
-        """Получить список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
+        """Получить список групп области с шаблонами NGFW в каждой группе. Шаблоны только со статусом True"""
         try:
             result = self._server.v1.ccdevices.templates.groups.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
@@ -268,7 +268,7 @@ class McXmlRpc:
         return 0, result['items']   # Возвращает [{id: str, name: str, device_templates: [id_1, id_2, ...]}, ...]
 
     def add_device_templates_group(self, group_info):
-        """Создать новую группу шаблонов в области. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
+        """Создать новую группу шаблонов NGFW в области. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
         try:
             result = self._server.v1.ccdevices.templates.group.add(self._auth_token, group_info)
         except rpc.Fault as err:
@@ -281,7 +281,7 @@ class McXmlRpc:
         return 0, result    # Возвращает ID созданной группы шаблонов.
 
     def update_device_templates_group(self, group_id, group_info):
-        """Обновить группу шаблонов в области."""
+        """Обновить группу шаблонов NGFW в области."""
         try:
             result = self._server.v1.ccdevices.templates.group.update(self._auth_token, group_id, group_info)
         except rpc.Fault as err:
@@ -292,7 +292,7 @@ class McXmlRpc:
         return 0, result    # Возвращает True
 
     def get_device_templates(self, start=0, limit=1000, query={}):
-        """Получить список шаблонов устройств области"""
+        """Получить список шаблонов NGFW области"""
         try:
             result = self._server.v1.ccdevices.templates.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
@@ -303,7 +303,7 @@ class McXmlRpc:
         return 0, result['items']   # Возвращает список словарей.
 
     def fetch_device_template(self, template_id):
-        """Получить шаблон области по id"""
+        """Получить шаблон NGFW области по id"""
         try:
             result = self._server.v1.ccdevices.template.fetch(self._auth_token, template_id)
         except rpc.Fault as err:
@@ -314,7 +314,7 @@ class McXmlRpc:
         return 0, result   # Возвращает словарь.
 
     def add_device_template(self, template):
-        """Создать новый шаблон устройства в области. Принимает структуру: {'name': ИМЯ_ШАБЛОНА, 'description': ОПИСАНИЕ}"""
+        """Создать новый шаблон NGFW в области. Принимает структуру: {'name': ИМЯ_ШАБЛОНА, 'description': ОПИСАНИЕ}"""
         try:
             result = self._server.v1.ccdevices.template.add(self._auth_token, template)
         except rpc.Fault as err:
@@ -2484,7 +2484,7 @@ class McXmlRpc:
             return 0, {x['name'] for x in result}  # Возвращает set {protocol_name, ...}
 
     def get_url_categories(self):
-        """Получить список категорий URL"""
+        """Получить список предопределённых категорий URL"""
         try:
             result = self._server.v1.core.url.categories.list(self._auth_token)
         except rpc.Fault as err:
@@ -2515,8 +2515,8 @@ class McXmlRpc:
 
 
 ############################################## DCFW #########################################################
-#############################################################################################################
-######## DCFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
+#------------------------------------------------------------------------------------------------------------
+#---------- DCFW Template API module, выполняются только под администраторами областей (realm_admin/SF) -----
     def get_dcfw_device_templates_groups(self, start=0, limit=1000, query={}):
         """Получить список групп области для DCFW с шаблонами в каждой группе. Шаблоны только со статусом True"""
         try:
@@ -2548,6 +2548,7 @@ class McXmlRpc:
         """Обновить группу шаблонов DCFW в области."""
         try:
             result = self._server.v1.dcfwdevices.templates.group.update(self._auth_token, group_id, group_info)
+            print(result)
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Error: Нет прав на обновление группы шаблонов [Error mclib.update_device_templates_group: {err.faultString}].'
@@ -2589,6 +2590,28 @@ class McXmlRpc:
             else:
                 return 1, f'Error mclib.add_dcfwdevice_template: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного шаблона.
+
+    def get_dcfw_devices_list(self, start=0, limit=1000, query={}):
+        """Получить список устройств DCFW области"""
+        try:
+            result = self._server.v1.dcfwdevices.devices.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение списка устройств DCFW [Error mclib.get_devices_list: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_dcfw_devices_list: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей.
+
+    def add_dcfw_device(self, device_info):
+        """Создать устройство DCFW"""
+        try:
+            result = self._server.v1.dcfwdevices.device.add(self._auth_token, device_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на создание устройства DCFW [Error mclib.get_devices_list: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.add_dcfw_device: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возврает ID созданного устройства.
 
     def get_dcfw_realm_idps_signatures(self, start=0, limit=50000, query={}):
         """Получить список сигнатур IDPS всех шаблонов области раздела DCFW"""

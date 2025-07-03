@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.5   25.06.2025
+# Версия 2.3   02.07.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -22,6 +22,7 @@ from import_ngfw_to_mc import ImportMcNgfwSelectedPoints
 from import_dcfw_to_mc import ImportMcDcfwSelectedPoints
 from import_functions import ImportNgfwSelectedPoints
 from import_mc_ngfw_templates import ImportMcNgfwTemplates
+from import_mc_dcfw_templates import ImportMcDcfwTemplates
 from utm import UtmXmlRpc
 from mclib import McXmlRpc
 
@@ -35,7 +36,7 @@ class SelectAction(QWidget):
         text2 = "Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b> и сохранение её в файлах json в каталоге <b>data</b> в текущей директории."
         text3 = "Экспорт группы шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b> и сохранение в каталог <b>mc_templates</b> в текущей директории."
         text4 = "Импорт файлов конфигурации NGFW из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b>."
-        text5 = "Импорт файлов конфигурации NGFW из каталога <b>data</b> в группу шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b>."
+        text5 = "Импорт файлов конфигурации NGFW и DCFW из каталога <b>data</b> в группу шаблонов NGFW или DCFW <b>UserGate Management Center</b> версии <b>7</b>."
         text6 = "Импорт из каталога <b>mc_templates</b> ранее экспортированной группы шаблонов в административную область <b>UserGate Management Center</b> версии <b>7</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -73,7 +74,7 @@ class SelectAction(QWidget):
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
 
-        self.btn_import_mc = QPushButton("Импорт конфигурации NGFW в группу\nшаблонов UG Management Center")
+        self.btn_import_mc = QPushButton("Импорт конфигурации NGFW|DCFW в\nгруппу шаблонов UG Management Center")
         self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import_mc.setFont(btn_font)
         self.btn_import_mc.setFixedWidth(280)
@@ -1363,9 +1364,6 @@ class SelectMcTemplateGroupImport(QWidget):
             dialog = SelectDirectoryAndRealm(self.parent)
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
-#                print('\n', 'config_path: ', self.parent.get_config_path())
-#                print('base_path: ', self.base_path, '\n')
-#                print('groups: ', self.groups, '\n')
                 self.list_tree_groups()
                 self.tree.init_tree(self.groups)
                 self.tree.setHidden(False)
@@ -1462,7 +1460,7 @@ class SelectMcTemplateGroupImport(QWidget):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт выбранной группы шаблонов (все шаблоны группы) или отдельного шаблона группы.
         """
-        if self.new_device in ('EndPoint', 'LogAn', 'DCFW'):
+        if self.new_device in ('EndPoint', 'LogAn'):
             message = f'Импорт раздела "{self.new_device}" пока не реализован.'
             func.message_inform(self, 'Внимание!', message)
         elif self.new_device == 'DCFW' and self.utm.float_version < 7.4:
@@ -1474,19 +1472,29 @@ class SelectMcTemplateGroupImport(QWidget):
             if self.thread is None:
                 self.disable_buttons()
                 if self.new_device == 'NGFW':
+#                    print('\nself.device: ', self.device)
+#                    print('new_device: ', self.new_device)
+#                    print('base_path: ', self.base_path[self.device])
+#                    print('selected_group: ', self.selected_group)
+#                    print('selected_templates: ', self.selected_templates)
                     self.thread = ImportMcNgfwTemplates(
                         self.utm,
                         base_path = self.base_path[self.device],
                         selected_group = self.selected_group,
                         selected_templates = self.selected_templates
                     )
-#                elif self.new_device == 'DCFW':
-#                    self.thread = ImportMcDcfwTemplates(
-#                        self.utm,
-#                        base_path = self.base_path[self.device],
-#                        selected_group = self.selected_group,
-#                        selected_templates = self.selected_templates
-#                    )
+                elif self.new_device == 'DCFW':
+#                    print('\nself.device: ', self.device)
+#                    print('new_device: ', self.new_device)
+#                    print('base_path: ', self.base_path[self.device])
+#                    print('selected_group: ', self.selected_group)
+#                    print('selected_templates: ', self.selected_templates)
+                    self.thread = ImportMcDcfwTemplates(
+                        self.utm,
+                        base_path = self.base_path[self.device],
+                        selected_group = self.selected_group,
+                        selected_templates = self.selected_templates
+                    )
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()
@@ -1499,15 +1507,18 @@ class SelectMcTemplateGroupImport(QWidget):
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
         Затем запускаем импорт всех групп выбранного раздела конфигурации.
         """
-        if self.new_device in ('EndPoint', 'LogAn'):
+        if self.new_device in ('EndPoint', 'LogAn', 'DCFW'):
             message = f'Импорт раздела "{self.new_device}" пока не реализован.'
+            func.message_inform(self, 'Внимание!', message)
+        elif self.new_device == 'DCFW' and self.utm.float_version < 7.4:
+            message = f'Импорт раздела "{self.new_device}" не возможен для вашей версии МС.'
             func.message_inform(self, 'Внимание!', message)
         else:
             if not func.check_auth(self):
                 self.run_page_0()
             if self.thread is None:
                 self.disable_buttons()
-                self.thread = ImportMcSelectedTemplates(
+                self.thread = ImportMcNgfwTemplates(
                     self.utm,
                         device_type = self.new_device,
                         base_path = self.base_path[self.device],

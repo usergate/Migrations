@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
-# Импорт ранее экспортированной группы шаблонов на UserGate Management Center версии 7 и выше.
-# Версия 1.0   03.07.2025  (только для ug_ngfw_converter)
+# Импорт ранее экспортированной группы шаблонов в раздел DCFW UserGate Management Center версии 7 и выше.
+# Версия 0.1   02.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -28,7 +28,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import MyMixedService, BaseObject, BaseAppObject
 
 
-class ImportMcNgfwTemplates(QThread, MyMixedService):
+class ImportMcDcfwTemplates(QThread, MyMixedService):
     """Импортируем разделы конфигурации в шаблон МС"""
     stepChanged = pyqtSignal(str)
 
@@ -52,14 +52,6 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 'BANKS_IP_LIST': BaseObject(id='id-BANKS_IP_LIST', template_id='', template_name=''),
                 'ZAPRET_INFO_BLACK_LIST_IP': BaseObject(id='id-ZAPRET_INFO_BLACK_LIST_IP', template_id='', template_name=''),
             },
-            'mime': {
-                'MIME_CAT_APPLICATIONS': BaseObject(id='id-MIME_CAT_APPLICATIONS', template_id='', template_name=''),
-                'MIME_CAT_DOCUMENTS': BaseObject(id='id-MIME_CAT_DOCUMENTS', template_id='', template_name=''),
-                'MIME_CAT_IMAGES': BaseObject(id='id-MIME_CAT_IMAGES', template_id='', template_name=''),
-                'MIME_CAT_JAVASCRIPT': BaseObject(id='id-MIME_CAT_JAVASCRIPT', template_id='', template_name=''),
-                'MIME_CAT_SOUNDS': BaseObject(id='id-MIME_CAT_SOUNDS', template_id='', template_name=''),
-                'MIME_CAT_VIDEO': BaseObject(id='id-MIME_CAT_VIDEO', template_id='', template_name=''),
-            },
             'url_lists': {
                 'ENTENSYS_WHITE_LIST': BaseObject(id='id-ENTENSYS_WHITE_LIST', template_id='', template_name=''),
                 'BAD_SEARCH_BLACK_LIST': BaseObject(id='id-BAD_SEARCH_BLACK_LIST', template_id='', template_name=''),
@@ -69,32 +61,6 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 'ZAPRET_INFO_BLACK_LIST': BaseObject(id='id-ZAPRET_INFO_BLACK_LIST', template_id='', template_name=''),
                 'ZAPRET_INFO_BLACK_LIST_DOMAIN': BaseObject(id='id-ZAPRET_INFO_BLACK_LIST_DOMAIN', template_id='', template_name=''),
             },
-            'ug_morphology': ('MORPH_CAT_BADWORDS', 'MORPH_CAT_DLP_ACCOUNTING',
-                'MORPH_CAT_DLP_FINANCE', 'MORPH_CAT_DLP_LEGAL', 'MORPH_CAT_DLP_MARKETING', 'MORPH_CAT_DLP_PERSONAL',
-                'MORPH_CAT_DRUGSWORDS', 'MORPH_CAT_FZ_436', 'MORPH_CAT_GAMBLING', 'MORPH_CAT_KAZAKHSTAN',
-                'MORPH_CAT_MINJUSTWORDS', 'MORPH_CAT_PORNOWORDS', 'MORPH_CAT_SUICIDEWORDS', 'MORPH_CAT_TERRORWORDS'),
-            'ug_useragents': (
-                'USERAGENT_ANDROID',
-                'USERAGENT_APPLE',
-                'USERAGENT_BLACKBERRY',
-                'USERAGENT_CHROMEGENERIC',
-                'USERAGENT_CHROMEOS',
-                'USERAGENT_CHROMIUM',
-                'USERAGENT_EDGE',
-                'USERAGENT_FFGENERIC',
-                'USERAGENT_IE',
-                'USERAGENT_IOS',
-                'USERAGENT_LINUX',
-                'USERAGENT_MACOS',
-                'USERAGENT_MOBILESAFARI',
-                'USERAGENT_OPERA',
-                'USERAGENT_SAFARIGENERIC',
-                'USERAGENT_SPIDER',
-                'USERAGENT_UCBROWSER',
-                'USERAGENT_WIN',
-                'USERAGENT_WINPHONE',
-                'USERAGENT_YABROWSER'
-            )
         }
         self.convert_mc_url_categorygroups = {
             'mc parental control': 'MC Parental control',
@@ -105,12 +71,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             'mc threats': 'MC Threats'
         }
         self.import_library_funcs = {
-            'Morphology': self.import_morphology_lists,
             'Services': self.import_services_list,
             'ServicesGroups': self.import_services_groups,
             'IPAddresses': self.import_ip_lists,
-            'Useragents': self.import_useragent_lists,
-            'ContentTypes': self.import_mime_lists,
             'URLLists': self.import_url_lists,
             'TimeSets': self.import_time_restricted_lists,
             'BandwidthPools': self.import_shaper_list,
@@ -129,11 +92,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             'LLDPProfiles': self.import_lldp_profiles,
             'SSLProfiles': self.import_ssl_profiles,
             'SSLForwardingProfiles': self.import_ssl_forward_profiles,
-            'HIPObjects': self.import_hip_objects,
-            'HIPProfiles': self.import_hip_profiles,
             'BfdProfiles': self.import_bfd_profiles,
             'UserIdAgentSyslogFilters': self.import_useridagent_syslog_filters,
-            'Scenarios': self.import_scenarios,
             'Certificates': self.import_certificates,
             'Groups': self.import_local_groups,
             'SNMPSecurityProfiles': self.import_snmp_security_profiles,
@@ -147,8 +107,6 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             'UserCertificateProfiles': self.import_client_certificate_profiles,
             'Users': self.import_local_users,
             'AuthServers': self.import_auth_servers,
-            'ICAPServers': self.import_icap_servers,
-            'ReverseProxyServers': self.import_reverseproxy_servers,
         }
         self.import_shared_2 = {
             'AuthProfiles': self.import_auth_profiles,
@@ -169,22 +127,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             'DeviceManagement': self.pass_function,
             'Administrators': self.pass_function,
             'CaptivePortal': self.import_captive_portal_rules,
-            'TerminalServers': self.import_terminal_servers,
             'UserIDagent': self.import_userid_agent,
             'Firewall': self.import_firewall_rules,
             'NATandRouting': self.import_nat_rules,
             'TrafficShaping': self.import_shaper_rules,
-            'ContentFiltering': self.import_content_rules,
-            'SafeBrowsing': self.import_safebrowsing_rules,
-            'TunnelInspection': self.import_tunnel_inspection_rules,
-            'SSLInspection': self.import_ssldecrypt_rules,
-            'SSHInspection': self.import_sshdecrypt_rules,
-            'MailSecurity': self.import_mailsecurity,
-            'ICAPRules': self.import_icap_rules,
-            'DoSProfiles': self.import_dos_profiles,
-            'DoSRules': self.import_dos_rules,
-            'WebPortal': self.import_proxyportal_rules,
-            'ReverseProxyRules': self.import_reverseproxy_rules,
             'ServerRules': self.import_vpn_server_rules,
             'ClientRules': self.import_vpn_client_rules,
             'AlertRules': self.import_notification_alert_rules,
@@ -195,6 +141,11 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
 
     def run(self):
         """Импортируем разделы конфигурации"""
+        print('base_path: ', self.base_path)
+        print('device_groups: ', self.device_groups)
+        print('selected_group: ', self.selected_group)
+        print('selected_templates: ', self.selected_templates)
+
         if self.device_groups:
             """Импортируем все групы с шаблонами данного раздела"""
             path_dict = {}
@@ -213,54 +164,56 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             2. Идём по списку шаблонов. Проверяем что такого шаблона нет в группе. Если нет, создаём, иначе пропускаем.
             3. Импортируем шаблон.
             """
-            self.stepChanged.emit(f'BLUE|Импорт группы шаблонов "{self.selected_group}" в раздел "NGFW".')
-            self.get_groups_templates()     # Получаем группы шаблонов области и шаблоны каждой группы (self.groups, self.group_templates).
+            self.stepChanged.emit(f'BLUE|Импорт группы шаблонов "{self.selected_group}" в раздел "DCFW".')
+            self.get_groups_templates()     # Получаем группы шаблонов DCFW области и шаблоны каждой группы (self.groups, self.group_templates).
             if self.error:
                 self.stepChanged.emit('ORANGE|Импорт конфигурации прерван.')
                 return
             if self.selected_group in self.groups:
                 self.stepChanged.emit(f'GRAY|    Группа шаблонов "{self.selected_group}" уже существует.')
             else:
-                err, result = self.utm.add_device_templates_group({'name': self.selected_group})
+                err, result = self.utm.add_dcfw_device_templates_group({'name': self.selected_group})
                 if err:
                     self.stepChanged.emit(f'RED|    {result}.')
                     self.stepChanged.emit('ORANGE|    Импорт конфигурации прерван.')
                     return
                 self.groups[self.selected_group] = result
                 self.group_templates[self.selected_group] = {}
-                self.stepChanged.emit(f'GREEN|    Создана группа шаблонов "{self.selected_group}".')
+                self.stepChanged.emit(f'GREEN|    Создана группа шаблонов DCFW "{self.selected_group}".')
 
             if self.selected_templates:
                 for template in self.selected_templates:
-                    self.stepChanged.emit(f'LBLUE|Проверяем отсутствие шаблона "{template}" в группе шаблонов "{self.selected_group}" и области "{self.realm}".')
+                    self.stepChanged.emit(f'LBLUE|Проверяем отсутствие шаблона "{template}" в группе шаблонов DCFW "{self.selected_group}" области "{self.realm}".')
                     if template in self.group_templates[self.selected_group]:
-                        self.stepChanged.emit(f'ORANGE|    Warning: Шаблон "{template}" уже существует в группе шаблонов "{self.selected_group}".')
+                        self.stepChanged.emit(f'ORANGE|    Warning: Шаблон "{template}" уже существует в группе шаблонов DCFW "{self.selected_group}".')
                         self.error = 2
                     elif template in list(self.realm_templates.values()):
-                        self.stepChanged.emit(f'ORANGE|    Warning: Шаблон "{template}" уже существует в области "{self.realm}".')
+                        self.stepChanged.emit(f'ORANGE|    Warning: Шаблон "{template}" уже существует в разделе DCFW области "{self.realm}".')
                         self.error = 2
 
                 if not self.error:
                     for template in self.selected_templates:
-                        err, result = self.utm.add_device_template({'name': template})
+                        err, result = self.utm.add_dcfw_device_template({'name': template})
                         if err:
                             self.stepChanged.emit(f'RED|    {result}.')
                             self.stepChanged.emit('ORANGE|    Импорт конфигурации прерван.')
                             return
                         template_id = result    # Запоминаем ID текущего шаблона
                         self.group_templates[self.selected_group][template] = template_id
-                        self.stepChanged.emit(f'BLUE|Создан шаблон "{template}" в области "{self.realm}".')
+                        self.stepChanged.emit(f'BLUE|Создан шаблон "{template}" в разделе DCFW области "{self.realm}".')
 
                         group_info = {
+#                            'id': self.groups[self.selected_group],
                             'name': self.selected_group,
-                            'device_templates': [[template_id, True] for template_id in self.group_templates[self.selected_group].values()]
+#                            'description': '',
+                            'dcfw_templates': [[template_id, True] for template_id in self.group_templates[self.selected_group].values()]
                         }
-                        err, result = self.utm.update_device_templates_group(self.groups[self.selected_group], group_info)
+                        err, result = self.utm.update_dcfw_device_templates_group(self.groups[self.selected_group], group_info)
                         if err:
                             self.stepChanged.emit(f'RED|    {result}.')
                             self.stepChanged.emit('ORANGE|    Импорт конфигурации прерван.')
                             return
-                        self.stepChanged.emit(f'BLACK|    Шаблон "{template}" добавлен в группу шаблонов "{self.selected_group}".')
+                        self.stepChanged.emit(f'BLACK|    Шаблон "{template}" добавлен в группу шаблонов DCFW "{self.selected_group}".')
 
                         path_dict = {}
                         template_path = os.path.join(self.base_path, self.selected_group, template)
@@ -276,21 +229,22 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                         else:
                             self.stepChanged.emit(f'GRAY|    Каталог "{template_path}" пуст.')
 
-#                        print('\n', 'self.groups: ', self.groups)
-#                        print('\n', 'self.group_templates: ', self.group_templates, '\n')
+                        print('\n', 'self.groups: ', self.groups)
+                        print('\n', 'self.group_templates: ', self.group_templates, '\n')
 
                     self.get_ldap_servers()  # Получаем список всех активных LDAP-серверов области.
                     self.get_library_data()  # Получаем часто используемые данные из библиотек всех шаблонов группы шаблонов
-                    self.import_ngfw_devices()  # Импортируем устройства NGFW
+                    self.import_dcfw_devices()  # Импортируем устройства DCFW
 
-                    for section in (self.import_library_funcs, self.import_shared_1, self.import_shared_2, self.import_shared_3, self.import_funcs):
-                        for template in self.selected_templates:
-                            self.stepChanged.emit(f'TEST|\nИмпортируем разделы конфигурации в шаблон "{template}".')
-                            if (path_dict := self.template_config_section_paths.get(template, False)):
-                                template_id = self.group_templates[self.selected_group][template]
-                                for key, value in section.items():
-                                    if key in path_dict:
-                                        value(path_dict[key], template_id, template)
+#                    for section in (self.import_library_funcs, self.import_shared_1, self.import_shared_2, self.import_shared_3, self.import_funcs):
+#                        for template in self.selected_templates:
+#                            self.stepChanged.emit(f'TEST|\nИмпортируем разделы конфигурации в шаблон "{template}".')
+#                            if (path_dict := self.template_config_section_paths.get(template, False)):
+#                                template_id = self.group_templates[self.selected_group][template]
+#                                for key, value in section.items():
+#                                    if key in path_dict:
+#                                        print(key, ' ---- ', path_dict[key], '\n')
+#                                        value(path_dict[key], template_id, template)
             else:
                 self.stepChanged.emit(f'GRAY|    В группе шаблонов "{self.selected_group}" нет шаблонов для импорта.')
                 
@@ -304,20 +258,18 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
 
     def get_groups_templates(self):
         """Получаем группы шаблонов области и шаблоны каждой группы"""
-        err, result = self.utm.get_device_templates()
+        err, result = self.utm.get_dcfw_device_templates()
         if err:
-            self.stepChanged.emit('iRED|Не удалось получить список шаблонов области.')
+            self.stepChanged.emit('iRED|Не удалось получить список шаблонов DCFW области.')
             self.stepChanged.emit(f'RED|{result}')
             self.error = 1
         else:
             for item in result:
                 self.realm_templates[item['id']] = item['name']
-                if item['name'] == 'UserGate Libraries template':
-                    self.usergate_lib_template = (item['name'], item['id'])
             
-            err, result = self.utm.get_device_templates_groups()
+            err, result = self.utm.get_dcfw_device_templates_groups()
             if err:
-                self.stepChanged.emit('iRED|Не удалось получить список групп шаблонов области.')
+                self.stepChanged.emit('iRED|Не удалось получить список групп шаблонов DCFW области.')
                 self.stepChanged.emit(f'RED|{result}')
                 self.error = 1
             else:
@@ -326,40 +278,41 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                     self.group_templates[item['name']] = {self.realm_templates[template_id]: template_id for template_id in item['device_templates']}
 
 
-    def import_ngfw_devices(self):
-        """Импортируем устройства NGFW"""
-        self.stepChanged.emit('BLUE|Импорт устройств NGFW в раздел "NGFW/Устройства".')
+    def import_dcfw_devices(self):
+        """Импортируем устройства DCFW"""
+        self.stepChanged.emit('BLUE|Импорт устройств DCFW в раздел "DCFW/Устройства".')
         json_file = os.path.join(self.base_path, 'config_devices_list.json')
         err, data = self.read_json_file(json_file, mode=1)
         if err:
-            self.stepChanged.emit('ORANGE|    Устройств NGFW не импортированы и не будут использованы в правилах.')
+            self.stepChanged.emit('ORANGE|    Устройств DCFW не импортированы и не будут использованы в правилах.')
             return
 
         error = 0
         for item in data:
             if item['name'] in self.mc_data['devices_list']:
-                self.stepChanged.emit(f'uGRAY|    Устройство NGFW "{item["name"]}" уже существует.')
+                self.stepChanged.emit(f'uGRAY|    Устройство DCFW "{item["name"]}" уже существует.')
             else:
-                try:
-                    item['device_templates_group'] = self.groups[item['device_templates_group']]
-                except KeyError:
-                    self.stepChanged.emit(f'RED|    Не найдена группа шаблонов "{item["device_templates_group"]}" для устройства NGFW "{item["name"]}" [Устройство NGFW "{item["name"]}" не импортировано].')
-                    error = 1
-                    continue
+                if self.selected_group == item['device_templates_group']:   # Проверяем что устройство принадлежит импортируемой группе шаблонов.
+                    try:
+                        item['device_templates_group'] = self.groups[item['device_templates_group']]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Не найдена группа шаблонов "{item["device_templates_group"]}" для устройства DCFW "{item["name"]}" [Устройство NGFW "{item["name"]}" не импортировано].')
+                        error = 1
+                        continue
 
-                err, result = self.utm.add_ngfw_device(item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Устройство NGFW "{item["name"]}" не импортировано]')
-                    error = 1
-                    continue
-                else:
-                    self.mc_data['devices_list'][item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Устройство NGFW "{item["name"]}" импортировано.')
+                    err, result = self.utm.add_dcfw_device(item)
+                    if err:
+                        self.stepChanged.emit(f'RED|    {result}  [Устройство DCFW "{item["name"]}" не импортировано]')
+                        error = 1
+                        continue
+                    else:
+                        self.mc_data['devices_list'][item['name']] = result
+                        self.stepChanged.emit(f'BLACK|    Устройство DCFW "{item["name"]}" импортировано.')
         if error:
             self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте устройств NGFW.')
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте устройств DCFW.')
         else:
-            self.stepChanged.emit('GREEN|    Импорт устройств NGFW завершён.')
+            self.stepChanged.emit('GREEN|    Импорт устройств DCFW завершён.')
 
 
     def get_ldap_servers(self):
@@ -1895,6 +1848,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
         self.stepChanged.emit('BLUE|Импорт syslog фильтров UserID агента в раздел "Библиотеки/Syslog фильтры UserID агента".')
         error = 0
 
+        self.stepChanged.emit('bRED|    Импорт syslog фильтров UserID агента в настоящее время не возможен, так как соответствующие API не работают.')
+        return
+
         if not self.mc_data.get('userid_filters', False):
             if self.get_useridagent_filters():        # Заполняем self.mc_data['userid_filters']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
@@ -2763,7 +2719,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             for x in item['routes']:
                 x['name'] = self.get_transformed_name(x['name'], descr='Имя route')[1]
                 if x['ifname'] != 'undefined':
-                    if f'{x["ifname"]}:{item["node_name"]}' not in mc_ifaces:
+                    if f'{x["ifname"]}:{self.node_name}' not in mc_ifaces:
                         if f'{x["ifname"]}:cluster' not in mc_ifaces:
                             self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на узле кластера "{item["node_name"]}".')
                             x['ifname'] = 'undefined'
@@ -3521,12 +3477,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             # Добавляем доменных пользователей в группу.
             self.stepChanged.emit(f'NOTE|       Добавляем доменных пользователей в группу "{item["name"]}".')
             n = 0
-            for user in users:
-                if '\\' in user:
+            for user_name in users:
+                if '\\' in user_name:
                     n += 1
-                    if ' ' in user: # В версиях до 7.3 имя было 'domain\\user_name', сейчас 'User1 (domain\\user1)'
-                        user_domain_name = user.split()[1].replace('(', '').replace(')', '')    # Убираем логин, оставляем имя и убираем скобки
-                    domain, name = user_domain_name.split('\\')
+                    domain, name = user_name.split('\\')
                     try:
                         ldap_id = self.mc_data['ldap_servers'][domain.lower()]
                     except KeyError:
@@ -3545,7 +3499,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                             self.stepChanged.emit(f'RED|       {result2}  [{user_name}]')
                             error = 1
                         else:
-                            self.stepChanged.emit(f'BLACK|       Пользователь "{user}" добавлен в группу "{item["name"]}".')
+                            self.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
             if not n:
                 self.stepChanged.emit(f'GRAY|       Нет доменных пользователей в группе "{item["name"]}".')
         if error:
@@ -4244,11 +4198,13 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
         self.stepChanged.emit(f'LBLUE|    Фильтры для коннеторов Syslog Агентов UserID в этой версии МС не переносятся. Необходимо добавить их руками.')
         error = 0
 
-        if not self.mc_data.get('userid_filters', False):
-            if self.get_useridagent_filters():        # Заполняем self.mc_data['userid_filters']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
-                return
-        userid_filters = self.mc_data['userid_filters']
+#        В версии 7.1 это не работает!!!!!!
+#        err, result = self.utm.get_template_useridagent_filters(template_id)
+#        if err:
+#            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте агентов UserID.')
+#            self.error = 1
+#            return
+#        useridagent_filters = {x['name']: x['id'] for x in result}
 
         useridagent_servers = {}
         for name, uid in self.group_templates[self.selected_group].items():
@@ -4282,15 +4238,16 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                     error = 1
                 if 'filters' in item:
                     new_filters = []
+                    self.stepChanged.emit(f'rNOTE|    Warning: [UserID агент "{item["name"]}"] Не импортированы Syslog фильтры. В вашей версии МС API для этого не работает.')
                     for filter_name in item['filters']:
-                        try:
-                            new_filters.append(userid_filters[filter_name].id)
-                        except KeyError:
-                            self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
-                            item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
-                            error = 1
+                        item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
+#                        try:
+#                            new_filters.append(useridagent_filters[filter_name])
+#                        except KeyError:
+#                            self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
+#                            item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
+#                            error = 1
                     item['filters'] = new_filters
-
                 if item['type'] == 'radius' and 'server_secret' not in item:
                     item['server_secret'] = '123'
 
@@ -6186,7 +6143,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил SNMP завершён.')
 
 
-    def pass_function(self, path, template_id, template_name):
+    def pass_function(self, path):
         """Функция заглушка"""
         self.stepChanged.emit(f'GRAY|Импорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
 
@@ -6286,8 +6243,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                     else:
                         tmp_arr1 = [x.split('=') for x in item[1].split(',')]
                         tmp_arr2 = [b for a, b in tmp_arr1 if a in ('dc', 'DC')]
+                        print(tmp_arr1)
                         ldap_domain = '.'.join(tmp_arr2)
                         group_name = tmp_arr1[0][1] if tmp_arr1[0][0] == 'CN' else None
+                        print(ldap_domain, ' --- ', group_name)
                         if group_name:
                             try:
                                 ldap_id = self.mc_data['ldap_servers'][ldap_domain.lower()]
@@ -6959,17 +6918,15 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
 
     def get_library_data(self):
         """Получаем часто используемые данные из библиотек всех шаблонов группы шаблонов"""
-        # Добавляем в список шаблонов предустановленный шаблон 'UserGate Libraries template'.
         templates = list(self.group_templates[self.selected_group].items())
-        templates.append(self.usergate_lib_template)
         error = 0
 
         self.stepChanged.emit('BLUE|Заполняем служебные структуры данных.')
 
-        # Получаем список зон группы шаблонов и устанавливаем значение self.mc_data['zones']
+        # Получаем список зон группы шаблонов DCFW и устанавливаем значение self.mc_data['zones']
         self.mc_data['zones'] = {}
         for name, uid in templates:
-            err, result = self.utm.get_template_zones_list(uid)
+            err, result = self.utm.get_dcfw_template_zones(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -6980,10 +6937,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['zones'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список сервисов группы шаблонов и устанавливаем значение self.mc_data['services']
+        # Получаем список сервисов группы шаблонов DCFW и устанавливаем значение self.mc_data['services']
         self.mc_data['services'] = {}
         for name, uid in templates:
-            err, result = self.utm.get_template_services_list(uid)
+            err, result = self.utm.get_dcfw_template_services(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -6994,10 +6951,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['services'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список календарей группы шаблонов и устанавливаем значение self.mc_data['calendars']
+        # Получаем список календарей группы шаблонов DCFW и устанавливаем значение self.mc_data['calendars']
         self.mc_data['calendars'] = {}
         for name, uid in templates:
-            err, result = self.utm.get_template_nlists_list(uid, 'timerestrictiongroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'timerestrictiongroup')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7008,10 +6965,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['calendars'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список групп категорий URL группы шаблонов и устанавливаем значение self.mc_data['url_categorygroups']
+        # Получаем список групп категорий URL группы шаблонов DCFW и устанавливаем значение self.mc_data['url_categorygroups']
         self.mc_data['url_categorygroups'] = {}
         for name, uid in templates:
-            err, result = self.utm.get_template_nlists_list(uid, 'urlcategorygroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'urlcategorygroup')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7022,10 +6979,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['url_categorygroups'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список профилей SSL группы шаблонов и устанавливаем значение self.mc_data['ssl_profiles']
+        # Получаем список профилей SSL группы шаблонов DCFW и устанавливаем значение self.mc_data['ssl_profiles']
         self.mc_data['ssl_profiles'] = {-1: BaseObject(id=-1, template_id='', template_name='')}
         for name, uid in templates:
-            err, result = self.utm.get_template_ssl_profiles(uid)
+            err, result = self.utm.get_dcfw_template_ssl_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7036,10 +6993,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['ssl_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список шаблонов страниц группы шаблонов и устанавливаем значение self.mc_data['response_pages']
+        # Получаем список шаблонов страниц группы шаблонов DCFW и устанавливаем значение self.mc_data['response_pages']
         self.mc_data['response_pages'] = {-1: BaseObject(id=-1, template_id='', template_name='')}
         for name, uid in templates:
-            err, result = self.utm.get_template_responsepages_list(uid)
+            err, result = self.utm.get_dcfw_template_responsepages(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7050,10 +7007,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['response_pages'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем полосы пропускания группы шаблонов и устанавливаем значение self.mc_data['shapers']
+        # Получаем полосы пропускания группы шаблонов DCFW и устанавливаем значение self.mc_data['shapers']
         self.mc_data['shapers'] = {}
         for name, uid in templates:
-            err, result = self.utm.get_template_shapers_list(uid)
+            err, result = self.utm.get_dcfw_template_shapers(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7064,10 +7021,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['shapers'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список групп сервисов группы шаблонов и устанавливаем значение self.mc_data['service_groups']
+        # Получаем список групп сервисов группы шаблонов DCFW и устанавливаем значение self.mc_data['service_groups']
         self.mc_data['service_groups'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'servicegroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'servicegroup')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7078,9 +7035,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['service_groups'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список IP-листов группы шаблонов и устанавливаем значение self.mc_data['ip_lists']
+        # Получаем список IP-листов группы шаблонов DCFW и устанавливаем значение self.mc_data['ip_lists']
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'network')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'network')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7091,22 +7048,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['ip_lists'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список типов контента группы шаблонов и устанавливаем значение self.mc_data['mime']
+        # Получаем список URL-листов группы шаблонов DCFW и устанавливаем значение self.mc_data['url_lists']
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'mime')
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['mime']:
-                    self.stepChanged.emit(f'ORANGE|    Список типов контента "{x["name"]}" обнаружен в нескольких шаблонах группы. Список из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['mime'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        # Получаем список URL-листов группы шаблонов и устанавливаем значение self.mc_data['url_lists']
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'url')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'url')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7117,10 +7061,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['url_lists'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список групп приложений группы шаблонов и устанавливаем значение self.mc_data['apps_groups']
+        # Получаем список групп приложений группы шаблонов DCFW и устанавливаем значение self.mc_data['apps_groups']
         self.mc_data['apps_groups'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'applicationgroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'applicationgroup')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7131,24 +7075,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['apps_groups'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список сценариев группы шаблонов и устанавливаем значение self.mc_data['scenarios']
-        self.mc_data['scenarios'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_scenarios_rules(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                error = 1
-                break
-            for x in result:
-                if x['name'] in self.mc_data['scenarios']:
-                    self.stepChanged.emit(f'ORANGE|    Сценарий "{x["name"]}" обнаружен в нескольких шаблонах группы. Сценарий из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['scenarios'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        # Получаем список сертификатов группы шаблонов и устанавливаем значение self.mc_data['certs']
+        # Получаем список сертификатов группы шаблонов DCFW и устанавливаем значение self.mc_data['certs']
         self.mc_data['certs'] = {-1: BaseObject(id=-1, template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_certificates_list(uid)
+            err, result = self.utm.get_dcfw_template_certificates(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7159,13 +7089,13 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['certs'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список профилей аутентификации группы шаблонов и устанавливаем значение self.mc_data['auth_profiles']
+        # Получаем список профилей аутентификации группы шаблонов DCFW и устанавливаем значение self.mc_data['auth_profiles']
         self.mc_data['auth_profiles'] = {
             -1: BaseObject(id=-1, template_id='', template_name=''),
             False: BaseObject(id=False, template_id='', template_name=''),
         }
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_auth_profiles(uid)
+            err, result = self.utm.get_dcfw_template_auth_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7176,10 +7106,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['auth_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список локальных групп пользователей группы шаблонов и устанавливаем значение self.mc_data['local_groups']
+        # Получаем список локальных групп пользователей группы шаблонов DCFW и устанавливаем значение self.mc_data['local_groups']
         self.mc_data['local_groups'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_groups_list(uid)
+            err, result = self.utm.get_dcfw_template_groups(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7190,10 +7120,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                 else:
                     self.mc_data['local_groups'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
-        # Получаем список локальных пользователей группы шаблонов и устанавливаем значение self.mc_data['local_users']
+        # Получаем список локальных пользователей группы шаблонов DCFW и устанавливаем значение self.mc_data['local_users']
         self.mc_data['local_users'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_users_list(uid)
+            err, result = self.utm.get_dcfw_template_users(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -7212,17 +7142,17 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             error = 1
         self.mc_data['url_categories'] = {x['name']: x['id'] for x in result}
 
-        # Получаем список предопределённых категорий приложений l7 и устанавливаем значение self.mc_data['l7_categories']
+        # Получаем список предопределённых категорий приложений l7 DCFW и устанавливаем значение self.mc_data['l7_categories']
         self.mc_data['l7_categories'] = {}
-        err, result = self.utm.get_l7_categories()
+        err, result = self.utm.get_dcfw_l7_categories()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             error = 1
         self.mc_data['l7_categories'] = {x['name']: x['id'] for x in result}
 
-        # Получаем список устройств NGFW области и устанавливаем значение self.mc_data['devices_list']
+        # Получаем список устройств DCFW области и устанавливаем значение self.mc_data['devices_list']
         self.mc_data['devices_list'] = {}
-        err, result = self.utm.get_devices_list()
+        err, result = self.utm.get_dcfw_devices_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             error = 1

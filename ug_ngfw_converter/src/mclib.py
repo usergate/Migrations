@@ -2548,7 +2548,6 @@ class McXmlRpc:
         """Обновить группу шаблонов DCFW в области."""
         try:
             result = self._server.v1.dcfwdevices.templates.group.update(self._auth_token, group_id, group_info)
-            print(result)
         except rpc.Fault as err:
             if err.faultCode == 5:
                 return 2, f'Error: Нет прав на обновление группы шаблонов [Error mclib.update_device_templates_group: {err.faultString}].'

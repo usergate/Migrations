@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.3   02.07.2025
+# Версия 2.5   07.07.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -498,7 +498,7 @@ class SelectMcExportMode(QWidget):
         self.btn3.setFixedWidth(130)
         self.btn3.setStyleSheet('color: gray; background: gainsboro;')
         self.btn3.setEnabled(False)
-        self.btn3.clicked.connect(lambda: self._save_logs('export.log'))
+        self.btn3.clicked.connect(lambda: self._save_logs())
         hbox_btn = QHBoxLayout()
         hbox_btn.addWidget(self.btn1)
         hbox_btn.addStretch()
@@ -698,10 +698,10 @@ class SelectMcExportMode(QWidget):
         else:
             func.message_inform(self, "Внимание!", "Вы не выбрали группу шаблонов для экспорта.")
 
-    def _save_logs(self, log_file):
+    def _save_logs(self):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
-        path_logfile = os.path.join(self.group_path, f'{today:%Y-%m-%d_%M:%S}-{log_file}')
+        path_logfile = os.path.join(self.parent.mc_base_path, f'{today:%Y-%m-%d_%M%S}-export_{self.device}_{self.selected_group}.log')
         list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
         with open(path_logfile, 'w') as fh:
             print(*list_items, sep='\n', file=fh)
@@ -1231,6 +1231,7 @@ class SelectMcTemplateGroupImport(QWidget):
         self.parent = parent
         self.utm = None
         self.device = 'NGFW'
+        self.new_device = 'NGFW'
         self.base_path = {}
         self.groups = {}
         self.selected_group = None
@@ -1281,17 +1282,17 @@ class SelectMcTemplateGroupImport(QWidget):
         self.btn2.setEnabled(False)
         self.btn2.clicked.connect(self.import_selected_templates)
 
-        self.btn3 = QPushButton("Импортировать все группы раздела")
-        self.btn3.setFixedWidth(240)
-        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn3.setEnabled(False)
-        self.btn3.clicked.connect(self.import_all)
+#        self.btn3 = QPushButton("Импортировать все группы раздела")
+#        self.btn3.setFixedWidth(240)
+#        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+#        self.btn3.setEnabled(False)
+#        self.btn3.clicked.connect(self.import_all)
 
         self.btn4 = QPushButton("Сохранить лог")
         self.btn4.setFixedWidth(120)
         self.btn4.setStyleSheet('color: gray; background: gainsboro;')
         self.btn4.setEnabled(False)
-        self.btn4.clicked.connect(lambda: self._save_logs('import.log'))
+        self.btn4.clicked.connect(lambda: self._save_logs())
 
         self.btn_ngfw = QRadioButton('NGFW')
         self.btn_ngfw.setChecked(True)
@@ -1309,8 +1310,8 @@ class SelectMcTemplateGroupImport(QWidget):
         hbox_btn.addWidget(self.btn_dcfw)
         hbox_btn.addStretch()
         hbox_btn.addWidget(self.btn2)
-        hbox_btn.addStretch()
-        hbox_btn.addWidget(self.btn3)
+#        hbox_btn.addStretch()
+#        hbox_btn.addWidget(self.btn3)
         hbox_btn.addStretch()
         hbox_btn.addWidget(self.btn4)
 
@@ -1328,8 +1329,8 @@ class SelectMcTemplateGroupImport(QWidget):
     def disable_buttons(self):
         self.btn2.setStyleSheet('color: gray; background: gainsboro;')
         self.btn2.setEnabled(False)
-        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
-        self.btn3.setEnabled(False)
+#        self.btn3.setStyleSheet('color: gray; background: gainsboro;')
+#        self.btn3.setEnabled(False)
         self.btn4.setStyleSheet('color: gray; background: gainsboro;')
         self.btn4.setEnabled(False)
 
@@ -1337,8 +1338,10 @@ class SelectMcTemplateGroupImport(QWidget):
     def enable_buttons(self):
         self.btn2.setStyleSheet('color: forestgreen; background: white;')
         self.btn2.setEnabled(True)
-        self.btn3.setStyleSheet('color: forestgreen; background: white;')
-        self.btn3.setEnabled(True)
+#        self.btn3.setStyleSheet('color: darkred; background: white;')
+#        self.btn3.setEnabled(True)
+        self.btn4.setStyleSheet('color: steelblue; background: white;')
+        self.btn4.setEnabled(True)
 
 
     def get_auth(self):
@@ -1376,6 +1379,8 @@ class SelectMcTemplateGroupImport(QWidget):
                         func.message_inform(self, 'Внимание!', message)
                         self.run_page_0()
                         return
+                    self.label_config_path.setText(f'  Input: ./{self.base_path[self.device]}')
+                    self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.new_device}  ')
                 else:
                     self.run_page_0()
             else:
@@ -1428,6 +1433,7 @@ class SelectMcTemplateGroupImport(QWidget):
             self.add_item_log(f'{title:>100}', color=color)
             self.add_item_log(f'{title1:>100}', color=color)
             self.add_item_log(f'{"="*100}', color='ORANGE')
+#        print('new_device - ', self.new_device)
 #        print(self.selected_group, self.selected_templates)
 
 
@@ -1472,11 +1478,6 @@ class SelectMcTemplateGroupImport(QWidget):
             if self.thread is None:
                 self.disable_buttons()
                 if self.new_device == 'NGFW':
-#                    print('\nself.device: ', self.device)
-#                    print('new_device: ', self.new_device)
-#                    print('base_path: ', self.base_path[self.device])
-#                    print('selected_group: ', self.selected_group)
-#                    print('selected_templates: ', self.selected_templates)
                     self.thread = ImportMcNgfwTemplates(
                         self.utm,
                         base_path = self.base_path[self.device],
@@ -1484,11 +1485,6 @@ class SelectMcTemplateGroupImport(QWidget):
                         selected_templates = self.selected_templates
                     )
                 elif self.new_device == 'DCFW':
-#                    print('\nself.device: ', self.device)
-#                    print('new_device: ', self.new_device)
-#                    print('base_path: ', self.base_path[self.device])
-#                    print('selected_group: ', self.selected_group)
-#                    print('selected_templates: ', self.selected_templates)
                     self.thread = ImportMcDcfwTemplates(
                         self.utm,
                         base_path = self.base_path[self.device],
@@ -1502,41 +1498,42 @@ class SelectMcTemplateGroupImport(QWidget):
                 func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
 
-    def import_all(self):
-        """
-        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
-        Затем запускаем импорт всех групп выбранного раздела конфигурации.
-        """
-        if self.new_device in ('EndPoint', 'LogAn', 'DCFW'):
-            message = f'Импорт раздела "{self.new_device}" пока не реализован.'
-            func.message_inform(self, 'Внимание!', message)
-        elif self.new_device == 'DCFW' and self.utm.float_version < 7.4:
-            message = f'Импорт раздела "{self.new_device}" не возможен для вашей версии МС.'
-            func.message_inform(self, 'Внимание!', message)
-        else:
-            if not func.check_auth(self):
-                self.run_page_0()
-            if self.thread is None:
-                self.disable_buttons()
-                self.thread = ImportMcNgfwTemplates(
-                    self.utm,
-                        device_type = self.new_device,
-                        base_path = self.base_path[self.device],
-                        device_groups = self.groups[self.device],
-                        selected_group = self.selected_group,
-                        selected_templates = self.selected_templates
-                )
-                self.thread.stepChanged.connect(self.on_step_changed)
-                self.thread.finished.connect(self.on_finished)
-                self.thread.start()
-            else:
-                func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
+#    def import_all(self):
+#        """
+#        Проверяем что авторизация не протухла. Если протухла, логинимся заново.
+#        Затем запускаем импорт всех групп выбранного раздела конфигурации.
+#        """
+#        if self.new_device in ('EndPoint', 'LogAn', 'DCFW'):
+#            message = f'Импорт раздела "{self.new_device}" пока не реализован.'
+#            func.message_inform(self, 'Внимание!', message)
+#        elif self.new_device == 'DCFW' and self.utm.float_version < 7.4:
+#            message = f'Импорт раздела "{self.new_device}" не возможен для вашей версии МС.'
+#            func.message_inform(self, 'Внимание!', message)
+#        else:
+#            if not func.check_auth(self):
+#                self.run_page_0()
+#            if self.thread is None:
+#                self.disable_buttons()
+#                self.thread = ImportMcNgfwTemplates(
+#                    self.utm,
+#                        device_type = self.new_device,
+#                        base_path = self.base_path[self.device],
+#                        device_groups = self.groups[self.device],
+#                        selected_group = self.selected_group,
+#                        selected_templates = self.selected_templates
+#                )
+#                self.thread.stepChanged.connect(self.on_step_changed)
+#                self.thread.finished.connect(self.on_finished)
+#                self.thread.start()
+#            else:
+#                func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
 
     def run_page_0(self):
         """Возвращаемся на стартовое окно"""
         if self.utm:
             self.utm.logout()
+        self.disable_buttons()
         self.utm = None
         self.device = 'NGFW'
         self.base_path.clear()
@@ -1561,10 +1558,10 @@ class SelectMcTemplateGroupImport(QWidget):
         self.log_list.addItem(i)
 
 
-    def _save_logs(self, log_file):
+    def _save_logs(self):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
-        path_logfile = os.path.join(self.group_path, f'{today:%Y-%m-%d_%M:%S}-{log_file}')
+        path_logfile = os.path.join(self.parent.mc_base_path, f'{today:%Y-%m-%d_%M%S}-import_{self.device}_{self.selected_group}.log')
         list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
         with open(path_logfile, 'w') as fh:
             print(*list_items, sep='\n', file=fh)

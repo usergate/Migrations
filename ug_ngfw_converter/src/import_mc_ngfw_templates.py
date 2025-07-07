@@ -25,10 +25,10 @@
 import os, sys, json
 import copy
 from PyQt6.QtCore import QThread, pyqtSignal
-from common_classes import MyMixedService, BaseObject, BaseAppObject
+from common_classes import MyMixedService, UsercatalogLdapServers, BaseObject, BaseAppObject
 
 
-class ImportMcNgfwTemplates(QThread, MyMixedService):
+class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
     """Импортируем разделы конфигурации в шаблон МС"""
     stepChanged = pyqtSignal(str)
 
@@ -340,53 +340,29 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
             if item['name'] in self.mc_data['devices_list']:
                 self.stepChanged.emit(f'uGRAY|    Устройство NGFW "{item["name"]}" уже существует.')
             else:
-                try:
-                    item['device_templates_group'] = self.groups[item['device_templates_group']]
-                except KeyError:
-                    self.stepChanged.emit(f'RED|    Не найдена группа шаблонов "{item["device_templates_group"]}" для устройства NGFW "{item["name"]}" [Устройство NGFW "{item["name"]}" не импортировано].')
-                    error = 1
-                    continue
+                if self.selected_group == item['device_templates_group']:   # Проверяем что устройство принадлежит импортируемой группе шаблонов.
+                    try:
+                        item['device_templates_group'] = self.groups[item['device_templates_group']]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Не найдена группа шаблонов "{item["device_templates_group"]}" для устройства NGFW "{item["name"]}" [Устройство NGFW "{item["name"]}" не импортировано].')
+                        error = 1
+                        continue
 
-                err, result = self.utm.add_ngfw_device(item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Устройство NGFW "{item["name"]}" не импортировано]')
-                    error = 1
-                    continue
+                    err, result = self.utm.add_ngfw_device(item)
+                    if err:
+                        self.stepChanged.emit(f'RED|    {result}  [Устройство NGFW "{item["name"]}" не импортировано]')
+                        error = 1
+                        continue
+                    else:
+                        self.mc_data['devices_list'][item['name']] = result
+                        self.stepChanged.emit(f'BLACK|    Устройство NGFW "{item["name"]}" импортировано.')
                 else:
-                    self.mc_data['devices_list'][item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Устройство NGFW "{item["name"]}" импортировано.')
+                    self.stepChanged.emit(f'uGRAY|    Нет устройств NGFW для группы шаблонов "{self.selected_group}".')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте устройств NGFW.')
         else:
             self.stepChanged.emit('GREEN|    Импорт устройств NGFW завершён.')
-
-
-    def get_ldap_servers(self):
-        """Получаем список всех активных LDAP-серверов области."""
-        self.stepChanged.emit(f'BLUE|Получаем список активных LDAP-серверов в каталогах пользователей области.')
-        self.mc_data['ldap_servers'] = {}
-        err, result = self.utm.get_usercatalog_ldap_servers()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
-            return
-        elif result:
-            err, result2 = self.utm.get_usercatalog_servers_status()
-            if err:
-                self.stepChanged.emit(f'RED|    {result2}')
-                self.error = 1
-            else:
-                servers_status = {x['id']: x['status'] for x in result2}
-                for srv in result:
-                    if servers_status[srv['id']] == 'connected':
-                        for domain in srv['domains']:
-                            self.mc_data['ldap_servers'][domain.lower()] = srv['id']
-                        self.stepChanged.emit(f'GREEN|    LDAP-коннектор "{srv["name"]}" - статус: "connected".')
-                    else:
-                        self.stepChanged.emit(f'GRAY|    LDAP-коннектор "{srv["name"]}" имеет не корректный статус: "{servers_status[srv["id"]]}".')
-        if not self.mc_data['ldap_servers']:
-            self.stepChanged.emit('NOTE|    Нет доступных LDAP-серверов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
 
 
     #--------------------------------------- Библиотека -------------------------------------------------
@@ -3530,7 +3506,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                     try:
                         ldap_id = self.mc_data['ldap_servers'][domain.lower()]
                     except KeyError:
-                        self.stepChanged.emit(f'bRED|       Warning: Доменный пользователь "{user_name}" не импортирован в группу "{item["name"]}". Нет LDAP-коннектора для домена "{domain}".')
+                        self.stepChanged.emit(f'bRED|       Warning: Доменный пользователь "{user}" не импортирован в группу "{item["name"]}". Нет LDAP-коннектора для домена "{domain}".')
                     else:
                         err1, result1 = self.utm.get_usercatalog_ldap_user_guid(ldap_id, name)
                         if err1:
@@ -3538,11 +3514,11 @@ class ImportMcNgfwTemplates(QThread, MyMixedService):
                             error = 1
                             continue
                         elif not result1:
-                            self.stepChanged.emit(f'bRED|       Warning: Нет пользователя "{user_name}" в домене "{domain}". Доменный пользователь не импортирован в группу "{item["name"]}".')
+                            self.stepChanged.emit(f'bRED|       Warning: Нет пользователя "{user}" в домене "{domain}". Доменный пользователь не импортирован в группу "{item["name"]}".')
                             continue
                         err2, result2 = self.utm.add_user_in_template_group(template_id, local_groups[item['name']].id, result1)
                         if err2:
-                            self.stepChanged.emit(f'RED|       {result2}  [{user_name}]')
+                            self.stepChanged.emit(f'RED|       {result2}  [{user}]')
                             error = 1
                         else:
                             self.stepChanged.emit(f'BLACK|       Пользователь "{user}" добавлен в группу "{item["name"]}".')

@@ -19,16 +19,16 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов в раздел DCFW UserGate Management Center версии 7 и выше.
-# Версия 0.1   02.07.2025  (только для ug_ngfw_converter)
+# Версия 1.0   07.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
 import copy
 from PyQt6.QtCore import QThread, pyqtSignal
-from common_classes import MyMixedService, BaseObject, BaseAppObject
+from common_classes import MyMixedService, UsercatalogLdapServers, BaseObject, BaseAppObject
 
 
-class ImportMcDcfwTemplates(QThread, MyMixedService):
+class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
     """Импортируем разделы конфигурации в шаблон МС"""
     stepChanged = pyqtSignal(str)
 
@@ -122,7 +122,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             'DNS': self.import_dns_config,
             'DHCP': self.import_dhcp_subnets,
             'VRF': self.import_vrf,
-            'WCCP': self.import_wccp_rules,
             'GeneralSettings': self.import_general_settings,
             'DeviceManagement': self.pass_function,
             'Administrators': self.pass_function,
@@ -141,10 +140,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def run(self):
         """Импортируем разделы конфигурации"""
-        print('base_path: ', self.base_path)
-        print('device_groups: ', self.device_groups)
-        print('selected_group: ', self.selected_group)
-        print('selected_templates: ', self.selected_templates)
+#        print('base_path: ', self.base_path)
+#        print('device_groups: ', self.device_groups)
+#        print('selected_group: ', self.selected_group)
+#        print('selected_templates: ', self.selected_templates, '\n')
 
         if self.device_groups:
             """Импортируем все групы с шаблонами данного раздела"""
@@ -203,9 +202,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         self.stepChanged.emit(f'BLUE|Создан шаблон "{template}" в разделе DCFW области "{self.realm}".')
 
                         group_info = {
-#                            'id': self.groups[self.selected_group],
                             'name': self.selected_group,
-#                            'description': '',
                             'dcfw_templates': [[template_id, True] for template_id in self.group_templates[self.selected_group].values()]
                         }
                         err, result = self.utm.update_dcfw_device_templates_group(self.groups[self.selected_group], group_info)
@@ -229,22 +226,26 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         else:
                             self.stepChanged.emit(f'GRAY|    Каталог "{template_path}" пуст.')
 
-                        print('\n', 'self.groups: ', self.groups)
-                        print('\n', 'self.group_templates: ', self.group_templates, '\n')
+#                        print('\n', 'self.groups: ', self.groups)
+#                        print('\n', 'self.group_templates: ', self.group_templates, '\n')
 
                     self.get_ldap_servers()  # Получаем список всех активных LDAP-серверов области.
-                    self.get_library_data()  # Получаем часто используемые данные из библиотек всех шаблонов группы шаблонов
+                    self.get_library_data()  # Получаем часто используемые данные из библиотек всех шаблонов группы шаблонов DCFW
                     self.import_dcfw_devices()  # Импортируем устройства DCFW
 
-#                    for section in (self.import_library_funcs, self.import_shared_1, self.import_shared_2, self.import_shared_3, self.import_funcs):
-#                        for template in self.selected_templates:
+                    if self.error:
+                        self.stepChanged.emit('iRED|\nИмпорт группы шаблонов прерван. Устраните ошибки и аовторите импорт.\n')
+                        return
+
+                    for section in (self.import_library_funcs, self.import_shared_1, self.import_shared_2, self.import_shared_3, self.import_funcs):
+                        for template in self.selected_templates:
 #                            self.stepChanged.emit(f'TEST|\nИмпортируем разделы конфигурации в шаблон "{template}".')
-#                            if (path_dict := self.template_config_section_paths.get(template, False)):
-#                                template_id = self.group_templates[self.selected_group][template]
-#                                for key, value in section.items():
-#                                    if key in path_dict:
-#                                        print(key, ' ---- ', path_dict[key], '\n')
-#                                        value(path_dict[key], template_id, template)
+                            if (path_dict := self.template_config_section_paths.get(template, False)):
+                                template_id = self.group_templates[self.selected_group][template]
+                                for key, value in section.items():
+                                    if key in path_dict:
+#                                        print(key, ' ---- ', path_dict[key])
+                                        value(path_dict[key], template_id, template)
             else:
                 self.stepChanged.emit(f'GRAY|    В группе шаблонов "{self.selected_group}" нет шаблонов для импорта.')
                 
@@ -308,6 +309,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     else:
                         self.mc_data['devices_list'][item['name']] = result
                         self.stepChanged.emit(f'BLACK|    Устройство DCFW "{item["name"]}" импортировано.')
+                else:
+                    self.stepChanged.emit(f'uGRAY|    Нет устройств DCFW для группы шаблонов "{self.selected_group}".')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте устройств DCFW.')
@@ -315,107 +318,15 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт устройств DCFW завершён.')
 
 
-    def get_ldap_servers(self):
-        """Получаем список всех активных LDAP-серверов области."""
-        self.stepChanged.emit(f'BLUE|Получаем список активных LDAP-серверов в каталогах пользователей области.')
-        self.mc_data['ldap_servers'] = {}
-        err, result = self.utm.get_usercatalog_ldap_servers()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
-            return
-        elif result:
-            err, result2 = self.utm.get_usercatalog_servers_status()
-            if err:
-                self.stepChanged.emit(f'RED|    {result2}')
-                self.error = 1
-            else:
-                servers_status = {x['id']: x['status'] for x in result2}
-                for srv in result:
-                    if servers_status[srv['id']] == 'connected':
-                        for domain in srv['domains']:
-                            self.mc_data['ldap_servers'][domain.lower()] = srv['id']
-                        self.stepChanged.emit(f'GREEN|    LDAP-коннектор "{srv["name"]}" - статус: "connected".')
-                    else:
-                        self.stepChanged.emit(f'GRAY|    LDAP-коннектор "{srv["name"]}" имеет не корректный статус: "{servers_status[srv["id"]]}".')
-        if not self.mc_data['ldap_servers']:
-            self.stepChanged.emit('NOTE|    Нет доступных LDAP-серверов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
-
-
     #--------------------------------------- Библиотека -------------------------------------------------
-    def import_morphology_lists(self, path, template_id, template_name):
-        """Импортируем списки морфологии"""
-        json_file = os.path.join(path, 'config_morphology_lists.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт списков морфологии в раздел "Библиотеки/Морфология".')
-        error = 0
-
-        if not self.mc_data.get('morphology', False):
-            if self.get_morphology_list():        # Заполняем self.mc_data['morphology']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков морфологии.')
-                return
-        morphology = self.mc_data['morphology']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
-            content = item.pop('content')
-            item.pop('last_update', None)
-
-            if item['name'] in morphology:
-                if template_id == morphology[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Список морфологии "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Список морфологии "{item["name"]}" уже существует в шаблоне "{morphology[item["name"]].template_name}".')
-                    continue
-            else:
-                err, result = self.utm.add_template_nlist(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Список морфологии "{item["name"]}" не импортирован]')
-                    error = 1
-                    continue
-                else:
-                    morphology[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Список морфологии "{item["name"]}" импортирован.')
-
-            if item['list_type_update'] == 'static':
-                if content:
-                    for value in content:
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, morphology[item['name']].id, value)
-                        if err2 == 3:
-                            self.stepChanged.emit(f'GRAY|       {result2}')
-                        elif err2 == 1:
-                            self.stepChanged.emit(f'RED|       {result2}  [Список морфологии "{item["name"]}"]')
-                            error = 1
-                        elif err2 == 7:
-                            message = f'       Error: Список морфологии "{item["name"]}" не найден в шаблоне "{morphology[item["name"]].template_name}".'
-                            self.stepChanged.emit(f'RED|{message}\n          Импорт прерван. Перелогиньтесь в МС и повторите попытку.')
-                            self.error = 1
-                            return
-                        else:
-                            self.stepChanged.emit(f'BLACK|       Добавлено "{value["value"]}".')
-                else:
-                    self.stepChanged.emit(f'GRAY|       Содержимое списка морфологии "{item["name"]}" не обновлено так как он пуст.')
-            else:
-                self.stepChanged.emit(f'GRAY|       Содержимое списка морфологии "{item["name"]}" не обновлено так как он обновляется удалённо.')
-
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков морфологии.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт списков морфологии завершён.')
-
-
     def import_services_list(self, path, template_id, template_name):
-        """Импортируем список сервисов раздела библиотеки"""
+        """Импортируем список сервисов раздела DCFW"""
         json_file = os.path.join(path, 'config_services_list.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт списка сервисов в раздел "Библиотеки/Сервисы"')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт списка сервисов в раздел "Библиотеки/Сервисы".')
         error = 0
 
         services = self.mc_data['services']
@@ -428,7 +339,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Сервис "{item["name"]}" уже существует в шаблоне "{services[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_service(template_id, item)
+                err, result = self.utm.add_dcfw_template_service(template_id, item)
                 if err == 3:
                     self.stepChanged.emit(f'GRAY|    {result}')
                 elif err == 1:
@@ -437,7 +348,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     services[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
                     self.stepChanged.emit(f'BLACK|    Сервис "{item["name"]}" импортирован.')
-            self.msleep(3)
+            self.msleep(2)
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при добавлении сервисов.')
@@ -452,7 +363,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт групп сервисов раздела "Библиотеки/Группы сервисов".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт групп сервисов раздела "Библиотеки/Группы сервисов".')
         out_message = 'GREEN|    Группы сервисов импортированы в раздел "Библиотеки/Группы сервисов".'
         error = 0
 
@@ -461,6 +372,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for item in data:
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя группы')
             content = item.pop('content')
+            item['type'] = 'dcfw_servicegroup'
             item.pop('last_update', None)
 
             if item['name'] in servicegroups:
@@ -470,7 +382,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Группа сервисов "{item["name"]}" уже существует в шаблоне "{servicegroups[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, item)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Группа сервисов "{item["name"]}" не импортирована]')
                     error = 1
@@ -496,7 +408,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                             self.stepChanged.emit(f'RED|       Error: [Группа сервисов "{item["name"]}"] Сервис "{service["name"]}" не добавлен так как находиться в другом шаблоне ("{tmp.template_name}"). Можно добавлять сервисы только из текущего шаблона.')
                             error = 1
                             continue
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, servicegroups[item['name']].id, service)
+                        err2, result2 = self.utm.add_dcfw_template_nlist_item(template_id, servicegroups[item['name']].id, service)
                         if err2 == 3:
                             self.stepChanged.emit(f'GRAY|       Сервис "{service["name"]}" уже существует в этой группе сервисов.')
                         elif err2 == 1:
@@ -524,7 +436,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def import_ip_lists(self, path, template_id, template_name):
         """Импортируем списки IP адресов"""
-        self.stepChanged.emit('BLUE|Импорт списков IP-адресов раздела "Библиотеки/IP-адреса".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт списков IP-адресов раздела "Библиотеки/IP-адреса".')
 
         if not os.path.isdir(path):
             self.stepChanged.emit('GRAY|    Нет списков IP-адресов для импорта.')
@@ -556,7 +468,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Список IP-адресов "{data["name"]}" уже существует в шаблоне "{ip_lists[data["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, data)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, data)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Список IP-адресов "{data["name"]}" не импортирован]')
                     error = 1
@@ -601,7 +513,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         if not new_content:
                             self.stepChanged.emit(f'uGRAY|       Список "{data["name"]}" не имеет содержимого.')
                             continue
-                        err, result = self.utm.add_template_nlist_items(template_id, ip_lists[data['name']].id, new_content)
+                        err, result = self.utm.add_dcfw_template_nlist_items(template_id, ip_lists[data['name']].id, new_content)
                         if err == 1:
                             self.stepChanged.emit(f'RED|       {result} [Список IP-адресов "{data["name"]}" содержимое не импортировано]')
                             error = 1
@@ -622,122 +534,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт списков IP-адресов завершён.')
 
 
-    def import_useragent_lists(self, path, template_id, template_name):
-        """Импортируем списки Useragent браузеров"""
-        json_file = os.path.join(path, 'config_useragents_list.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт списка "Useragent браузеров" в раздел "Библиотеки/Useragent браузеров".')
-        error = 0
-
-        if not self.mc_data.get('useragents', False):
-            if self.get_useragents_list():        # Заполняем self.mc_data['useragents']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков Useragent браузеров.')
-                return
-        useragents = self.mc_data['useragents']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
-            content = item.pop('content')
-            item.pop('last_update', None)
-
-            if item['name'] in useragents:
-                if template_id == useragents[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Список Useragent "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Список Useragent "{item["name"]}" уже существует в шаблоне "{useragents[item["name"]].template_name}".')
-                    continue
-            else:
-                err, result = self.utm.add_template_nlist(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Список Useragent "{item["name"]}" не импортирован]')
-                    error = 1
-                    continue
-                else:
-                    useragents[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Список Useragent "{item["name"]}" импортирован.')
-
-            if item['list_type_update'] == 'static':
-                if content:
-                    err2, result2 = self.utm.add_template_nlist_items(template_id, useragents[item['name']].id, content)
-                    if err2 == 3:
-                        self.stepChanged.emit(f'GRAY|       {result2}')
-                    elif err2 == 1:
-                        self.stepChanged.emit(f'RED|       {result2}  [Список Useragent: "{item["name"]}"]')
-                        error = 1
-                    else:
-                        self.stepChanged.emit(f'BLACK|       Содержимое списка Useragent "{item["name"]}" импортировано.')
-                else:
-                    self.stepChanged.emit(f'GRAY|       Список Useragent "{item["name"]}" пуст.')
-            else:
-                self.stepChanged.emit(f'GRAY|       Содержимое списка Useragent "{item["name"]}" не импортировано так как он обновляется удалённо.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков Useragent браузеров.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт списка "Useragent браузеров" завершён.')
-
-
-    def import_mime_lists(self, path, template_id, template_name):
-        """Импортируем списки Типов контента"""
-        json_file = os.path.join(path, 'config_mime_types.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт списка "Типы контента" в раздел "Библиотеки/Типы контента".')
-        error = 0
-
-        mimes = self.mc_data['mime']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя списка')
-            content = item.pop('content')
-            item.pop('last_update', None)
-
-            if item['name'] in mimes:
-                if template_id == mimes[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Список Типов контента "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Список Типов контента "{item["name"]}" уже существует в шаблоне "{mimes[item["name"]].template_name}".')
-                    continue
-            else:
-                err, result = self.utm.add_template_nlist(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Список Типов контента "{item["name"]}" не импортирован]')
-                    error = 1
-                    continue
-                else:
-                    mimes[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Список Типов контента "{item["name"]}" импортирован.')
-
-            if item['list_type_update'] == 'static':
-                if content:
-                    err2, result2 = self.utm.add_template_nlist_items(template_id, mimes[item['name']].id, content)
-                    if err2 == 3:
-                        self.stepChanged.emit(f'GRAY|       {result2}')
-                    elif err2 == 1:
-                        self.stepChanged.emit(f'RED|       {result2}  [Список Типов контента "{item["name"]}"]')
-                        error = 1
-                    else:
-                        self.stepChanged.emit(f'BLACK|       Содержимое списка Типов контента "{item["name"]}" импортировано.')
-                else:
-                    self.stepChanged.emit(f'GRAY|       Список Типов контента "{item["name"]}" пуст.')
-            else:
-                self.stepChanged.emit(f'GRAY|       Содержимое списка Типов контента "{item["name"]}" не импортировано так как он обновляется удалённо.')
-
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списков "Типы контента".')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт списка "Типы контента" завершён.')
-
-
     def import_url_lists(self, path, template_id, template_name):
         """Импортировать списки URL в шаблон МС"""
-        self.stepChanged.emit('BLUE|Импорт списков URL раздела "Библиотеки/Списки URL".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт списков URL раздела "Библиотеки/Списки URL".')
         
         if not os.path.isdir(path):
             self.stepChanged.emit('GRAY|    Нет списков URL для импорта.')
@@ -771,7 +570,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Список URL "{data["name"]}" уже существует в шаблоне "{url_lists[data["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, data)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, data)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Список URL "{data["name"]}" не импортирован]')
                     error = 1
@@ -798,7 +597,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if template_id == url_lists[data['name']].template_id:
                 if data['list_type_update'] == 'static':
                     if data['content']:
-                        err, result = self.utm.add_template_nlist_items(template_id, url_lists[data['name']].id, data['content'])
+                        err, result = self.utm.add_dcfw_template_nlist_items(template_id, url_lists[data['name']].id, data['content'])
                         if err == 1:
                             self.stepChanged.emit(f'RED|       {result} [Список URL "{data["name"]}" - содержимое не импортировано]')
                             error = 1
@@ -826,7 +625,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт списка "Календари" в раздел "Библиотеки/Календари".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт списка "Календари" в раздел "Библиотеки/Календари".')
         error = 0
 
         calendars = self.mc_data['calendars']
@@ -843,7 +642,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Календарь "{item["name"]}" уже существует в шаблоне "{calendars[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, item)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Календарь "{item["name"]}" не импортирован]')
                     error = 1
@@ -857,7 +656,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['list_type_update'] == 'static':
                 if content:
                     for value in content:
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, calendars[item['name']].id, value)
+                        err2, result2 = self.utm.add_dcfw_template_nlist_item(template_id, calendars[item['name']].id, value)
                         if err2 == 1:
                             error = 1
                             self.stepChanged.emit(f'RED|       {result2}  [TimeSet "{value["name"]}"] не импортирован')
@@ -889,7 +688,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт списка "Полосы пропускания" в раздел "Библиотеки/Полосы пропускания".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт списка "Полосы пропускания" в раздел "Библиотеки/Полосы пропускания".')
         error = 0
 
         shapers = self.mc_data['shapers']
@@ -902,7 +701,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Полоса пропускания "{item["name"]}" уже существует в шаблоне "{shapers[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_shaper(template_id, item)
+                err, result = self.utm.add_dcfw_template_shaper(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Полоса пропускания "{item["name"]}" не импортирована]')
                     error = 1
@@ -928,17 +727,13 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт списка шаблонов страниц в раздел "Библиотеки/Шаблоны страниц".')
-#        self.stepChanged.emit('LBLUE|    Импортируются только шаблоны страниц у которых есть HTML-файл страницы.')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт списка шаблонов страниц в раздел "Библиотеки/Шаблоны страниц".')
         error = 0
         html_files = os.listdir(path)
 
         response_pages = self.mc_data['response_pages']
 
-#        n = 0
         for item in data:
-#            if f"{item['name']}.html" in html_files:
-#                n += 1
             if item['name'] in response_pages:
                 if template_id == response_pages[item['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Шаблон страницы "{item["name"]}" уже существует в текущем шаблоне.')
@@ -946,7 +741,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Шаблон страницы "{item["name"]}" уже существует в шаблоне "{response_pages[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_responsepage(template_id, item)
+                err, result = self.utm.add_dcfw_template_responsepage(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Шаблон страницы "{item["name"]}" не импортирован]')
                     error = 1
@@ -962,7 +757,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'RED|       {result}')
                     error = 1
                 elif result['success']:
-                    err2, result2 = self.utm.set_template_responsepage_data(template_id, response_pages[item['name']].id, result['storage_file_uid'])
+                    err2, result2 = self.utm.set_dcfw_template_responsepage_data(template_id, response_pages[item['name']].id, result['storage_file_uid'])
                     if err2:
                         self.stepChanged.emit(f'RED|       {result2} [Страница "{item["name"]}.html" не импортирована]')
                         error = 1
@@ -971,9 +766,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     error = 1
                     self.stepChanged.emit(f'ORANGE|       Error: Не удалось импортировать страницу "{item["name"]}.html".')
-#        if not n:
-#            self.stepChanged.emit('GRAY|    Нет шаблонов страниц у которых есть HTML-файл страницы.')
-
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте шаблонов страниц.')
@@ -988,7 +780,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт групп URL категорий раздела "Библиотеки/Категории URL".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"]  Импорт групп URL категорий раздела "Библиотеки/Категории URL".')
         error = 0
 
         url_category_groups = self.mc_data['url_categorygroups']
@@ -1006,7 +798,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Группа URL категорий "{item["name"]}" уже существует в шаблоне "{url_category_groups[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, item)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Группа URL категорий "{item["name"]}" не импортирована]')
                     error = 1
@@ -1020,7 +812,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['list_type_update'] == 'static':
                 if content:
                     for category in content:
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, url_category_groups[item['name']].id, category)
+                        err2, result2 = self.utm.add_dcfw_template_nlist_item(template_id, url_category_groups[item['name']].id, category)
                         if err2 == 3:
                             self.stepChanged.emit(f'GRAY|       Категория "{category["name"]}" уже существует.')
                         elif err2 == 1:
@@ -1051,12 +843,12 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт категорий URL раздела "Библиотеки/Изменённые категории URL".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт категорий URL раздела "Библиотеки/Изменённые категории URL".')
         error = 0
 
         custom_url = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_custom_url_list(uid)
+            err, result = self.utm.get_dcfw_template_custom_urls(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте изменённых категорий URL.')
                 self.error = 1
@@ -1081,7 +873,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Изменение категории URL "{item["name"]}" уже существует в шаблоне "{custom_url[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_custom_url(template_id, item)
+                err, result = self.utm.add_dcfw_template_custom_url(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Изменение категорий для URL "{item["name"]}" не импортировано]')
                     error = 1
@@ -1102,11 +894,11 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт пользовательских приложений в раздел "Библиотеки/Приложения".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт пользовательских приложений в раздел "Библиотеки/Приложения".')
         error = 0
 
         users_apps = {}
-        err, result = self.utm.get_realm_l7_signatures(query={'query': 'owner = You'})
+        err, result = self.utm.get_dcfw_realm_l7_signatures(query={'query': 'owner = You'})
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -1135,7 +927,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         message = f'{message}\n       Пользовательское приложение "{item["name"]}" существует в шаблоне, отсутствующем в данной группе шаблонов.'
                     self.stepChanged.emit(f'sGREEN|    {message}')
             else:
-                err, result = self.utm.add_template_app_signature(template_id, item)
+                err, result = self.utm.add_dcfw_template_app_signature(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Пользовательское приложение "{item["name"]}" не импортировано]')
                     error = 1
@@ -1157,7 +949,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей приложений раздела "Библиотеки/Профили приложений".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей приложений раздела "Библиотеки/Профили приложений".')
         error = 0
 
         if not self.mc_data.get('l7_apps', False):
@@ -1189,7 +981,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль приложений "{item["name"]}" уже существует в шаблоне "{l7_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_l7_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_l7_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль приложений "{item["name"]}" не импортирован]')
                     error = 1
@@ -1211,7 +1003,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт групп приложений в раздел "Библиотеки/Группы приложений".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт групп приложений в раздел "Библиотеки/Группы приложений".')
 
         if not self.mc_data.get('l7_apps', False):
             if self.get_app_signatures():        # Заполняем self.mc_data['l7_apps']
@@ -1233,7 +1025,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Группа приложений "{item["name"]}" уже существует в шаблоне "{apps_groups[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, item)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Группа приложений "{item["name"]}" не импортирована]')
                     error = 1
@@ -1258,7 +1050,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                             error = 1
                             continue
 
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, apps_groups[item['name']].id, app) 
+                        err2, result2 = self.utm.add_dcfw_template_nlist_item(template_id, apps_groups[item['name']].id, app) 
                         if err2 == 1:
                             self.stepChanged.emit(f'RED|       {result2}  [Группа приложений "{item["name"]}"]')
                             error = 1
@@ -1289,7 +1081,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт групп почтовых адресов раздела "Библиотеки/Почтовые адреса".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт групп почтовых адресов раздела "Библиотеки/Почтовые адреса".')
         error = 0
 
         if not self.mc_data.get('email_groups', False):
@@ -1310,7 +1102,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Группа почтовых адресов "{item["name"]}" уже существует в шаблоне "{email_groups[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, item)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Группа почтовых адресов "{item["name"]}" не импортирована]')
                     error = 1
@@ -1324,7 +1116,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['list_type_update'] == 'static':
                 if content:
                     for email in content:
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, email_groups[item['name']].id, email)
+                        err2, result2 = self.utm.add_dcfw_template_nlist_item(template_id, email_groups[item['name']].id, email)
                         if err2 == 1:
                             self.stepChanged.emit(f'RED|       {result2} [Группа почтовых адресов "{item["name"]}"]')
                             error = 1
@@ -1356,7 +1148,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт групп телефонных номеров раздела "Библиотеки/Номера телефонов".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт групп телефонных номеров раздела "Библиотеки/Номера телефонов".')
         error = 0
 
         if not self.mc_data.get('phone_groups', False):
@@ -1377,7 +1169,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Группа телефонных номеров "{item["name"]}" уже существует в шаблоне "{phone_groups[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_nlist(template_id, item)
+                err, result = self.utm.add_dcfw_template_nlist(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result}  [Группа телефонных номеров "{item["name"]}" не импортирована]')
                     error = 1
@@ -1391,7 +1183,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['list_type_update'] == 'static':
                 if content:
                     for number in content:
-                        err2, result2 = self.utm.add_template_nlist_item(template_id, phone_groups[item['name']].id, number)
+                        err2, result2 = self.utm.add_dcfw_template_nlist_item(template_id, phone_groups[item['name']].id, number)
                         if err2 == 1:
                             self.stepChanged.emit(f'RED|       {result2} [Группа телефонных номеров "{item["name"]}"]')
                             error = 1
@@ -1423,9 +1215,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт пользовательских сигнатур СОВ в раздел "Библиотеки/Сигнатуры СОВ".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт пользовательских сигнатур СОВ в раздел "Библиотеки/Сигнатуры СОВ".')
         error = 0
 
+        # Получаем пользовательские сигнатуры СОВ.
         if not self.mc_data.get('realm_users_signatures', False):
             if self.get_idps_realm_users_signatures():        # Заполняем атрибут self.mc_data['realm_users_signatures']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте импорте пользовательских сигнатур СОВ.')
@@ -1442,7 +1235,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         message = f'{message}\n       Сигнатура СОВ "{item["msg"]}" существует в шаблоне, отсутствующем в данной группе шаблонов.'
                     self.stepChanged.emit(f'sGREEN|    {message}')
             else:
-                err, result = self.utm.add_template_idps_signature(template_id, item)
+                err, result = self.utm.add_dcfw_template_idps_signature(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Сигнатура СОВ "{item["msg"]}" не импортирована]')
                     error = 1
@@ -1464,7 +1257,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей СОВ в раздел "Библиотеки/Профили СОВ".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей СОВ в раздел "Библиотеки/Профили СОВ".')
         error = 0
 
         # Получаем пользовательские сигнатуры СОВ.
@@ -1474,7 +1267,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 return
 
         self.stepChanged.emit(f'NOTE|    Получаем список сигнатур СОВ с МС, это может быть долго...')
-        err, result = self.utm.get_template_idps_signatures_list(template_id)
+        err, result = self.utm.get_dcfw_template_idps_signatures(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте профилей СОВ.')
             self.error = 1
@@ -1515,7 +1308,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль СОВ "{item["name"]}" уже существует в шаблоне "{idps_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_idps_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_idps_profile(template_id, item)
                 if err:
                     error = 1
                     self.stepChanged.emit(f'RED|    {result}  [Профиль СОВ "{item["name"]}" не импортирован]')
@@ -1536,7 +1329,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей оповещений в раздел "Библиотеки/Профили оповещений".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей оповещений в раздел "Библиотеки/Профили оповещений".')
         error = 0
 
         if not self.mc_data.get('notification_profiles', False):
@@ -1553,7 +1346,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль оповещения "{item["name"]}" уже существует в шаблоне "{notification_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_notification_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_notification_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль оповещения "{item["name"]}" не импортирован]')
                     error = 1
@@ -1576,7 +1369,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей netflow в раздел "Библиотеки/Профили netflow".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей netflow в раздел "Библиотеки/Профили netflow".')
         error = 0
 
         if not self.mc_data.get('netflow_profiles', False):
@@ -1593,7 +1386,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль netflow "{item["name"]}" уже существует в шаблоне "{netflow_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_netflow_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_netflow_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль netflow "{item["name"]}" не импортирован]')
                     error = 1
@@ -1614,7 +1407,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей LLDP в раздел "Библиотеки/Профили LLDP".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей LLDP в раздел "Библиотеки/Профили LLDP".')
         error = 0
 
         if not self.mc_data.get('lldp_profiles', False):
@@ -1631,7 +1424,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль LLDP "{item["name"]}" уже существует в шаблоне "{lldp_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_lldp_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_lldp_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль LLDP "{item["name"]}" не импортирован]')
                     error = 1
@@ -1652,7 +1445,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей SSL в раздел "Библиотеки/Профили SSL".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей SSL в раздел "Библиотеки/Профили SSL".')
         error = 0
         ssl_profiles = self.mc_data['ssl_profiles']
 
@@ -1667,7 +1460,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль SSL "{item["name"]}" уже существует в шаблоне "{ssl_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_ssl_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_ssl_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль SSL "{item["name"]}" не импортирован]')
                     error = 1
@@ -1688,7 +1481,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей пересылки SSL в раздел "Библиотеки/Профили пересылки SSL".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей пересылки SSL в раздел "Библиотеки/Профили пересылки SSL".')
         error = 0
 
         if not self.mc_data.get('ssl_forward_profiles', False):
@@ -1705,7 +1498,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль пересылки SSL "{item["name"]}" уже существует в шаблоне "{ssl_forward_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_ssl_forward_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_ssl_forward_profile(template_id, item)
                 if err:
                     error = 1
                     self.stepChanged.emit(f'RED|    {result}  [Профиль пересылки SSL "{item["name"]}" не импортирован]')
@@ -1719,88 +1512,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт профилей пересылки SSL завершён.')
 
 
-    def import_hip_objects(self, path, template_id, template_name):
-        """Импортируем HIP объекты"""
-        json_file = os.path.join(path, 'config_hip_objects.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт HIP объектов в раздел "Библиотеки/HIP объекты".')
-        error = 0
-
-        if not self.mc_data.get('hip_objects', False):
-            if self.get_hip_objects():        # Заполняем self.mc_data['hip_objects']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP объектов.')
-                return
-        hip_objects = self.mc_data['hip_objects']
-
-        for item in data:
-            if item['name'] in hip_objects:
-                if template_id == hip_objects[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    HIP объект "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    HIP объект "{item["name"]}" уже существует в шаблоне "{hip_objects[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_hip_object(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [HIP объект "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    hip_objects[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    HIP объект "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP объектов.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт HIP объектов завершён.')
-
-
-    def import_hip_profiles(self, path, template_id, template_name):
-        """Импортируем HIP профили"""
-        json_file = os.path.join(path, 'config_hip_profiles.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт HIP профилей в раздел "Библиотеки/HIP профили".')
-        error = 0
-
-        if not self.mc_data.get('hip_objects', False):
-            if self.get_hip_objects():        # Заполняем self.mc_data['hip_objects']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP профилей.')
-                return
-        hip_objects = self.mc_data['hip_objects']
-
-        if not self.mc_data.get('hip_profiles', False):
-            if self.get_hip_profiles():        # Заполняем self.mc_data['hip_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP профилей.')
-                return
-        hip_profiles = self.mc_data['hip_profiles']
-
-        for item in data:
-            for obj in item['hip_objects']:
-                obj['id'] = hip_objects[obj['id']].id
-            if item['name'] in hip_profiles:
-                if template_id == hip_profiles[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    HIP профиль "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    HIP профиль "{item["name"]}" уже существует в шаблоне "{hip_profiles[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_hip_profile(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [HIP профиль "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    hip_profiles[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    HIP профиль "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте HIP профилей.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт HIP профилей завершён.')
-
-
     def import_bfd_profiles(self, path, template_id, template_name):
         """Импортируем профили BFD"""
         json_file = os.path.join(path, 'config_bfd_profiles.json')
@@ -1808,7 +1519,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей BFD в раздел "Библиотеки/Профили BFD".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей BFD в раздел "Библиотеки/Профили BFD".')
         error = 0
 
         if not self.mc_data.get('bfd_profiles', False):
@@ -1824,7 +1535,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль BFD "{item["name"]}" уже существует в шаблоне "{bfd_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_bfd_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_bfd_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль BFD: "{item["name"]}" не импортирован]')
                     error = 1
@@ -1845,11 +1556,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт syslog фильтров UserID агента в раздел "Библиотеки/Syslog фильтры UserID агента".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт syslog фильтров UserID агента в раздел "Библиотеки/Syslog фильтры UserID агента".')
         error = 0
-
-        self.stepChanged.emit('bRED|    Импорт syslog фильтров UserID агента в настоящее время не возможен, так как соответствующие API не работают.')
-        return
 
         if not self.mc_data.get('userid_filters', False):
             if self.get_useridagent_filters():        # Заполняем self.mc_data['userid_filters']
@@ -1864,7 +1572,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Фильтр агента UserID "{item["name"]}" уже существует в шаблоне "{userid_filters[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_useridagent_filter(template_id, item)
+                err, result = self.utm.add_dcfw_template_useridagent_filter(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Фильтр "{item["name"]}" не импортирован]')
                     error = 1
@@ -1878,75 +1586,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт Syslog фильтров UserID агента завершён.')
 
 
-    def import_scenarios(self, path, template_id, template_name):
-        """Импортируем список сценариев"""
-        json_file = os.path.join(path, 'config_scenarios.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт списка сценариев в раздел "Библиотеки/Сценарии".')
-        error = 0
-        scenarios = self.mc_data['scenarios']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сценария')
-            for condition in item['conditions']:
-                if condition['kind'] == 'application':
-                    for x in condition['apps']:
-                        try:
-                            if x[0] == 'ro_group':
-                                x[1] = 0 if x[1] == 'All' else self.mc_data['l7_categories'][x[1]]
-                            elif x[0] == 'group':
-                                x[1] = self.mc_data['apps_groups'][x[1]].id
-                        except KeyError as err:
-                            self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа приложений {err}. Загрузите группы приложений и повторите попытку.')
-                            item['description'] = f'{item["description"]}\nError: Не найдена группа приложений {err}.'
-                            condition['apps'] = []
-                            error = 1
-                            break
-                elif condition['kind'] == 'mime_types':
-                    try:
-                        condition['content_types'] = [self.mc_data['mime'][x].id for x in condition['content_types']]
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найден тип контента {err}. Загрузите типы контента и повторите попытку.')
-                        item['description'] = f'{item["description"]}\nError: Не найден тип контента {err}.'
-                        condition['content_types'] = []
-                        error = 1
-                elif condition['kind'] == 'url_category':
-                    for x in condition['url_categories']:
-                        try:
-                            if x[0] == 'list_id':
-                                x[1] = self.mc_data['url_categorygroups'][x[1]].id
-                            elif x[0] == 'category_id':
-                                x[1] = self.mc_data['url_categories'][x[1]]
-                        except KeyError as err:
-                            self.stepChanged.emit(f'RED|    Error: [Сценарий "{item["name"]}"] Не найдена группа URL категорий {err}. Загрузите категории URL и повторите попытку.')
-                            item['description'] = f'{item["description"]}\nError: Не найдена группа URL категорий {err}.'
-                            condition['url_categories'] = []
-                            error = 1
-                            break
-
-            if item['name'] in scenarios:
-                if template_id == scenarios[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Сценарий "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Сценарий "{item["name"]}" уже существует в шаблоне "{scenarios[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_scenarios_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Сценарий "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    scenarios[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Сценарий "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте списка сценариев.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт списка сценариев завершён.')
-
-
     #----------------------------------------- Сеть ------------------------------------------------
     def import_zones(self, path, template_id, template_name):
         """Импортируем зоны на NGFW, если они есть."""
@@ -1955,7 +1594,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт зон в раздел "Сеть/Зоны".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт зон в раздел "Сеть/Зоны".')
         mc_zones = self.mc_data['zones']
         error = 0
 
@@ -1978,7 +1617,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             zone['description'] = current_zone.description
             error = current_zone.error
 
-            err, result = self.utm.add_template_zone(template_id, zone)
+            err, result = self.utm.add_dcfw_template_zone(template_id, zone)
             if err == 3:
                 self.stepChanged.emit(f'uGRAY|    {result}')
             elif err == 1:
@@ -2002,7 +1641,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit(f'BLUE|Импорт интерфейсов.')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт интерфейсов.')
         if not self.mc_data.get('interfaces', False):
             if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
@@ -2097,7 +1736,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['netflow_profile'] = 'undefined'
                     error = 1
 
-                err, result = self.utm.add_template_interface(template_id, item)
+                err, result = self.utm.add_dcfw_template_interface(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
                     error = 1
@@ -2181,7 +1820,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['netflow_profile'] = 'undefined'
                     error = 1
 
-                err, result = self.utm.add_template_interface(template_id, item)
+                err, result = self.utm.add_dcfw_template_interface(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
                     error = 1
@@ -2237,7 +1876,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['config_on_device'] = True
                 item['ipv4'] = new_ipv4
 
-                err, result = self.utm.add_template_interface(template_id, item)
+                err, result = self.utm.add_dcfw_template_interface(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["tunnel"]["mode"]} - {item["name"]}" не импортирован]')
                     error = 1
@@ -2309,7 +1948,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['netflow_profile'] = 'undefined'
                     error = 1
 
-                err, result = self.utm.add_template_interface(template_id, item)
+                err, result = self.utm.add_dcfw_template_interface(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
                     error = 1
@@ -2387,7 +2026,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['netflow_profile'] = 'undefined'
                     error = 1
 
-                err, result = self.utm.add_template_interface(template_id, item)
+                err, result = self.utm.add_dcfw_template_interface(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                     error = 1
@@ -2414,7 +2053,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт шлюзов в раздел "Сеть/Шлюзы".')
         error = 0
 
         if not self.mc_data.get('interfaces', False):
@@ -2464,7 +2103,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Шлюз "{item["name"]}" уже существует в шаблоне "{gateways[gateway_name].template_name}" на узле кластера "{item["node_name"]}".')
             else:
-                err, result = self.utm.add_template_gateway(template_id, item)
+                err, result = self.utm.add_dcfw_template_gateway(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Шлюз "{item["name"]}" не импортирован]')
                     error = 1
@@ -2485,9 +2124,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт настроек проверки сети раздела "Сеть/Шлюзы/Проверка сети".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт настроек проверки сети раздела "Сеть/Шлюзы/Проверка сети".')
 
-        err, result = self.utm.update_template_gateway_failover(template_id, data)
+        err, result = self.utm.update_dcfw_template_gateway_failover(template_id, data)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при обновлении настроек проверки сети.')
             self.error = 1
@@ -2502,7 +2141,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт настроек DHCP раздела "Сеть/DHCP".')
         if not self.mc_data.get('interfaces', False):
             if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
@@ -2511,7 +2150,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
         mc_dhcp_subnets = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_dhcp_list(uid)
+            err, result = self.utm.get_dcfw_template_dhcp_list(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте настроек DHCP.')
                 self.error = 1
@@ -2535,7 +2174,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 self.stepChanged.emit(f'sGREEN|    DHCP subnet "{item["name"]}" уже существует в шаблоне "{mc_dhcp_subnets[full_name]}" на узле кластера "{item["node_name"]}".')
                 continue
 
-            err, result = self.utm.add_template_dhcp_subnet(template_id, item)
+            err, result = self.utm.add_dcfw_template_dhcp_subnet(template_id, item)
             if err == 1:
                 self.stepChanged.emit(f'RED|    {result}  [subnet "{item["name"]}" не импортирован]')
                 error = 1
@@ -2553,25 +2192,25 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def import_dns_config(self, path, template_id, template_name):
         """Импортируем раздел 'UserGate/DNS'."""
-        self.import_dns_servers(path, template_id)
-        self.import_dns_proxy(path, template_id)
-        self.import_dns_rules(path, template_id)
-        self.import_dns_static(path, template_id)
+        self.import_dns_servers(path, template_id, template_name)
+        self.import_dns_proxy(path, template_id, template_name)
+        self.import_dns_rules(path, template_id, template_name)
+        self.import_dns_static(path, template_id, template_name)
 
 
-    def import_dns_servers(self, path, template_id):
+    def import_dns_servers(self, path, template_id, template_name):
         """Импортируем список системных DNS серверов"""
         json_file = os.path.join(path, 'config_dns_servers.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт системных DNS серверов в раздел "Сеть/DNS/Системные DNS-серверы".')
         error = 0
 
         for item in data:
             item.pop('is_bad', None)
-            err, result = self.utm.add_template_dns_server(template_id, item)
+            err, result = self.utm.add_dcfw_template_dns_server(template_id, item)
             if err == 3:
                 self.stepChanged.emit(f'GRAY|    {result}')
             elif err == 1:
@@ -2587,19 +2226,19 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт системных DNS-серверов завершён.')
 
 
-    def import_dns_proxy(self, path, template_id):
+    def import_dns_proxy(self, path, template_id, template_name):
         """Импортируем настройки DNS прокси"""
         json_file = os.path.join(path, 'config_dns_proxy.json')
         err, result = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт настроек DNS-прокси раздела "Сеть/DNS/Настройки DNS-прокси".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт настроек DNS-прокси раздела "Сеть/DNS/Настройки DNS-прокси".')
         error = 0
 
         for key, value in result.items():
             value = {'enabled': True, 'code': key, 'value': value}
-            err, result = self.utm.update_template_dns_setting(template_id, key, value)
+            err, result = self.utm.update_dcfw_template_dns_setting(template_id, key, value)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 error = 1
@@ -2610,18 +2249,18 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Настройки DNS-прокси импортированы.')
 
 
-    def import_dns_rules(self, path, template_id):
+    def import_dns_rules(self, path, template_id, template_name):
         """Импортируем правила DNS-прокси"""
         json_file = os.path.join(path, 'config_dns_rules.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт правил DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил DNS-прокси в раздел "Сеть/DNS/DNS-прокси/Правила DNS".')
         error = 0
 
         for item in data:
-            err, result = self.utm.add_template_dns_rule(template_id, item)
+            err, result = self.utm.add_dcfw_template_dns_rule(template_id, item)
             if err == 3:
                 self.stepChanged.emit(f'GRAY|    {result}')
             elif err == 1:
@@ -2637,18 +2276,18 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил DNS-прокси завершён.')
 
 
-    def import_dns_static(self, path, template_id):
+    def import_dns_static(self, path, template_id, template_name):
         """Импортируем статические записи DNS"""
         json_file = os.path.join(path, 'config_dns_static.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт статических записей DNS в раздел "Сеть/DNS/DNS-прокси/Статические записи".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт статических записей DNS в раздел "Сеть/DNS/DNS-прокси/Статические записи".')
         error = 0
 
         for item in data:
-            err, result = self.utm.add_template_dns_static_record(template_id, item)
+            err, result = self.utm.add_dcfw_template_dns_static_record(template_id, item)
             if err == 3:
                 self.stepChanged.emit(f'GRAY|    {result}')
             elif err == 1:
@@ -2671,7 +2310,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
         self.stepChanged.emit('LBLUE|    Если вы используете BGP, после импорта включите нужные фильтры in/out для BGP-соседей и Routemaps в свойствах соседей.')
         error = 0
     
@@ -2719,7 +2358,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             for x in item['routes']:
                 x['name'] = self.get_transformed_name(x['name'], descr='Имя route')[1]
                 if x['ifname'] != 'undefined':
-                    if f'{x["ifname"]}:{self.node_name}' not in mc_ifaces:
+                    if f'{x["ifname"]}:{item["node_name"]}' not in mc_ifaces:
                         if f'{x["ifname"]}:cluster' not in mc_ifaces:
                             self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на узле кластера "{item["node_name"]}".')
                             x['ifname'] = 'undefined'
@@ -2798,14 +2437,14 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             try:
                 if vrf_name in mc_vrf:
                     self.stepChanged.emit(f'uGRAY|    VRF "{item["name"]}" уже существует в текущем шаблоне на узле кластера "{item["node_name"]}".')
-                    err, result = self.utm.update_template_vrf(template_id, mc_vrf[vrf_name].id, item)
+                    err, result = self.utm.update_dcfw_template_vrf(template_id, mc_vrf[vrf_name].id, item)
                     if err:
                         self.stepChanged.emit(f'RED|       {result} [VRF "{item["name"]}"]')
                         error = 1
                     else:
                         self.stepChanged.emit(f'uGRAY|       VRF "{item["name"]}" обновлён.')
                 else:
-                    err, result = self.utm.add_template_vrf(template_id, item)
+                    err, result = self.utm.add_dcfw_template_vrf(template_id, item)
                     if err:
                         self.stepChanged.emit(f'RED|    {result} [VRF "{item["name"]}" не импортирован]')
                         error = 1
@@ -2822,72 +2461,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт виртуальных маршрутизаторов завершён.')
 
 
-    def import_wccp_rules(self, path, template_id, template_name):
-        """Импортируем список правил WCCP"""
-        json_file = os.path.join(path, 'config_wccp.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил WCCP в раздел "Сеть/WCCP".')
-        error = 0
-
-        wccp_rules = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_wccp_rules(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил WCCP.')
-                self.error = 1
-                return
-            for x in result:
-                if x['name'] in wccp_rules:
-                    self.stepChanged.emit(f'ORANGE|    Warning: Правило WCCP "{x["name"]}" обнаружено в нескольких шаблонах группы шаблонов. Правило из шаблона "{name}" не будет использовано.')
-                else:
-                    wccp_rules[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        for item in data:
-            item['cc_network_devices'] = self.get_network_devices(item)
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['routers']:
-                routers = []
-                for x in item['routers']:
-                    if x[0] == 'list_id':
-                        try:
-                            x[1] = self.mc_data['ip_lists'][x[1]].id
-                        except KeyError as err:
-                            self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список {err} в группе шаблонов. Возможно он отсутствует в этой группе шаблонов.')
-                            error = 1
-                            continue
-                    routers.append(x)
-                item['routers'] = routers
-
-            if item['name'] in wccp_rules:
-                if template_id == wccp_rules[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Правило WCCP "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Правило WCCP "{item["name"]}" уже существует в шаблоне "{wccp_rules[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_wccp_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result} [Правило WCCP "{item["name"]}" не импортировано]')
-                    error = 1
-                else:
-                    self.stepChanged.emit(f'BLACK|    Правило WCCP "{item["name"]}" импортировано.')
-                    wccp_rules[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил WCCP.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил WCCP завершён.')
-
-
     #------------------------------------------ UserGate --------------------------------------------------
     def import_certificates(self, path, template_id, template_name):
         """Импортируем сертификаты"""
-        self.stepChanged.emit('BLUE|Импорт сертификатов в раздел "UserGate/Сертификаты".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт сертификатов в раздел "UserGate/Сертификаты".')
 
         if not os.path.isdir(path):
             return
@@ -2923,7 +2500,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'BLACK|    Не найден файл сертификата "{cert_name}" для импорта. Будет сгенерирован новый сертификат "{cert_name}".')
                     data.update(data['issuer'])
-                    err, result = self.utm.new_template_certificate(template_id, data)
+                    err, result = self.utm.new_dcfw_template_certificate(template_id, data)
                     if err == 1:
                         self.stepChanged.emit(f'RED|       {result}')
                         error = 1
@@ -2946,7 +2523,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if data['name'] in mc_certs:
                 if template_id == mc_certs[data['name']].template_id:
                     self.stepChanged.emit(f'uGRAY|    Сертификат "{cert_name}" уже существует в текущем шаблоне.')
-                    err, result = self.utm.update_template_certificate(template_id, mc_certs[data['name']].id, data, cert_data, private_key=key_data)
+                    err, result = self.utm.update_dcfw_template_certificate(template_id, mc_certs[data['name']].id, data, cert_data, private_key=key_data)
                     if err:
                         self.stepChanged.emit(f'RED|       {result} [Сертификат "{cert_name}"]')
                         error = 1
@@ -2955,7 +2532,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Cертификат "{cert_name}" уже существует в шаблоне "{mc_certs[data["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_certificate(template_id, data, cert_data, private_key=key_data)
+                err, result = self.utm.add_dcfw_template_certificate(template_id, data, cert_data, private_key=key_data)
                 if err:
                     self.stepChanged.emit(f'RED|    {result} [Сертификат "{cert_name}" не импортирован]')
                     error = 1
@@ -2977,7 +2554,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Профили клиентских сертификатов".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "UserGate/Профили клиентских сертификатов".')
 
         if not self.mc_data.get('client_certs_profiles', False):
             if self.get_client_certificate_profiles(): # Заполняем self.mc_data['client_certs_profiles']
@@ -2996,7 +2573,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             else:
                 item['ca_certificates'] = [self.mc_data['certs'][x].id for x in item['ca_certificates']]
 
-                err, result = self.utm.add_template_client_certificate_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_client_certificate_profile(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result} [Профиль клиентского сертификата "{item["name"]}" не импортирован]')
                     error = 1
@@ -3014,26 +2591,25 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def import_general_settings(self, path, template_id, template_name):
         """Импортируем раздел 'UserGate/Настройки'."""
-        self.import_ui(path, template_id)
-        self.import_ntp_settings(path, template_id)
-        self.import_proxy_port(path, template_id)
-        self.import_saml_server_port(path, template_id)
-        self.import_modules(path, template_id)
-        self.import_cache_settings(path, template_id)
-        self.import_proxy_exceptions(path, template_id)
-        self.import_web_portal_settings(path, template_id)
-        self.import_upstream_proxy_settings(path, template_id)
-        self.import_upstream_update_proxy_settings(path, template_id)
+        self.import_ui(path, template_id, template_name)
+        self.import_ntp_settings(path, template_id, template_name)
+        self.import_proxy_port(path, template_id, template_name)
+        self.import_saml_server_port(path, template_id, template_name)
+        self.import_modules(path, template_id, template_name)
+        self.import_cache_settings(path, template_id, template_name)
+#        self.import_proxy_exceptions(path, template_id, template_name)
+        self.import_upstream_proxy_settings(path, template_id, template_name)
+        self.import_upstream_update_proxy_settings(path, template_id, template_name)
 
 
-    def import_ui(self, path, template_id):
+    def import_ui(self, path, template_id, template_name):
         """Импортируем раздел UserGate/Настройки/Настройки интерфейса"""
         json_file = os.path.join(path, 'config_settings_ui.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки интерфейса".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "UserGate/Настройки/Настройки интерфейса".')
 
         if not self.mc_data.get('client_certs_profiles', False):
             if self.get_client_certificate_profiles(): # Заполняем self.mc_data['client_certs_profiles']
@@ -3092,7 +2668,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         error = 1
                         continue
                 setting[key] = value
-                err, result = self.utm.set_template_settings(template_id, setting)
+                err, result = self.utm.set_dcfw_template_general_settings(template_id, setting)
                 if err:
                     self.stepChanged.emit(f'RED|    {result} [Параметр "{params[key]}" не импортирован]')
                     error = 1
@@ -3105,19 +2681,19 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт настроек интерфейса завершён.')
 
 
-    def import_ntp_settings(self, path, template_id):
+    def import_ntp_settings(self, path, template_id, template_name):
         """Импортируем настройки NTP в шаблон"""
         json_file = os.path.join(path, 'config_ntp.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт настроек NTP раздела "UserGate/Настройки/Настройки времени сервера".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт настроек NTP раздела "UserGate/Настройки/Настройки времени сервера".')
         error = 0
 
         for i, ntp_server in enumerate(data['ntp_servers']):
             settings = {f'ntp_server{i+1}': ntp_server}
-            err, result = self.utm.set_template_settings(template_id, settings)
+            err, result = self.utm.set_dcfw_template_general_settings(template_id, settings)
             if err:
                 self.stepChanged.emit(f'RED|    {result} [NTP-сервер "{ntp_server["value"]}" не импортирован]')
                 error = 1
@@ -3132,7 +2708,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 'enabled': True if data['ntp_synced'] else False
             }
         }
-        err, result = self.utm.set_template_settings(template_id, settings)
+        err, result = self.utm.set_dcfw_template_general_settings(template_id, settings)
         if err:
             self.stepChanged.emit(f'RED|    {result} [Параметр "Использовать NTP" не установлен]')
             error = 1
@@ -3146,16 +2722,16 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт серверов NTP завершён.')
 
 
-    def import_proxy_port(self, path, template_id):
+    def import_proxy_port(self, path, template_id, template_name):
         """Импортируем HTTP(S)-прокси порт в шаблон"""
         json_file = os.path.join(path, 'config_proxy_port.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули/HTTP(S)-прокси порт".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "UserGate/Настройки/Модули/HTTP(S)-прокси порт".')
 
-        err, result = self.utm.set_template_settings(template_id, {'proxy_server_port': data})
+        err, result = self.utm.set_dcfw_template_general_settings(template_id, {'proxy_server_port': data})
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте HTTP(S)-прокси порта.')
             self.error = 1
@@ -3163,16 +2739,16 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit(f'BLACK|    HTTP(S)-прокси порт установлен в значение "{data["value"]}"')
 
 
-    def import_saml_server_port(self, path, template_id):
+    def import_saml_server_port(self, path, template_id, template_name):
         """Импортируем порт SAML-сервера в шаблон"""
         json_file = os.path.join(path, 'config_saml_port.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули/Порт SAML-сервера".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "UserGate/Настройки/Модули/Порт SAML-сервера".')
 
-        err, result = self.utm.set_template_settings(template_id, {'saml_server_port': data})
+        err, result = self.utm.set_dcfw_template_general_settings(template_id, {'saml_server_port': data})
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте порта SAML-сервера.')
             self.error = 1
@@ -3180,14 +2756,14 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit(f'BLACK|    Порт SAML-сервера установлен в значение "{data["value"]}"')
 
 
-    def import_modules(self, path, template_id):
+    def import_modules(self, path, template_id, template_name):
         """Импортируем модули"""
         json_file = os.path.join(path, 'config_settings_modules.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Модули".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "UserGate/Настройки/Модули".')
         params = {
             'auth_captive': 'Домен Auth captive-портала',
             'logout_captive': 'Домен Logout captive-портала',
@@ -3213,7 +2789,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     continue
                 setting = {}
                 setting[key] = value
-                err, result = self.utm.set_template_settings(template_id, setting)
+                err, result = self.utm.set_dcfw_template_general_settings(template_id, setting)
                 if err:
                     self.stepChanged.emit(f'RED|    {result} [Параметр "{params[key]}" не установлен]')
                     error = 1
@@ -3227,21 +2803,21 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт модулей завершён.')
 
 
-    def import_cache_settings(self, path, template_id):
+    def import_cache_settings(self, path, template_id, template_name):
         """Импортируем раздел 'UserGate/Настройки/Настройки кэширования HTTP'"""
         json_file = os.path.join(path, 'config_proxy_settings.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт разделов "Расширенные настройки" и "Настройки кэширования HTTP" из "UserGate/Настройки".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт разделов "Расширенные настройки" и "Настройки кэширования HTTP" из "UserGate/Настройки".')
         error = 0
         settings = {
             'advanced': 'Расширенные настройки',
             'http_cache': 'Настройки кэширования HTTP',
         }
         for key in data:
-            err, result = self.utm.set_template_settings(template_id, data[key])
+            err, result = self.utm.set_dcfw_template_general_settings(template_id, data[key])
             if err:
                 self.stepChanged.emit(f'RED|    {result} [{settings[key]} не импортированы]')
                 error = 1
@@ -3255,149 +2831,64 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импортированы "Расширенные настройки" и "Настройки кэширования HTTP".')
 
 
-    def import_proxy_exceptions(self, path, template_id):
-        """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
-        json_file = os.path.join(path, 'config_proxy_exceptions.json')
-        err, exceptions = self.read_json_file(json_file, mode=2)
-        if err:
-            return
+#    def import_proxy_exceptions(self, path, template_id, template_name):
+#        """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
+#        json_file = os.path.join(path, 'config_proxy_exceptions.json')
+#        err, exceptions = self.read_json_file(json_file, mode=2)
+#        if err:
+#            return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования".')
-        error = 0
+#        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования".')
+#        error = 0
 
-        err, result = self.utm.get_template_nlists_list(template_id, 'httpcwl')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
-            self.error = 1
-            return
-        if result:
-            list_id = result[0]['id']
-        else:
-            httpcwl_list = {'name': 'HTTP Cache Exceptions', 'type': 'httpcwl'}
-            err, list_id = self.utm.add_template_nlist(template_id, httpcwl_list)
-            if err:
-                self.stepChanged.emit(f'RED|    {list_id}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
-                self.error = 1
-                return
+#        err, result = self.utm.get_dcfw_template_nlists(template_id, 'httpcwl')
+#        if err:
+#            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
+#            self.error = 1
+#            return
+#        if result:
+#            list_id = result[0]['id']
+#        else:
+#            httpcwl_list = {'name': 'HTTP Cache Exceptions', 'type': 'httpcwl'}
+#            err, list_id = self.utm.add_template_nlist(template_id, httpcwl_list)
+#            if err:
+#                self.stepChanged.emit(f'RED|    {list_id}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
+#                self.error = 1
+#                return
     
-        for item in exceptions:
-            err, result = self.utm.add_template_nlist_item(template_id, list_id, item)
-            if err == 1:
-                self.stepChanged.emit(f'RED|    {result} [URL "{item["value"]}" не импортирован]')
-                error = 1
-            elif err == 3:
-                self.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
-            else:
-                self.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
+#        for item in exceptions:
+#            err, result = self.utm.add_dcfw_template_nlist_item(template_id, list_id, item)
+#            if err == 1:
+#                self.stepChanged.emit(f'RED|    {result} [URL "{item["value"]}" не импортирован]')
+#                error = 1
+#            elif err == 3:
+#                self.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
+#            else:
+#                self.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
 
-        if exceptions:
-            err, result = self.utm.set_template_settings(template_id, {'http_cache_exceptions': {'enabled': True}})
-            if err:
-                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при установке статуса исключения кэширования.')
-                error = 1
-            else:
-                self.stepChanged.emit(f'BLACK|    Исключения кэширования включено.')
+#        if exceptions:
+#            err, result = self.utm.set_dcfw_template_general_settings(template_id, {'http_cache_exceptions': {'enabled': True}})
+#            if err:
+#                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при установке статуса исключения кэширования.')
+#                error = 1
+#            else:
+#                self.stepChanged.emit(f'BLACK|    Исключения кэширования включено.')
 
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте исключений кэширования HTTP.')
-        else:
-            self.stepChanged.emit('GREEN|    Исключения кэширования HTTP импортированы".')
-
-
-    def import_web_portal_settings(self, path, template_id):
-        """Импортируем раздел 'UserGate/Настройки/Веб-портал'"""
-        json_file = os.path.join(path, 'config_web_portal.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Веб-портал".')
-        error = 0
-
-        response_pages = self.mc_data['response_pages']
-
-        if not self.mc_data.get('client_certs_profiles', False):
-            if self.get_client_certificate_profiles(): # Устанавливаем self.mc_data['client_certs_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек Веб-портала.')
-                return
-        client_certs_profiles = self.mc_data['client_certs_profiles']
-
-        value = data['value']
-        try:
-            value['user_auth_profile_id'] = self.mc_data['auth_profiles'][value['user_auth_profile_id']].id
-        except KeyError:
-            message = f'    Error: Не найден профиль аутентификации "{value["user_auth_profile_id"]}". Возможно он отсутствует в этой группе шаблонов.'
-            self.stepChanged.emit(f'RED|{message}\n    Произошла ошибка при импорте настроек Веб-портала.')
-            self.error = 1
-            return
-
-        try:
-            value['ssl_profile_id'] = self.mc_data['ssl_profiles'][value['ssl_profile_id']].id
-        except KeyError:
-            message = f'    Error: Не найден профиль SSL "{value["ssl_profile_id"]}". Возможно он отсутствует в этой группе шаблонов.'
-            self.stepChanged.emit('RED|{massage}\n    Произошла ошибка при импорте настроек Веб-портала.')
-            self.error = 1
-            return
-
-        if value['client_certificate_profile_id']:
-            try:
-                value['client_certificate_profile_id'] = client_certs_profiles[value['client_certificate_profile_id']].id
-            except KeyError:
-                self.stepChanged.emit(f'RED|    Error: Не найден профиль клиентского сертификата "{value["client_certificate_profile_id"]}". Возможно он отсутствует в этой группе шаблонов.')
-                value['client_certificate_profile_id'] = 0
-                value['cert_auth_enabled'] = False
-                error = 1
-
-        if value['certificate_id']:
-            try:
-                value['certificate_id'] = self.mc_data['certs'][value['certificate_id']].id
-            except KeyError:
-                self.stepChanged.emit(f'RED|    Error: Не найден сертификат "{value["certificate_id"]}". Возможно он отсутствует в этой группе шаблонов.')
-                value['certificate_id'] = -1
-                error = 1
-        else:
-            data['certificate_id'] = -1
-
-        if value['proxy_portal_template_id'] != -1:
-            try:
-                value['proxy_portal_template_id'] = response_pages[value['proxy_portal_template_id']].id
-            except KeyError:
-                value['proxy_portal_template_id'] = -1
-                self.stepChanged.emit(f'RED|    Error: Не найден шаблон портала "{value["proxy_portal_template_id"]}". Возможно он отсутствует в этой группе шаблонов.')
-                error = 1
-
-        if value['proxy_portal_login_template_id'] != -1:
-            try:
-                value['proxy_portal_login_template_id'] = response_pages[value['proxy_portal_login_template_id']].id
-            except KeyError as err:
-                value['proxy_portal_login_template_id'] = -1
-                self.stepChanged.emit(f'RED|    Error: Не найден шаблон страницы аутентификации {err}. Возможно он отсутствует в этой группе шаблонов.')
-                error = 1
-
-        settings = {
-            'proxy_portal': {
-                'value': value,
-                'enabled': data['enabled']
-            }
-        }
-    
-        err, result = self.utm.set_template_settings(template_id, settings)
-        if err:
-            self.stepChanged.emit(f'RED|    {result} [Настройки не импортированы]\n    Произошла ошибка при импорте настроек Веб-портала.')
-            self.error = 1
-        else:
-            self.stepChanged.emit('GREEN|    Импортирован раздел "UserGate/Настройки/Веб-портал".')
+#        if error:
+#            self.error = 1
+#            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте исключений кэширования HTTP.')
+#        else:
+#            self.stepChanged.emit('GREEN|    Исключения кэширования HTTP импортированы".')
 
 
-    def import_upstream_proxy_settings(self, path, template_id):
+    def import_upstream_proxy_settings(self, path, template_id, template_name):
         """Импортируем настройки вышестоящего прокси"""
         json_file = os.path.join(path, 'upstream_proxy_settings.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
 
         settings = {
             'upstream_proxy': {
@@ -3406,7 +2897,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             }
         }
     
-        err, result = self.utm.set_template_settings(template_id, settings)
+        err, result = self.utm.set_dcfw_template_general_settings(template_id, settings)
         if err:
             self.stepChanged.emit(f'RED|    {result} [Настройки не импортированы]\n    Произошла ошибка при импорте настроек вышестоящего прокси.')
             self.error = 1
@@ -3414,14 +2905,14 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Настройки вышестоящего прокси импортировны.')
 
 
-    def import_upstream_update_proxy_settings(self, path, template_id):
+    def import_upstream_update_proxy_settings(self, path, template_id, template_name):
         """Импортируем настройки вышестоящего прокси для проверки лицензий и обновлений"""
         json_file = os.path.join(path, 'upstream_proxy_check_update.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси для проверки лицензий и обновлений".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт настроек раздела "UserGate/Настройки/Вышестоящий прокси для проверки лицензий и обновлений".')
 
         settings = {
             'upstream_update_proxy': {
@@ -3430,7 +2921,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             }
         }
     
-        err, result = self.utm.set_template_settings(template_id, settings)
+        err, result = self.utm.set_dcfw_template_general_settings(template_id, settings)
         if err:
             message = 'Произошла ошибка при импорте настроек вышестоящего прокси для проверки лицензий и обновлений.'
             self.stepChanged.emit(f'RED|    {result} [Настройки не импортированы]\n    {message}')
@@ -3447,7 +2938,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт локальных групп пользователей в раздел "Пользователи и устройства/Группы".')
         self.stepChanged.emit(f'LBLUE|    Если используются доменные пользователи, необходимы настроенные LDAP-коннекторы в "Управление областью/Каталоги пользователей"')
         error = 0
 
@@ -3463,7 +2954,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Группа пользователей "{item["name"]}" уже существует в шаблоне "{local_groups[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_group(template_id, item)
+                err, result = self.utm.add_dcfw_template_group(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result} [Группа пользователей "{item["name"]}" не импортирована]')
                     error = 1
@@ -3477,14 +2968,16 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             # Добавляем доменных пользователей в группу.
             self.stepChanged.emit(f'NOTE|       Добавляем доменных пользователей в группу "{item["name"]}".')
             n = 0
-            for user_name in users:
-                if '\\' in user_name:
+            for user in users:
+                if '\\' in user:
                     n += 1
-                    domain, name = user_name.split('\\')
+                    if ' ' in user:  # Для импорта из версий шаблонов NGFW > 7.2
+                        user_domain_name = user.split()[1].replace('(', '').replace(')', '')    # Убираем логин и скобки, оставляем имя.
+                    domain, name = user_domain_name.split('\\')
                     try:
                         ldap_id = self.mc_data['ldap_servers'][domain.lower()]
                     except KeyError:
-                        self.stepChanged.emit(f'bRED|       Warning: Доменный пользователь "{user_name}" не импортирован в группу "{item["name"]}". Нет LDAP-коннектора для домена "{domain}".')
+                        self.stepChanged.emit(f'bRED|       Warning: Доменный пользователь "{user}" не импортирован в группу "{item["name"]}". Нет LDAP-коннектора для домена "{domain}".')
                     else:
                         err1, result1 = self.utm.get_usercatalog_ldap_user_guid(ldap_id, name)
                         if err1:
@@ -3492,14 +2985,14 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                             error = 1
                             continue
                         elif not result1:
-                            self.stepChanged.emit(f'bRED|       Warning: Нет пользователя "{user_name}" в домене "{domain}". Доменный пользователь не импортирован в группу "{item["name"]}".')
+                            self.stepChanged.emit(f'bRED|       Warning: Нет пользователя "{user}" в домене "{domain}". Доменный пользователь не импортирован в группу "{item["name"]}".')
                             continue
-                        err2, result2 = self.utm.add_user_in_template_group(template_id, local_groups[item['name']].id, result1)
+                        err2, result2 = self.utm.add_dcfw_user_in_group(template_id, local_groups[item['name']].id, result1)
                         if err2:
-                            self.stepChanged.emit(f'RED|       {result2}  [{user_name}]')
+                            self.stepChanged.emit(f'RED|       {result2}  [{user}]')
                             error = 1
                         else:
-                            self.stepChanged.emit(f'BLACK|       Пользователь "{user_name}" добавлен в группу "{item["name"]}".')
+                            self.stepChanged.emit(f'BLACK|       Пользователь "{user}" добавлен в группу "{item["name"]}".')
             if not n:
                 self.stepChanged.emit(f'GRAY|       Нет доменных пользователей в группе "{item["name"]}".')
         if error:
@@ -3516,7 +3009,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт локальных пользователей в раздел "Пользователи и устройства/Пользователи".')
         error = 0
         local_users = self.mc_data['local_users']
 
@@ -3532,7 +3025,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     self.stepChanged.emit(f'sGREEN|    Пользователь "{item["name"]}" уже существует в шаблоне "{local_users[item["name"]].template_name}".')
                     continue
             else:
-                err, result = self.utm.add_template_user(template_id, item)
+                err, result = self.utm.add_dcfw_template_user(template_id, item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|    {result} [Пользователь "{item["name"]}" не импортирован]')
                     error = 1
@@ -3550,7 +3043,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 except KeyError as err:
                     self.stepChanged.emit(f'bRED|       Warning: Не найдена группа {err} для пользователя {item["name"]}. Возможно она отсутствует в этой группе шаблонов.')
                 else:
-                    err2, result2 = self.utm.add_user_in_template_group(template_id, group_guid, local_users[item['name']].id)
+                    err2, result2 = self.utm.add_dcfw_user_in_group(template_id, group_guid, local_users[item['name']].id)
                     if err2:
                         self.stepChanged.emit(f'RED|       {result2}  [User "{item["name"]}" не добавлен в группу "{group}"]')
                         error = 1
@@ -3565,7 +3058,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def import_auth_servers(self, path, template_id, template_name):
         """Импортируем список серверов аутентификации"""
-        self.stepChanged.emit('BLUE|Импорт раздела "Пользователи и устройства/Серверы аутентификации".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт раздела "Пользователи и устройства/Серверы аутентификации".')
 
         if not self.mc_data.get('auth_servers', False):
             if self.get_auth_servers():    # Устанавливаем self.mc_data['auth_servers']
@@ -3602,7 +3095,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 item['keytab_exists'] = False
                 item['type'] = 'ldap'
                 item.pop("cc", None)
-                err, result = self.utm.add_template_auth_server(template_id, item)
+                err, result = self.utm.add_dcfw_template_auth_server(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [LDAP-сервер "{item["name"]}" не импортирован]')
                     error = 1
@@ -3636,7 +3129,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             else:
                 item['type'] = 'ntlm'
                 item.pop("cc", None)
-                err, result = self.utm.add_template_auth_server(template_id, item)
+                err, result = self.utm.add_dcfw_template_auth_server(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [NTLM-сервер "{item["name"]}" не импортирован]')
                     error = 1
@@ -3671,7 +3164,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             else:
                 item['type'] = 'radius'
                 item.pop("cc", None)
-                err, result = self.utm.add_template_auth_server(template_id, item)
+                err, result = self.utm.add_dcfw_template_auth_server(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [RADIUS-сервер "{item["name"]}" не импортирован]')
                     error = 1
@@ -3706,7 +3199,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             else:
                 item['type'] = 'tacacs_plus'
                 item.pop("cc", None)
-                err, result = self.utm.add_template_auth_server(template_id, item)
+                err, result = self.utm.add_dcfw_template_auth_server(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Сервер TACACS+ "{item["name"]}" не импортирован]')
                     error = 1
@@ -3748,7 +3241,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         self.stepChanged.emit(f'RED|       Error: [Сервер SAML "{item["name"]}"] Не найден сертификат "{item["certificate_id"]}". Возможно он отсутствует в этой группе шаблонов.')
                         item['certificate_id'] = 0
                         error = 1
-                err, result = self.utm.add_template_auth_server(template_id, item)
+                err, result = self.utm.add_dcfw_template_auth_server(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Сервер SAML "{item["name"]}" не импортирован]')
                     error = 1
@@ -3769,7 +3262,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей MFA в раздел "Пользователи и устройства/Профили MFA".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей MFA в раздел "Пользователи и устройства/Профили MFA".')
         error = 0
 
         if not self.mc_data.get('notification_profiles', False):
@@ -3805,7 +3298,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         continue
                     item['auth_notification_profile_id'] = notification_profiles[item['auth_notification_profile_id']].id
 
-                err, result = self.utm.add_template_2fa_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_2fa_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль MFA "{item["name"]}" не импортирован]')
                     error = 1
@@ -3826,7 +3319,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей аутентификации в раздел "Пользователи и устройства/Профили аутентификации".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей аутентификации в раздел "Пользователи и устройства/Профили аутентификации".')
         error = 0
 
         if not self.mc_data.get('auth_servers', False):
@@ -3878,7 +3371,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль аутентификации "{item["name"]}" уже существует в шаблоне "{auth_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_auth_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_auth_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result} [Профиль аутентификации "{item["name"]}" не импортирован]')
                     error = 1
@@ -3899,7 +3392,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт Captive-профилей в раздел "Пользователи и устройства/Captive-профили".')
         error = 0
 
         response_pages = self.mc_data['response_pages']
@@ -3977,7 +3470,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Captive-профиль "{item["name"]}" уже существует в шаблоне "{captive_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_captive_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_captive_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Captive-profile "{item["name"]}" не импортирован]')
                     error = 1
@@ -3999,7 +3492,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт правил Captive-портала в раздел "Пользователи и устройства/Captive-портал".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил Captive-портала в раздел "Пользователи и устройства/Captive-портал".')
         error = 0
 
         if not self.mc_data.get('captive_profiles', False):
@@ -4010,7 +3503,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
         captive_portal_rules = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_captive_portal_rules(uid)
+            err, result = self.utm.get_dcfw_template_captive_portal_rules(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил Captive-портала.')
                 self.error = 1
@@ -4049,7 +3542,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Правило Captive-портала "{item["name"]}" уже существует в шаблоне "{captive_portal_rules[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_captive_portal_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_captive_portal_rule(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Captive-portal "{item["name"]}" не импортирован]')
                     error = 1
@@ -4061,50 +3554,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил Captive-портала.')
         else:
             self.stepChanged.emit('GREEN|    Импорт правил Captive-портала завершён.')
-
-
-    def import_terminal_servers(self, path, template_id, template_name):
-        """Импортируем список терминальных серверов"""
-        json_file = os.path.join(path, 'config_terminal_servers.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт списка терминальных серверов в раздел "Пользователи и устройства/Терминальные серверы".')
-        error = 0
-        terminal_servers = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_terminal_servers(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте списка терминальных серверов.')
-                self.error = 1
-                return
-            for x in result:
-                if x['name'] in terminal_servers:
-                    self.stepChanged.emit('ORANGE|    Терминальный сервер обнаружен в нескольких шаблонах группы. Сервер из шаблона "{name}" не будет использован.')
-                else:
-                    terminal_servers[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
-            if item['name'] in terminal_servers:
-                if template_id == terminal_servers[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Терминальный сервер "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Терминальный сервер "{item["name"]}" уже существует в шаблоне "{terminal_servers[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_terminal_server(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Terminal Server "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    terminal_servers[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Терминальный сервер "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте терминальных серверов.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт терминальных серверов завершён.')
 
 
     def import_userid_agent(self, path, template_id, template_name):
@@ -4120,12 +3569,12 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт свойств агента UserID в раздел "Пользователи и устройства/Свойства агента UserID')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт свойств агента UserID в раздел "Пользователи и устройства/Свойства агента UserID')
         error = 0
         
         useridagent_config = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_useridagent_config(uid)
+            err, result = self.utm.get_dcfw_template_useridagent_config(uid)
             if err:
                 self.stepChanged.emit('RED|    {result}\n       Произошла ошибка при импорте свойств агента UserID.')
                 self.error = 1
@@ -4172,7 +3621,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                         error = 1
                 item['ignore_networks'] = new_networks
 
-                err, result = self.utm.set_template_useridagent_config(template_id, item)
+                err, result = self.utm.add_dcfw_template_useridagent_config(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result} [Свойства агента UserID не установлены]')
                     error = 1
@@ -4194,21 +3643,18 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт Агент UserID в раздел "Пользователи и устройства/UserID агент коннекторы".')
-        self.stepChanged.emit(f'LBLUE|    Фильтры для коннеторов Syslog Агентов UserID в этой версии МС не переносятся. Необходимо добавить их руками.')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт Агент UserID в раздел "Пользователи и устройства/UserID агент коннекторы".')
         error = 0
 
-#        В версии 7.1 это не работает!!!!!!
-#        err, result = self.utm.get_template_useridagent_filters(template_id)
-#        if err:
-#            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте агентов UserID.')
-#            self.error = 1
-#            return
-#        useridagent_filters = {x['name']: x['id'] for x in result}
+        if not self.mc_data.get('userid_filters', False):
+            if self.get_useridagent_filters():        # Заполняем self.mc_data['userid_filters']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте syslog фильтров UserID агента.')
+                return
+        userid_filters = self.mc_data['userid_filters']
 
         useridagent_servers = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_useridagent_servers(uid)
+            err, result = self.utm.get_dcfw_template_useridagent_servers(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте агентов UserID.')
                 self.error = 1
@@ -4238,20 +3684,19 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     error = 1
                 if 'filters' in item:
                     new_filters = []
-                    self.stepChanged.emit(f'rNOTE|    Warning: [UserID агент "{item["name"]}"] Не импортированы Syslog фильтры. В вашей версии МС API для этого не работает.')
                     for filter_name in item['filters']:
-                        item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
-#                        try:
-#                            new_filters.append(useridagent_filters[filter_name])
-#                        except KeyError:
-#                            self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Загрузите фильтры UserID агента и повторите попытку.')
-#                            item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
-#                            error = 1
+                        try:
+                            new_filters.append(userid_filters[filter_name].id)
+                        except KeyError:
+                            self.stepChanged.emit(f'RED|    Error: [UserID агент "{item["name"]}"] Не найден Syslog фильтр "{filter_name}". Возможно он отсутствует в этой группе шаблонов.')
+                            item['description'] = f'{item["description"]}\nError: Не найден Syslog фильтр UserID агента "{filter_name}".'
+                            error = 1
                     item['filters'] = new_filters
+
                 if item['type'] == 'radius' and 'server_secret' not in item:
                     item['server_secret'] = '123'
 
-                err, result = self.utm.add_template_useridagent_server(template_id, item)
+                err, result = self.utm.add_dcfw_template_useridagent_server(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Коннектор UserID агент "{item["name"]}" для узла "{item["node_name"]}" не импортирован]')
                     error = 1
@@ -4277,7 +3722,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил межсетевого экрана в раздел "Политики сети/Межсетевой экран".')
 
         if not self.mc_data.get('idps_profiles', False):
             if self.get_idps_profiles():            # Устанавливаем self.mc_data['idps_profiles']
@@ -4291,13 +3736,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 return
         l7_profiles = self.mc_data['l7_profiles']
 
-        if not self.mc_data.get('hip_profiles', False):
-            if self.get_hip_profiles():            # Устанавливаем self.mc_data['hip_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
-                return
-        hip_profiles = self.mc_data['hip_profiles']
-
-        err, result = self.utm.get_template_firewall_rules(template_id)
+        err, result = self.utm.get_dcfw_template_firewall_rules(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил межсетевого экрана.')
             self.error = 1
@@ -4310,16 +3749,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             item.pop('time_updated', None)
             item.pop('apps', None)
             item.pop('apps_negate', None)
+            item.pop('hip_profiles', None)
+            item.pop('scenario_rule_id', None)
 
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            if item['scenario_rule_id']:
-                try:
-                    item['scenario_rule_id'] = self.mc_data['scenarios'][item['scenario_rule_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сценарий {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                    item['scenario_rule_id'] = False
-                    item['error'] = True
             if 'ips_profile' in item and item['ips_profile']:
                 try:
                     item['ips_profile'] = idps_profiles[item['ips_profile']].id
@@ -4340,18 +3773,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['error'] = True
             else:
                 item['l7_profile'] = False
-            if 'hip_profiles' in item:
-                new_hip_profiles = []
-                for hip in item['hip_profiles']:
-                    try:
-                        new_hip_profiles.append(hip_profiles[hip].id)
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль HIP {err}. Возможно он отсутствует в этой группе шаблонов.')
-                        item['description'] = f'{item["description"]}\nError: Не найден профиль HIP {err}.'
-                        item['error'] = True
-                item['hip_profiles'] = new_hip_profiles
-            else:
-                item['hip_profiles'] = []
 
             item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
             item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
@@ -4369,8 +3790,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in firewall_rules:
                 self.stepChanged.emit(f'uGRAY|    Правило МЭ "{item["name"]}" уже существует в текущем шаблоне.')
             else:
-#                item['position'] = 'last'
-                err, result = self.utm.add_template_firewall_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_firewall_rule(template_id, item)
                 if err:
                     error = 1
                     self.stepChanged.emit(f'RED|    {result}  [Правило МЭ "{item["name"]}" не импортировано]')
@@ -4391,7 +3811,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт правил NAT в раздел "Политики сети/NAT и маршрутизация".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил NAT в раздел "Политики сети/NAT и маршрутизация".')
         error = 0
 
         if not self.mc_data.get('gateways', False):
@@ -4400,7 +3820,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 return
         mc_gateways = self.mc_data['gateways']
 
-        err, result = self.utm.get_template_traffic_rules(template_id)
+        err, result = self.utm.get_dcfw_template_traffic_rules(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил NAT.')
             self.error = 1
@@ -4410,6 +3830,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for item in data:
             item.pop('time_created', None)
             item.pop('time_updated', None)
+            item.pop('scenario_rule_id', None)
+
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item['zone_in'] = self.get_zones_id('src', item['zone_in'], item)
             item['zone_out'] = self.get_zones_id('dst', item['zone_out'], item)
@@ -4434,15 +3856,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     item['gateway'] = ''
                     item['error'] = True
 
-            if item['scenario_rule_id']:
-                try:
-                    item['scenario_rule_id'] = self.mc_data['scenarios'][item['scenario_rule_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сценарий {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                    item['scenario_rule_id'] = False
-                    item['error'] = True
-            
             if item.pop('error', False):
                 item['enabled'] = False
                 error = 1
@@ -4450,8 +3863,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in nat_rules:
                 self.stepChanged.emit(f'uGRAY|    Правило "{item["name"]}" уже существует.')
             else:
-#                item['position'] = 'last'
-                err, result = self.utm.add_template_traffic_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_traffic_rule(template_id, item)
                 if err:
                     error = 1
                     self.stepChanged.emit(f'RED|    {result}  [Правило "{item["name"]}" не импортировано]')
@@ -4467,7 +3879,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def import_loadbalancing_rules(self, path, template_id, template_name):
         """Импортируем правила балансировки нагрузки"""
-        self.stepChanged.emit('BLUE|Импорт правил балансировки нагрузки в раздел "Политики сети/Балансировка нагрузки".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил балансировки нагрузки в раздел "Политики сети/Балансировка нагрузки".')
         err, result = self.utm.get_template_loadbalancing_rules(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил балансировки нагрузки.')
@@ -4475,8 +3887,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             return
 
         self.import_loadbalancing_tcpudp(path, result, template_id)
-        self.import_loadbalancing_icap(path, result, template_id)
-        self.import_loadbalancing_reverse(path, result, template_id)
 
 
     def import_loadbalancing_tcpudp(self, path, balansing_servers, template_id):
@@ -4507,7 +3917,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in tcpudp_rules:
                 self.stepChanged.emit(f'uGRAY|       Правило балансировки TCP/UDP "{item["name"]}" уже существует.')
             else:
-                err, result = self.utm.add_template_loadbalancing_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_loadbalancing_rule(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result}  [Правило "{item["name"]}" не импортировано]')
                     error = 1
@@ -4521,120 +3931,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил балансировки TCP/UDP завершён.')
 
 
-    def import_loadbalancing_icap(self, path, balansing_servers, template_id):
-        """Импортируем балансировщики ICAP"""
-        self.stepChanged.emit('BLUE|    Импорт балансировщиков ICAP.')
-        json_file = os.path.join(path, 'config_loadbalancing_icap.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err in (2, 3):
-            self.stepChanged.emit(f'GRAY|       Нет балансировщиков ICAP для импорта.')
-            return
-        elif err == 1:
-            return
-
-        error = 0
-
-        if not self.mc_data.get('icap_servers', False):
-            if self.get_icap_servers():            # Устанавливаем self.mc_data['icap_servers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки ICAP.')
-                return
-        icap_servers = self.mc_data['icap_servers']
-
-        icap_loadbalancing = {x['name']: x['id'] for x in balansing_servers if x['type'] == 'icap'}
-
-        for item in data:
-            item['type'] = 'icap'
-            item['cc_network_devices'] = self.get_network_devices(item)
-            new_profiles = []
-            for profile in item['profiles']:
-                try:
-                    new_profiles.append(icap_servers[profile].id)
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|       Error: [Правило "{item["name"]}"] Не найден сервер ICAP "{profile}" в группе шаблонов. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сервер ICAP "{profile}".'
-                    item['enabled'] = False
-                    error = 1
-            item['profiles'] = new_profiles
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            if item['name'] in icap_loadbalancing:
-                self.stepChanged.emit(f'uGRAY|       Правило балансировки ICAP "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_loadbalancing_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|       {result}  [Правило "{item["name"]}" не импортировано]')
-                    error = 1
-                else:
-                    icap_loadbalancing[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|       Правило балансировки ICAP "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки ICAP.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил балансировки ICAP завершён.')
-
-
-    def import_loadbalancing_reverse(self, path, balansing_servers, template_id):
-        """Импортируем балансировщики reverse-proxy"""
-        self.stepChanged.emit('BLUE|    Импорт балансировщиков Reverse-proxy.')
-        json_file = os.path.join(path, 'config_loadbalancing_reverse.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err in (2, 3):
-            self.stepChanged.emit(f'GRAY|       Нет балансировщиков Reverse-proxy для импорта.')
-            return
-        elif err == 1:
-            return
-
-        error = 0
-
-        if not self.mc_data.get('reverseproxy_servers', False):
-            if self.get_reverseproxy_servers():            # Устанавливаем self.mc_data['reverseproxy_servers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки Reverse-proxy.')
-                return
-        reverseproxy_servers = self.mc_data['reverseproxy_servers']
-
-        reverse_rules = {x['name']: x['id'] for x in balansing_servers if x['type'] == 'rp'}
-
-        for item in data:
-            item['cc_network_devices'] = self.get_network_devices(item)
-            item['type'] = 'rp'
-            new_profiles = []
-            for profile in item['profiles']:
-                try:
-                    new_profiles.append(reverseproxy_servers[profile].id)
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|       Error: [Правило "{item["name"]}"] Не найден сервер reverse-proxy {err} в группе шаблонов. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сервер reverse-proxy {err}.'
-                    item['enabled'] = False
-                    error = 1
-            item['profiles'] = new_profiles
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            if item['name'] in reverse_rules:
-                self.stepChanged.emit(f'uGRAY|       Правило балансировки reverse-proxy "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_loadbalancing_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|       {result}  [Правило "{item["name"]}" не импортировано]')
-                    error = 1
-                else:
-                    reverse_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|       Правило балансировки reverse-proxy "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил балансировки Reverse-proxy.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил балансировки Reverse-proxy завершён.')
-
-
     def import_shaper_rules(self, path, template_id, template_name):
         """Импортируем список правил пропускной способности"""
         json_file = os.path.join(path, 'config_shaper_rules.json')
@@ -4642,7 +3938,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт правил пропускной способности в раздел "Политики сети/Пропускная способность".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил пропускной способности в раздел "Политики сети/Пропускная способность".')
         error = 0
 
         err, result = self.utm.get_template_shaper_rules(template_id)
@@ -4653,15 +3949,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         shaper_rules = {x['name']: x['id'] for x in result}
 
         for item in data:
+            item.pop('scenario_rule_id', None)
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            if item['scenario_rule_id']:
-                try:
-                    item['scenario_rule_id'] = self.mc_data['scenarios'][item['scenario_rule_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сценарий {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                    item['scenario_rule_id'] = False
-                    item['error'] = True
 
             item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
             item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
@@ -4687,7 +3976,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in shaper_rules:
                 self.stepChanged.emit(f'uGRAY|    Правило пропускной способности "{item["name"]}" уже существует.')
             else:
-                err, result = self.utm.add_template_shaper_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_shaper_rule(template_id, item)
                 if err:
                     error = 1
                     self.stepChanged.emit(f'RED|    {result}  [Правило "{item["name"]}" не импортировано]')
@@ -4701,920 +3990,6 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил пропускной способности завершён.')
 
 
-    #------------------------------------- Политики безопасности ------------------------------------------
-    def import_content_rules(self, path, template_id, template_name):
-        """Импортировать список правил фильтрации контента"""
-        json_file = os.path.join(path, 'config_content_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил фильтрации контента в раздел "Политики безопасности/Фильтрация контента".')
-        error = 0
-
-        if not self.mc_data.get('morphology', False):
-            if self.get_morphology_list():    # Устанавливаем self.mc_data['morphology']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
-                return
-        morphology_list = self.mc_data['morphology']
-
-        if not self.mc_data.get('useragents', False):
-            if self.get_useragent_list():    # Устанавливаем self.mc_data['useragents']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
-                return
-        useragent_list = self.mc_data['useragents']
-
-        err, result = self.utm.get_template_content_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил контентной фильтрации.')
-            self.error = 1
-            return
-        content_rules = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            item.pop('time_created', None)
-            item.pop('time_updated', None)
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            try:
-                item['blockpage_template_id'] = self.mc_data['response_pages'][item['blockpage_template_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден шаблон страницы блокировки {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден шаблон страницы блокировки {err}.'
-                item['blockpage_template_id'] = -1
-                item['error'] = True
-
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['url_categories'] = self.get_url_categories_id(item)
-            item['urls'] = self.get_urls_id(item['urls'], item)
-            item['referers'] = self.get_urls_id(item['referers'], item)
-            item['referer_categories'] = self.get_url_categories_id(item, referer=1)
-            item['time_restrictions'] = self.get_time_restrictions(item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if item['scenario_rule_id']:
-                try:
-                    item['scenario_rule_id'] = self.mc_data['scenarios'][item['scenario_rule_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сценарий {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                    item['scenario_rule_id'] = False
-                    item['error'] = True
-
-            new_morph_categories = []
-            for x in item['morph_categories']:
-                if x in self.mc_data['ug_morphology']:
-                    new_morph_categories.append(f'id-{x}')
-                else:
-                    try:
-                        new_morph_categories.append(morphology_list[x].id)
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список морфологии {err}. Возможно он отсутствует в этой группе шаблонов.')
-                        item['description'] = f'{item["description"]}\nError: Не найден список морфологии {err}.'
-                        item['error'] = True
-            item['morph_categories'] = new_morph_categories
-
-            new_user_agents = []
-            for x in item['user_agents']:
-                if x[1] in self.mc_data['ug_useragents']:
-                    new_user_agents.append(['list_id', f'id-{x[1]}'])
-                else:
-                    try:
-                        new_user_agents.append(['list_id', useragent_list[x[1]].id])
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список UserAgent {err}. Возможно он отсутствует в этой группе шаблонов.')
-                        item['description'] = f'{item["description"]}\nError: Не найден список UserAgent {err}.'
-                        item['error'] = True
-            item['user_agents'] = new_user_agents
-
-            new_content_types = []
-            for x in item['content_types']:
-                try:
-                    new_content_types.append(self.mc_data['mime'][x].id)
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список типов контента {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден список типов контента {err}.'
-                    item['error'] = True
-            item['content_types'] = new_content_types
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in content_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило контентной фильтрации "{item["name"]}" уже существует.')
-            else:
-#                item['position'] = 'last'
-                err, result = self.utm.add_template_content_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило "{item["name"]}" не импортировано]')
-                else:
-                    content_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило контентной фильтрации "{item["name"]}" импортировано.')
-
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил контентной фильтрации завершён.')
-
-
-    def import_safebrowsing_rules(self, path, template_id, template_name):
-        """Импортируем список правил веб-безопасности"""
-        json_file = os.path.join(path, 'config_safebrowsing_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил веб-безопасности в раздел "Политики безопасности/Веб-безопасность".')
-        error = 0
-
-        err, result = self.utm.get_template_safebrowsing_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил веб-безопасности.')
-            self.error = 1
-            return
-        safebrowsing_rules = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item.pop('time_created', None)
-            item.pop('time_updated', None)
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['time_restrictions'] = self.get_time_restrictions(item)
-            item['url_list_exclusions'] = self.get_urls_id(item['url_list_exclusions'], item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in safebrowsing_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило веб-безопасности "{item["name"]}" уже существует.')
-            else:
-#                item['position'] = 'last'
-                err, result = self.utm.add_template_safebrowsing_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило веб-безопасности "{item["name"]}" не импортировано]')
-                else:
-                    safebrowsing_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило веб-безопасности "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил веб-безопасности.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил веб-безопасности завершён.')
-
-
-    def import_tunnel_inspection_rules(self, path, template_id, template_name):
-        """Импортируем список правил инспектирования туннелей"""
-        json_file = os.path.join(path, 'config_tunnelinspection_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил инспектирования туннелей в раздел "Политики безопасности/Инспектирование туннелей".')
-        error = 0
-
-        err, rules = self.utm.get_template_tunnel_inspection_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил инспектирования туннелей.')
-            self.error = 1
-            return
-        tunnel_inspect_rules = {x['name']: x['id'] for x in rules}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in tunnel_inspect_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило инспектирования туннелей "{item["name"]}" уже существует.')
-            else:
-#                item['position'] = 'last'
-                err, result = self.utm.add_template_tunnel_inspection_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило инспектирования туннелей "{item["name"]}" не импортировано]')
-                else:
-                    tunnel_inspect_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило инспектирования туннелей "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования туннелей.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил инспектирования туннелей завершён.')
-
-
-    def import_ssldecrypt_rules(self, path, template_id, template_name):
-        """Импортируем список правил инспектирования SSL"""
-        json_file = os.path.join(path, 'config_ssldecrypt_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил инспектирования SSL в раздел "Политики безопасности/Инспектирование SSL".')
-        error = 0
-
-        if not self.mc_data.get('ssl_forward_profiles', False):
-            if self.get_ssl_forward_profiles():    # Устанавливаем self.mc_data['ssl_forward_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSL.')
-                return
-        ssl_forward_profiles = self.mc_data['ssl_forward_profiles']
-
-        err, rules = self.utm.get_template_ssldecrypt_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил инспектирования SSL.')
-            self.error = 1
-            return
-        ssldecrypt_rules = {x['name']: x['id'] for x in rules}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item.pop('time_created', None)
-            item.pop('time_updated', None)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['url_categories'] = self.get_url_categories_id(item)
-            item['urls'] = self.get_urls_id(item['urls'], item)
-            item['time_restrictions'] = self.get_time_restrictions(item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-            try:
-                item['ssl_profile_id'] = self.mc_data['ssl_profiles'][item['ssl_profile_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль SSL {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден профиль SSL {err}. Установлен Default SSL profile.'
-                item['ssl_profile_id'] = self.mc_data['ssl_profiles']['Default SSL profile'].id
-                item['error'] = True
-            try:
-                item['ssl_forward_profile_id'] = ssl_forward_profiles[item['ssl_forward_profile_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль пересылки SSL {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден профиль пересылки SSL {err}.'
-                item['ssl_forward_profile_id'] = -1
-                item['error'] = True
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in ssldecrypt_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило инспектирования SSL "{item["name"]}" уже существует.')
-            else:
-#                item['position'] = 'last'
-                err, result = self.utm.add_template_ssldecrypt_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило инспектирования SSL "{item["name"]}" не импортировано]')
-                else:
-                    ssldecrypt_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило инспектирования SSL "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSL.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил инспектирования SSL завершён.')
-
-
-    def import_sshdecrypt_rules(self, path, template_id, template_name):
-        """Импортируем список правил инспектирования SSH"""
-        json_file = os.path.join(path, 'config_sshdecrypt_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил инспектирования SSH в раздел "Политики безопасности/Инспектирование SSH".')
-        error = 0
-
-        err, rules = self.utm.get_template_sshdecrypt_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил инспектирования SSH.')
-            self.error = 1
-            return
-        sshdecrypt_rules = {x['name']: x['id'] for x in rules}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item.pop('time_created', None)
-            item.pop('time_updated', None)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['time_restrictions'] = self.get_time_restrictions(item)
-            item['protocols'] = self.get_services(item['protocols'], item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in sshdecrypt_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило инспектирования SSH "{item["name"]}" уже существует.')
-            else:
-                item['position'] = 'last'
-                err, result = self.utm.add_template_sshdecrypt_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило инспектирования SSH "{item["name"]}" не импортировано]')
-                else:
-                    sshdecrypt_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило инспектирования SSH "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил инспектирования SSH.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил инспектирования SSH завершён.')
-
-
-    def import_mailsecurity(self, path, template_id, template_name):
-        self.import_mailsecurity_rules(path, template_id)
-        self.import_mailsecurity_antispam(path, template_id)
-
-
-    def import_mailsecurity_rules(self, path, template_id):
-        """Импортируем список правил защиты почтового трафика"""
-        json_file = os.path.join(path, 'config_mailsecurity_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил защиты почтового трафика в раздел "Политики безопасности/Защита почтового трафика".')
-        error = 0
-
-        if not self.mc_data.get('email_groups', False):
-            if self.get_email_groups():    # Устанавливаем self.mc_data['email_groups']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты почтового трафика.')
-                return
-        email = self.mc_data['email_groups']
-
-        err, result = self.utm.get_template_mailsecurity_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил защиты почтового трафика.')
-            self.error = 1
-            return
-        mailsecurity_rules = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if not item['services']:
-                item['services'] = [['service', 'SMTP'], ['service', 'POP3'], ['service', 'SMTPS'], ['service', 'POP3S']]
-            item['services'] = self.get_services(item['services'], item)
-
-            try:
-                item['envelope_from'] = [[x[0], email[x[1]].id] for x in item['envelope_from']]
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список почтовых адресов {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден список почтовых адресов {err}.'
-                item['envelope_from'] = []
-                item['error'] = True
-
-            try:
-                item['envelope_to'] = [[x[0], email[x[1]].id] for x in item['envelope_to']]
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список почтовых адресов {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден список почтовых адресов {err}.'
-                item['envelope_to'] = []
-                item['error'] = True
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in mailsecurity_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_mailsecurity_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило "{item["name"]}" не импортировано]')
-                else:
-                    mailsecurity_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты почтового трафика.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил защиты почтового трафика завершён.')
-
-
-    def import_mailsecurity_antispam(self, path, template_id):
-        """Импортируем dnsbl и batv защиты почтового трафика"""
-        json_file = os.path.join(path, 'config_mailsecurity_dnsbl.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт настроек антиспама защиты почтового трафика в раздел "Политики безопасности/Защита почтового трафика".')
-
-        data['white_list'] = self.get_ips_id('white_list', data['white_list'], {'name': 'antispam DNSBL'})
-        data['black_list'] = self.get_ips_id('black_list', data['black_list'], {'name': 'antispam DNSBL'})
-
-        err, result = self.utm.set_template_mailsecurity_antispam(template_id, data)
-        if err:
-            self.error = 1
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте настроек антиспама.')
-        else:
-            self.stepChanged.emit(f'GREEN|    Настройки антиспама импортированы.')
-
-
-    def import_icap_servers(self, path, template_id, template_name):
-        """Импортируем список серверов ICAP"""
-        json_file = os.path.join(path, 'config_icap_servers.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт серверов ICAP в раздел "Политики безопасности/ICAP-серверы".')
-        error = 0
-
-        if not self.mc_data.get('icap_servers', False):
-            if self.get_icap_servers():      # Устанавливаем self.mc_data['icap_servers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов ICAP.')
-                return
-        icap_servers = self.mc_data['icap_servers']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
-            if item['name'] in icap_servers:
-                if template_id == icap_servers[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    ICAP-сервер "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    ICAP-сервер "{item["name"]}" уже существует в шаблоне "{icap_servers[item["name"]].template_name}".')
-            else:
-                item['position'] = 'last'
-                err, result = self.utm.add_template_icap_server(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [ICAP-сервер "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    icap_servers[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    ICAP-сервер "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов ICAP.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт серверов ICAP завершён.')
-
-
-    def import_icap_rules(self, path, template_id, template_name):
-        """Импортируем список правил ICAP"""
-        json_file = os.path.join(path, 'config_icap_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил ICAP в раздел "Политики безопасности/ICAP-правила".')
-        error = 0
-
-        if not self.mc_data.get('icap_servers', False):
-            if self.get_icap_servers():      # Устанавливаем self.mc_data['icap_servers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил ICAP.')
-                return
-        icap_servers = self.mc_data['icap_servers']
-
-        err, result = self.utm.get_template_loadbalancing_rules(template_id, query={'query': 'type = icap'})
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил ICAP.')
-            self.error = 1
-            return
-        icap_loadbalancing = {x['name']: x['id'] for x in result}
-
-        err, result = self.utm.get_template_icap_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил ICAP.')
-            self.error = 1
-            return
-        icap_rules = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item.pop('time_created', None)
-            item.pop('time_updated', None)
-
-            new_servers = []
-            for server in item['servers']:
-                if server[0] == 'lbrule':
-                    try:
-                        new_servers.append(['lbrule', icap_loadbalancing[server[1]]])
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден балансировщик серверов ICAP {err}. Возможно он отсутствует в этой группе шаблонов.')
-                        item['description'] = f'{item["description"]}\nError: Не найден балансировщик серверов ICAP {err}.'
-                        item['error'] = True
-                elif server[0] == 'profile':
-                    try:
-                        new_servers.append(['profile', icap_servers[server[1]].id])
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сервер ICAP {err}. Возможно он отсутствует в этой группе шаблонов.')
-                        item['description'] = f'{item["description"]}\nError: Не найден сервер ICAP {err}.'
-                        item['error'] = True
-            item['servers'] = new_servers
-
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['url_categories'] = self.get_url_categories_id(item)
-            item['urls'] = self.get_urls_id(item['urls'], item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            new_content_types = []
-            for x in item['content_types']:
-                try:
-                    new_content_types.append(self.mc_data['mime'][x].id)
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список типов контента {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден список типов контента {err}.'
-                    item['error'] = True
-            item['content_types'] = new_content_types
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in icap_rules:
-                self.stepChanged.emit(f'uGRAY|    ICAP-правило "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_icap_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [ICAP-правило "{item["name"]}" не импортировано]')
-                    error = 1
-                else:
-                    icap_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    ICAP-правило "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил ICAP.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил ICAP завершён.')
-
-
-    def import_dos_profiles(self, path, template_id, template_name):
-        """Импортируем список профилей DoS"""
-        json_file = os.path.join(path, 'config_dos_profiles.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт профилей DoS в раздел "Политики безопасности/Профили DoS".')
-        error = 0
-
-        if not self.mc_data.get('dos_profiles', False):
-            if self.get_dos_profiles():      # Устанавливаем self.mc_data['dos_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей DoS.')
-                return
-        dos_profiles = self.mc_data['dos_profiles']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
-            if item['name'] in dos_profiles:
-                if template_id == dos_profiles[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Профиль DoS "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Профиль DoS "{item["name"]}" уже существует в шаблоне "{dos_profiles[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_dos_profile(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Профиль DoS "{item["name"]}" не импортирован]')
-                else:
-                    dos_profiles[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Профиль DoS "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей DoS.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт профилей DoS завершён.')
-
-
-    def import_dos_rules(self, path, template_id, template_name):
-        """Импортируем список правил защиты DoS"""
-        json_file = os.path.join(path, 'config_dos_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил защиты DoS в раздел "Политики безопасности/Правила защиты DoS".')
-        error = 0
-
-        if not self.mc_data.get('dos_profiles', False):
-            if self.get_dos_profiles():      # Устанавливаем self.mc_data['dos_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей DoS.')
-                return
-        dos_profiles = self.mc_data['dos_profiles']
-
-        err, result = self.utm.get_template_dos_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил защиты DoS.')
-            self.error = 1
-            return
-        dos_rules = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['services'] = self.get_services(item['services'], item)
-            item['time_restrictions'] = self.get_time_restrictions(item)
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if item['dos_profile']:
-                try:
-                    item['dos_profile'] = dos_profiles[item['dos_profile']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль DoS {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль DoS {err}.'
-                    item['dos_profile'] = False
-                    item['error'] = True
-            if item['scenario_rule_id']:
-                try:
-                    item['scenario_rule_id'] = self.mc_data['scenarios'][item['scenario_rule_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сценарий {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сценарий {err}.'
-                    item['scenario_rule_id'] = False
-                    item['error'] = True
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in dos_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило защиты DoS "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_dos_rule(template_id, item)
-                if err:
-                    error = 1
-                    self.stepChanged.emit(f'RED|    {result}  [Правило защиты DoS "{item["name"]}" не импортировано]')
-                else:
-                    dos_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило защиты DoS "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил защиты DoS.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил защиты DoS завершён.')
-
-
-    #---------------------------------------- Глобальный портал ----------------------------------------
-    def import_proxyportal_rules(self, path, template_id, template_name):
-        """Импортируем список URL-ресурсов веб-портала"""
-        json_file = os.path.join(path, 'config_web_portal.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт списка ресурсов веб-портала в раздел "Глобальный портал/Веб-портал".')
-        error = 0
-
-        err, result = self.utm.get_template_proxyportal_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте ресурсов веб-портала.')
-            self.error = 1
-            return
-        list_proxyportal = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя ресурса')
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            try:
-                if item['mapping_url_ssl_profile_id']:
-                    item['mapping_url_ssl_profile_id'] = self.mc_data['ssl_profiles'][item['mapping_url_ssl_profile_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль SSL {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден профиль SSL {err}.'
-                item['mapping_url_ssl_profile_id'] = 0
-                item['error'] = True
-
-            try:
-                if item['mapping_url_certificate_id']:
-                    item['mapping_url_certificate_id'] = self.mc_data['certs'][item['mapping_url_certificate_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сертификат {err}. Возможно он отсутствует в этой группе шаблонов.')
-                item['description'] = f'{item["description"]}\nError: Не найден сертификат {err}.'
-                item['mapping_url_certificate_id'] = 0
-                item['error'] = True
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in list_proxyportal:
-                self.stepChanged.emit(f'uGRAY|    Ресурс веб-портала "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_proxyportal_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Ресурс веб-портала "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    list_proxyportal[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Ресурс веб-портала "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте ресурсов веб-портала.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт списка ресурсов веб-портала завершён.')
-
-
-    def import_reverseproxy_servers(self, path, template_id, template_name):
-        """Импортируем список серверов reverse-прокси"""
-        json_file = os.path.join(path, 'config_reverseproxy_servers.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт серверов reverse-прокси в раздел "Глобальный портал/Серверы reverse-прокси".')
-        error = 0
-
-        if not self.mc_data.get('reverseproxy_servers', False):
-            if self.get_reverseproxy_servers():      # Устанавливаем self.mc_data['reverseproxy_servers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.')
-                return
-        reverseproxy_servers = self.mc_data['reverseproxy_servers']
-
-        for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
-            if item['name'] in reverseproxy_servers:
-                if template_id == reverseproxy_servers[item['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Сервер reverse-прокси "{item["name"]}" уже существует в текущем шаблоне.')
-                else:
-                    self.stepChanged.emit(f'sGREEN|    Сервер reverse-прокси "{item["name"]}" уже существует в шаблоне "{icap_servers[item["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_template_reverseproxy_server(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Сервер reverse-прокси "{item["name"]}" не импортирован]')
-                    error = 1
-                else:
-                    reverseproxy_servers[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Сервер reverse-прокси "{item["name"]}" импортирован.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов reverse-прокси.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт серверов reverse-прокси завершён.')
-
-
-    def import_reverseproxy_rules(self, path, template_id, template_name):
-        """Импортируем список правил reverse-прокси"""
-        json_file = os.path.join(path, 'config_reverseproxy_rules.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт правил reverse-прокси в раздел "Глобальный портал/Правила reverse-прокси".')
-        error = 0
-
-        err, result = self.utm.get_template_loadbalancing_rules(template_id, query={'query': 'type = reverse'})
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил reverse-прокси.')
-            self.error = 1
-            return
-        reverse_loadbalancing = {x['name']: x['id'] for x in result}
-
-        if not self.mc_data.get('reverseproxy_servers', False):
-            if self.get_reverseproxy_servers():      # Устанавливаем self.mc_data['reverseproxy_servers']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
-                return
-        reverseproxy_servers = self.mc_data['reverseproxy_servers']
-
-        if not self.mc_data.get('useragents', False):
-            if self.get_useragent_list():      # Устанавливаем self.mc_data['useragents']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
-                return
-        useragent_list = self.mc_data['useragents']
-
-        if not self.mc_data.get('client_certs_profiles', False):
-            if self.get_client_certificate_profiles(): # Устанавливаем self.mc_data['client_certs_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
-                return
-        client_certs_profiles = self.mc_data['client_certs_profiles']
-
-        err, result = self.utm.get_template_reverseproxy_rules(template_id)
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил reverse-прокси.')
-            self.error = 1
-            return
-        reverseproxy_rules = {x['name']: x['id'] for x in result}
-
-        for item in data:
-            item.pop('waf_profile_id', None)    # Если конфигурация была выгрудена с версии < 7.3
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
-            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
-            item['dst_ips'] = self.get_ips_id('dst', item['dst_ips'], item)
-            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
-            item['cc_network_devices'] = self.get_network_devices(item)
-
-            if not item['src_zones']:
-                self.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не указана src-зона.')
-                error = 1
-                continue
-
-            try:
-                for x in item['servers']:
-                    x[1] = reverseproxy_servers[x[1]].id if x[0] == 'profile' else reverse_loadbalancing[x[1]]
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: Правило "{item["name"]}" не импортировано. Не найден сервер reverse-прокси или балансировщик {err}. Возможно он отсутствует в этой группе шаблонов..')
-                error = 1
-                continue
-
-            if item['ssl_profile_id']:
-                try:
-                    item['ssl_profile_id'] = self.mc_data['ssl_profiles'][item['ssl_profile_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль SSL {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль SSL {err}.'
-                    item['ssl_profile_id'] = 0
-                    item['is_https'] = False
-                    item['error'] = True
-            else:
-                item['is_https'] = False
-
-            if item['certificate_id']:
-                try:
-                    item['certificate_id'] = self.mc_data['certs'][item['certificate_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден сертификат {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден сертификат {err}.'
-                    item['certificate_id'] = -1
-                    item['is_https'] = False
-                    item['error'] = True
-            else:
-                item['certificate_id'] = -1
-                item['is_https'] = False
-
-            new_user_agents = []
-            for x in item['user_agents']:
-                if x[1] in self.mc_data['ug_useragents']:
-                    new_user_agents.append(['list_id', f'id-{x[1]}'])
-                else:
-                    try:
-                        new_user_agents.append(['list_id', useragent_list[x[1]].id])
-                    except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден список Useragent {err}. Возможно он отсутствует в этой группе шаблонов.')
-                        item['description'] = f'{item["description"]}\nError: Не найден Useragent {err}.'
-                        item['error'] = True
-            item['user_agents'] = new_user_agents
-
-            if item['client_certificate_profile_id']:
-                try:
-                    item['client_certificate_profile_id'] = client_certs_profiles[item['client_certificate_profile_id']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}". Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль сертификата пользователя "{item["client_certificate_profile_id"]}".'
-                    item['client_certificate_profile_id'] = 0
-                    item['error'] = True
-
-            if item.pop('error', False):
-                item['enabled'] = False
-                error = 1
-
-            if item['name'] in reverseproxy_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило reverse-прокси "{item["name"]}" уже существует.')
-            else:
-                err, result = self.utm.add_template_reverseproxy_rule(template_id, item)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}  [Правило reverse-прокси "{item["name"]}" не импортировано]')
-                    error = 1
-                else:
-                    reverseproxy_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Правило reverse-прокси "{item["name"]}" импортировано.')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил reverse-прокси.')
-        else:
-            self.stepChanged.emit('GREEN|    Импорт правил reverse-прокси завершён.')
-        self.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
-
-
     #-------------------------------------- VPN -------------------------------------------------
     def import_vpnclient_security_profiles(self, path, template_id, template_name):
         """Импортируем клиентские профилей безопасности VPN"""
@@ -5623,7 +3998,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт клиентских профилей безопасности VPN в раздел "VPN/Клиентские профили безопасности".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт клиентских профилей безопасности VPN в раздел "VPN/Клиентские профили безопасности".')
         error = 0
 
         if not self.mc_data.get('vpn_client_security_profiles', False):
@@ -5648,7 +4023,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль безопасности VPN "{item["name"]}" уже существует в шаблоне "{security_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_vpn_client_security_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_vpn_client_security_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN "{item["name"]}" не импортирован]')
                     error = 1
@@ -5669,7 +4044,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт серверных профилей безопасности VPN в раздел "VPN/Серверные профили безопасности".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт серверных профилей безопасности VPN в раздел "VPN/Серверные профили безопасности".')
         error = 0
 
         if not self.mc_data.get('client_certs_profiles', False):
@@ -5708,7 +4083,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль безопасности VPN "{item["name"]}" уже существует в шаблоне "{security_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_vpn_server_security_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_vpn_server_security_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль безопасности VPN "{item["name"]}" не импортирован]')
                     error = 1
@@ -5741,7 +4116,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт списка сетей VPN в раздел "VPN/Сети VPN".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт списка сетей VPN в раздел "VPN/Сети VPN".')
         error = 0
 
         if not self.mc_data.get('vpn_networks', False):
@@ -5764,7 +4139,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Сеть VPN "{item["name"]}" уже существует в шаблоне "{vpn_networks[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_vpn_network(template_id, item)
+                err, result = self.utm.add_dcfw_template_vpn_network(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Сеть VPN "{item["name"]}" не импортирована]')
                     error = 1
@@ -5785,7 +4160,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт клиентских правил VPN в раздел "VPN/Клиентские правила".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт клиентских правил VPN в раздел "VPN/Клиентские правила".')
         error = 0
 
         if not self.mc_data.get('interfaces', False):
@@ -5833,7 +4208,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in vpn_client_rules:
                 self.stepChanged.emit(f'uGRAY|    Клиентское правило VPN "{item["name"]}" уже существует в текущем шаблоне.')
             else:
-                err, result = self.utm.add_template_vpn_client_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_vpn_client_rule(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Клиентское правило VPN "{item["name"]}" не импортировано]')
                     error = 1
@@ -5854,7 +4229,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт серверных правил VPN в раздел "VPN/Серверные правила".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт серверных правил VPN в раздел "VPN/Серверные правила".')
         error = 0
 
         if not self.mc_data.get('interfaces', False):
@@ -5874,7 +4249,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 return
         vpn_networks = self.mc_data['vpn_networks']
 
-        err, result = self.utm.get_template_vpn_server_rules(template_id)
+        err, result = self.utm.get_dcfw_template_vpn_server_rules(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте серверных правил VPN.')
             self.error = 1
@@ -5920,7 +4295,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in vpn_server_rules:
                 self.stepChanged.emit(f'uGRAY|    Серверное правило VPN "{item["name"]}" уже существует в текщем шаблоне.')
             else:
-                err, result = self.utm.add_template_vpn_server_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_vpn_server_rule(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Серверное правило VPN "{item["name"]}" не импортировано]')
                     error = 1
@@ -5942,7 +4317,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт правил оповещений в раздел "Диагностика и мониторинг/Правила оповещений".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт правил оповещений в раздел "Диагностика и мониторинг/Правила оповещений".')
         error = 0
 
         if not self.mc_data.get('notification_profiles', False):
@@ -5960,7 +4335,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил оповещений.')
                 return
 
-        err, result = self.utm.get_template_notification_alert_rules(template_id)
+        err, result = self.utm.get_dcfw_template_notification_alert_rules(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил оповещений.')
             self.error = 1
@@ -6001,7 +4376,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in alert_rules:
                 self.stepChanged.emit(f'uGRAY|    Правило оповещения "{item["name"]}" уже существует в текущем шаблоне.')
             else:
-                err, result = self.utm.add_template_notification_alert_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_notification_alert_rule(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Правило оповещения "{item["name"]}" не импортировано]')
                     error = 1
@@ -6022,7 +4397,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт профилей безопасности SNMP в раздел "Диагностика и мониторинг/Профили безопасности SNMP".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт профилей безопасности SNMP в раздел "Диагностика и мониторинг/Профили безопасности SNMP".')
         error = 0
 
         if not self.mc_data.get('snmp_security_profiles', False):
@@ -6043,7 +4418,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 else:
                     self.stepChanged.emit(f'sGREEN|    Профиль безопасности SNMP "{item["name"]}" уже существует в шаблоне "{snmp_security_profiles[item["name"]].template_name}".')
             else:
-                err, result = self.utm.add_template_snmp_security_profile(template_id, item)
+                err, result = self.utm.add_dcfw_template_snmp_security_profile(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Профиль безопасности SNMP: "{item["name"]}" не импортирован]')
                     error = 1
@@ -6064,10 +4439,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт параметров SNMP в раздел "Диагностика и мониторинг/Параметры SNMP".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт параметров SNMP в раздел "Диагностика и мониторинг/Параметры SNMP".')
         error = 0
         for item in data:
-            err, result = self.utm.add_template_snmp_parameters(template_id, item)
+            err, result = self.utm.add_dcfw_template_snmp_parameters(template_id, item)
             if err == 1:
                 self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте параметров SNMP.')
                 error = 1
@@ -6089,7 +4464,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт списка правил SNMP в раздел "Диагностика и мониторинг/SNMP".')
+        self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт списка правил SNMP в раздел "Диагностика и мониторинг/SNMP".')
         error = 0
 
         if not self.mc_data.get('snmp_security_profiles', False):
@@ -6098,7 +4473,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                 return
         snmp_security_profiles = self.mc_data['snmp_security_profiles']
 
-        err, result = self.utm.get_template_snmp_rules(template_id)
+        err, result = self.utm.get_dcfw_template_snmp_rules(template_id)
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил SNMP.')
             self.error = 1
@@ -6129,7 +4504,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             if item['name'] in snmp_rules:
                 self.stepChanged.emit(f'uGRAY|    Правило SNMP "{item["name"]}" уже существует в текущем шаблоне.')
             else:
-                err, result = self.utm.add_template_snmp_rule(template_id, item)
+                err, result = self.utm.add_dcfw_template_snmp_rule(template_id, item)
                 if err:
                     self.stepChanged.emit(f'RED|    {result}  [Правило SNMP "{item["name"]}" не импортировано]')
                     error = 1
@@ -6143,9 +4518,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил SNMP завершён.')
 
 
-    def pass_function(self, path):
+    def pass_function(self, path, template_id, template_name):
         """Функция заглушка"""
         self.stepChanged.emit(f'GRAY|Импорт раздела "{path.rpartition("/")[2]}" в настоящее время не реализован.')
+
 
     ###################################### Служебные функции ############################################
     def get_ips_id(self, mode, rule_ips, rule):
@@ -6243,10 +4619,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
                     else:
                         tmp_arr1 = [x.split('=') for x in item[1].split(',')]
                         tmp_arr2 = [b for a, b in tmp_arr1 if a in ('dc', 'DC')]
-                        print(tmp_arr1)
                         ldap_domain = '.'.join(tmp_arr2)
                         group_name = tmp_arr1[0][1] if tmp_arr1[0][0] == 'CN' else None
-                        print(ldap_domain, ' --- ', group_name)
                         if group_name:
                             try:
                                 ldap_id = self.mc_data['ldap_servers'][ldap_domain.lower()]
@@ -6368,44 +4742,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         return devices_list
 
     #-------------------------- Заполнение self.mc_data ------------------------------------------------------
-    def get_morphology_list(self):
-        """Получаем список морфологии группы шаблонов и устанавливаем значение self.mc_data['morphology']"""
-        self.mc_data['morphology'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'morphology')
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['morphology']:
-                    self.stepChanged.emit(f'ORANGE|    Список морфологии "{x["name"]}" обнаружен в нескольких шаблонах группы. Список из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['morphology'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
-    def get_useragents_list(self):
-        """Получаем список UserAgents группы шаблонов и устанавливаем значение self.mc_data['useragents']"""
-        self.mc_data['useragents'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'useragent')
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['useragents']:
-                    self.stepChanged.emit(f'ORANGE|    Список UserAgents "{x["name"]}" обнаружен в нескольких шаблонах группы. Список из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['useragents'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
     def get_app_signatures(self):
-        """Получаем список предустановленных приложений l7 и устанавливаем значение self.mc_data['l7_apps']"""
+        """Получаем список предустановленных приложений l7 DCFW и устанавливаем значение self.mc_data['l7_apps']"""
         self.mc_data['l7_apps'] = {}
-        err, result = self.utm.get_realm_l7_signatures()
+        err, result = self.utm.get_dcfw_realm_l7_signatures()
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -6416,10 +4756,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_l7_profiles(self):
-        """Получаем список профилей приложений группы шаблонов и устанавливаем значение self.mc_data['l7_profiles']"""
+        """Получаем список профилей приложений группы шаблонов DCFW и устанавливаем значение self.mc_data['l7_profiles']"""
         self.mc_data['l7_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_l7_profiles_list(uid)
+            err, result = self.utm.get_dcfw_template_l7_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6433,10 +4773,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_email_groups(self):
-        """Получаем список групп почтовых адресов группы шаблонов и устанавливаем значение self.mc_data['email_groups']"""
+        """Получаем список групп почтовых адресов группы шаблонов DCFW и устанавливаем значение self.mc_data['email_groups']"""
         self.mc_data['email_groups'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'emailgroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'emailgroup')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6450,10 +4790,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_phone_groups(self):
-        """Получаем список групп телефонных номеров группы шаблонов и устанавливаем значение self.mc_data['phone_groups']"""
+        """Получаем список групп телефонных номеров группы шаблонов DCFW и устанавливаем значение self.mc_data['phone_groups']"""
         self.mc_data['phone_groups'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_nlists_list(uid, 'phonegroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'phonegroup')
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6467,9 +4807,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_idps_realm_users_signatures(self):
-        """Получаем список пользовательских сигнатур СОВ всех шаблонов и устанавливаем значение self.mc_data['users_signatures']"""
+        """Получаем список пользовательских сигнатур СОВ раздела DCFW области и устанавливаем значение self.mc_data['users_signatures']"""
         self.mc_data['realm_users_signatures'] = {}
-        err, result = self.utm.get_realm_idps_signatures(query={'query': 'owner = You'})
+        err, result = self.utm.get_dcfw_realm_idps_signatures(query={'query': 'owner = You'})
         if err:
             self.stepChanged.emit(f'RED|    {result}')
             self.error = 1
@@ -6480,10 +4820,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_idps_profiles(self):
-        """Получаем список профилей СОВ группы шаблонов и устанавливаем значение self.mc_data['idps_profiles']"""
+        """Получаем список профилей СОВ группы шаблонов DCFW и устанавливаем значение self.mc_data['idps_profiles']"""
         self.mc_data['idps_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_idps_profiles_list(uid)
+            err, result = self.utm.get_dcfw_template_idps_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6497,10 +4837,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_notification_profiles(self):
-        """Получаем список профилей оповещения группы шаблонов и устанавливаем значение атрибута self.mc_data['notification_profiles']"""
+        """Получаем список профилей оповещения группы шаблонов DCFW и устанавливаем значение атрибута self.mc_data['notification_profiles']"""
         self.mc_data['notification_profiles'] = {-5: BaseObject(id=-5, template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_notification_profiles(uid)
+            err, result = self.utm.get_dcfw_template_notification_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6514,10 +4854,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_netflow_profiles(self):
-        """Получаем список профилей netflow группы шаблонов и устанавливаем значение self.mc_data['netflow_profiles']"""
+        """Получаем список профилей netflow группы шаблонов DCFW и устанавливаем значение self.mc_data['netflow_profiles']"""
         self.mc_data['netflow_profiles'] = {'undefined': BaseObject(id='undefined', template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_netflow_profiles(uid)
+            err, result = self.utm.get_dcfw_template_netflow_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6531,10 +4871,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_lldp_profiles(self):
-        """Получаем список профилей lldp группы шаблонов и устанавливаем значение self.mc_data['lldp_profiles']"""
+        """Получаем список профилей lldp группы шаблонов DCFW и устанавливаем значение self.mc_data['lldp_profiles']"""
         self.mc_data['lldp_profiles'] = {'undefined': BaseObject(id='undefined', template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_lldp_profiles(uid)
+            err, result = self.utm.get_dcfw_template_lldp_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6548,10 +4888,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_ssl_forward_profiles(self):
-        """Получаем список профилей пересылки SSL группы шаблонов и устанавливаем значение self.mc_data['ssl_forward_profiles']"""
+        """Получаем список профилей пересылки SSL группы шаблонов DCFW и устанавливаем значение self.mc_data['ssl_forward_profiles']"""
         self.mc_data['ssl_forward_profiles'] = {-1: BaseObject(id=-1, template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_ssl_forward_profiles(uid)
+            err, result = self.utm.get_dcfw_template_ssl_forward_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6564,45 +4904,11 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         return 0
 
 
-    def get_hip_objects(self):
-        """Получаем список HIP объектов группы шаблонов и устанавливаем значение self.mc_data['hip_objects']"""
-        self.mc_data['hip_objects'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_hip_objects(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['hip_objects']:
-                    self.stepChanged.emit(f'ORANGE|    HIP объект "{x["name"]}" обнаружен в нескольких шаблонах группы. HIP объект из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['hip_objects'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
-    def get_hip_profiles(self):
-        """Получаем список HIP профилей группы шаблонов и устанавливаем значение self.mc_data['hip_profiles']"""
-        self.mc_data['hip_profiles'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_hip_profiles(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['hip_profiles']:
-                    self.stepChanged.emit(f'ORANGE|    HIP профиль "{x["name"]}" обнаружен в нескольких шаблонах группы. HIP профиль из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['hip_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
     def get_bfd_profiles(self):
-        """Получаем список BFD профилей группы шаблонов и устанавливаем значение self.mc_data['bfd_profiles']"""
+        """Получаем список BFD профилей группы шаблонов DCFW и устанавливаем значение self.mc_data['bfd_profiles']"""
         self.mc_data['bfd_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_bfd_profiles(uid)
+            err, result = self.utm.get_dcfw_template_bfd_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6616,10 +4922,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_useridagent_filters(self):
-        """Получаем Syslog фильтры агента UserID группы шаблонов и устанавливаем значение self.mc_data['userid_filters']"""
+        """Получаем Syslog фильтры агента UserID группы шаблонов DCFW и устанавливаем значение self.mc_data['userid_filters']"""
         self.mc_data['userid_filters'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_useridagent_filters(uid)
+            err, result = self.utm.get_dcfw_template_useridagent_filters(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6633,10 +4939,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_interfaces_list(self):
-        """Получаем список всех интерфейсов в группе шаблонов и устанавливаем значение self.mc_data['interfaces']"""
+        """Получаем список всех интерфейсов в группе шаблонов DCFW и устанавливаем значение self.mc_data['interfaces']"""
         self.mc_data['interfaces'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_interfaces_list(uid)
+            err, result = self.utm.get_dcfw_template_interfaces(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6653,10 +4959,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_gateways_list(self):
-        """Получаем список всех шлюзов в группе шаблонов и устанавливаем значение self.mc_data['gateways']"""
+        """Получаем список всех шлюзов в группе шаблонов DCFW и устанавливаем значение self.mc_data['gateways']"""
         self.mc_data['gateways'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_gateways(uid)
+            err, result = self.utm.get_dcfw_template_gateways(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6672,10 +4978,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_vrf_list(self):
-        """Получаем список всех VRF в группе шаблонов и устанавливаем значение self.mc_data['vrf']"""
+        """Получаем список всех VRF в группе шаблонов DCFW и устанавливаем значение self.mc_data['vrf']"""
         self.mc_data['vrf'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_vrf_list(uid)
+            err, result = self.utm.get_dcfw_template_vrfs(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6691,10 +4997,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
     def get_client_certificate_profiles(self):
         """
-        Получаем список профилей клиентских сертификатов в группе шаблонов и устанавливаем значение self.mc_data['client_cert_profiles']"""
+        Получаем список профилей клиентских сертификатов в группе шаблонов DCFW и устанавливаем значение self.mc_data['client_cert_profiles']"""
         self.mc_data['client_certs_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_client_certificate_profiles(uid)
+            err, result = self.utm.get_dcfw_template_client_certificate_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6708,10 +5014,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_auth_servers(self):
-        """Получаем список всех серверов аутентификации в группе шаблонов и устанавливаем значение self.mc_data['auth_servers']"""
+        """Получаем список всех серверов аутентификации в группе шаблонов DCFW и устанавливаем значение self.mc_data['auth_servers']"""
         auth_servers = {'ldap': {}, 'ntlm': {}, 'radius': {}, 'tacacs_plus': {}, 'saml_idp': {}}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_auth_servers(uid)
+            err, result = self.utm.get_dcfw_template_auth_servers(uid)
             if err == 1:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6726,10 +5032,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_profiles_2fa(self):
-        """Получаем список профилей MFA в группе шаблонов и устанавливаем значение self.mc_data['profiles_2fa']"""
+        """Получаем список профилей MFA в группе шаблонов DCFW и устанавливаем значение self.mc_data['profiles_2fa']"""
         self.mc_data['profiles_2fa'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_2fa_profiles(uid)
+            err, result = self.utm.get_dcfw_template_2fa_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6743,10 +5049,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_captive_profiles(self):
-        """Получаем список Captive-профилей в группе шаблонов и устанавливаем значение self.mc_data['captive_profiles']"""
+        """Получаем список Captive-профилей в группе шаблонов DCFW и устанавливаем значение self.mc_data['captive_profiles']"""
         self.mc_data['captive_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_captive_profiles(uid)
+            err, result = self.utm.get_dcfw_template_captive_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6759,62 +5065,11 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         return 0
 
 
-    def get_icap_servers(self):
-        """Получаем список серверов ICAP в группе шаблонов и устанавливаем значение self.mc_data['icap_servers']"""
-        self.mc_data['icap_servers'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_icap_servers(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['icap_servers']:
-                    self.stepChanged.emit(f'ORANGE|    Сервер ICAP "{x["name"]}" обнаружен в нескольких шаблонах группы. Сервер из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['icap_servers'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
-    def get_reverseproxy_servers(self):
-        """Получаем список серверов reverse-proxy в группе шаблонов и устанавливаем значение self.mc_data['reverseproxy_servers']"""
-        self.mc_data['reverseproxy_servers'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_reverseproxy_servers(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['reverseproxy_servers']:
-                    self.stepChanged.emit(f'ORANGE|    Сервер Reverse-прокси "{x["name"]}" обнаружен в нескольких шаблонах группы. Сервер из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['reverseproxy_servers'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
-    def get_dos_profiles(self):
-        """Получаем список профилей DoS в группе шаблонов и устанавливаем значение self.mc_data['dos_profiles']"""
-        self.mc_data['dos_profiles'] = {}
-        for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_dos_profiles(uid)
-            if err:
-                self.stepChanged.emit(f'RED|    {result}')
-                self.error = 1
-                return 1
-            for x in result:
-                if x['name'] in self.mc_data['dos_profiles']:
-                    self.stepChanged.emit(f'ORANGE|    Профиль DoS "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль DoS из шаблона "{name}" не будет использован.')
-                else:
-                    self.mc_data['dos_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
-        return 0
-
-
     def get_vpn_client_security_profiles(self):
-        """Получаем клиентские профили безопасности VPN в группе шаблонов и устанавливаем значение self.mc_data['vpn_client_security_profiles']"""
+        """Получаем клиентские профили безопасности VPN в группе шаблонов DCFW и устанавливаем значение self.mc_data['vpn_client_security_profiles']"""
         self.mc_data['vpn_client_security_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_vpn_client_security_profiles(uid)
+            err, result = self.utm.get_dcfw_template_vpn_client_security_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6828,10 +5083,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_vpn_server_security_profiles(self):
-        """Получаем серверные профили безопасности VPN в группе шаблонов и устанавливаем значение self.mc_data['vpn_server_security_profiles']"""
+        """Получаем серверные профили безопасности VPN в группе шаблонов DCFW и устанавливаем значение self.mc_data['vpn_server_security_profiles']"""
         self.mc_data['vpn_server_security_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_vpn_server_security_profiles(uid)
+            err, result = self.utm.get_dcfw_template_vpn_server_security_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6845,10 +5100,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_vpn_networks(self):
-        """Получаем сети VPN в группе шаблонов и устанавливаем значение self.mc_data['vpn_networks']"""
+        """Получаем сети VPN в группе шаблонов DCFW и устанавливаем значение self.mc_data['vpn_networks']"""
         self.mc_data['vpn_networks'] = {False: BaseObject(id=False, template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_vpn_networks(uid)
+            err, result = self.utm.get_dcfw_template_vpn_networks(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6862,10 +5117,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
 
 
     def get_snmp_security_profiles(self):
-        """Получаем профили безопасности SNMP в группе шаблонов и устанавливаем значение self.mc_data['snmp_security_profiles']"""
+        """Получаем профили безопасности SNMP в группе шаблонов DCFW и устанавливаем значение self.mc_data['snmp_security_profiles']"""
         self.mc_data['snmp_security_profiles'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_template_snmp_security_profiles(uid)
+            err, result = self.utm.get_dcfw_template_snmp_security_profiles(uid)
             if err:
                 self.stepChanged.emit(f'RED|    {result}')
                 self.error = 1
@@ -6891,29 +5146,10 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
             'rip': {},
             'pimsm': {}
         }
-        err, result = self.utm.add_template_vrf(template_id, vrf)
+        err, result = self.utm.add_dcfw_template_vrf(template_id, vrf)
         if err:
             return err, result
         return 0, result    # Возвращаем ID добавленного VRF
-
-
-    def add_new_nlist(self, name, nlist_type, content):
-        """Добавляем в библиотеку новый nlist с содержимым"""
-        nlist = {
-            'name': name,
-            'description': '',
-            'type': nlist_type,
-            'list_type_update': 'static',
-            'schedule': 'disabled',
-            'attributes': {'threat_level': 3},
-        }
-        err, list_id = self.utm.add_template_nlist(self.template_id, nlist)
-        if err:
-            return err, list_id
-        err, result = self.utm.add_template_nlist_items(self.template_id, list_id, content)
-        if err:
-            return err, result
-        return 0, list_id
 
 
     def get_library_data(self):
@@ -6956,7 +5192,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for name, uid in templates:
             err, result = self.utm.get_dcfw_template_nlists(uid, 'timerestrictiongroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} [Список календарей]')
                 error = 1
                 break
             for x in result:
@@ -6970,7 +5206,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for name, uid in templates:
             err, result = self.utm.get_dcfw_template_nlists(uid, 'urlcategorygroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} [группы категорий URL]')
                 error = 1
                 break
             for x in result:
@@ -7024,9 +5260,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         # Получаем список групп сервисов группы шаблонов DCFW и устанавливаем значение self.mc_data['service_groups']
         self.mc_data['service_groups'] = {}
         for name, uid in self.group_templates[self.selected_group].items():
-            err, result = self.utm.get_dcfw_template_nlists(uid, 'servicegroup')
+            err, result = self.utm.get_dcfw_template_nlists(uid, 'dcfw_servicegroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} [dcfw_servicegroup]')
                 error = 1
                 break
             for x in result:
@@ -7039,7 +5275,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_dcfw_template_nlists(uid, 'network')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} [список IP-листов]')
                 error = 1
                 break
             for x in result:
@@ -7052,7 +5288,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_dcfw_template_nlists(uid, 'url')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} [список URL-листов]')
                 error = 1
                 break
             for x in result:
@@ -7066,7 +5302,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_dcfw_template_nlists(uid, 'applicationgroup')
             if err:
-                self.stepChanged.emit(f'RED|    {result}')
+                self.stepChanged.emit(f'RED|    {result} [группы приложений]')
                 error = 1
                 break
             for x in result:
@@ -7159,6 +5395,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService):
         self.mc_data['devices_list'] = {x['name']: x['id'] for x in result}
 
         if error:
+            self.error = 1
             self.stepChanged.emit('iRED|Произошла ошибка инициализации импорта. Устраните ошибки и повторите импорт.')
         else:
             self.stepChanged.emit('GREEN|    Служебные структуры данных заполнены.')
@@ -7242,27 +5479,8 @@ class Zone:
                             allowed_ips.append(item)
                         service['allowed_ips'] = allowed_ips
                     else:
-                        nlist_name = f'Zone {self.name} (service access: {service_name})'
-                        if nlist_name in self.parent.mc_data['ip_lists']:
-                            service['allowed_ips'] = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
-                        else:
-                            content = [{'value': ip} for ip in service['allowed_ips']]
-                            err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
-                            if err == 1:
-                                self.parent.stepChanged.emit(f'RED|    {list_id}')
-                                self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в контроле доступа "{service_name}".')
-                                self.description = f'{self.description}\nError: В контроле доступа "{service_name}" не создан список IP-адресов.'
-                                self.error = 1
-                                continue
-                            elif err == 3:
-                                self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" зоны "{self.name}" уже существует.')
-                                self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
-                                continue
-                            else:
-                                self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" контроля доступа сервиса "{service_name}" для зоны "{self.name}".')
-                                service['allowed_ips'] = [['list_id', list_id]]
-                                self.parent.mc_data['ip_lists'][nlist_name] = BaseObject(id=list_id, template_id=self.parent.template_id, template_name=self.parent.templates[self.parent.template_id])
-
+                        self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не корректная запись в контроле доступа "{service_name}" - "{service["allowed_ips"]}".')
+                        service['allowed_ips'] = []
                 new_services_access.append(service)
         self.services_access = new_services_access
 
@@ -7284,29 +5502,8 @@ class Zone:
                     new_networks.append(item)
                 self.networks = new_networks
             else:
-                nlist_name = f'Zone {self.name} (IP-spufing)'
-                if nlist_name in self.parent.mc_data['ip_lists']:
-                    self.networks = [['list_id', self.parent.mc_data['ip_lists'][nlist_name].id]]
-                else:
-                    content = [{'value': ip} for ip in self.networks]
-                    err, list_id = add_new_nlist(self.parent, nlist_name, 'network', content)
-                    if err == 1:
-                        self.parent.stepChanged.emit(f'RED|    {list_id}')
-                        self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не создан список IP-адресов в защите от IP-спуфинга.')
-                        self.description = f'{self.description}\nError: В разделе "Защита от IP-спуфинга" не создан список IP-адресов.'
-                        self.networks = []
-                        self.error = 1
-                    elif err == 3:
-                        self.parent.stepChanged.emit(f'ORANGE|    Warning: Список IP-адресов "{nlist_name}" в защите от IP-спуфинга зоны "{self.name}" уже существует.')
-                        self.parent.stepChanged.emit('bRED|       Перезапустите конвертер и повторите попытку.')
-                    else:
-                        self.parent.stepChanged.emit(f'BLACK|       Создан список IP-адресов "{nlist_name}" в защите от IP-спуфинга для зоны "{self.name}".')
-                        self.networks = [['list_id', list_id]]
-                        self.parent.mc_data['ip_lists'][nlist_name] = BaseObject(id=list_id, template_id=self.parent.template_id, template_name=self.parent.templates[self.parent.template_id])
-        if not self.networks:
-            self.enable_antispoof = False
-            self.antispoof_invert = False
-
+                self.parent.stepChanged.emit(f'RED|       Error [Зона "{self.name}"]. Не корректная запись в защите от IP-спуфинга - "{self.networks}".')
+                self.networks = []
 
     def check_sessions_limit(self):
         """Обрабатываем ограничение сессий"""

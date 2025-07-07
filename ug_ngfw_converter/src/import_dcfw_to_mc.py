@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 1.1   03.07.2025  (только для ug_ngfw_converter)
+# Версия 1.2   04.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -2631,8 +2631,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.import_proxy_port(path)
         self.import_modules(path)
         self.import_cache_settings(path)
-        self.import_proxy_exceptions(path)
-#        self.import_web_portal_settings(path)
+#        self.import_proxy_exceptions(path)
         self.import_upstream_proxy_settings(path)
         self.import_upstream_update_proxy_settings(path)
 
@@ -2866,138 +2865,54 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импортированы "Расширенные настройки" и "Настройки кэширования HTTP".')
 
 
-    def import_proxy_exceptions(self, path):
-        """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
-        json_file = os.path.join(path, 'config_proxy_exceptions.json')
-        err, exceptions = self.read_json_file(json_file, mode=2)
-        if err:
-            return
+#    def import_proxy_exceptions(self, path):
+#        """Импортируем раздел UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования"""
+#        json_file = os.path.join(path, 'config_proxy_exceptions.json')
+#        err, exceptions = self.read_json_file(json_file, mode=2)
+#        if err:
+#            return
 
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования".')
-        error = 0
+#        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Настройки кэширования HTTP/Исключения кэширования".')
+#        error = 0
 
-        err, result = self.utm.get_dcfw_template_nlists(self.template_id, 'httpcwl')
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
-            self.error = 1
-            return
-        if result:
-            list_id = result[0]['id']
-        else:
-            httpcwl_list = {'name': 'HTTP Cache Exceptions', 'type': 'httpcwl'}
-            err, list_id = self.utm.add_dcfw_template_nlist(self.template_id, httpcwl_list)
-            if err:
-                self.stepChanged.emit(f'RED|    {list_id}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
-                self.error = 1
-                return
+#        err, result = self.utm.get_dcfw_template_nlists(self.template_id, 'httpcwl')
+#        if err:
+#            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
+#            self.error = 1
+#            return
+#        if result:
+#            list_id = result[0]['id']
+#        else:
+#            httpcwl_list = {'name': 'HTTP Cache Exceptions', 'type': 'httpcwl'}
+#            err, list_id = self.utm.add_dcfw_template_nlist(self.template_id, httpcwl_list)
+#            if err:
+#                self.stepChanged.emit(f'RED|    {list_id}\n    Произошла ошибка при импорте исключений кэширования HTTP.')
+#                self.error = 1
+#                return
     
-        for item in exceptions:
-            err, result = self.utm.add_dcfw_template_nlist_item(self.template_id, list_id, item)
-            if err == 1:
-                self.stepChanged.emit(f'RED|    {result} [URL "{item["value"]}" не импортирован]')
-                error = 1
-            elif err == 3:
-                self.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
-            else:
-                self.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
+#        for item in exceptions:
+#            err, result = self.utm.add_dcfw_template_nlist_item(self.template_id, list_id, item)
+#            if err == 1:
+#                self.stepChanged.emit(f'RED|    {result} [URL "{item["value"]}" не импортирован]')
+#                error = 1
+#            elif err == 3:
+#                self.stepChanged.emit(f'GRAY|    URL "{item["value"]}" уже существует в исключениях кэширования.')
+#            else:
+#                self.stepChanged.emit(f'BLACK|    В исключения кэширования добавлен URL "{item["value"]}".')
 
-        if exceptions:
-            err, result = self.utm.set_dcfw_template_general_settings(self.template_id, {'http_cache_exceptions': {'enabled': True}})
-            if err:
-                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при установке статуса исключения кэширования.')
-                error = 1
-            else:
-                self.stepChanged.emit(f'BLACK|    Исключения кэширования включено.')
+#        if exceptions:
+#            err, result = self.utm.set_dcfw_template_general_settings(self.template_id, {'http_cache_exceptions': {'enabled': True}})
+#            if err:
+#                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при установке статуса исключения кэширования.')
+#                error = 1
+#            else:
+#                self.stepChanged.emit(f'BLACK|    Исключения кэширования включено.')
 
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте исключений кэширования HTTP.')
-        else:
-            self.stepChanged.emit('GREEN|    Исключения кэширования HTTP импортированы".')
-
-
-    def import_web_portal_settings(self, path):
-        """Импортируем раздел 'UserGate/Настройки/Веб-портал'"""
-        json_file = os.path.join(path, 'config_web_portal.json')
-        err, data = self.read_json_file(json_file, mode=2)
-        if err:
-            return
-
-        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Настройки/Веб-портал".')
-        error = 0
-
-        response_pages = self.mc_data['response_pages']
-
-        if not self.mc_data['client_certs_profiles']:
-            if self.get_client_certificate_profiles(): # Устанавливаем self.mc_data['client_certs_profiles']
-                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек Веб-портала.')
-                return
-        client_certs_profiles = self.mc_data['client_certs_profiles']
-
-        try:
-            data['user_auth_profile_id'] = self.mc_data['auth_profiles'][data['user_auth_profile_id']].id
-        except KeyError as err:
-            message = f'    Error: Не найден профиль аутентификации {err}. Загрузите профили аутентификации и повторите попытку.'
-            self.stepChanged.emit(f'RED|{message}\n    Произошла ошибка при импорте настроек Веб-портала.')
-            self.error = 1
-            return
-
-        try:
-            data['ssl_profile_id'] = self.mc_data['ssl_profiles'][data['ssl_profile_id']].id
-        except KeyError as err:
-            message = f'    Error: Не найден профиль SSL {err}. Загрузите профили SSL и повторите попытку.'
-            self.stepChanged.emit(f'RED|{massage}\n    Произошла ошибка при импорте настроек Веб-портала.')
-            self.error = 1
-            return
-
-        if data['client_certificate_profile_id']:
-            try:
-                data['client_certificate_profile_id'] = client_certs_profiles[data['client_certificate_profile_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: Не найден профиль клиентского сертификата {err}. Укажите его вручную или загрузите профили клиентских сертификатов и повторите попытку.')
-                data['client_certificate_profile_id'] = 0
-                data['cert_auth_enabled'] = False
-                error = 1
-
-        if data['certificate_id']:
-            try:
-                data['certificate_id'] = self.mc_data['certs'][data['certificate_id']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: Не найден сертификат {err}. Укажите сертификат вручную или загрузите сертификаты и повторите попытку.')
-                data['certificate_id'] = -1
-                error = 1
-        else:
-            data['certificate_id'] = -1
-
-        if data['proxy_portal_template_id'] != -1:
-            try:
-                data['proxy_portal_template_id'] = response_pages[data['proxy_portal_template_id']].id
-            except KeyError as err:
-                data['proxy_portal_template_id'] = -1
-                self.stepChanged.emit(f'RED|    Error: Не найден шаблон портала {err}. Укажите шаблон портала вручную или загрузите шаблоны страниц и повторите попытку.')
-                error = 1
-
-        if data['proxy_portal_login_template_id'] != -1:
-            try:
-                data['proxy_portal_login_template_id'] = response_pages[data['proxy_portal_login_template_id']].id
-            except KeyError as err:
-                data['proxy_portal_login_template_id'] = -1
-                self.stepChanged.emit(f'RED|    Error: Не найден шаблон страницы аутентификации {err}. Укажите её вручную или загрузите шаблоны страниц и повторите попытку.')
-                error = 1
-
-        settings = {
-            'proxy_portal': {
-                'value': data,
-                'enabled': False if not data['enabled'] else True
-            }
-        }
-    
-        err, result = self.utm.set_dcfw_template_general_settings(self.template_id, settings)
-        if err:
-            self.stepChanged.emit(f'RED|    {result} [Настройки не импортированы]\n    Произошла ошибка при импорте настроек Веб-портала.')
-            self.error = 1
-        else:
-            self.stepChanged.emit('GREEN|    Импортирован раздел "UserGate/Настройки/Веб-портал".')
+#        if error:
+#            self.error = 1
+#            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте исключений кэширования HTTP.')
+#        else:
+#            self.stepChanged.emit('GREEN|    Исключения кэширования HTTP импортированы".')
 
 
     def import_upstream_proxy_settings(self, path):

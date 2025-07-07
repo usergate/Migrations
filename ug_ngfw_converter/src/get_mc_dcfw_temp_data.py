@@ -20,16 +20,16 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
 # Класс GetMcDcfwTemporaryData - для получения часто используемых данных.
-# Version 0.1  24.06.2025    (идентично для ug_ngfw_converter и universal_converter)
+# Version 1.1  03.07.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
 import os, sys
 from PyQt6.QtCore import QThread, pyqtSignal
 from services import default_urlcategorygroup
-from common_classes import WriteBinFile, BaseObject
+from common_classes import WriteBinFile, UsercatalogLdapServers, BaseObject
 
 
-class GetMcDcfwTemporaryData(QThread, WriteBinFile):
+class GetMcDcfwTemporaryData(QThread, WriteBinFile, UsercatalogLdapServers):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных DCFW."""
     stepChanged = pyqtSignal(str)
     def __init__(self, utm, templates):
@@ -37,7 +37,6 @@ class GetMcDcfwTemporaryData(QThread, WriteBinFile):
         self.utm = utm
         self.templates = templates    # структура {template_id: template_name}
         self.mc_data = {
-            'ldap_servers': {},     # LDAP-сервера в каталогах пользователей области
             'services': {},
             'service_groups': {},
             'ip_lists': {
@@ -101,29 +100,7 @@ class GetMcDcfwTemporaryData(QThread, WriteBinFile):
         self.stepChanged.emit(f'BLUE|Заполняем служебные структуры данных.')
 
         # Получаем список всех активных LDAP-серверов области
-        self.stepChanged.emit(f'BLACK|    Получаем список активных LDAP-серверов в каталогах пользователей области.')
-        self.mc_data['ldap_servers'] = {}
-        err, result = self.utm.get_usercatalog_ldap_servers()
-        if err:
-            self.stepChanged.emit(f'RED|       {result}')
-            self.stepChanged.emit(f'iRED|Произошла ошибка инициализации импорта! Устраните ошибки и повторите импорт.')
-            return
-        elif result:
-            err, result2 = self.utm.get_usercatalog_servers_status()
-            if err:
-                self.stepChanged.emit(f'RED|       {result2}')
-                self.error = 1
-            else:
-                servers_status = {x['id']: x['status'] for x in result2}
-                for srv in result:
-                    if servers_status[srv['id']] == 'connected':
-                        for domain in srv['domains']:
-                            self.mc_data['ldap_servers'][domain.lower()] = srv['id']
-                        self.stepChanged.emit(f'GREEN|       LDAP-коннектор "{srv["name"]}" - статус: "connected".')
-                    else:
-                        self.stepChanged.emit(f'GRAY|       LDAP-коннектор "{srv["name"]}" имеет не корректный статус: "{servers_status[srv["id"]]}".')
-        if not self.mc_data['ldap_servers']:
-            self.stepChanged.emit('NOTE|       Нет доступных LDAP-серверов в каталогах пользователей области. Доменные пользователи не будут импортированы.')
+        self.get_ldap_servers()
 
         # Получаем список групп сервисов
         self.stepChanged.emit(f'BLACK|    Получаем список групп сервисов группы шаблонов.')
@@ -256,15 +233,15 @@ class GetMcDcfwTemporaryData(QThread, WriteBinFile):
 
         # Получаем ID шаблона "UserGate Libraries template" и добавляем его в список шаблонов.
         # Далее получаем данные с учётом этого шаблона.
-        err, result = self.utm.get_dcfw_device_templates()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}')
-            self.error = 1
-        else:
-            for item in result:
-                if item['name'] == 'UserGate Libraries template':
-                    self.templates[item['id']] = item['name']
-                    break
+#        err, result = self.utm.get_dcfw_device_templates()
+#        if err:
+#            self.stepChanged.emit(f'RED|    {result}')
+#            self.error = 1
+#        else:
+#            for item in result:
+#                if item['name'] == 'UserGate Libraries template':
+#                    self.templates[item['id']] = item['name']
+#                    break
 
         # Получаем список зон
         self.stepChanged.emit(f'BLACK|    Получаем список зон группы шаблонов.')

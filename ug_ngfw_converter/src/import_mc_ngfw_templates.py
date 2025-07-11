@@ -315,7 +315,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                 if item['name'] == 'UserGate Libraries template':
                     self.usergate_lib_template = (item['name'], item['id'])
             
-            err, result = self.utm.get_device_templates_groups()
+            err, result = self.utm.get_ngfw_templates_groups()
             if err:
                 self.stepChanged.emit('iRED|Не удалось получить список групп шаблонов области.')
                 self.stepChanged.emit(f'RED|{result}')
@@ -323,7 +323,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             else:
                 for item in result:
                     self.groups[item['name']] = item['id']
-                    self.group_templates[item['name']] = {self.realm_templates[template_id]: template_id for template_id in item['device_templates']}
+                    self.group_templates[item['name']] = {self.realm_templates[template_id]: template_id for template_id in item['templates']}
 
 
     def import_ngfw_devices(self):

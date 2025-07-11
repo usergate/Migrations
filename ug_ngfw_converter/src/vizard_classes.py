@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.5   07.07.2025
+# Версия 2.6   10.07.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -14,10 +14,11 @@ from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
 import common_func as func
 import config_style as cs
 import export_from_ngfw as ef
-import export_from_mc as expmc
 import get_ngfw_temporary_data as gtd
 from get_mc_ngfw_temp_data import GetMcNgfwTemporaryData
 from get_mc_dcfw_temp_data import GetMcDcfwTemporaryData
+from export_mc_ngfw_template_group import ExportMcNgfwTemplateGroup
+from export_mc_dcfw_template_group import ExportMcDcfwTemplateGroup
 from import_ngfw_to_mc import ImportMcNgfwSelectedPoints
 from import_dcfw_to_mc import ImportMcDcfwSelectedPoints
 from import_functions import ImportNgfwSelectedPoints
@@ -441,11 +442,12 @@ class SelectExportMode(SelectMode):
 
 
 class SelectMcExportMode(QWidget):
-    """Класс для экспорта конфигурации NGFW из группы шаблонов MC. Номер в стеке 2."""
+    """Класс для экспорта группы шаблонов из MC. Номер в стеке 2."""
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
         self.utm = None
+        self.device = 'NGFW'
         self.groups = {}
         self.base_path = {}
         self.group_path = None
@@ -455,7 +457,7 @@ class SelectMcExportMode(QWidget):
         self.title = QLabel()
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.title.setFixedHeight(22)
-        self.title.setText("<b><font color='green' size='+2'>Экспорт конфигурации из группы шаблонов UserGate Management Center</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Экспорт группы шаблонов из UserGate Management Center</font></b>")
 
         frame_nodeinfo = QFrame()
         frame_nodeinfo.setFixedHeight(22)
@@ -517,6 +519,7 @@ class SelectMcExportMode(QWidget):
         self.parent.stacklayout.currentChanged.connect(self.init_export_widget)
         self.tree.itemSelected.connect(self.get_selected_item)
 
+
     def disable_buttons(self):
         self.btn1.setStyleSheet('color: gray; background: gainsboro;')
         self.btn1.setEnabled(False)
@@ -525,6 +528,7 @@ class SelectMcExportMode(QWidget):
         self.btn3.setStyleSheet('color: gray; background: gainsboro;')
         self.btn3.setEnabled(False)
 
+
     def enable_buttons(self):
         self.btn1.setStyleSheet('color: steelblue; background: white;')
         self.btn1.setEnabled(True)
@@ -532,6 +536,7 @@ class SelectMcExportMode(QWidget):
         self.btn2.setEnabled(True)
         self.btn3.setStyleSheet('color: steelblue; background: white;')
         self.btn3.setEnabled(True)
+
 
     def get_auth(self):
         """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
@@ -546,6 +551,7 @@ class SelectMcExportMode(QWidget):
         else:
             return False
 
+
     def init_export_widget(self, e):
         """
         При открытии этой вкладки создаём каталог для области.
@@ -554,7 +560,8 @@ class SelectMcExportMode(QWidget):
         if e == 2:
             self.parent.resize(980, 750)
             if self.get_auth():
-                self.label_node_name.setText(f'  {self.utm.node_name}/{self.utm._login.split("/")[1]}')
+                self.realm = self.utm._login.split('/')[1]
+                self.label_node_name.setText(f'  {self.utm.node_name}/{self.realm}/{self.device}')
                 self.label_version.setText(f'MC (версия {self.utm.version})')
                 if self.utm.float_version < 7.1:
                     message = f'Экспорт шаблонов Management Center версии мене чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
@@ -575,9 +582,9 @@ class SelectMcExportMode(QWidget):
                     with open(os.path.join(self.parent.get_config_path(), 'version.json'), 'w') as fh:
                         json.dump({'device': 'MC', 'node name': self.utm.node_name, 'version': self.utm.version, 'admin': self.utm._login}, fh, indent=4)
                     self.groups['NGFW'] = self.get_ngfw_groups_templates()
-                    self.groups['DCFW'] = {}
+                    self.groups['DCFW'] = self.get_dcfw_groups_templates()
                     self.groups['EndPoint'] = self.get_endpoint_groups_templates()
-                    self.groups['LogAn'] = {}
+                    self.groups['LogAn'] = self.get_logan_groups_templates()
                     
                     tree_dirs = {key: {key1: [y for y in val1.values()] for key1, val1 in value.items()} for key, value in self.groups.items()}
                     self.tree.init_tree(tree_dirs)
@@ -587,12 +594,13 @@ class SelectMcExportMode(QWidget):
             else:
                 self.run_page_0()
 
+
     def create_all_dirs(self):
         """"""
-        self.base_path['NGFW'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'NGFW')
-        self.base_path['DCFW'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'DCFW')
-        self.base_path['EndPoint'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'EndPoint')
-        self.base_path['LogAn'] = os.path.join(self.parent.get_config_path(), self.utm._login.split('/')[1], 'LogAn')
+        self.base_path['NGFW'] = os.path.join(self.parent.get_config_path(), self.realm, 'NGFW')
+        self.base_path['DCFW'] = os.path.join(self.parent.get_config_path(), self.realm, 'DCFW')
+        self.base_path['EndPoint'] = os.path.join(self.parent.get_config_path(), self.realm, 'EndPoint')
+        self.base_path['LogAn'] = os.path.join(self.parent.get_config_path(), self.realm, 'LogAn')
         try:
             for path in self.base_path.values():
                 if not os.path.isdir(path):
@@ -601,53 +609,102 @@ class SelectMcExportMode(QWidget):
             return 1, f'Ошибка создания каталога: "{path}" [{err}]'
         return 0, 'Ok'
 
+
     def get_ngfw_groups_templates(self):
         """Для NGFW. Получаем группы шаблонов области и шаблоны каждой группы."""
         groups = {}
         err, result = self.utm.get_device_templates()
         if err:
-            func.message_alert(self, 'Не удалось получить список шаблонов', result)
+            func.message_alert(self, 'Не удалось получить список шаблонов NGFW', result)
         else:
             realm_templates = {x['id']: x['name'] for x in result}
-
-            err, result = self.utm.get_device_templates_groups()
+            err, result = self.utm.get_ngfw_templates_groups()
             if err:
-                func.message_alert(self, 'Не удалось получить список групп шаблонов', result)
+                func.message_alert(self, 'Не удалось получить список групп шаблонов NGFW', result)
             else:
                 for item in result:
-                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['device_templates']}
+                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['templates']}
         return groups
+
+
+    def get_dcfw_groups_templates(self):
+        """Для DCFW. Получаем группы шаблонов области и шаблоны каждой группы."""
+        groups = {}
+        err, result = self.utm.get_dcfw_device_templates()
+        if err:
+            func.message_alert(self, 'Не удалось получить список шаблонов DCFW', result)
+        else:
+            realm_templates = {x['id']: x['name'] for x in result}
+            err, result = self.utm.get_dcfw_templates_groups()
+            if err:
+                func.message_alert(self, 'Не удалось получить список групп шаблонов DCFW', result)
+            else:
+                for item in result:
+                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['templates']}
+        return groups
+
 
     def get_endpoint_groups_templates(self):
         """Для EndPoint. Получаем группы шаблонов области и шаблоны каждой группы."""
         groups = {}
         err, result = self.utm.get_endpoint_templates()
         if err:
-            func.message_alert(self, 'Не удалось получить список шаблонов', result)
+            func.message_alert(self, 'Не удалось получить список шаблонов EndPoint', result)
         else:
             realm_templates = {x['id']: x['name'] for x in result}
-
             err, result = self.utm.get_endpoint_templates_groups()
             if err:
-                func.message_alert(self, 'Не удалось получить список групп шаблонов', result)
+                func.message_alert(self, 'Не удалось получить список групп шаблонов EndPoint', result)
             else:
                 for item in result:
-                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['endpoint_templates']}
+                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['templates']}
         return groups
+
+
+    def get_logan_groups_templates(self):
+        """Для LogAn. Получаем группы шаблонов области и шаблоны каждой группы."""
+        groups = {}
+        err, result = self.utm.get_logan_templates()
+        if err:
+            func.message_alert(self, 'Не удалось получить список шаблонов LogAn', result)
+        else:
+            realm_templates = {x['id']: x['name'] for x in result}
+            err, result = self.utm.get_logan_templates_groups()
+            if err:
+                func.message_alert(self, 'Не удалось получить список групп шаблонов LogAn', result)
+            else:
+                for item in result:
+                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['templates']}
+        return groups
+
 
     def get_selected_item(self, selected_item):
         """Получаем выбранную группу шаблонов"""
         self.device = selected_item
+        if self.device in ('EndPoint', 'LogAn'):
+            pass
         if self.tree.selected_path:
             self.selected_group = self.tree.selected_path['group']
             self.group_path = os.path.join(self.base_path[self.device], self.selected_group)
             self.label_config_directory.setText(f'{self.group_path}  ')
+            self.label_node_name.setText(f'  {self.utm.node_name}/{self.realm}/{self.device}')
             self.btn2.setStyleSheet('color: forestgreen; background: white;')
             self.btn2.setEnabled(True)
+            title1 = f'Экспорт группы шаблонов "{self.device}/{self.selected_group}"'
+            title2 = f'из МС версии {self.utm.version} в каталог "{self.group_path}".'
+            color = 'GREEN'
         else:
             self.label_config_directory.setText(f'{self.base_path[self.device]}  ')
+            self.label_node_name.setText(f'  {self.utm.node_name}/{self.realm}/{self.device}')
             self.btn2.setStyleSheet('color: gray; background: gainsboro;')
             self.btn2.setEnabled(False)
+            title1 = 'Выберите группу шаблонов для экспорта."'
+            title2 = ''
+            color = 'BLUE'
+        self.log_list.clear()
+        self.add_item_log(f'{title1:>100}', color=color)
+        self.add_item_log(f'{title2:>100}', color=color)
+        self.add_item_log(f'{"="*100}', color='ORANGE')
 
 
     def export_selected_group(self):
@@ -660,16 +717,11 @@ class SelectMcExportMode(QWidget):
             self.run_page_0()
 
         if self.selected_group:
-            self.log_list.clear()
-            if self.device in ('DCFW', 'EndPoint', 'LogAn'):
+            if self.device in ('EndPoint', 'LogAn'):
                 message = f'Экспорт шаблонов "{self.device}" из Management Center пока не реализован.'
-                self.add_item_log(message, color='ORANGE')
                 func.message_inform(self, 'Внимание', message)
                 return
 
-            title = f'Экспорт группы шаблонов "{self.selected_group}" из МС версии {self.utm.version} в каталог "{self.group_path}".'
-            self.add_item_log(f'{title:>160}', color='GREEN')
-            self.add_item_log(f'{"="*160}', color='ORANGE')
             templates = self.groups[self.device][self.selected_group]
             if templates:
                 err, msg = func.create_dir(self.group_path, delete='no')
@@ -680,12 +732,20 @@ class SelectMcExportMode(QWidget):
                 self.tree.setEnabled(False)
 
                 if self.thread is None:
-                    self.thread = expmc.ExportAll(
-                        self.utm,
-                        self.selected_group,
-                        self.group_path,
-                        templates
-                    )
+                    if self.device == 'NGFW':
+                        self.thread = ExportMcNgfwTemplateGroup(
+                            self.utm,
+                            self.selected_group,
+                            self.group_path,
+                            templates
+                        )
+                    elif self.device == 'DCFW':
+                        self.thread = ExportMcDcfwTemplateGroup(
+                            self.utm,
+                            self.selected_group,
+                            self.group_path,
+                            templates
+                        )
                     self.thread.stepChanged.connect(self.on_step_changed)
                     self.thread.finished.connect(self.on_finished)
                     self.thread.start()
@@ -1664,16 +1724,16 @@ class SelectMcGroupTemplates(QDialog):
     def add_groups_items(self):
         """При открытии этого диалога получаем с МС список групп шаблонов и заполняем список выбора групп."""
         if self.device == 'NGFW':
-            err, result = self.parent.utm.get_device_templates_groups()
-        else:
-            err, result = self.parent.utm.get_dcfw_device_templates_groups()
+            err, result = self.parent.utm.get_ngfw_templates_groups()
+        elif self.device == 'DCFW':
+            err, result = self.parent.utm.get_dcfw_templates_groups()
         if err:
             func.message_alert(self, 'Не удалось получить список групп шаблонов!', result)
         else:
             self.groups_list.clear()
             for item in result:
                 self.groups_list.addItem(item['name'])
-                self.groups[item['name']] = item['device_templates']
+                self.groups[item['name']] = item['templates']
             self.groups_list.setCurrentRow(0)
 
     def select_dest_group(self, item_text):
@@ -1777,7 +1837,7 @@ class SelectConfigDirectoryWindow(QDialog):
                 self.base_path = self.main_window.ngfw_base_path
             case 'MC':
                 self.base_path = self.main_window.mc_base_path
-        list_dir = os.listdir(self.base_path)
+        list_dir = [name for name in os.listdir(self.base_path) if os.path.isdir(os.path.join(self.base_path, name))]
         self.config_directory = QComboBox()
         self.config_directory.addItems(sorted(list_dir))
         if self.mode == 'export':
@@ -1841,13 +1901,14 @@ class SelectDirectoryAndRealm(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.main_window = parent
+        self.base_path = self.main_window.mc_base_path
         self.setWindowTitle("Выбор каталога и области")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
 
         title = QLabel("<b><font color='green'>Выберите каталог и область МС в каталоге.")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        list_dir = os.listdir(self.main_window.mc_base_path)
+        list_dir = [name for name in os.listdir(self.base_path) if os.path.isdir(os.path.join(self.base_path, name))]
         self.config_dir = QComboBox()
         self.config_dir.addItems(sorted(list_dir))
         self.config_dir.setEditable(False)

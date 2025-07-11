@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # get_mc_temporary_data.py
 # Класс GetMcDcfwTemporaryData - для получения часто используемых данных.
-# Version 1.1  03.07.2025    (идентично для ug_ngfw_converter и universal_converter)
+# Version 1.2  10.07.2025    (идентично для ug_ngfw_converter и universal_converter)
 #
 
 import os, sys

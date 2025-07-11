@@ -215,47 +215,22 @@ class McXmlRpc:
                 return 1, f'Error mclib.get_object_names: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает словарь.
 
-######## EndPoint API module, выполняются только под администраторами областей (realm_admin/SF)#########
-    def get_endpoint_templates_groups(self, start=0, limit=1000, query={}):
-        """Получить для EndPoint список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
+    def get_dcfw_object_names(self, query={}):
+        """
+        Получить имя объекта DCFW области по его ID. Пример query: {'user': ['e5c2fc4b-5d85-378d-a00d-af7200000458'], ...}
+        """
         try:
-            result = self._server.v1.epdevices.endpoint.templates.groups.list(self._auth_token, start, limit, query, [])
+            result = self._server.v1.dcfwdevices.resolve.object.names(self._auth_token, query)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_endpoint_templates_groups: {err.faultString}].'
+                return 2, f'Нет прав на получение имени объекта [Error mclib.get_object_names: {err.faultString}].'
             else:
-                return 1, f'Error mclib.get_endpoint_templates_groups: [{err.faultCode}] — {err.faultString}'
-        for group in result['items']:
-            group['endpoint_templates'] = [x[0] for x in group['endpoint_templates'] if x[1]]
-        return 0, result['items']   # Возвращает [{id: str, name: str, endpoint_templates: [id_1, id_2, ...]}, ...]
-
-    def add_endpoint_templates_group(self, group_info):
-        """Для EndPoint создать новую группу шаблонов. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
-        try:
-            result = self._server.v1.epdevices.endpoint.templates.group.add(self._auth_token, group_info)
-        except rpc.Fault as err:
-            if err.faultCode == 5:
-                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_endpoint_templates_group: {err.faultString}].'
-            elif err.faultCode == 9:
-                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_device_template: {err.faultString}].'
-            else:
-                return 1, f'Error mclib.add_endpoint_templates_group: [{err.faultCode}] — {err.faultString}'
-        return 0, result    # Возвращает ID созданной группы шаблонов.
-
-    def get_endpoint_templates(self, start=0, limit=1000, query={}):
-        """Получить список шаблонов EndPoint области"""
-        try:
-            result = self._server.v1.epdevices.endpoint.templates.list(self._auth_token, start, limit, query, [])
-        except rpc.Fault as err:
-            if err.faultCode == 5:
-                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_endpoint_templates: {err.faultString}].'
-            else:
-                return 1, f'Error mclib.get_endpoint_templates: [{err.faultCode}] — {err.faultString}'
-        return 0, result['items']   # Возвращает список словарей.
+                return 1, f'Error mclib.get_object_names: [{err.faultCode}] — {err.faultString}'
+        return 0, result   # Возвращает словарь.
 
 ######## NGFW Template API module, выполняются только под администраторами областей (realm_admin/SF)#########
-    def get_device_templates_groups(self, start=0, limit=1000, query={}):
-        """Получить список групп области с шаблонами NGFW в каждой группе. Шаблоны только со статусом True"""
+    def get_ngfw_templates_groups(self, start=0, limit=1000, query={}):
+        """Получить список групп шаблонов NGFW области. Шаблоны только со статусом True"""
         try:
             result = self._server.v1.ccdevices.templates.groups.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
@@ -264,7 +239,8 @@ class McXmlRpc:
             else:
                 return 1, f'Error mclib.get_device_templates_groups: [{err.faultCode}] — {err.faultString}'
         for group in result['items']:
-            group['device_templates'] = [x[0] for x in group['device_templates'] if x[1]]
+            group['templates'] = [x[0] for x in group['device_templates'] if x[1]]
+            group.pop('device_templates', None)
         return 0, result['items']   # Возвращает [{id: str, name: str, device_templates: [id_1, id_2, ...]}, ...]
 
     def add_device_templates_group(self, group_info):
@@ -2517,19 +2493,19 @@ class McXmlRpc:
 ############################################## DCFW #########################################################
 #------------------------------------------------------------------------------------------------------------
 #---------- DCFW Template API module, выполняются только под администраторами областей (realm_admin/SF) -----
-    def get_dcfw_device_templates_groups(self, start=0, limit=1000, query={}):
+    def get_dcfw_templates_groups(self, start=0, limit=1000, query={}):
         """Получить список групп области для DCFW с шаблонами в каждой группе. Шаблоны только со статусом True"""
         try:
             result = self._server.v1.dcfwdevices.templates.groups.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_device_templates_groups: {err.faultString}].'
+                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_dcfw_templates_groups: {err.faultString}].'
             else:
-                return 1, f'Error mclib.get_dcfwdevice_templates_groups: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.get_dcfw_templates_groups: [{err.faultCode}] — {err.faultString}'
         for group in result['items']:
-            group['device_templates'] = [x[0] for x in group['dcfw_templates'] if x[1]]
+            group['templates'] = [x[0] for x in group['dcfw_templates'] if x[1]]
             group.pop('dcfw_templates', None)
-        return 0, result['items']   # Возвращает [{id: str, name: str, dcfw_templates: [id_1, id_2, ...]}, ...]
+        return 0, result['items']   # Возвращает [{id: str, name: str, templates: [id_1, id_2, ...]}, ...]
 
     def add_dcfw_device_templates_group(self, group_info):
         """Создать новую группу шаблонов DCFW в области. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
@@ -2537,11 +2513,11 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.templates.group.add(self._auth_token, group_info)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_device_templates_group: {err.faultString}].'
+                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_dcfw_device_templates_group: {err.faultString}].'
             elif err.faultCode == 9:
-                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_device_templates_group: {err.faultString}].'
+                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_dcfw_device_templates_group: {err.faultString}].'
             else:
-                return 1, f'Error mclib.add_dcfwdevice_templates_group: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.add_dcfw_device_templates_group: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданной группы шаблонов.
 
     def update_dcfw_device_templates_group(self, group_id, group_info):
@@ -2550,9 +2526,9 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.templates.group.update(self._auth_token, group_id, group_info)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Error: Нет прав на обновление группы шаблонов [Error mclib.update_device_templates_group: {err.faultString}].'
+                return 2, f'Error: Нет прав на обновление группы шаблонов [Error mclib.update_dcfw_device_templates_group: {err.faultString}].'
             else:
-                return 1, f'Error mclib.update_dcfwdevice_templates_group: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.update_dcfw_device_templates_group: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает True
 
     def get_dcfw_device_templates(self, start=0, limit=1000, query={}):
@@ -2561,9 +2537,9 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.templates.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_device_templates: {err.faultString}].'
+                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_dcfw_device_templates: {err.faultString}].'
             else:
-                return 1, f'Error mclib.get_dcfwdevice_templates: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.get_dcfw_device_templates: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей.
 
     def fetch_dcfw_device_template(self, template_id):
@@ -2572,9 +2548,9 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.template.fetch(self._auth_token, template_id)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получение шаблона [Error mclib.fetch_device_template: {err.faultString}].'
+                return 2, f'Нет прав на получение шаблона [Error mclib.fetch_dcfw_device_template: {err.faultString}].'
             else:
-                return 1, f'Error mclib.fetch_dcfwdevice_template: [{err.faultCode}] — {err.faultString}'
+                return 1, f'Error mclib.fetch_dcfw_device_template: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает словарь.
 
     def add_dcfw_device_template(self, template):
@@ -2583,9 +2559,9 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.template.add(self._auth_token, template)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на добавление шаблона устройства [Error mclib.add_device_template: {err.faultString}].'
+                return 2, f'Нет прав на добавление шаблона устройства [Error mclib.add_dcfw_device_template: {err.faultString}].'
             elif err.faultCode == 9:
-                return 2, f'Шаблон с таким именем уже существует [Error mclib.add_device_template: {err.faultString}].'
+                return 2, f'Шаблон с таким именем уже существует [Error mclib.add_dcfw_device_template: {err.faultString}].'
             else:
                 return 1, f'Error mclib.add_dcfwdevice_template: [{err.faultCode}] — {err.faultString}'
         return 0, result    # Возвращает ID созданного шаблона.
@@ -2596,7 +2572,7 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.devices.list(self._auth_token, start, limit, query, [])
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на получение списка устройств DCFW [Error mclib.get_devices_list: {err.faultString}].'
+                return 2, f'Нет прав на получение списка устройств DCFW [Error mclib.get_dcfw_devices_list: {err.faultString}].'
             else:
                 return 1, f'Error mclib.get_dcfw_devices_list: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']   # Возвращает список словарей.
@@ -2607,7 +2583,7 @@ class McXmlRpc:
             result = self._server.v1.dcfwdevices.device.add(self._auth_token, device_info)
         except rpc.Fault as err:
             if err.faultCode == 5:
-                return 2, f'Нет прав на создание устройства DCFW [Error mclib.get_devices_list: {err.faultString}].'
+                return 2, f'Нет прав на создание устройства DCFW [Error mclib.add_dcfw_device: {err.faultString}].'
             else:
                 return 1, f'Error mclib.add_dcfw_device: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возврает ID созданного устройства.
@@ -2926,12 +2902,12 @@ class McXmlRpc:
             return 1, f'Error mclib.update_template_idps_signature: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
-    def fetch_template_idps_signature(self, template_id, signature_id):
+    def fetch_dcfw_template_idps_signature(self, template_id, signature_id):
         """Получить сигнатуру IDPS (СОВ) по ID из шаблона DCFW"""
         try:
             result = self._server.v2.dcfwidps.signature_fetch(self._auth_token, template_id, signature_id)
         except rpc.Fault as err:
-            return 1, f'Error mclib.fetch_template_idps_signature: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.fetch_dcfw_template_idps_signature: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает словарь
 
     def get_dcfw_template_idps_profiles(self, template_id, start=0, limit=10000, query={}):
@@ -3169,6 +3145,22 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error mclib.set_dcfw_template_general_settings: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает True
+
+    def get_dcfw_template_admins_profiles(self, template_id, start=0, limit=10000, query={}):
+        """Получить список профилей администраторов шаблона DCFW"""
+        try:
+            result = self._server.v1.dcfwadministrators.administrator.profiles.list(self._auth_token, template_id, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_dcfw_template_admins_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def get_dcfw_template_admins(self, template_id, start=0, limit=10000, query={}):
+        """Получить список администраторов шаблона DCFW"""
+        try:
+            result = self._server.v1.dcfwadministrators.administrators.list(self._auth_token, template_id, start, limit, query, [])
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_dcfw_template_admins: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
 
     def get_dcfw_template_certificates(self, template_id, start=0, limit=500, query={}):
         """Получить список сертификатов DCFW шаблона"""
@@ -3476,7 +3468,7 @@ class McXmlRpc:
             return 1, f'Error mclib.update_dcfw_template_dns_setting: [{err.faultCode}] — {err.faultString}'
         return 0, result   # Возвращает True
 
-#--------------------------------------------- VPF DCFW ---------------------------------------------------------
+#--------------------------------------------- VRF DCFW ---------------------------------------------------------
     def get_dcfw_template_vrfs(self, template_id):
         """Получить список VRFs шаблона DCFW со всей конфигурацией"""
         try:
@@ -3510,7 +3502,7 @@ class McXmlRpc:
         try:
             result = self._server.v1.dcfwaccounts.groups.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
-            return 1, f'Error mclib.get_dcfw_template_groups_list: [{err.faultCode}] — {err.faultString}'
+            return 1, f'Error mclib.get_dcfw_template_groups: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
     def add_dcfw_template_group(self, template_id, group):
@@ -4084,24 +4076,6 @@ class McXmlRpc:
             return 1, f'Error mclib.update_dcfw_template_snmp_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
-#---------------------------------------- Служебные методы DCFW ---------------------------------------------------------
-#    def get_ip_protocol_list(self):
-#        """Получить список поддерживаемых IP протоколов"""
-#        try:
-#            result = self._server.v1.core.ip.protocol.list(self._auth_token)
-#        except rpc.Fault as err:
-#            return 1, f"Error mclib.get_ip_protocol_list: [{err.faultCode}] — {err.faultString}"
-#        else:
-#            return 0, {x['name'] for x in result}  # Возвращает set {protocol_name, ...}
-
-#    def get_l7_apps(self, template_id, start=0, limit=500000, query={}):
-#        """Получить список приложений l7 шаблона"""
-#        try:
-#            result = self._server.v1.ccl7.signatures.list(self._auth_token, template_id, start, limit, query, [])
-#            return 0, [{'id': x['signature_id'], 'name': x['name']} for x in result['items']]
-#        except rpc.Fault as err:
-#            return 1, f"Error mclib.get_l7_apps: [{err.faultCode}] — {err.faultString}"
-
     def get_dcfw_l7_categories(self):
         """
         Получить список категорий l7 DCFW.
@@ -4113,6 +4087,90 @@ class McXmlRpc:
             return 1, f"Error mclib.get_dcfw_l7_categories: [{err.faultCode}] — {err.faultString}"
         else:
             return 0, result['items']
+
+
+############################################# EndPoint #######################################################
+#-------------------------------------------------------------------------------------------------------------
+#----------------------- EndPoint API module, выполняются только под администраторами областей ---------------
+    def get_endpoint_templates_groups(self, start=0, limit=1000, query={}):
+        """Получить для EndPoint список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
+        try:
+            result = self._server.v1.epdevices.endpoint.templates.groups.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_endpoint_templates_groups: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_endpoint_templates_groups: [{err.faultCode}] — {err.faultString}'
+        for group in result['items']:
+            group['templates'] = [x[0] for x in group['endpoint_templates'] if x[1]]
+            group.pop('endpoint_templates', None)
+        return 0, result['items']   # Возвращает [{id: str, name: str, templates: [id_1, id_2, ...]}, ...]
+
+    def add_endpoint_templates_group(self, group_info):
+        """Для EndPoint создать новую группу шаблонов. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
+        try:
+            result = self._server.v1.epdevices.endpoint.templates.group.add(self._auth_token, group_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_endpoint_templates_group: {err.faultString}].'
+            elif err.faultCode == 9:
+                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_endpoint_templates_group: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.add_endpoint_templates_group: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID созданной группы шаблонов.
+
+    def get_endpoint_templates(self, start=0, limit=1000, query={}):
+        """Получить список шаблонов EndPoint области"""
+        try:
+            result = self._server.v1.epdevices.endpoint.templates.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_endpoint_templates: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_endpoint_templates: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей.
+
+
+############################################### LogAn ########################################################
+#-------------------------------------------------------------------------------------------------------------
+#----------------------- LogAn API module, выполняются только под администраторами областей ------------------
+    def get_logan_templates_groups(self, start=0, limit=1000, query={}):
+        """Получить для LogAn список групп области с шаблонами в каждой группе. Шаблоны только со статусом True"""
+        try:
+            result = self._server.v1.logandevices.templates.groups.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на получение списка шаблонов [Error mclib.get_logan_templates_groups: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_logan_templates_groups: [{err.faultCode}] — {err.faultString}'
+        for group in result['items']:
+            group['templates'] = [x[0] for x in group['logan_templates'] if x[1]]
+            group.pop('logan_templates', None)
+        return 0, result['items']   # Возвращает [{id: str, name: str, endpoint_templates: [id_1, id_2, ...]}, ...]
+
+    def add_logan_templates_group(self, group_info):
+        """Для LogAn создать новую группу шаблонов. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
+        try:
+            result = self._server.v1.logandevices.templates.group.add(self._auth_token, group_info)
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Error: Нет прав на добавление группы шаблонов в область [Error mclib.add_logan_templates_group: {err.faultString}].'
+            elif err.faultCode == 9:
+                return 2, f'Error: Группа шаблонов с таким именем уже существует [Error mclib.add_logan_template: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.add_logan_templates_group: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID созданной группы шаблонов.
+
+    def get_logan_templates(self, start=0, limit=1000, query={}):
+        """Получить список шаблонов LogAn области"""
+        try:
+            result = self._server.v1.logandevices.templates.list(self._auth_token, start, limit, query, [])
+        except rpc.Fault as err:
+            if err.faultCode == 5:
+                return 2, f'Нет прав на получение списка шаблонов [Error mclib.get_logan_templates: {err.faultString}].'
+            else:
+                return 1, f'Error mclib.get_logan_templates: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']   # Возвращает список словарей.
 
 
 class UtmError(Exception): pass

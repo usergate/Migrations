@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
-# Импорт ранее экспортированной группы шаблонов в раздел DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.0   07.07.2025  (только для ug_ngfw_converter)
+# Импорт ранее экспортированной группы шаблонов DCFW в раздел DCFW UserGate Management Center версии 7 и выше.
+# Версия 1.2   10.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -29,7 +29,7 @@ from common_classes import MyMixedService, UsercatalogLdapServers, BaseObject, B
 
 
 class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
-    """Импортируем разделы конфигурации в шаблон МС"""
+    """Импортируем группу шаблонов DCFW на МС"""
     stepChanged = pyqtSignal(str)
 
     def __init__(self, utm, device_type=None, base_path=None, device_groups=None, selected_group=None, selected_templates=None):
@@ -268,7 +268,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             for item in result:
                 self.realm_templates[item['id']] = item['name']
             
-            err, result = self.utm.get_dcfw_device_templates_groups()
+            err, result = self.utm.get_dcfw_templates_groups()
             if err:
                 self.stepChanged.emit('iRED|Не удалось получить список групп шаблонов DCFW области.')
                 self.stepChanged.emit(f'RED|{result}')
@@ -276,7 +276,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             else:
                 for item in result:
                     self.groups[item['name']] = item['id']
-                    self.group_templates[item['name']] = {self.realm_templates[template_id]: template_id for template_id in item['device_templates']}
+                    self.group_templates[item['name']] = {self.realm_templates[template_id]: template_id for template_id in item['templates']}
 
 
     def import_dcfw_devices(self):
@@ -3753,26 +3753,29 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             item.pop('scenario_rule_id', None)
 
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
-            if 'ips_profile' in item and item['ips_profile']:
-                try:
-                    item['ips_profile'] = idps_profiles[item['ips_profile']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль СОВ {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
-                    item['ips_profile'] = False
-                    item['error'] = True
-            else:
-                item['ips_profile'] = False
-            if 'l7_profile' in item and item['l7_profile']:
-                try:
-                    item['l7_profile'] = l7_profiles[item['l7_profile']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль приложений {err}. Возможно он отсутствует в этой группе шаблонов.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
-                    item['l7_profile'] = False
-                    item['error'] = True
-            else:
-                item['l7_profile'] = False
+            if 'ips_profile' in item:
+                item['profiles'] = {
+                    'l7': item.pop('l7_profile', False),
+                    'idps': item.pop('ips_profile', False),
+                    'content': False,
+                    'tls': False
+                }
+
+            try:
+                item['profiles']['idps'] = idps_profiles[item['profiles']['idps']].id
+            except KeyError as err:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль СОВ {err}. Возможно он отсутствует в этой группе шаблонов.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
+                item['profiles']['idps'] = False
+                item['error'] = True
+
+            try:
+                item['profiles']['l7'] = l7_profiles[item['profiles']['l7']].id
+            except KeyError as err:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль приложений {err}. Возможно он отсутствует в этой группе шаблонов.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
+                item['profiles']['l7'] = False
+                item['error'] = True
 
             item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
             item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
@@ -4757,7 +4760,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
     def get_l7_profiles(self):
         """Получаем список профилей приложений группы шаблонов DCFW и устанавливаем значение self.mc_data['l7_profiles']"""
-        self.mc_data['l7_profiles'] = {}
+        self.mc_data['l7_profiles'] = {False: BaseObject(id=False, template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_dcfw_template_l7_profiles(uid)
             if err:
@@ -4821,7 +4824,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
     def get_idps_profiles(self):
         """Получаем список профилей СОВ группы шаблонов DCFW и устанавливаем значение self.mc_data['idps_profiles']"""
-        self.mc_data['idps_profiles'] = {}
+        self.mc_data['idps_profiles'] = {False: BaseObject(id=False, template_id='', template_name='')}
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_dcfw_template_idps_profiles(uid)
             if err:
@@ -5169,7 +5172,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                 break
             for x in result:
                 if x['name'] in self.mc_data['zones']:
-                    self.stepChanged.emit(f'ORANGE|    Зона "{x["name"]}" обнаружен в нескольких шаблонах группы. Зона из шаблона "{name}" не будет использована.')
+                    self.stepChanged.emit(f'ORANGE|    Зона "{x["name"]}" обнаружена в нескольких шаблонах группы. Зона из шаблона "{name}" не будет использована.')
                 else:
                     self.mc_data['zones'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 

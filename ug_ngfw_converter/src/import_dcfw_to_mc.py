@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
-# Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 1.2   04.07.2025  (только для ug_ngfw_converter)
+# Класс импорта разделов конфигурации в шаблон DCFW UserGate Management Center версии 7 и выше.
+# Версия 1.3   10.07.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -3875,26 +3875,29 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
             item['position_layer'] = 'pre'
-            if 'ips_profile' in item and item['ips_profile']:
-                try:
-                    item['ips_profile'] = idps_profiles[item['ips_profile']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль СОВ {err}. Загрузите профили СОВ и повторите попытку.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
-                    item['ips_profile'] = False
-                    item['error'] = True
-            else:
-                item['ips_profile'] = False
-            if 'l7_profile' in item and item['l7_profile']:
-                try:
-                    item['l7_profile'] = l7_profiles[item['l7_profile']].id
-                except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль приложений {err}. Загрузите профили приложений и повторите попытку.')
-                    item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
-                    item['l7_profile'] = False
-                    item['error'] = True
-            else:
-                item['l7_profile'] = False
+            if 'ips_profile' in item:
+                item['profiles'] = {
+                    'l7': item.pop('l7_profile', False),
+                    'idps': item.pop('ips_profile', False),
+                    'content': False,
+                    'tls': False
+                }
+
+            try:
+                item['profiles']['idps'] = idps_profiles[item['profiles']['idps']].id
+            except KeyError as err:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль СОВ {err}. Загрузите профили СОВ и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
+                item['profiles']['idps'] = False
+                item['error'] = True
+
+            try:
+                item['profiles']['l7'] = l7_profiles[item['profiles']['l7']].id
+            except KeyError as err:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль приложений {err}. Загрузите профили приложений и повторите попытку.')
+                item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
+                item['profiles']['l7'] = False
+                item['error'] = True
 
             item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
             item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)

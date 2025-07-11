@@ -29,7 +29,7 @@ from services import default_urlcategorygroup
 from common_classes import WriteBinFile, UsercatalogLdapServers, BaseObject
 
 
-class GetMcNgfwTemporaryData(QThread, WriteBinFile):
+class GetMcNgfwTemporaryData(QThread, WriteBinFile, UsercatalogLdapServers):
     """Получаем конфигурационные данные с MC для заполнения служебных структур данных."""
     stepChanged = pyqtSignal(str)
     def __init__(self, utm, templates):

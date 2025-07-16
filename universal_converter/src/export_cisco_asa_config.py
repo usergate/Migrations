@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # export_cisco_asa_config.py (convert configuration from Cisco ASA to NGFW UserGate).
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 2.4 24.04.2025
+# Версия 2.5 16.07.2025
 #
 
 import os, sys, json
@@ -380,17 +380,22 @@ class ConvertCiscoASAConfig(QThread, MyConv):
             'nameif': '',
             'description': '',
             'vlan': 0,
-            'ipv4': ''
+            'ipv4': '',
+            'mode': 'static',
         }
         for item in data_block:
-                match item[0]:
-                    case 'description':
-                        iface['description'] = ' '.join(item[1:])
-                    case 'vlan':
-                        iface['vlan'] = int(item[1])
-                    case 'nameif':
-                        iface['nameif'] = item[1]
-                    case 'ip':
+            match item[0]:
+                case 'description':
+                    iface['description'] = ' '.join(item[1:])
+                case 'vlan':
+                    iface['vlan'] = int(item[1])
+                case 'nameif':
+                    iface['nameif'] = item[1]
+                case 'ip':
+                    if item[2] == 'dhcp':
+                        iface['ipv4'] = False
+                        iface['mode'] = 'dhcp'
+                    else:
                         err, packed_address = self.pack_ip_address(item[2], item[3])
                         if not err:
                             iface['ipv4'] = packed_address
@@ -989,10 +994,10 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                     'master': False,
                     'netflow_profile': 'undefined',
                     'lldp_profile': 'undefined',
-                    'ipv4': [item['ipv4']],
+                    'ipv4': [item['ipv4']] if item['ipv4'] else [],
                     'ifalias': '',
                     'flow_control': False,
-                    'mode': 'static',
+                    'mode': item['mode'],
                     'mtu': data['zones'][item['nameif']] if item.get('nameif', False) in data['zones'] else 1500,
                     'tap': False,
                     'dhcp_relay': {

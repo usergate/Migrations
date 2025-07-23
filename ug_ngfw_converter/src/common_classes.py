@@ -401,7 +401,7 @@ class MyConv(MyMixedService):
         try:
             interface = ipaddress.ip_interface(ip)
             if isinstance(interface, ipaddress.IPv4Interface):
-                return f'{ip}/{interface.network.prefixlen}'
+                return f'{interface.ip}/{interface.network.prefixlen}'
             else:
                 return False
         except ValueError as err:

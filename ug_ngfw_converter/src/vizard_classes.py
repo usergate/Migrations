@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.6   10.07.2025
+# Версия 2.7   23.07.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -630,17 +630,18 @@ class SelectMcExportMode(QWidget):
     def get_dcfw_groups_templates(self):
         """Для DCFW. Получаем группы шаблонов области и шаблоны каждой группы."""
         groups = {}
-        err, result = self.utm.get_dcfw_device_templates()
-        if err:
-            func.message_alert(self, 'Не удалось получить список шаблонов DCFW', result)
-        else:
-            realm_templates = {x['id']: x['name'] for x in result}
-            err, result = self.utm.get_dcfw_templates_groups()
+        if self.utm.float_version >= 7.4:
+            err, result = self.utm.get_dcfw_device_templates()
             if err:
-                func.message_alert(self, 'Не удалось получить список групп шаблонов DCFW', result)
+                func.message_alert(self, 'Не удалось получить список шаблонов DCFW', result)
             else:
-                for item in result:
-                    groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['templates']}
+                realm_templates = {x['id']: x['name'] for x in result}
+                err, result = self.utm.get_dcfw_templates_groups()
+                if err:
+                    func.message_alert(self, 'Не удалось получить список групп шаблонов DCFW', result)
+                else:
+                    for item in result:
+                        groups[item['name']] = {template_id: realm_templates[template_id] for template_id in item['templates']}
         return groups
 
 

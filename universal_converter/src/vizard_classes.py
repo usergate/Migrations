@@ -19,6 +19,7 @@ import export_fortigate_config as fg
 import export_huawei_config as huawei
 import export_checkpoint_config as cp
 import export_mikrotik_config as mikrotik
+import export_paloalto_config as paloalto
 import import_to_mc
 import get_ngfw_temporary_data as gtd
 from export_checkpoint_old_config import ConvertOldCheckPointConfig
@@ -346,7 +347,7 @@ class SelectExportMode(QWidget):
         frame_nodeinfo.setLayout(hbox_nodeinfo)
 
         list_item_font = QFont("Serif", pointSize=14, weight=600)
-        vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Check Point (old)', 'Fortigate', 'Huawei', 'MikroTik']
+        vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Check Point (old)', 'Fortigate', 'Huawei', 'MikroTik', 'PaloAlto']
         self.vendor_list = QListWidget()
         self.vendor_list.setMaximumWidth(180)
         for vendor in vendors:
@@ -492,6 +493,8 @@ class SelectExportMode(QWidget):
                         self.thread = huawei.ConvertHuaweiConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'MikroTik':
                         self.thread = mikrotik.ConvertMikrotikConfig(self.vendor_current_path, self.parent.get_ug_config_path())
+                    case 'PaloAlto':
+                        self.thread = paloalto.ConvertPaloaltoConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
                 self.thread.start()

@@ -331,7 +331,7 @@ class MyConv(MyMixedService):
     def create_ip_list(self, ips=[], name=None, descr=None):
         """
         Создаём IP-лист для правила. Возвращаем имя ip-листа.
-        В вызываемом модуле должна быть структура: self.ip_lists = set()
+        В вызываемом модуле должна быть структура: self.ip_lists = set() или dict{}.
         """
         iplist_name = name if name else ips[0]
         err, iplist_name = self.get_transformed_name(iplist_name, descr='Имя списка IP-адресов')
@@ -357,7 +357,10 @@ class MyConv(MyMixedService):
             json_file = os.path.join(current_path, f'{ip_list["name"].translate(self.trans_filename)}.json')
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-            self.ip_lists.add(iplist_name)
+            if isinstance(self.ip_lists, dict):
+                self.ip_lists[iplist_name] = ips[0]
+            else:
+                self.ip_lists.add(iplist_name)
             self.stepChanged.emit(f'NOTE|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
 
         return iplist_name
@@ -372,7 +375,7 @@ class MyConv(MyMixedService):
         try:
             interface = ipaddress.ip_interface(ip)
             if isinstance(interface, ipaddress.IPv4Interface):
-                return f'{ip}/{interface.network.prefixlen}'
+                return f'{interface.ip}/{interface.network.prefixlen}'
             else:
                 return False
         except ValueError as err:

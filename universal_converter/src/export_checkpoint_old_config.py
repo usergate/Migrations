@@ -25,7 +25,7 @@
 import os, sys, json, shlex
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import MyConv
-from services import ip_proto, network_proto, ug_services, ServicePorts, service_ports
+from services import ip_proto, network_proto
 
 
 class ConvertOldCheckPointConfig(QThread, MyConv):

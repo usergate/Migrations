@@ -2270,6 +2270,79 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         """Импортируем интерфесы VPN."""
         self.stepChanged.emit('BLUE|    Импорт интерфейсов VPN в раздел "Сеть/Интерфейсы"')
         error = 0
+
+        mc_ifaces = self.mc_data['interfaces']
+        netflow_profiles = self.mc_data['netflow_profiles']
+        lldp_profiles = self.mc_data['lldp_profiles']
+
+        for item in data:
+            if 'kind' in item and item['kind'] == 'vpn':
+                item['node_name'] = 'cluster'
+                item.pop('running', None)
+                item.pop('master', None)
+                item.pop('mac', None)
+                item.pop('id', None)
+
+                iface_name = f'{item["name"]}:cluster'
+                if iface_name in mc_ifaces:
+                    if self.template_id == mc_ifaces[iface_name].template_id:
+                        self.stepChanged.emit(f'uGRAY|       Интерфейс "{item["name"]}" уже существует в текущем шаблоне на узле кластера "{self.node_name}".')
+                    else:
+                        self.stepChanged.emit(f'sGREEN|       Интерфейс "{item["name"]}" уже существует в шаблоне "{mc_ifaces[iface_name].template_name}" на узле кластера "{self.node_name}".')
+                    continue
+
+                if item['zone_id']:
+                    try:
+                        item['zone_id'] = self.mc_data['zones'][item['zone_id']].id
+                    except KeyError as err:
+                        self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найдена зона {err}. Импортируйте зоны и повторите попытку.')
+                        item['zone_id'] = 0
+                        error = 1
+
+                new_ipv4 = []
+                for ip in item['ipv4']:
+                    err, result = self.unpack_ip_address(ip)
+                    if err:
+                        self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не удалось преобразовать IP: "{ip}". IP-адрес использован не будет. {result}')
+                        error = 1
+                    else:
+                        new_ipv4.append(result)
+                if not new_ipv4:
+                    item['mode'] = 'manual'
+                item['ipv4'] = new_ipv4
+
+                try:
+                    item['lldp_profile'] = lldp_profiles[item['lldp_profile']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найден lldp profile "{item["lldp_profile"]}". Импортируйте профили LLDP и повторите попытку.')
+                    item['lldp_profile'] = 'undefined'
+                    error = 1
+                try:
+                    item['netflow_profile'] = netflow_profiles[item['netflow_profile']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|       Error: [Интерфейс "{item["name"]}"] Не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow и повторите попытку.')
+                    item['netflow_profile'] = 'undefined'
+                    error = 1
+
+                err, result = self.utm.add_template_interface(self.template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
+                    error = 1
+                else:
+                    mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
+                    self.stepChanged.emit(f'BLACK|       Интерфейс VPN "{item["name"]}" импортирован на узел кластера "cluster".')
+
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов VPN.')
+        else:
+            self.stepChanged.emit('GREEN|       Импорт интерфейсов VPN завершён.')
+
+
+    def import_vlan_interfaces(self, path, data):
+        """Импортируем интерфесы VLAN."""
+        self.stepChanged.emit('BLUE|    Импорт интерфейсов VLAN в раздел "Сеть/Интерфейсы"')
+        error = 0
         if isinstance(self.ngfw_vlans, int):
             self.stepChanged.emit(self.new_vlans)
             if self.ngfw_vlans == 1:
@@ -3519,7 +3592,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in users:
             user_groups = item.pop('groups', None)
             error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя пользователя')
-            error, item['auth_login'] = self.get_transformed_userlogin(item['auth_login'], err=error, descr='Логин пользователя')
+            item['auth_login'] = self.get_transformed_userlogin(item['auth_login'])
 
             if item['name'] in local_users:
                 if self.template_id == local_users[item['name']].template_id:

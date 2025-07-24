@@ -5,7 +5,7 @@
 МС версии 7.1 и выше.
 
 <p align="center"><img src="main_image.png"></p>
-<p align="center"><img src="main_image2.png"></p>
+<p align="center"><img src="ngfw_image2.png"></p>
 
 Программа работает в Ubuntu версии 24.04 или выше.<br>
 <b>Обращаем ваше внимание:</b> если вы запускаете данную программу в Ubuntu более старой версии или в другой

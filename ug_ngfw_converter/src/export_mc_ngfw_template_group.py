@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс экспорта группы шаблонов NGFW из UserGate Management Center.
-# Версия 1.6  09.07.2025
+# Версия 1.7  19.08.2025
 #
 
 import os, sys, json
@@ -2924,7 +2924,8 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
 
         data['auth_captive'].pop('template_id', None)
         data['logout_captive'].pop('template_id', None)
-        data['cert_captive'].pop('template_id', None)
+        if self.utm.float_version >= 7.3:   # В более старой версии этого нет.
+            data['cert_captive'].pop('template_id', None)
         data['block_page_domain'].pop('template_id', None)
         data['ftpclient_captive'].pop('template_id', None)
         data['ftp_proxy_enabled'].pop('template_id', None)

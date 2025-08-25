@@ -347,6 +347,7 @@ class SelectExportMode(QWidget):
         frame_nodeinfo.setLayout(hbox_nodeinfo)
 
         list_item_font = QFont("Serif", pointSize=14, weight=600)
+#        vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Check Point (old)', 'Fortigate', 'Huawei', 'Kerio', 'MikroTik', 'PaloAlto']
         vendors = ['Blue Coat', 'Cisco ASA', 'Cisco FPR', 'Check Point', 'Check Point (old)', 'Fortigate', 'Huawei', 'MikroTik', 'PaloAlto']
         self.vendor_list = QListWidget()
         self.vendor_list.setMaximumWidth(180)
@@ -491,6 +492,9 @@ class SelectExportMode(QWidget):
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Huawei':
                         self.thread = huawei.ConvertHuaweiConfig(self.vendor_current_path, self.parent.get_ug_config_path())
+                    case 'Kerio':
+                        import export_kerio_config as kerio
+                        self.thread = kerio.ConvertKerioConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'MikroTik':
                         self.thread = mikrotik.ConvertMikrotikConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'PaloAlto':

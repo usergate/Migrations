@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 4.2 11.04.2024
+# Версия 4.3 25.08.2025
 #
 
 import os, sys, json, copy
@@ -1341,7 +1341,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                 'content': []
             }
             if 'host-domain-name-suffix' not in value and list_name != 'All URLs (default)':
-                self.stepChanged.emit(f'RED|       Запись "{key}" не конвертирована так как не имеет host-domain-name-suffix.')
+                self.stepChanged.emit(f'RED|       Error: Запись "{key}" не конвертирована так как не имеет host-domain-name-suffix.')
                 error = 1
                 continue
 
@@ -1945,12 +1945,15 @@ class ConvertFortigateConfig(QThread, MyConv):
             return
         self.stepChanged.emit('BLUE|Конвертация правил DNAT/Порт-форвардинга.')
 
+        n = 0
         error = 0
         rules = []
         ips_for_rules = set()
         for key, value in data['config firewall vip'].items():
             if value and 'type' not in value:
                 if 'mappedip' in value:
+                    value['mappedip'] = value['mappedip'].split('/')[0]
+                    value['extip'] = value['extip'].split('/')[0]
                     services = []
                     port_mappings = []
                     if value['extip'] in ips_for_rules:
@@ -1999,7 +2002,8 @@ class ConvertFortigateConfig(QThread, MyConv):
                         'scenario_rule_id': False
                     }
                     rules.append(rule)
-                    self.stepChanged.emit(f'BLACK|    Создано правило {rule["action"]} "{rule["name"]}".')
+                    n += 1
+                    self.stepChanged.emit(f'BLACK|    {n} - Создано правило {rule["action"]} "{rule["name"]}".')
 
         self.ip_lists.update(ips_for_rules)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 4.4   04.06.2025
+# Версия 4.5   28.08.2025
 # Общий класс для работы с xml-rpc для NGFW и DCFW
 #
 # Коды возврата:
@@ -102,6 +102,8 @@ class UtmXmlRpc:
                 return 1, f"Ошибка utm.ping_session: [{err.faultCode}] — {err.faultString}"
         except OSError as err:
             return 1, f'Ошибка utm.login: {err} (Node: {self.server_ip}).'
+        except Exception as err:
+            return 1, f'Ошибка utm.ping_session: {err}.'
         return 0, result # Возвращает True
 
 ################################### Settings ####################################

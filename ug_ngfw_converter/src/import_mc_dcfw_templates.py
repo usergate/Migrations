@@ -234,7 +234,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     self.import_dcfw_devices()  # Импортируем устройства DCFW
 
                     if self.error:
-                        self.stepChanged.emit('iRED|\nИмпорт группы шаблонов прерван. Устраните ошибки и аовторите импорт.\n')
+                        self.stepChanged.emit('iRED|\nИмпорт группы шаблонов прерван. Устраните ошибки и повторите импорт.\n')
                         return
 
                     for section in (self.import_library_funcs, self.import_shared_1, self.import_shared_2, self.import_shared_3, self.import_funcs):
@@ -2975,8 +2975,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                 if '\\' in user:
                     n += 1
                     if ' ' in user:  # Для импорта из версий шаблонов NGFW > 7.2
-                        user_domain_name = user.split()[1].replace('(', '').replace(')', '')    # Убираем логин и скобки, оставляем имя.
-                    domain, name = user_domain_name.split('\\')
+                        user = user.split()[1].replace('(', '').replace(')', '')    # Убираем логин и скобки, оставляем имя.
+                    domain, name = user.split('\\')
                     try:
                         ldap_id = self.mc_data['ldap_servers'][domain.lower()]
                     except KeyError:

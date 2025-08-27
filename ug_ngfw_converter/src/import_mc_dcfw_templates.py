@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов DCFW в раздел DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.2   10.07.2025  (только для ug_ngfw_converter)
+# Версия 1.3   27.08.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -239,12 +239,11 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
                     for section in (self.import_library_funcs, self.import_shared_1, self.import_shared_2, self.import_shared_3, self.import_funcs):
                         for template in self.selected_templates:
-#                            self.stepChanged.emit(f'TEST|\nИмпортируем разделы конфигурации в шаблон "{template}".')
+                            self.stepChanged.emit(f'TEST|\nИмпортируем разделы конфигурации в шаблон "{template}".')
                             if (path_dict := self.template_config_section_paths.get(template, False)):
                                 template_id = self.group_templates[self.selected_group][template]
                                 for key, value in section.items():
                                     if key in path_dict:
-#                                        print(key, ' ---- ', path_dict[key])
                                         value(path_dict[key], template_id, template)
             else:
                 self.stepChanged.emit(f'GRAY|    В группе шаблонов "{self.selected_group}" нет шаблонов для импорта.')
@@ -289,11 +288,14 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             return
 
         error = 0
+        n = 0
         for item in data:
             if item['name'] in self.mc_data['devices_list']:
-                self.stepChanged.emit(f'uGRAY|    Устройство DCFW "{item["name"]}" уже существует.')
+                if self.selected_group == item['device_templates_group']:
+                    self.stepChanged.emit(f'uGRAY|    Устройство DCFW "{item["name"]}" для группы шаблонов "{self.selected_group}" уже существует.')
             else:
                 if self.selected_group == item['device_templates_group']:   # Проверяем что устройство принадлежит импортируемой группе шаблонов.
+                    n = 1
                     try:
                         item['device_templates_group'] = self.groups[item['device_templates_group']]
                     except KeyError:
@@ -309,8 +311,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     else:
                         self.mc_data['devices_list'][item['name']] = result
                         self.stepChanged.emit(f'BLACK|    Устройство DCFW "{item["name"]}" импортировано.')
-                else:
-                    self.stepChanged.emit(f'uGRAY|    Нет устройств DCFW для группы шаблонов "{self.selected_group}".')
+        if not n:
+            self.stepChanged.emit(f'uGRAY|    Нет устройств DCFW для группы шаблонов "{self.selected_group}".')
+
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте устройств DCFW.')

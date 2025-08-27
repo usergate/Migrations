@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов на UserGate Management Center версии 7 и выше.
-# Версия 1.0   03.07.2025  (только для ug_ngfw_converter)
+# Версия 1.1   27.08.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -336,11 +336,14 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             return
 
         error = 0
+        n = 0
         for item in data:
             if item['name'] in self.mc_data['devices_list']:
-                self.stepChanged.emit(f'uGRAY|    Устройство NGFW "{item["name"]}" уже существует.')
+                if self.selected_group == item['device_templates_group']:
+                    self.stepChanged.emit(f'uGRAY|    Устройство NGFW "{item["name"]}" для группы шаблонов "{self.selected_group}" уже существует.')
             else:
                 if self.selected_group == item['device_templates_group']:   # Проверяем что устройство принадлежит импортируемой группе шаблонов.
+                    n = 1
                     try:
                         item['device_templates_group'] = self.groups[item['device_templates_group']]
                     except KeyError:
@@ -356,8 +359,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     else:
                         self.mc_data['devices_list'][item['name']] = result
                         self.stepChanged.emit(f'BLACK|    Устройство NGFW "{item["name"]}" импортировано.')
-                else:
-                    self.stepChanged.emit(f'uGRAY|    Нет устройств NGFW для группы шаблонов "{self.selected_group}".')
+        if not n:
+            self.stepChanged.emit(f'uGRAY|    Нет устройств NGFW для группы шаблонов "{self.selected_group}".')
+
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте устройств NGFW.')
@@ -3501,8 +3505,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                 if '\\' in user:
                     n += 1
                     if ' ' in user: # В версиях до 7.3 имя было 'domain\\user_name', сейчас 'User1 (domain\\user1)'
-                        user_domain_name = user.split()[1].replace('(', '').replace(')', '')    # Убираем логин, оставляем имя и убираем скобки
-                    domain, name = user_domain_name.split('\\')
+                        user = user.split()[1].replace('(', '').replace(')', '')    # Убираем логин, оставляем имя и убираем скобки
+                    domain, name = user.split('\\')
                     try:
                         ldap_id = self.mc_data['ldap_servers'][domain.lower()]
                     except KeyError:

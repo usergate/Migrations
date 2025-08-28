@@ -382,6 +382,7 @@ zone_services = {
     31: "UserID syslog collector",
     32: "BFD",
     33: "Endpoints connect",
+    34: "API XML RPC поверх HTTPS",
 }
 
 # Для конвертации с Cisco FPR

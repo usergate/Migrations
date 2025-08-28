@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс экспорта группы шаблонов NGFW из UserGate Management Center.
-# Версия 1.7  19.08.2025
+# Версия 1.8  28.08.2025
 #
 
 import os, sys, json
@@ -1585,7 +1585,7 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
             'ffffff03-ffff-ffff-ffff-ffffff000018': 'Reverse-прокси',
             'ffffff03-ffff-ffff-ffff-ffffff000019': 'Веб-портал',
             'ffffff03-ffff-ffff-ffff-ffffff000022': 'SAML сервер',
-            'ffffff03-ffff-ffff-ffff-ffffff000023': 'Log analyzer',
+            'ffffff03-ffff-ffff-ffff-ffffff000023': 'Log analyzer/SIEM',
             'ffffff03-ffff-ffff-ffff-ffffff000024': 'OSPF',
             'ffffff03-ffff-ffff-ffff-ffffff000025': 'BGP',
             'ffffff03-ffff-ffff-ffff-ffffff000030': 'RIP',
@@ -1595,7 +1595,8 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
             'ffffff03-ffff-ffff-ffff-ffffff000029': 'NTP сервис',
             'ffffff03-ffff-ffff-ffff-ffffff000031': 'UserID syslog collector',
             'ffffff03-ffff-ffff-ffff-ffffff000032': 'BFD',
-            'ffffff03-ffff-ffff-ffff-ffffff000033': 'Endpoints connect'
+            'ffffff03-ffff-ffff-ffff-ffffff000033': 'Endpoints connect',
+            'ffffff03-ffff-ffff-ffff-ffffff000034': 'API XML RPC поверх HTTPS'
         }
 
         for template_id, template_name in self.templates.items():

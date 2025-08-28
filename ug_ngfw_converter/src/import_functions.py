@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.9   09.06.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 3.0   28.08.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -5046,7 +5046,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                                 self.stepChanged.emit(f'RED|{message}\n    Error: Список "{item["list"]}" не добавлен в список IP-адресов "{data["name"]}".')
                                 error = 1
                         else:
-                            self.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен "{item["list"]}". Данная версия не поддерживает содержимое в виде списков IP-адресов.')
+                            self.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен IP-лист "{item["list"]}". NGFW версии "{self.utm.float_version}" не поддерживает содержимое в виде списков IP-адресов.')
                     else:
                         new_content.append(item)
 
@@ -7232,14 +7232,16 @@ class Zone:
         """Обрабатываем сервисы из контроля доступа."""
         new_service_access = []
         for service in self.services_access:
-            service_name = service['service_id']
             # Проверяем что такой сервис существует в этой версии NGFW и получаем его ID.
+            service_name = service['service_id']
             try:
-                service['service_id'] = self.ngfw_zone_services[service['service_id']]
+                service['service_id'] = self.ngfw_zone_services[service_name]
             except KeyError as err:
                 self.parent.stepChanged.emit(f'RED|    Error: [Зона "{self.name}"] Не корректный сервис "{service_name}" в контроле доступа. Возможно он не существует в этой версии NGFW.')
                 self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'
                 self.error = 1
+                continue
+            if service['service_id'] == 34 and self.parent.utm.float_version < 7.4:
                 continue
             # Приводим список разрешённых адресов сервиса в соответствие с версией NGFW.
             if service['allowed_ips']:

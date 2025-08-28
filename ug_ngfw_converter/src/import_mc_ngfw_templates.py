@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов на UserGate Management Center версии 7 и выше.
-# Версия 1.1   27.08.2025  (только для ug_ngfw_converter)
+# Версия 1.3   28.08.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -3231,8 +3231,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                         value['value']['target_zone'] = self.mc_data['zones'][value['value']['target_zone']].id
                     except KeyError:
                         self.stepChanged.emit(f'RED|    Error: Не найдена зона {value["value"]["target_zone"]} для "{params[key]}". Вероятно зона отсутствует в этой группе шаблонов.')
+                        value['value']['target_zone'] = ''
                         error = 1
-                        continue
                 elif key == 'cert_captive' and not value:
                     continue
                 setting = {}
@@ -7245,6 +7245,7 @@ class Zone:
             'Веб-портал': 'ffffff03-ffff-ffff-ffff-ffffff000019',
             'SAML сервер': 'ffffff03-ffff-ffff-ffff-ffffff000022',
             'Log analyzer': 'ffffff03-ffff-ffff-ffff-ffffff000023',
+            'Log analyzer/SIEM': 'ffffff03-ffff-ffff-ffff-ffffff000023',
             'OSPF': 'ffffff03-ffff-ffff-ffff-ffffff000024',
             'BGP': 'ffffff03-ffff-ffff-ffff-ffffff000025',
             'RIP': 'ffffff03-ffff-ffff-ffff-ffffff000030',
@@ -7254,7 +7255,8 @@ class Zone:
             'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
             'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
             'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
-            'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
+            'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033',
+            'API XML RPC поверх HTTPS': 'ffffff03-ffff-ffff-ffff-ffffff000034'
         }
         self.error = 0
         self.check_services_access()
@@ -7267,10 +7269,12 @@ class Zone:
         new_services_access = []
         for service in self.services_access:
             if service['enabled']:
-                service_name = service['service_id']
                 # Проверяем что такой сервис существует в этой версии МС и получаем его ID.
+                service_name = service['service_id']
+                if service_name == 'API XML RPC поверх HTTPS' and self.parent.utm.float_version < 7.4:
+                    continue
                 try:
-                    service['service_id'] = self.service_ids[service['service_id']]
+                    service['service_id'] = self.service_ids[service_name]
                 except KeyError as err:
                     self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа. Сервис не импортирован.')
                     self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'

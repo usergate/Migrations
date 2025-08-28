@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.10  29.05.2025
+# Версия 3.11  28.08.2025
 #
 
 import os, sys, json
@@ -581,7 +581,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 # Удаляем неиспользуемые в настоящий момент сервисы зон: 3, 16, 20, 21 (в zone_services = false).
                 new_services_access = []
                 for service in zone['services_access']:
-                    service['service_id'] = zone_services[service['service_id']]
+                    service['service_id'] = zone_services.get(service['service_id'], False)
                     for item in service['allowed_ips']:
                         if item[0] == 'list_id':
                             item[1] = self.ngfw_data['ip_lists'][item[1]]

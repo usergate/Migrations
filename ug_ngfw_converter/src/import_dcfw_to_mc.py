@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс импорта разделов конфигурации в шаблон DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.3   10.07.2025  (только для ug_ngfw_converter)
+# Версия 1.4   28.08.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -5382,7 +5382,8 @@ class Zone:
             'NTP сервис': 'ffffff03-ffff-ffff-ffff-ffffff000029',
             'UserID syslog collector': 'ffffff03-ffff-ffff-ffff-ffffff000031',
             'BFD': 'ffffff03-ffff-ffff-ffff-ffffff000032',
-            'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033'
+            'Endpoints connect': 'ffffff03-ffff-ffff-ffff-ffffff000033',
+            'API XML RPC поверх HTTPS': 'ffffff03-ffff-ffff-ffff-ffffff000034'
         }
         self.error = 0
         self.check_services_access()
@@ -5395,10 +5396,12 @@ class Zone:
         new_services_access = []
         for service in self.services_access:
             if service['enabled']:
-                service_name = service['service_id']
                 # Проверяем что такой сервис существует в этой версии МС и получаем его ID.
+                service_name = service['service_id']
+                if service_name == 'API XML RPC поверх HTTPS' and self.parent.utm.float_version < 7.4:
+                    continue
                 try:
-                    service['service_id'] = self.service_ids[service['service_id']]
+                    service['service_id'] = self.service_ids[service_name]
                 except KeyError as err:
                     self.parent.stepChanged.emit(f'RED|    Error [Зона "{self.name}"]. Не корректный сервис "{service_name}" в контроле доступа. Сервис не импортирован.')
                     self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'

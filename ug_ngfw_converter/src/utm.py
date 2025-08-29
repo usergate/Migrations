@@ -2455,6 +2455,80 @@ class UtmXmlRpc:
             return 1, f'Error utm.update_reverseproxy_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
+################################### Вышестоящие прокси ###########################################
+    def get_cascade_proxy_servers(self, start=0, limit=10000):
+        """Получить список серверов вышестоящих прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.servers.list(self._auth_token, start, limit, {})
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_cascade_proxy_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_cascade_proxy_server(self, server_info):
+        """Добавить новый сервер вышестоящего прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.server.add(self._auth_token, server_info)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_cascade_proxy_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сервера
+
+    def update_cascade_proxy_server(self, server_id, server_info):
+        """Обновить сервер вышестоящего прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.server.update(self._auth_token, server_id, server_info)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_cascade_proxy_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_cascade_proxy_profiles(self, start=0, limit=10000):
+        """Получить список профилей вышестоящих прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.profiles.list(self._auth_token, start, limit, {})
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_cascade_proxy_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_cascade_proxy_profile(self, profile):
+        """Добавить новый профиль вышестоящего прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.profile.add(self._auth_token, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_cascade_proxy_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сервера
+
+    def update_cascade_proxy_profile(self, profile_id, profile):
+        """Обновить профиль вышестоящего прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.profile.update(self._auth_token, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_cascade_proxy_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_cascade_proxy_rules(self, start=0, limit=10000):
+        """Получить список правил вышестоящих прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.rules.list(self._auth_token, start, limit, {})
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_cascade_proxy_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_cascade_proxy_rule(self, rule):
+        """Добавить новое правило вышестоящего прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.rule.add(self._auth_token, rule)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_cascade_proxy_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сервера
+
+    def update_cascade_proxy_rule(self, rule_id, rule):
+        """Обновить правило вышестоящего прокси. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cascadeproxy.upstream.proxy.rule.update(self._auth_token, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_cascade_proxy_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+########################################### VPN ##################################################
     def get_vpn_security_profiles(self):
         """Получить список профилей безопасности VPN"""
         try:

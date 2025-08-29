@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.11  28.08.2025
+# Версия 3.12  29.08.2025
 #
 
 import os, sys, json
@@ -90,6 +90,9 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             "WebPortal": self.export_proxyportal_rules,
             "ReverseProxyRules": self.export_reverseproxy_rules,
             "ReverseProxyServers": self.export_reverseproxy_servers,
+            "UpstreamProxiesServers": self.export_upstream_proxies_servers,
+            "UpstreamProxiesProfiles": self.export_upstream_proxies_profiles,
+            "UpstreamProxiesRules": self.export_upstream_proxies_rules,
             "WAFprofiles": self.export_waf_profiles_list,
             "CustomWafLayers": self.export_waf_custom_layers,
             "SystemWafRules": self.pass_function,
@@ -3108,6 +3111,150 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GRAY|    Нет правил reverse-прокси для экспорта.')
 
 
+    #_-------------------------------- Вышестоящие прокси ------------------------------------
+    def export_upstream_proxies_servers(self, path):
+        """Экспортируем список серверов вышестоящих прокси"""
+        self.stepChanged.emit('BLUE|Экспорт списка серверов вышестоящих прокси из раздела "Вышестоящие прокси/Серверы".')
+
+        err, data = self.utm.get_cascade_proxy_servers()
+        if err:
+            self.stepChanged.emit(f'RED|    {data}\n    Произошла ошибка при экспорте списка серверов вышестоящих прокси.')
+            self.error = 1
+            return
+
+        if data:
+            self.ngfw_data['upstreamproxies_servers'] = {}
+            for item in data:
+                self.ngfw_data['upstreamproxies_servers'][item['id']] = item['name']
+                item.pop('id', None)
+                item.pop('active', None)
+                item.pop('errorMessage', None)
+                item.pop('cc', None)
+
+            err, msg = self.create_dir(path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+            json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'GREEN|    Список серверов вышестоящих прокси выгружен в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет серверов вышестоящих прокси для экспорта.')
+
+
+    def export_upstream_proxies_profiles(self, path):
+        """Экспортируем список профилей вышестоящих прокси"""
+        self.stepChanged.emit('BLUE|Экспорт списка профилей вышестоящих прокси из раздела "Вышестоящие прокси/Профили".')
+
+        err, data = self.utm.get_cascade_proxy_profiles()
+        if err:
+            self.stepChanged.emit(f'RED|    {data}\n    Произошла ошибка при экспорте списка профилей вышестоящих прокси.')
+            self.error = 1
+            return
+
+        if data:
+            if 'upstreamproxies_servers' not in self.ngfw_data:
+                if self.get_upstreamproxies_servers():  # Заполняем self.ngfw_data['upstreamproxies_servers']
+                    self.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте списка профилей вышестоящих прокси.')
+                    return
+            proxies_servers = self.ngfw_data['upstreamproxies_servers']
+            self.ngfw_data['upstreamproxies_profiles'] = {}
+
+            for item in data:
+                self.ngfw_data['upstreamproxies_profiles'][item['id']] = item['name']
+                item.pop('id', None)
+                item.pop('active', None)
+                item.pop('error', None)
+                item.pop('cc', None)
+                try:
+                    item['servers'] = [proxies_servers[x] for x in item['servers']]
+                except KeyError:
+                    self.stepChanged.emit(f'RED|    Error: [Профиль "{item["name"]}"] Не найден сервер для профиля. Серверы не добавлены в профиль.')
+                    item['servers'] = []
+
+            err, msg = self.create_dir(path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+            json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'GREEN|    Список профилей вышестоящих прокси выгружен в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет профилей вышестоящих прокси для экспорта.')
+
+
+    def export_upstream_proxies_rules(self, path):
+        """Экспортируем список правил вышестоящих прокси"""
+        self.stepChanged.emit('BLUE|Экспорт списка правил вышестоящих прокси из раздела "Вышестоящие прокси/Правила".')
+
+        err, data = self.utm.get_cascade_proxy_rules()
+        if err:
+            self.stepChanged.emit(f'RED|    {data}\n    Произошла ошибка при экспорте списка правил вышестоящих прокси.')
+            self.error = 1
+            return
+
+        if data:
+            error = 0
+            if 'list_templates' not in self.ngfw_data:
+                if self.get_templates_list():            # Заполняем self.ngfw_data['list_templates']
+                    self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при экспорте правил фильтрации контента.')
+                    return
+            templates_list = self.ngfw_data['list_templates']
+
+            if 'upstreamproxies_pofiles' not in self.ngfw_data:
+                if self.get_upstreamproxies_profiles():  # Заполняем self.ngfw_data['upstreamproxies_profiles']
+                    self.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте списка правил вышестоящих прокси.')
+                    return
+            proxies_profiles = self.ngfw_data['upstreamproxies_profiles']
+
+            for item in data:
+                item.pop('id', None)
+                item.pop('active', None)
+                item.pop('cc', None)
+                if item['proxy_profile']:
+                    try:
+                        item['proxy_profile'] = proxies_profiles[item['proxy_profile']]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль для правила. Установлено действие "Мимо прокси".')
+                        item['proxy_profile'] = ''
+                        item['action'] = 'direct'
+                        item['fallback_action'] = 'direct'
+                if 'fallback_block_page' in item:
+                    item['fallback_block_page'] = templates_list.get(item['fallback_block_page'], -1)
+                item['users'] = self.get_names_users_and_groups(item['users'], item['name'])
+                item['time_restrictions'] = self.get_time_restrictions_name(item['time_restrictions'], item)
+                item['url_categories'] = self.get_url_categories_name(item['url_categories'], item)
+                item['urls'] = self.get_urls_name(item['urls'], item)
+                item['src_zones'] = self.get_zones_name(item['src_zones'], item)
+                item['src_ips'] = self.get_ips_name(item['src_ips'], item)
+                item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+
+                if item.pop('error', False):
+                    error = 1
+
+            err, msg = self.create_dir(path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+            json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+
+            if error:
+                self.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте. Список правил вышестоящих прокси выгружен в файл "{json_file}".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|    Список правил вышестоящих прокси выгружен в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет правил вышестоящих прокси для экспорта.')
+
+
     #---------------------------------------- WAF --------------------------------------------
     def export_waf_custom_layers(self, path):
         """Экспортируем персональные WAF-слои. Для версии 7.1 и выше"""
@@ -5055,6 +5202,28 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             return 1
         self.ngfw_data['notification_profiles'] = {x['id']: self.get_transformed_name(x['name'], mode=0)[1] for x in result}
+        return 0
+
+
+    def get_upstreamproxies_servers(self):
+        """Получаем список серверов вышестоящих прокси и устанавливаем значение self.ngfw_data['upstreamproxies_servers']"""
+        err, result = self.utm.get_cascade_proxy_servers()
+        if err:
+            self.stepChanged.emit(f'RED|    {result}')
+            self.error = 1
+            return 1
+        self.ngfw_data['upstreamproxies_servers'] = {x['id']: x['name'] for x in result}
+        return 0
+
+
+    def get_upstreamproxies_profiles(self):
+        """Получаем список профилей вышестоящих прокси и устанавливаем значение self.ngfw_data['upstreamproxies_profiles']"""
+        err, result = self.utm.get_cascade_proxy_profiles()
+        if err:
+            self.stepChanged.emit(f'RED|    {result}')
+            self.error = 1
+            return 1
+        self.ngfw_data['upstreamproxies_profiles'] = {x['id']: x['name'] for x in result}
         return 0
 
 

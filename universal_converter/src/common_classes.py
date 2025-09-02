@@ -417,8 +417,12 @@ class MyConv(MyMixedService):
                 {'proto': 'tcp', 'port': '53', 'app_proto': '', 'source_port': '', 'alg': ''}]},
             {'name': 'HTTP', 'description': 'Hypertext Transport Protocol', 'protocols': [
                 {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+            {'name': 'HTTP Proxy', 'description': 'Hypertext Transport Protocol', 'protocols': [
+                {'proto': 'tcp', 'port': '8090', 'app_proto': '', 'source_port': '', 'alg': ''}]},
             {'name': 'HTTPS', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
                 {'proto': 'tcp', 'port': '443', 'app_proto': '', 'source_port': '', 'alg': ''}]},
+            {'name': 'HTTPS Proxy', 'description': 'Hypertext Transport Protocol over SSL', 'protocols': [
+                {'proto': 'tcp', 'port': '8091', 'app_proto': '', 'source_port': '', 'alg': ''}]},
             {'name': 'FTP', 'description': 'File Transfer Protocol', 'protocols': [
                 {'proto': 'tcp', 'port': '20', 'app_proto': '', 'source_port': '', 'alg': ''},
                 {'proto': 'tcp', 'port': '21', 'app_proto': '', 'source_port': '', 'alg': ''}]},

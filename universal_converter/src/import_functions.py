@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 2.9   09.06.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 3.2   02.09.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -128,6 +128,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             'WAFprofiles': self.import_waf_profiles,
             'WebPortal': self.import_proxyportal_rules,
             'ReverseProxyRules': self.import_reverseproxy_rules,
+            'UpstreamProxiesServers': self.import_upstream_proxies_servers,
+            'UpstreamProxiesProfiles': self.import_upstream_proxies_profiles,
+            'UpstreamProxiesRules': self.import_upstream_proxies_rules,
             'ServerSecurityProfiles': self.import_vpnserver_security_profiles,
             'ClientSecurityProfiles': self.import_vpnclient_security_profiles,
             'SecurityProfiles': self.import_vpn_security_profiles,
@@ -4216,6 +4219,197 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|    Импорт правил reverse-прокси завершён.')
         self.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
 
+
+    #----------------------------------- Вышестоящий прокси --------------------------------------
+    def import_upstream_proxies_servers(self, path):
+        """Импортируем список серверов вышестоящих прокси"""
+        json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт серверов вышестоящих прокси в раздел "Вышестоящие прокси/Серверы".')
+        error = 0
+
+        if 'upstreamproxies_servers' not in self.ngfw_data:
+            if self.get_upstreamproxies_servers():      # Устанавливаем атрибут self.ngfw_data['upstreamproxies_servers']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов вышестоящих прокси.')
+                return
+        proxies_servers = self.ngfw_data['upstreamproxies_servers']
+
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера прокси')
+            if item['name'] in proxies_servers:
+                self.stepChanged.emit(f'uGRAY|    Сервер вышестоящего прокси "{item["name"]}" уже существует.')
+                err, result = self.utm.update_cascade_proxy_server(proxies_servers[item['name']], item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|       {result}  [Сервер прокси "{item["name"]}"]')
+                else:
+                    self.stepChanged.emit(f'uGRAY|       Сервер вышестоящего прокси "{item["name"]}" обновлён.')
+            else:
+                err, result = self.utm.add_cascade_proxy_server(item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|    {result}  [Сервер прокси "{item["name"]}" не импортирован]')
+                else:
+                    proxies_servers[item['name']] = result
+                    self.stepChanged.emit(f'BLACK|    Сервер вышестоящего прокси "{item["name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов вышестоящих прокси.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт серверов вышестоящих прокси завершён.')
+
+
+    def import_upstream_proxies_profiles(self, path):
+        """Импортируем список профилей вышестоящих прокси"""
+        json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт профилей вышестоящих прокси в раздел "Вышестоящие прокси/Профили".')
+        error = 0
+
+        if 'upstreamproxies_servers' not in self.ngfw_data:
+            if self.get_upstreamproxies_servers():      # Устанавливаем атрибут self.ngfw_data['upstreamproxies_servers']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей вышестоящих прокси.')
+                return
+        proxies_servers = self.ngfw_data['upstreamproxies_servers']
+
+        if 'upstreamproxies_profiles' not in self.ngfw_data:
+            if self.get_upstreamproxies_profiles():      # Устанавливаем атрибут self.ngfw_data['upstreamproxies_profiles']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей вышестоящих прокси.')
+                return
+        proxies_profiles = self.ngfw_data['upstreamproxies_profiles']
+
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля прокси')
+            new_servers = []
+            for x in item['servers']:
+                try:
+                    new_servers.append(proxies_servers[x])
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: [Профиль "{item["name"]}"] Не найден сервер {err}. Импортируйте серверы прокси и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден сервер {err}.'
+                    error = 1
+            item['servers'] = new_servers
+
+            if item['name'] in proxies_profiles:
+                self.stepChanged.emit(f'uGRAY|    Профиль вышестоящего прокси "{item["name"]}" уже существует.')
+                err, result = self.utm.update_cascade_proxy_profile(proxies_profiles[item['name']], item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|       {result}  [Профиль прокси "{item["name"]}"]')
+                else:
+                    self.stepChanged.emit(f'uGRAY|       Профиль вышестоящего прокси "{item["name"]}" обновлён.')
+            else:
+                err, result = self.utm.add_cascade_proxy_profile(item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|    {result}  [Профиль прокси "{item["name"]}" не импортирован]')
+                else:
+                    proxies_profiles[item['name']] = result
+                    self.stepChanged.emit(f'BLACK|    Профиль вышестоящего прокси "{item["name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей вышестоящих прокси.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт профилей вышестоящих прокси завершён.')
+
+
+    def import_upstream_proxies_rules(self, path):
+        """Импортируем список правил вышестоящих прокси"""
+        json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт правил вышестоящих прокси в раздел "Вышестоящие прокси/Правила".')
+        error = 0
+
+        if 'upstreamproxies_profiles' not in self.ngfw_data:
+            if self.get_upstreamproxies_profiles():      # Устанавливаем атрибут self.ngfw_data['upstreamproxies_profiles']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил вышестоящих прокси.')
+                return
+        proxies_profiles = self.ngfw_data['upstreamproxies_profiles']
+
+        if 'list_templates' not in self.ngfw_data:
+            if self.get_templates_list():      # Устанавливаем атрибут self.ngfw_data['list_templates']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил вышестоящих прокси.')
+                return
+        list_templates = self.ngfw_data['list_templates']
+
+        err, result = self.utm.get_cascade_proxy_rules()
+        if err:
+            self.stepChanged.emit('RED|    {result}\n    Произошла ошибка при импорте правил вышестоящих прокси.')
+            self.error = 1
+            return
+        proxies_rules = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля прокси')
+            item.pop('position_layer', None)
+            item.pop('time_created', None)
+            item.pop('time_updated', None)
+            item.pop('cc', None)
+
+            if item['proxy_profile']:
+                try:
+                    item['proxy_profile'] = proxies_profiles[item['proxy_profile']]
+                except KeyError as err:
+                    message = 'Импортируйте профили и повторите попытку.\n       Установлен режим работы: "Мимо прокси".'
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль прокси {err}. {message}')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль прокси {err}. Установлен режим работы: "Мимо прокси".'
+                    item['proxy_profile'] = ''
+                    item['action'] = 'direct'
+                    item['fallback_action'] = 'direct'
+                    item.pop('fallback_block_page', None)
+                    error = 1
+            if 'fallback_block_page' in item:
+                try:
+                    item['fallback_block_page'] = list_templates[item['fallback_block_page']]
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден шаблон страницы блокировки {err}. Импортируйте шаблоны страниц и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден шаблон страницы блокировки {err}.'
+                    item['fallback_block_page'] = -1
+                    error = 1
+            item['users'] = self.get_guids_users_and_groups(item)
+            item['time_restrictions'] = self.get_time_restrictions_id(item)
+            item['url_categories'] = self.get_url_categories_id(item)
+            item['urls'] = self.get_urls_id(item['urls'], item)
+            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
+            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
+
+            if item.pop('error', False):
+                item['enabled'] = False
+                error = 1
+
+            if item['name'] in proxies_rules:
+                self.stepChanged.emit(f'uGRAY|    Правило вышестоящего прокси "{item["name"]}" уже существует.')
+                err, result = self.utm.update_cascade_proxy_rule(proxies_rules[item['name']], item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|       {result}  [Правило прокси "{item["name"]}"]')
+                else:
+                    self.stepChanged.emit(f'uGRAY|       Правило вышестоящего прокси "{item["name"]}" обновлено.')
+            else:
+                item['position'] = 'last'
+                err, result = self.utm.add_cascade_proxy_rule(item)
+                if err:
+                    error = 1
+                    self.stepChanged.emit(f'RED|    {result}  [Правило прокси "{item["name"]}" не импортировано]')
+                else:
+                    proxies_profiles[item['name']] = result
+                    self.stepChanged.emit(f'BLACK|    Правило вышестоящего прокси "{item["name"]}" импортировано.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил вышестоящих прокси.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт правил вышестоящих прокси завершён.')
+
+
     #------------------------------------------ WAF ----------------------------------------------
     def import_waf_custom_layers(self, path):
         """Импортируем персональные WAF-слои. Для версии 7.1 и выше"""
@@ -4981,10 +5175,12 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit("GRAY|    Нет списков IP-адресов для импорта.")
             return
         error = 0
+        n = 0
 
         # Импортируем все списки IP-адресов без содержимого (пустые).
         self.stepChanged.emit(f'LBLUE|    Импортируем списки IP-адресов без содержимого.')
         for file_name in files_list:
+            n += 1
             json_file = os.path.join(path, file_name)
             err, data = self.read_json_file(json_file, mode=2)
             if err:
@@ -4998,7 +5194,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 data.pop('list_type_update', None)
                 data.pop('schedule', None)
             if data['name'] in self.ngfw_data['ip_lists']:
-                self.stepChanged.emit(f'uGRAY|    Список IP-адресов "{data["name"]}" уже существует.')
+                self.stepChanged.emit(f'uGRAY|    {n} - Список IP-адресов "{data["name"]}" уже существует.')
                 err, result = self.utm.update_nlist(self.ngfw_data['ip_lists'][data['name']], data)
                 if err == 1:
                     error = 1
@@ -5014,11 +5210,13 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'RED|    {result}  [Список IP-адресов "{data["name"]}" не импортирован]')
                 else:
                     self.ngfw_data['ip_lists'][data['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Список IP-адресов "{data["name"]}" импортирован.')
+                    self.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{data["name"]}" импортирован.')
 
         # Добавляем содержимое в уже добавленные списки IP-адресов.
+        n = 0
         self.stepChanged.emit(f'LBLUE|    Импортируем содержимое списков IP-адресов.')
         for file_name in files_list:
+            n += 1
             json_file = os.path.join(path, file_name)
             err, data = self.read_json_file(json_file, mode=2)
             if err:
@@ -5046,7 +5244,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                                 self.stepChanged.emit(f'RED|{message}\n    Error: Список "{item["list"]}" не добавлен в список IP-адресов "{data["name"]}".')
                                 error = 1
                         else:
-                            self.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен "{item["list"]}". Данная версия не поддерживает содержимое в виде списков IP-адресов.')
+                            self.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен IP-лист "{item["list"]}". NGFW версии "{self.utm.float_version}" не поддерживает содержимое в виде списков IP-адресов.')
                     else:
                         new_content.append(item)
 
@@ -5057,7 +5255,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err2 == 2:
                     self.stepChanged.emit(f'GRAY|    {result2}')
                 else:
-                    self.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" импортировано.')
+                    self.stepChanged.emit(f'BLACK|    {n} - Содержимое списка IP-адресов "{data["name"]}" импортировано.')
             else:
                 self.stepChanged.emit(f'GRAY|    Список "{data["name"]}" пуст.')
 
@@ -6971,21 +7169,24 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'bRED|    Error: [Правило "{rule["name"]}"] Группа сервисов "{item[1]}" не добавлена. В версии 6 группы сервисов не поддерживаются.')
                 else:
                     try:
-                        new_service_list.append(self.ngfw_data['services'][item[1]])
+                        _, service_name = self.get_transformed_name(item[1], descr='Имя сервиса')
+                        new_service_list.append(self.ngfw_data['services'][service_name])
                     except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис "{item[1]}". Импортируйте сервисы и повторите попытку.')
-                        rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис {err}. Импортируйте сервисы и повторите попытку.')
+                        rule['description'] = f'{rule["description"]}\nError: Не найден сервис {err}.'
                         rule['error'] = True
         else:
             for item in service_list:
                 try:
                     if item[0] == 'service':
-                        new_service_list.append(['service', self.ngfw_data['services'][item[1]]])
+                        _, service_name = self.get_transformed_name(item[1], descr='Имя сервиса')
+                        new_service_list.append(['service', self.ngfw_data['services'][service_name]])
                     elif item[0] == 'list_id':
-                        new_service_list.append(['list_id', self.ngfw_data['service_groups'][item[1]]])
+                        _, service_name = self.get_transformed_name(item[1], descr='Имя группы сервисов')
+                        new_service_list.append(['list_id', self.ngfw_data['service_groups'][service_name]])
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис "{item[1]}". Загрузите сервисы и повторите импорт.')
-                    rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис {err}. Загрузите сервисы и повторите импорт.')
+                    rule['description'] = f'{rule["description"]}\nError: Не найден сервис {err}.'
                     rule['error'] = True
         return new_service_list
 
@@ -7185,6 +7386,28 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         return 0
 
 
+    def get_upstreamproxies_servers(self):
+        """Получаем список серверов вышестоящих proxy и устанавливаем значение атрибута self.ngfw_data['upstreamproxies_servers']"""
+        err, result = self.utm.get_cascade_proxy_servers()
+        if err:
+            self.stepChanged.emit(f'RED|       {result}')
+            self.error = 1
+            return 1
+        self.ngfw_data['upstreamproxies_servers'] = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
+        return 0
+
+
+    def get_upstreamproxies_profiles(self):
+        """Получаем список профилей вышестоящих proxy и устанавливаем значение атрибута self.ngfw_data['upstreamproxies_profiles']"""
+        err, result = self.utm.get_cascade_proxy_profiles()
+        if err:
+            self.stepChanged.emit(f'RED|       {result}')
+            self.error = 1
+            return 1
+        self.ngfw_data['upstreamproxies_profiles'] = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
+        return 0
+
+
     def add_tags_for_objects(self, data, object_type):
         """Добавляем тэги к объектам определённой группы"""
         if self.utm.product == 'dcfw':
@@ -7232,14 +7455,16 @@ class Zone:
         """Обрабатываем сервисы из контроля доступа."""
         new_service_access = []
         for service in self.services_access:
-            service_name = service['service_id']
             # Проверяем что такой сервис существует в этой версии NGFW и получаем его ID.
+            service_name = service['service_id']
             try:
-                service['service_id'] = self.ngfw_zone_services[service['service_id']]
+                service['service_id'] = self.ngfw_zone_services[service_name]
             except KeyError as err:
                 self.parent.stepChanged.emit(f'RED|    Error: [Зона "{self.name}"] Не корректный сервис "{service_name}" в контроле доступа. Возможно он не существует в этой версии NGFW.')
                 self.description = f'{self.description}\nError: Не импортирован сервис "{service_name}" в контроль доступа.'
                 self.error = 1
+                continue
+            if service['service_id'] == 34 and self.parent.utm.float_version < 7.4:
                 continue
             # Приводим список разрешённых адресов сервиса в соответствие с версией NGFW.
             if service['allowed_ips']:

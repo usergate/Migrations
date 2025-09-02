@@ -6853,12 +6853,14 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in service_list:
             try:
                 if item[0] == 'service':
-                    new_service_list.append(['service', self.mc_data['services'][item[1]].id])
+                    _, service_name = self.get_transformed_name(item[1], descr='Имя сервиса')
+                    new_service_list.append(['service', self.mc_data['services'][service_name].id])
                 elif item[0] == 'list_id':
-                    new_service_list.append(['list_id', self.mc_data['service_groups'][item[1]].id])
+                    _, service_name = self.get_transformed_name(item[1], descr='Имя группы сервисов')
+                    new_service_list.append(['list_id', self.mc_data['service_groups'][service_name].id])
             except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис или группа сервисов "{item[1]}" в группе шаблонов. Загрузите сервисы и группы сервисов и повторите импорт.')
-                rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис или группа сервисов {err} в группе шаблонов. Загрузите сервисы и группы сервисов и повторите импорт.')
+                rule['description'] = f'{rule["description"]}\nError: Не найден сервис {err}.'
                 rule['error'] = True
         return new_service_list
 

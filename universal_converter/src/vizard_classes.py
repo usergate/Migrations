@@ -1,28 +1,28 @@
 #!/usr/bin/python3
 #
-# Версия 1.17    25.08.2025
+# Версия 1.20    02.09.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
 from datetime import datetime as dt
-from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
-                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog)
+                             QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog, QTextEdit)
 import config_style as cs
 import common_func as func
-import export_blue_coat_config as bluecoat
-import export_cisco_asa_config as asa
-import export_cisco_fpr_config as fpr
-import export_fortigate_config as fg
-import export_huawei_config as huawei
-import export_checkpoint_config as cp
-import export_mikrotik_config as mikrotik
-import export_paloalto_config as paloalto
+#import export_blue_coat_config as bluecoat
+#import export_cisco_asa_config as asa
+#import export_cisco_fpr_config as fpr
+#import export_fortigate_config as fg
+#import export_huawei_config as huawei
+#import export_checkpoint_config as cp
+#from export_checkpoint_old_config import ConvertOldCheckPointConfig
+#import export_mikrotik_config as mikrotik
+#import export_paloalto_config as paloalto
 import import_to_mc
 import get_ngfw_temporary_data as gtd
-from export_checkpoint_old_config import ConvertOldCheckPointConfig
 from get_mc_temporary_data import GetMcTemporaryData
 from import_functions import ImportNgfwSelectedPoints
 from utm import UtmXmlRpc
@@ -142,8 +142,9 @@ class SelectMode(QWidget):
         self.utm = None
         self.product = 'NGFW'
         self.thread = None
-        self.log_list = QListWidget()
-        self.tmp_list = []
+        self.log_list = QTextEdit()
+        self.log_list.setReadOnly(True)
+        self.log_list.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         
         self.title = QLabel()
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -216,6 +217,7 @@ class SelectMode(QWidget):
         self.btn4.setStyleSheet('color: gray; background: gainsboro;')
         self.btn4.setEnabled(False)
 
+
     def enable_buttons(self):
         self.btn1.setStyleSheet('color: steelblue; background: white;')
         self.btn1.setEnabled(True)
@@ -225,6 +227,7 @@ class SelectMode(QWidget):
         self.btn3.setEnabled(True)
         self.btn4.setStyleSheet('color: steelblue; background: white;')
         self.btn4.setEnabled(True)
+
 
     def get_auth(self, mod='fw'):
         """Вызываем окно авторизации, если авторизация не прошла, возвращаемся в начальный экран."""
@@ -242,6 +245,7 @@ class SelectMode(QWidget):
         else:
             return False
 
+
     def get_selected_item(self, selected_item):
         """
         Получаем выбранный пункт меню и устанавливаем путь к разделу конфигурации.
@@ -250,15 +254,17 @@ class SelectMode(QWidget):
         self.current_ug_path = os.path.join(self.parent.get_ug_config_path(), selected_item['path'])
         self.selected_points = selected_item['points']
 
+
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
         path_logfile = os.path.join(self.parent.get_ug_config_path(), f'{today:%Y-%m-%d_%M:%S}-{log_file}')
-        list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
+        text = self.log_list.document().toPlainText()
         with open(path_logfile, 'w') as fh:
-            print(*list_items, sep='\n', file=fh)
+            print(text, sep='\n', file=fh)
             fh.write('\n')
         func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
+
 
     def run_page_0(self):
         """Возвращаемся на стартовое окно"""
@@ -276,31 +282,21 @@ class SelectMode(QWidget):
             os.remove('temporary_data.bin')
         self.parent.stacklayout.setCurrentIndex(0)
 
+
     def add_item_log(self, message, color='BLACK'):
         """Добавляем запись лога в log_list."""
-        i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color.get(color, 'RED')))
-        self.log_list.addItem(i)
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
+
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
-        if color == 'RED':
-            self.add_item_log(message, color=color)
-            self.log_list.scrollToBottom()
-        elif color in ('BLACK', 'NOTE'):
-            self.tmp_list.append((message, color))
-        else:
-            if self.tmp_list:
-                for x in self.tmp_list:
-                    self.add_item_log(x[0], color=x[1])
-                self.tmp_list.clear()
-            self.add_item_log(message, color=color)
-            self.log_list.scrollToBottom()
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
     def on_finished(self):
-        self.tmp_list.clear()
         self.thread = None
         self.enable_buttons()
 
@@ -319,8 +315,9 @@ class SelectExportMode(QWidget):
         self.vendor_base_path = ''
         self.vendor_current_path = ''
         self.thread = None
-        self.log_list = QListWidget()
-        self.tmp_list = []
+        self.log_list = QTextEdit()
+        self.log_list.setReadOnly(True)
+        self.log_list.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         
         self.title = QLabel("<b><font color='green' size='+2'>Конвертация сторонней конфигурации в формат UserGate</font></b>")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -470,12 +467,16 @@ class SelectExportMode(QWidget):
             if self.thread is None:
                 match self.selected_point:
                     case 'Blue Coat':
+                        import export_blue_coat_config as bluecoat
                         self.thread = bluecoat.ConvertBlueCoatConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Cisco ASA':
+                        import export_cisco_asa_config as asa
                         self.thread = asa.ConvertCiscoASAConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Cisco FPR':
+                        import export_cisco_fpr_config as fpr
                         self.thread = fpr.ConvertCiscoFPRConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Check Point':
+                        import export_checkpoint_config as cp
                         err, msg = self._create_checkpoint_datajson()
                         if err:
                             self.add_item_log(msg, color='RED')
@@ -486,17 +487,22 @@ class SelectExportMode(QWidget):
                         self.label_version.setText(f'{self.selected_point} - {msg}')
                         self.thread = cp.ConvertCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path(), msg)
                     case 'Check Point (old)':
-                        self.thread = ConvertOldCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path())
+                        import export_checkpoint_old_config as cp_old
+                        self.thread = cp_old.ConvertOldCheckPointConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Fortigate':
+                        import export_fortigate_config as fg
                         self.thread = fg.ConvertFortigateConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Huawei':
+                        import export_huawei_config as huawei
                         self.thread = huawei.ConvertHuaweiConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'Kerio':
                         import export_kerio_config as kerio
                         self.thread = kerio.ConvertKerioConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'MikroTik':
+                        import export_mikrotik_config as mikrotik
                         self.thread = mikrotik.ConvertMikrotikConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                     case 'PaloAlto':
+                        import export_paloalto_config as paloalto
                         self.thread = paloalto.ConvertPaloaltoConfig(self.vendor_current_path, self.parent.get_ug_config_path())
                 self.thread.stepChanged.connect(self.on_step_changed)
                 self.thread.finished.connect(self.on_finished)
@@ -541,15 +547,17 @@ class SelectExportMode(QWidget):
         else:
             return 1, f'Не найдена конфигурация Check Point в каталоге "{self.vendor_current_path}".'
 
+
     def _save_logs(self, log_file):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
         path_logfile = os.path.join(self.vendor_current_path, f'{today:%Y-%m-%d_%M:%S}-{log_file}')
-        list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
+        text = self.log_list.document().toPlainText()
         with open(path_logfile, 'w') as fh:
-            print(*list_items, sep='\n', file=fh)
+            print(text, sep='\n', file=fh)
             fh.write('\n')
         func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
+
 
     def run_page_0(self):
         """Возвращаемся на стартовое окно"""
@@ -562,40 +570,22 @@ class SelectExportMode(QWidget):
         self.vendor_current_path = ''
         self.parent.stacklayout.setCurrentIndex(0)
 
+
     def add_item_log(self, message, color='BLACK'):
         """Добавляем запись лога в log_list."""
-        i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color[color]))
-        self.log_list.addItem(i)
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
 
-    def items_add_and_scroll(self):
-        if self.tmp_list:
-            for x in self.tmp_list:
-                self.log_list.addItem(x)
-            self.tmp_list.clear()
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
-        i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color[color]))
-        if color in ('BLACK', 'NOTE', 'uGRAY'):
-            self.tmp_list.append(i)
-            if len(self.tmp_list) > 30:
-                self.items_add_and_scroll()
-                self.log_list.scrollToBottom()
-        else:
-            if color == 'RED':
-                self.log_list.addItem(i)
-                self.log_list.scrollToBottom()
-            else:
-                self.items_add_and_scroll()
-                self.log_list.addItem(i)
-                self.log_list.scrollToBottom()
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
+
     def on_finished(self):
-        self.tmp_list.clear()
         self.thread = None
         self.enable_buttons()
         self.btn3.setStyleSheet('color: darkred; background: white;')
@@ -1779,38 +1769,45 @@ class MainTree(QTreeWidget):
                 "Фильтрация контента", "Веб-безопасность", "Инспектирование туннелей", "Инспектирование SSL", "Инспектирование SSH",
                 "СОВ", "Правила АСУ ТП", "Защита почтового трафика", "ICAP-серверы", "ICAP-правила", "Профили DoS",
                 "Правила защиты DoS", "Глобальный портал", "Веб-портал", "Серверы reverse-прокси", "Правила reverse-прокси",
-                "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
+                "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила", "Тэги",
                 "Профили безопасности VPN", "Профили АСУ ТП", "Морфология", "Useragent браузеров", "Типы контента", "Категории URL",
-                "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии"},
+                "Изменённые категории URL", "HID объекты", "HID профили", "Сценарии",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы"
+            },
             8.0: {
                 "Маршруты", "OSPF", "BGP",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
-                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы", "Тэги"
+            },
             7.4: {
                 "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
             7.3: {
                 "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
-                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы"
+            },
             7.2: {
                 "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
-                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы", "Тэги",
+            },
             7.1: {
                 "Маршруты", "OSPF", "BGP", "WAF", "Персональные WAF-слои", "Системные WAF-правила", "WAF-профили",
-                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП"},
+                "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы", "Тэги",
+            },
             7.0: {
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
-                "Политики BYOD",
-                "Агент UserID",
-                "Правила АСУ ТП",
+                "Политики BYOD", "Агент UserID", "Правила АСУ ТП", "Профили АСУ ТП",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
-                "Профили АСУ ТП",
-                "Профили приложений", "Приложения",
-                "Сигнатуры СОВ",
+                "Профили приложений", "Приложения", "Сигнатуры СОВ",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
-                "Параметры SNMP", "Профили безопасности SNMP",
+                "Параметры SNMP", "Профили безопасности SNMP", "Тэги",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы",
             },
             6.1: {
                 "Профили пользовательских сертификатов",
@@ -1820,11 +1817,10 @@ class MainTree(QTreeWidget):
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
-                "Сигнатуры СОВ",
-                "Профили LLDP",
-                "Профили пересылки SSL",
+                "Сигнатуры СОВ", "Профили LLDP", "Профили пересылки SSL", "Тэги",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы",
             },
             5.0: {
                 "Профили пользовательских сертификатов",
@@ -1836,9 +1832,10 @@ class MainTree(QTreeWidget):
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
-                "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL",
+                "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL", "Тэги",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
+                "Вышестоящий прокси", "Правила", "Профили", "Серверы",
             },
         }
 

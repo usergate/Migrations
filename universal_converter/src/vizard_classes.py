@@ -6,7 +6,7 @@
 import os, json, ipaddress
 from datetime import datetime as dt
 from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog, QTextEdit)

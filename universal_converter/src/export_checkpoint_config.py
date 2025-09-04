@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 4.5    21.04.2025
+# Версия 4.6    03.09.2025
 #
 
 import os, sys, json, uuid, copy
@@ -209,6 +209,8 @@ class ConvertCheckPointConfig(QThread, MyConv):
                 data = {
                     "ui_timezone": "".join(x[1:])
                 }
+                if data['ui_timezone'].startswith('Etc/'):
+                    return
                 json_file = os.path.join(current_path, 'config_settings_ui.json')
                 with open(json_file, 'w') as fh:
                     json.dump(data, fh, indent=4, ensure_ascii=False)

@@ -5240,8 +5240,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                                 item['list'] = self.ngfw_data['ip_lists'][item_list]
                                 new_content.append(item)
                             except KeyError:
-                                message = f'    Error: Нет IP-листа "{item["list"]}" в списках IP-адресов NGFW.'
-                                self.stepChanged.emit(f'RED|{message}\n    Error: Список "{item["list"]}" не добавлен в список IP-адресов "{data["name"]}".')
+                                message = f'    Error: Нет IP-листа "{item_list}" в списках IP-адресов NGFW.'
+                                self.stepChanged.emit(f'RED|{message}\n    Error: Список "{item_list}" не добавлен в список IP-адресов "{data["name"]}".')
                                 error = 1
                         else:
                             self.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен IP-лист "{item["list"]}". NGFW версии "{self.utm.float_version}" не поддерживает содержимое в виде списков IP-адресов.')

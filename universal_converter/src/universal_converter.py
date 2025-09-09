@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.42   05.09.2025
+# Version 8.43   09.09.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys
@@ -31,9 +31,9 @@ from common_func import create_dir, message_alert
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.42)")
-#        ico = QIcon("favicon.png")
-        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.43)")
+        ico = QIcon("favicon.png")
+#        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
         self.setWindowIcon(ico)
         self._base_bluecoat_path = 'data_blue_coat'
         self._base_asa_path = 'data_cisco_asa'

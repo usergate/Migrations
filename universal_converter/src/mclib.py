@@ -241,7 +241,7 @@ class McXmlRpc:
         for group in result['items']:
             group['templates'] = [x[0] for x in group['device_templates'] if x[1]]
             group.pop('device_templates', None)
-        return 0, result['items']   # Возвращает [{id: str, name: str, device_templates: [id_1, id_2, ...]}, ...]
+        return 0, result['items']   # Возвращает [{id: str, name: str, templates: [id_1, id_2, ...]}, ...]
 
     def add_device_templates_group(self, group_info):
         """Создать новую группу шаблонов NGFW в области. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""

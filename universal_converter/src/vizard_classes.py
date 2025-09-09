@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 1.20    02.09.2025
+# Версия 1.22    09.09.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -820,7 +820,7 @@ class SelectMcImportMode(SelectMode):
         self.template_name = None
         self.templates = None
         self.id_nodes = [f'node_{i}' for i in range(1, 100)]
-        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации в шаблон UserGate Management Center</font></b>")
+        self.title.setText("<b><font color='green' size='+2'>Импорт конфигурации в шаблон NGFW UserGate Management Center</font></b>")
         self.btn1.clicked.connect(self.select_template)
         self.btn2.setText("Импорт выбранного раздела")
         self.btn2.clicked.connect(self.import_selected_points)
@@ -893,7 +893,7 @@ class SelectMcImportMode(SelectMode):
             self.tree.version = self.utm.float_version
             self.tree.product = self.utm.product
             self.tree.change_items_status(self.parent.get_ug_config_path())
-            title = f'Импорт конфигурации в шаблон "{self.templates_group_name}/{self.template_name}" на МС.'
+            title = f'Импорт конфигурации в шаблон NGFW "{self.templates_group_name}/{self.template_name}" на МС.'
             self.add_item_log(f'{title:>100}', color='GREEN')
             self.add_item_log(f'{"="*100}', color='ORANGE')
             if init:
@@ -1146,14 +1146,14 @@ class SelectMcGroupTemplates(QDialog):
 
     def add_groups_items(self):
         """При открытии этого диалога получаем с МС список групп шаблонов и заполняем список выбора групп."""
-        err, result = self.parent.utm.get_device_templates_groups()
+        err, result = self.parent.utm.get_ngfw_templates_groups()
         if err:
             func.message_alert(self, 'Не удалось получить список групп шаблонов!', result)
         else:
             self.groups_list.clear()
             for item in result:
                 self.groups_list.addItem(item['name'])
-                self.groups[item['name']] = item['device_templates']
+                self.groups[item['name']] = item['templates']
             self.groups_list.setCurrentRow(0)
 
     def select_dest_group(self, item_text):

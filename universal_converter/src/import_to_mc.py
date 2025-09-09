@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.10   09.06.2025  (только для universal_converter)
+# Версия 3.11   09.06.2025  (только для universal_converter)
 #
 
 import os, sys, json
@@ -146,7 +146,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         # Читаем бинарный файл библиотечных данных.
         err, self.mc_data = self.read_bin_file()
         if err:
-            self.stepChanged.emit('iRED|Импорт конфигурации в шаблон Management Center прерван! Не удалось прочитать служебные данные.')
+            self.stepChanged.emit('iRED|Импорт конфигурации в шаблон NGFW Management Center прерван! Не удалось прочитать служебные данные.')
             return
 
         if self.all_points:
@@ -171,7 +171,7 @@ class ImportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         # Сохраняем бинарный файл библиотечных данных после изменений во время работы.
         if self.write_bin_file(self.mc_data):
-            self.stepChanged.emit('iRED|Импорт конфигурации в шаблон Management Center прерван! Не удалось записать служебные данные.')
+            self.stepChanged.emit('iRED|Импорт конфигурации в шаблон NDFW Management Center прерван! Не удалось записать служебные данные.')
             return
 
         if self.error:

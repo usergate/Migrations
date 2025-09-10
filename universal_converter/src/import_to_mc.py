@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Классы импорта разделов конфигурации в шаблон UserGate Management Center версии 7 и выше.
-# Версия 3.11   09.06.2025  (только для universal_converter)
+# Версия 3.12   10.09.2025  (только для universal_converter)
 #
 
 import os, sys, json
@@ -7551,7 +7551,7 @@ class Zone:
                         allowed_ips = []
                         for item in service['allowed_ips']:
                             if item[0] == 'list_id':
-                                _, list_name = self.parent.get_transformed_name(item[1], desrc='Имя списка', mode=0)
+                                _, list_name = self.parent.get_transformed_name(item[1], descr='Имя списка', mode=0)
                                 try:
                                     item[1] = self.parent.mc_data['ip_lists'][list_name].id
                                 except KeyError as err:
@@ -7594,7 +7594,7 @@ class Zone:
                 new_networks = []
                 for item in self.networks:
                     if item[0] == 'list_id':
-                        _, list_name = self.parent.get_transformed_name(item[1], desrc='Имя списка', mode=0)
+                        _, list_name = self.parent.get_transformed_name(item[1], descr='Имя списка', mode=0)
                         try:
                             item[1] = self.parent.mc_data['ip_lists'][list_name].id
                         except KeyError as err:

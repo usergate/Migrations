@@ -241,7 +241,7 @@ class McXmlRpc:
         for group in result['items']:
             group['templates'] = [x[0] for x in group['device_templates'] if x[1]]
             group.pop('device_templates', None)
-        return 0, result['items']   # Возвращает [{id: str, name: str, device_templates: [id_1, id_2, ...]}, ...]
+        return 0, result['items']   # Возвращает [{id: str, name: str, templates: [id_1, id_2, ...]}, ...]
 
     def add_device_templates_group(self, group_info):
         """Создать новую группу шаблонов NGFW в области. Принимает структуру: {'name': ИМЯ_ГРУППЫ, 'description': ОПИСАНИЕ}"""
@@ -2226,6 +2226,79 @@ class McXmlRpc:
                 return 2, f'Нет лицензии на модуль WAF или прав на изменение персональных слоёв WAF шаблона.'
             else:
                 return 1, f'Error mclib.update_template_waf_custom_layer: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+################################### Вышестоящие прокси ###########################################
+    def get_template_cascade_proxy_servers(self, template_id, start=0, limit=10000):
+        """Получить список серверов вышестоящих прокси шаблона. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.servers.list(self._auth_token, template_id, start, limit, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_template_cascade_proxy_servers: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_cascade_proxy_server(self, template_id, server_info):
+        """Добавить новый сервер вышестоящего прокси в шаблон. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.server.add(self._auth_token, template_id, server_info)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_template_cascade_proxy_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сервера
+
+    def update_template_cascade_proxy_server(self, template_id, server_id, server_info):
+        """Обновить сервер вышестоящего прокси в шаблоне. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.server.update(self._auth_token, template_id, server_id, server_info)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_template_cascade_proxy_server: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_cascade_proxy_profiles(self, template_id, start=0, limit=10000):
+        """Получить список профилей вышестоящих прокси шаблона. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.profiles.list(self._auth_token, template_id, start, limit, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_template_cascade_proxy_profiles: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_cascade_proxy_profile(self, template_id, profile):
+        """Добавить новый профиль вышестоящего прокси в шаблон. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_template_cascade_proxy_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сервера
+
+    def update_template_cascade_proxy_profile(self, template_id, profile_id, profile):
+        """Обновить профиль вышестоящего прокси в шаблоне. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.profile.update(self._auth_token, template_id, profile_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_template_cascade_proxy_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает True
+
+    def get_template_cascade_proxy_rules(self, template_id, start=0, limit=10000):
+        """Получить список правил вышестоящих прокси шаблона. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.rules.list(self._auth_token, template_id, start, limit, {}, [])
+        except rpc.Fault as err:
+            return 1, f'Error utm.get_template_cascade_proxy_rules: [{err.faultCode}] — {err.faultString}'
+        return 0, result['items']
+
+    def add_template_cascade_proxy_rule(self, template_id, rule):
+        """Добавить новое правило вышестоящего прокси в шаблон. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.rule.add(self._auth_token, template_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error utm.add_template_cascade_proxy_rule: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сервера
+
+    def update_template_cascade_proxy_rule(self, template_id, rule_id, rule):
+        """Обновить правило вышестоящего прокси в шаблоне. С версии 7.4 и выше."""
+        try:
+            result = self._server.v1.cccascadeproxy.upstream.proxy.rule.update(self._auth_token, template_id, rule_id, rule)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_template_cascade_proxy_rule: [{err.faultCode}] — {err.faultString}'
         return 0, result     # Возвращает True
 
 ################################### VPN #############################################################################

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс экспорта группы шаблонов NGFW из UserGate Management Center.
-# Версия 1.8  28.08.2025
+# Версия 1.9  10.09.2025
 #
 
 import os, sys, json
@@ -215,6 +215,9 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
             'DoSRules': self.export_dos_rules,
             'WebPortal': self.export_proxyportal_rules,
             'ReverseProxyRules': self.export_reverseproxy_rules,
+            'UpstreamProxiesServers': self.export_upstream_proxies_servers,
+            'UpstreamProxiesProfiles': self.export_upstream_proxies_profiles,
+            'UpstreamProxiesRules': self.export_upstream_proxies_rules,
             'ClientSecurityProfiles': self.export_vpnclient_security_profiles,
             'ServerSecurityProfiles': self.export_vpnserver_security_profiles,
             'VPNNetworks': self.export_vpn_networks,
@@ -4174,6 +4177,138 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
             else:
                 self.stepChanged.emit(f'GRAY|    [Шаблон "{template_name}"] Нет правил reverse-прокси для экспорта.')
         return 0
+
+
+    #--------------------------------------------- Вышестоящие прокси ------------------------------------------------------
+    def export_upstream_proxies_servers(self):
+        """Экспортируем список серверов вышестоящих прокси."""
+        self.stepChanged.emit('BLUE|Экспорт списка серверов вышестоящих прокси из раздела "Вышестоящие прокси/Серверы".')
+
+        self.mc_data['upstreamproxies_servers'] = {}
+        for template_id, template_name in self.templates.items():
+            err, data = self.utm.get_template_cascade_proxy_servers(template_id)
+            if err:
+                self.stepChanged.emit(f'RED|    {data}')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте серверов вышестоящих прокси.')
+                return 1
+
+            if data:
+                for item in data:
+                    self.mc_data['upstreamproxies_servers'][item['id']] = item['name']
+                    item.pop('id', None)
+                    item.pop('template_id', None)
+
+                path = os.path.join(self.group_path, template_name, 'UpstreamProxies/UpstreamProxiesServers')
+                err, msg = self.create_dir(path)
+                if err:
+                    self.stepChanged.emit(f'RED|    {msg}')
+                    self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта серверов вышестоящих прокси.')
+                    return 1
+
+                json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(data, fh, indent=4, ensure_ascii=False)
+                self.stepChanged.emit(f'GREEN|    [Шаблон "{template_name}"] Список серверов вышестоящих прокси выгружен в файл "{json_file}".')
+            else:
+                self.stepChanged.emit(f'GRAY|    [Шаблон "{template_name}"] Нет серверов вышестоящих прокси для экспорта.')
+        return 0
+
+
+    def export_upstream_proxies_profiles(self):
+        """Экспортируем список профилей вышестоящих прокси."""
+        self.stepChanged.emit('BLUE|Экспорт списка профилей вышестоящих прокси из раздела "Вышестоящие прокси/Профили".')
+        self.mc_data['upstreamproxies_profiles'] = {}
+
+        for template_id, template_name in self.templates.items():
+            err, data = self.utm.get_template_cascade_proxy_profiles(template_id)
+            if err:
+                self.stepChanged.emit(f'RED|    {data}')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте профилей вышестоящих прокси.')
+                return 1
+
+            if data:
+                for item in data:
+                    self.mc_data['upstreamproxies_profiles'][item['id']] = item['name']
+                    item.pop('id', None)
+                    item.pop('template_id', None)
+                    try:
+                        item['servers'] = [self.mc_data['upstreamproxies_servers'][x] for x in item['servers']]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Error [Шаблон "{template_name}"]. Не найден сервер для профиля "{item["name"]}". Серверы не добавлены в профиль.')
+                        item['servers'] = []
+
+                path = os.path.join(self.group_path, template_name, 'UpstreamProxies/UpstreamProxiesProfiles')
+                err, msg = self.create_dir(path)
+                if err:
+                    self.stepChanged.emit(f'RED|    {msg}')
+                    self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта профилей вышестоящих прокси.')
+                    return 1
+
+                json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(data, fh, indent=4, ensure_ascii=False)
+                self.stepChanged.emit(f'GREEN|    [Шаблон "{template_name}"] Список профилей вышестоящих прокси выгружен в файл "{json_file}".')
+            else:
+                self.stepChanged.emit(f'GRAY|    [Шаблон "{template_name}"] Нет профилей вышестоящих прокси для экспорта.')
+        return 0
+
+
+    def export_upstream_proxies_rules(self):
+        """Экспортируем список правил вышестоящих прокси."""
+        self.stepChanged.emit('BLUE|Экспорт списка правил вышестоящих прокси из раздела "Вышестоящие прокси/Правила".')
+
+        for template_id, template_name in self.templates.items():
+            err, data = self.utm.get_template_cascade_proxy_rules(template_id)
+            if err:
+                self.stepChanged.emit(f'RED|    {data}')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте правил вышестоящих прокси.')
+                return 1
+
+            if data:
+                error = 0
+                for item in data:
+                    item.pop('id', None)
+                    item.pop('template_id', None)
+                    if item['proxy_profile']:
+                        try:
+                            item['proxy_profile'] = self.mc_data['upstreamproxies_profiles'][item['proxy_profile']]
+                        except KeyError:
+                            self.stepChanged.emit(f'RED|    Error [Шаблон "{template_name}"]. Не найден профиль "{item["proxy_profile"]}" для правила "{item["name"]}". Установлено действие "Мимо прокси".')
+                            item['proxy_profile'] = ''
+                            item['action'] = 'direct'
+                            item['fallback_action'] = 'direct'
+                    if 'fallback_block_page' in item:
+                        item['fallback_block_page'] = self.mc_data['response_pages'].get(item['fallback_block_page'], -1)
+                    error, item['users'] = self.get_names_users_and_groups(item['users'], item['name'], error, template_name)
+                    error, item['time_restrictions'] = self.get_time_restrictions_name(item['time_restrictions'], item['name'], error, template_name)
+                    error, item['url_categories'] = self.get_url_categories_name(item['url_categories'], item['name'], error, template_name)
+                    error, item['urls'] = self.get_urls_name(item['urls'], item['name'], error, template_name)
+                    error, item['src_zones'] = self.get_zones_name('src', item['src_zones'], item['name'], error, template_name)
+                    error, item['src_ips'] = self.get_ips_name('src', item['src_ips'], item['name'], error, template_name)
+                    error, item['cc_network_devices'] = self.get_network_devices(item['cc_network_devices'], item['name'], error, template_name)
+                    item['time_created'] = item['time_created'].rstrip('Z').replace('T', ' ', 1)
+                    item['time_updated'] = item['time_updated'].rstrip('Z').replace('T', ' ', 1)
+
+                path = os.path.join(self.group_path, template_name, 'UpstreamProxies/UpstreamProxiesRules')
+                err, msg = self.create_dir(path)
+                if err:
+                    self.stepChanged.emit(f'RED|    {msg}')
+                    self.stepChanged.emit(f'ORANGE|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта правил вышестоящих прокси.')
+                    return 1
+
+                json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(data, fh, indent=4, ensure_ascii=False)
+
+                if error:
+                    self.stepChanged.emit(f'ORANGE|    [Шаблон "{template_name}"] Произошла ошибка при экспорте правил вышестоящих прокси.')
+                    self.error = 1
+                else:
+                    self.stepChanged.emit(f'GREEN|    [Шаблон "{template_name}"] Правила вышестоящих прокси выгружен в файл "{json_file}".')
+            else:
+                self.stepChanged.emit(f'GRAY|    [Шаблон "{template_name}"] Нет правил вышестоящих прокси для экспорта.')
+        return 0
+
 
     #------------------------------------------------------- VPN ------------------------------------------------------------
     def export_vpnclient_security_profiles(self):

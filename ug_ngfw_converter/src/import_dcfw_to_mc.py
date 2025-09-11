@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс импорта разделов конфигурации в шаблон DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.4   28.08.2025  (только для ug_ngfw_converter)
+# Версия 1.6   03.09.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -291,10 +291,12 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         error = 0
         ip_lists = self.mc_data['ip_lists']
+        n = 0
 
         # Импортируем все списки IP-адресов без содержимого (пустые).
         self.stepChanged.emit('LBLUE|    Импортируем списки IP-адресов без содержимого.')
         for file_name in files_list:
+            n += 1
             json_file = os.path.join(path, file_name)
             err, data = self.read_json_file(json_file, mode=2)
             if err:
@@ -306,9 +308,9 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
             if data['name'] in ip_lists:
                 if self.template_id == ip_lists[data['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Список IP-адресов "{data["name"]}" уже существует в текущем шаблоне.')
+                    self.stepChanged.emit(f'uGRAY|    {n} - Список IP-адресов "{data["name"]}" уже существует в текущем шаблоне.')
                 else:
-                    self.stepChanged.emit(f'sGREEN|    Список IP-адресов "{data["name"]}" уже существует в шаблоне "{ip_lists[data["name"]].template_name}".')
+                    self.stepChanged.emit(f'sGREEN|    {n} - Список IP-адресов "{data["name"]}" уже существует в шаблоне "{ip_lists[data["name"]].template_name}".')
                     continue
             else:
                 err, result = self.utm.add_dcfw_template_nlist(self.template_id, data)
@@ -319,18 +321,20 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'GRAY|    {result}.')
                 else:
                     ip_lists[data['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
-                    self.stepChanged.emit(f'BLACK|    Список IP-адресов "{data["name"]}" импортирован.')
+                    self.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{data["name"]}" импортирован.')
 
         # Импортируем содержимое в уже добавленные списки IP-адресов.
+        n = 0
         self.stepChanged.emit('LBLUE|    Импортируем содержимое списков IP-адресов.')
         for file_name in files_list:
+            n += 1
             json_file = os.path.join(path, file_name)
             err, data = self.read_json_file(json_file)
             if err:
                 continue
 
             _, data['name'] = self.get_transformed_name(data['name'], err=error, descr='Имя списка', mode=0)
-            self.stepChanged.emit(f'BLACK|    Импортируем содержимое списка IP-адресов "{data["name"]}".')
+            self.stepChanged.emit(f'BLACK|    {n} - Импортируем содержимое списка IP-адресов "{data["name"]}".')
 
             if data['name'] not in ip_lists:
                 self.stepChanged.emit(f'RED|       Не найден список IP-адресов "{data["name"]}". Содержимое не импортировано]')
@@ -353,19 +357,10 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                                     error = 1
                             else:
                                 new_content.append(item)
-#                                item_value = f'IP-адрес "{item["value"]}"'
                         if not new_content:
                             self.stepChanged.emit(f'uGRAY|       Список "{data["name"]}" не имеет содержимого.')
                             continue
 
-#                            err, result = self.utm.add_template_nlist_item(self.template_id, iplist['id'], item)
-#                            if err == 1:
-#                                self.stepChanged.emit(f'RED|       {result} [{item_value}] не добавлен в список IP-адресов "{data["name"]}"')
-#                                error = 1
-#                            elif err == 3:
-#                                self.stepChanged.emit(f'uGRAY|       {item_value} уже существует.')
-#                            else:
-#                                self.stepChanged.emit(f'BLACK|       Добавлен {item_value}.')
                         err, result = self.utm.add_dcfw_template_nlist_items(self.template_id, ip_lists[data['name']].id, new_content)
                         if err == 1:
                             self.stepChanged.emit(f'RED|       {result} [Список IP-адресов "{data["name"]}" содержимое не импортировано]')
@@ -3865,7 +3860,9 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         firewall_rules = {x['name']: x['id'] for x in result}
 
         error = 0
+        n = 0
         for item in data:
+            n =+ 1
             item.pop('time_created', None)
             item.pop('time_updated', None)
             item.pop('apps', None)
@@ -3883,21 +3880,21 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     'tls': False
                 }
 
-            try:
-                item['profiles']['idps'] = idps_profiles[item['profiles']['idps']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль СОВ {err}. Загрузите профили СОВ и повторите попытку.')
-                item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
-                item['profiles']['idps'] = False
-                item['error'] = True
+                try:
+                    item['profiles']['idps'] = idps_profiles[item['profiles']['idps']].id
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль СОВ {err}. Загрузите профили СОВ и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль СОВ {err}.'
+                    item['profiles']['idps'] = False
+                    item['error'] = True
 
-            try:
-                item['profiles']['l7'] = l7_profiles[item['profiles']['l7']].id
-            except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль приложений {err}. Загрузите профили приложений и повторите попытку.')
-                item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
-                item['profiles']['l7'] = False
-                item['error'] = True
+                try:
+                    item['profiles']['l7'] = l7_profiles[item['profiles']['l7']].id
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль приложений {err}. Загрузите профили приложений и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль приложений {err}.'
+                    item['profiles']['l7'] = False
+                    item['error'] = True
 
             item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
             item['dst_zones'] = self.get_zones_id('dst', item['dst_zones'], item)
@@ -3912,7 +3909,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 error = 1
 
             if item['name'] in firewall_rules:
-                self.stepChanged.emit(f'uGRAY|    Правило МЭ "{item["name"]}" уже существует.')
+                self.stepChanged.emit(f'uGRAY|    {n} - Правило МЭ "{item["name"]}" уже существует.')
                 item.pop('position', None)
                 err, result = self.utm.update_dcfw_template_firewall_rule(self.template_id, firewall_rules[item['name']], item)
                 if err:
@@ -3928,7 +3925,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'RED|    {result}  [Правило МЭ "{item["name"]}" не импортировано]')
                 else:
                     firewall_rules[item['name']] = result
-                    self.stepChanged.emit(f'BLACK|   Правило МЭ "{item["name"]}" импортировано.')
+                    self.stepChanged.emit(f'BLACK|   {n} - Правило МЭ "{item["name"]}" импортировано.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил межсетевого экрана.')
@@ -4853,12 +4850,14 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in service_list:
             try:
                 if item[0] == 'service':
-                    new_service_list.append(['service', self.mc_data['services'][item[1]].id])
+                    _, service_name = self.get_transformed_name(item[1], descr='Имя сервиса')
+                    new_service_list.append(['service', self.mc_data['services'][service_name].id])
                 elif item[0] == 'list_id':
-                    new_service_list.append(['list_id', self.mc_data['service_groups'][item[1]].id])
+                    _, service_name = self.get_transformed_name(item[1], descr='Имя группы сервисов')
+                    new_service_list.append(['list_id', self.mc_data['service_groups'][service_name].id])
             except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис или группа сервисов "{item[1]}" в группе шаблонов. Загрузите сервисы и группы сервисов и повторите импорт.')
-                rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис или группа сервисов {err} в группе шаблонов. Загрузите сервисы и группы сервисов и повторите импорт.')
+                rule['description'] = f'{rule["description"]}\nError: Не найден сервис {err}.'
                 rule['error'] = True
         return new_service_list
 

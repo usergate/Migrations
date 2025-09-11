@@ -85,6 +85,8 @@ class GetMcNgfwTemporaryData(QThread, WriteBinFile, UsercatalogLdapServers):
             'reverseproxy_servers': {},
             'dos_profiles': {},
             'waf_profiles': {},
+            'upstreamproxies_servers': {},
+            'upstreamproxies_profiles': {},
             'vpn_client_security_profiles': {},
             'vpn_server_security_profiles': {},
             'vpn_networks': {},

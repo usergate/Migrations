@@ -1,14 +1,14 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.8   28.08.2025
+# Версия 2.9   03.09.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
 from datetime import datetime as dt
-from PyQt6.QtGui import QBrush, QColor, QFont, QPalette
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox,
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QWidget, QFrame, QDialog, QMessageBox, QTextEdit,
                              QListWidget, QListWidgetItem, QPushButton, QLabel, QSpacerItem, QLineEdit, QComboBox, QScrollArea,
                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QSplitter, QInputDialog, QRadioButton, QButtonGroup)
 import common_func as func
@@ -177,8 +177,9 @@ class SelectMode(QWidget):
         self.utm = None
         self.product = 'NGFW'
         self.thread = None
-        self.log_list = QListWidget()
-        self.tmp_list = []
+        self.log_list = QTextEdit()
+        self.log_list.setReadOnly(True)
+        self.log_list.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         
         self.title = QLabel()
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -302,9 +303,9 @@ class SelectMode(QWidget):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
         path_logfile = os.path.join(self.parent.get_config_path(), f'{today:%Y-%m-%d_%M:%S}-{log_file}')
-        list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
+        text = self.log_list.document().toPlainText()
         with open(path_logfile, 'w') as fh:
-            print(*list_items, sep='\n', file=fh)
+            print(text, sep='\n', file=fh)
             fh.write('\n')
         func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
 
@@ -326,29 +327,17 @@ class SelectMode(QWidget):
 
     def add_item_log(self, message, color='BLACK'):
         """Добавляем запись лога в log_list."""
-        i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color.get(color, 'RED')))
-        self.log_list.addItem(i)
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
-        if color == 'RED':
-            self.add_item_log(message, color=color)
-            self.log_list.scrollToBottom()
-        elif color in ('BLACK'):
-            self.tmp_list.append((message, color))
-        else:
-            if self.tmp_list:
-                for x in self.tmp_list:
-                    self.add_item_log(x[0], color=x[1])
-                self.tmp_list.clear()
-            self.add_item_log(message, color=color)
-            self.log_list.scrollToBottom()
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
     def on_finished(self):
-        self.tmp_list.clear()
         self.thread = None
         self.enable_buttons()
 
@@ -479,7 +468,9 @@ class SelectMcExportMode(QWidget):
         hbox_info.setContentsMargins(0, 2, 0, 2)
         frame_nodeinfo.setLayout(hbox_info)
 
-        self.log_list = QListWidget()
+        self.log_list = QTextEdit()
+        self.log_list.setReadOnly(True)
+        self.log_list.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.tree = TreeGroupTemplates()
         splitter = QSplitter()
         splitter.addWidget(self.tree)
@@ -763,9 +754,9 @@ class SelectMcExportMode(QWidget):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
         path_logfile = os.path.join(self.parent.mc_base_path, f'{today:%Y-%m-%d_%M%S}-export_{self.device}_{self.selected_group}.log')
-        list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
+        text = self.log_list.document().toPlainText()
         with open(path_logfile, 'w') as fh:
-            print(*list_items, sep='\n', file=fh)
+            print(text, sep='\n', file=fh)
             fh.write('\n')
         func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
 
@@ -790,14 +781,12 @@ class SelectMcExportMode(QWidget):
 
     def add_item_log(self, message, color='BLACK'):
         """Добавляем запись лога в log_list."""
-        i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color.get(color, 'RED')))
-        self.log_list.addItem(i)
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
         self.add_item_log(message, color=color)
-        self.log_list.scrollToBottom()
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
@@ -1298,7 +1287,6 @@ class SelectMcTemplateGroupImport(QWidget):
         self.selected_group = None
         self.selected_templates = []
         self.thread = None
-        self.tmp_list = []
 
         self.title = QLabel("<b><font color='green' size='+2'>Импорт групп шаблонов МС на UserGate Management Center</font></b>")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1324,7 +1312,9 @@ class SelectMcTemplateGroupImport(QWidget):
         hbox_info.setContentsMargins(0, 2, 0, 2)
         frame_nodeinfo.setLayout(hbox_info)
 
-        self.log_list = QListWidget()
+        self.log_list = QTextEdit()
+        self.log_list.setReadOnly(True)
+        self.log_list.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.tree = TreeGroupTemplates(child_disabled=False)
         splitter = QSplitter()
         splitter.addWidget(self.tree)
@@ -1614,36 +1604,25 @@ class SelectMcTemplateGroupImport(QWidget):
 
     def add_item_log(self, message, color='BLACK'):
         """Добавляем запись лога в log_list."""
-        i = QListWidgetItem(message)
-        i.setForeground(QColor(cs.color.get(color, 'RED')))
-        self.log_list.addItem(i)
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
 
 
     def _save_logs(self):
         """Сохраняем лог из log_list в файл "log_file" в текущей директории"""
         today = dt.now()
         path_logfile = os.path.join(self.parent.mc_base_path, f'{today:%Y-%m-%d_%M%S}-import_{self.device}_{self.selected_group}.log')
-        list_items = [self.log_list.item(row).text() for row in range(self.log_list.count())]
+        text = self.log_list.document().toPlainText()
         with open(path_logfile, 'w') as fh:
-            print(*list_items, sep='\n', file=fh)
+            print(text, sep='\n', file=fh)
             fh.write('\n')
         func.message_inform(self, 'Сохранение лога', f'Лог сохранён в файл "{path_logfile}".')
 
 
     def on_step_changed(self, msg):
         color, _, message = msg.partition('|')
-        if color == 'RED':
-            self.add_item_log(message, color=color)
-            self.log_list.scrollToBottom()
-        elif color in ('BLACK', 'NOTE'):
-            self.tmp_list.append((message, color))
-        else:
-            if self.tmp_list:
-                for x in self.tmp_list:
-                    self.add_item_log(x[0], color=x[1])
-                self.tmp_list.clear()
-            self.add_item_log(message, color=color)
-            self.log_list.scrollToBottom()
+        self.log_list.setTextColor(QColor(cs.color.get(color, 'RED')))
+        self.log_list.append(message)
         if color in ('iORANGE', 'iGREEN', 'iRED'):
             func.message_inform(self, 'Внимание!', message)
 
@@ -2417,56 +2396,46 @@ class MainTree(QTreeWidget):
                 "Вышестоящий прокси", "Правила", "Профили", "Серверы"
             },
             7.2: {
-                "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Tags",
+                "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Тэги",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП",
                 "Вышестоящий прокси", "Правила", "Профили", "Серверы"
             },
             7.1: {
-                "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Tags",
+                "Маршруты", "OSPF", "BGP", "Системные WAF-правила", "Тэги",
                 "Политики BYOD", "СОВ", "Правила АСУ ТП", "Профили безопасности VPN", "Профили АСУ ТП",
                 "Вышестоящий прокси", "Правила", "Профили", "Серверы"
             },
             7.0: {
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
-                "Политики BYOD",
-                "Агент UserID",
-                "Правила АСУ ТП",
+                "Политики BYOD", "Агент UserID", "Правила АСУ ТП", "Профили АСУ ТП",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
-                "Профили АСУ ТП",
-                "Профили приложений", "Приложения",
-                "Сигнатуры СОВ",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Tags",
+                "Профили приложений", "Приложения", "Сигнатуры СОВ",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Тэги",
                 "Параметры SNMP", "Профили безопасности SNMP",
                 "Вышестоящий прокси", "Правила", "Профили", "Серверы",
             },
             6.1: {
                 "Профили пользовательских сертификатов",
                 "Маршруты", "OSPF", "BGP",
-                "Инспектирование туннелей",
-                "Агент UserID",
+                "Инспектирование туннелей", "Агент UserID",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
-                "Сигнатуры СОВ",
-                "Профили LLDP",
-                "Профили пересылки SSL",
-                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Tags",
+                "Сигнатуры СОВ", "Профили LLDP", "Профили пересылки SSL",
+                "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента", "Тэги",
                 "Параметры SNMP", "Профили безопасности SNMP",
                 "Вышестоящий прокси", "Правила", "Профили", "Серверы",
             },
             5.0: {
                 "Профили пользовательских сертификатов",
-                "Виртуальные маршрутизаторы",
-                "Терминальные серверы",
-                "Агент UserID",
-                "Инспектирование туннелей",
-                "Инспектирование SSH",
+                "Виртуальные маршрутизаторы", "Терминальные серверы", "Агент UserID",
+                "Инспектирование туннелей", "Инспектирование SSH",
                 "WAF", "WAF-профили", "Персональные WAF-слои", "Системные WAF-правила",
                 "Серверные профили безопасности", "Клиентские профили безопасности",
                 "Группы сервисов", "Профили приложений", "Приложения",
-                "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL", "Tags",
+                "Сигнатуры СОВ", "Профили LLDP", "Профили SSL", "Профили пересылки SSL", "Тэги",
                 "HID объекты", "HID профили", "Профили BFD", "Syslog фильтры UserID агента",
                 "Параметры SNMP", "Профили безопасности SNMP",
                 "Вышестоящий прокси", "Правила", "Профили", "Серверы",

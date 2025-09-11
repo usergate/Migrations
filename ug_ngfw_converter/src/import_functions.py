@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.1   29.08.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 3.2   02.09.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -4238,7 +4238,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         proxies_servers = self.ngfw_data['upstreamproxies_servers']
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера прокси')
+#            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера прокси')
             if item['name'] in proxies_servers:
                 self.stepChanged.emit(f'uGRAY|    Сервер вышестоящего прокси "{item["name"]}" уже существует.')
                 err, result = self.utm.update_cascade_proxy_server(proxies_servers[item['name']], item)
@@ -4349,7 +4349,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         proxies_rules = {x['name']: x['id'] for x in result}
 
         for item in data:
-            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля прокси')
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила прокси')
             item.pop('position_layer', None)
             item.pop('time_created', None)
             item.pop('time_updated', None)
@@ -5175,10 +5175,12 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit("GRAY|    Нет списков IP-адресов для импорта.")
             return
         error = 0
+        n = 0
 
         # Импортируем все списки IP-адресов без содержимого (пустые).
         self.stepChanged.emit(f'LBLUE|    Импортируем списки IP-адресов без содержимого.')
         for file_name in files_list:
+            n += 1
             json_file = os.path.join(path, file_name)
             err, data = self.read_json_file(json_file, mode=2)
             if err:
@@ -5192,7 +5194,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 data.pop('list_type_update', None)
                 data.pop('schedule', None)
             if data['name'] in self.ngfw_data['ip_lists']:
-                self.stepChanged.emit(f'uGRAY|    Список IP-адресов "{data["name"]}" уже существует.')
+                self.stepChanged.emit(f'uGRAY|    {n} - Список IP-адресов "{data["name"]}" уже существует.')
                 err, result = self.utm.update_nlist(self.ngfw_data['ip_lists'][data['name']], data)
                 if err == 1:
                     error = 1
@@ -5208,11 +5210,13 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'RED|    {result}  [Список IP-адресов "{data["name"]}" не импортирован]')
                 else:
                     self.ngfw_data['ip_lists'][data['name']] = result
-                    self.stepChanged.emit(f'BLACK|    Список IP-адресов "{data["name"]}" импортирован.')
+                    self.stepChanged.emit(f'BLACK|    {n} - Список IP-адресов "{data["name"]}" импортирован.')
 
         # Добавляем содержимое в уже добавленные списки IP-адресов.
+        n = 0
         self.stepChanged.emit(f'LBLUE|    Импортируем содержимое списков IP-адресов.')
         for file_name in files_list:
+            n += 1
             json_file = os.path.join(path, file_name)
             err, data = self.read_json_file(json_file, mode=2)
             if err:
@@ -5236,8 +5240,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                                 item['list'] = self.ngfw_data['ip_lists'][item_list]
                                 new_content.append(item)
                             except KeyError:
-                                message = f'    Error: Нет IP-листа "{item["list"]}" в списках IP-адресов NGFW.'
-                                self.stepChanged.emit(f'RED|{message}\n    Error: Список "{item["list"]}" не добавлен в список IP-адресов "{data["name"]}".')
+                                message = f'    Error: Нет IP-листа "{item_list}" в списках IP-адресов NGFW.'
+                                self.stepChanged.emit(f'RED|{message}\n    Error: Список "{item_list}" не добавлен в список IP-адресов "{data["name"]}".')
                                 error = 1
                         else:
                             self.stepChanged.emit(f'GRAY|    В список "{data["name"]}" не добавлен IP-лист "{item["list"]}". NGFW версии "{self.utm.float_version}" не поддерживает содержимое в виде списков IP-адресов.')
@@ -5251,7 +5255,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err2 == 2:
                     self.stepChanged.emit(f'GRAY|    {result2}')
                 else:
-                    self.stepChanged.emit(f'BLACK|    Содержимое списка IP-адресов "{data["name"]}" импортировано.')
+                    self.stepChanged.emit(f'BLACK|    {n} - Содержимое списка IP-адресов "{data["name"]}" импортировано.')
             else:
                 self.stepChanged.emit(f'GRAY|    Список "{data["name"]}" пуст.')
 
@@ -7165,21 +7169,24 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'bRED|    Error: [Правило "{rule["name"]}"] Группа сервисов "{item[1]}" не добавлена. В версии 6 группы сервисов не поддерживаются.')
                 else:
                     try:
-                        new_service_list.append(self.ngfw_data['services'][item[1]])
+                        _, service_name = self.get_transformed_name(item[1], descr='Имя сервиса')
+                        new_service_list.append(self.ngfw_data['services'][service_name])
                     except KeyError as err:
-                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис "{item[1]}". Импортируйте сервисы и повторите попытку.')
-                        rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис {err}. Импортируйте сервисы и повторите попытку.')
+                        rule['description'] = f'{rule["description"]}\nError: Не найден сервис {err}.'
                         rule['error'] = True
         else:
             for item in service_list:
                 try:
                     if item[0] == 'service':
-                        new_service_list.append(['service', self.ngfw_data['services'][item[1]]])
+                        _, service_name = self.get_transformed_name(item[1], descr='Имя сервиса')
+                        new_service_list.append(['service', self.ngfw_data['services'][service_name]])
                     elif item[0] == 'list_id':
-                        new_service_list.append(['list_id', self.ngfw_data['service_groups'][item[1]]])
+                        _, service_name = self.get_transformed_name(item[1], descr='Имя группы сервисов')
+                        new_service_list.append(['list_id', self.ngfw_data['service_groups'][service_name]])
                 except KeyError as err:
-                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис "{item[1]}". Загрузите сервисы и повторите импорт.')
-                    rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{item[1]}".'
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис {err}. Загрузите сервисы и повторите импорт.')
+                    rule['description'] = f'{rule["description"]}\nError: Не найден сервис {err}.'
                     rule['error'] = True
         return new_service_list
 

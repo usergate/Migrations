@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов на UserGate Management Center версии 7 и выше.
-# Версия 1.3   28.08.2025  (только для ug_ngfw_converter)
+# Версия 1.4   11.09.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -185,6 +185,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             'DoSRules': self.import_dos_rules,
             'WebPortal': self.import_proxyportal_rules,
             'ReverseProxyRules': self.import_reverseproxy_rules,
+            'UpstreamProxiesServers': self.import_upstream_proxies_servers,
+            'UpstreamProxiesProfiles': self.import_upstream_proxies_profiles,
+            'UpstreamProxiesRules': self.import_upstream_proxies_rules,
             'ServerRules': self.import_vpn_server_rules,
             'ClientRules': self.import_vpn_client_rules,
             'AlertRules': self.import_notification_alert_rules,
@@ -3087,7 +3090,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                                 self.stepChanged.emit(f'RED|    Error: Не найден профиль клиентского сертификата {err} для "{params[key]}". Загрузите профили клиентских сертификатов и повторите попытку.')
                                 error = 1
                                 continue
-                elif key == 'web_console_ssl_profile_id':
+                elif key == 'web_console_ssl_profile_id' and value['value']:
                     try:
                         value['value'] = self.mc_data['ssl_profiles'][value['value']].id
                     except KeyError as err:
@@ -3095,6 +3098,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                         error = 1
                         continue
                 elif key == 'response_pages_ssl_profile_id':
+                    if not value['value']:
+                        continue
                     try:
                         value['value'] = self.mc_data['ssl_profiles'][value['value']].id
                     except KeyError as err:
@@ -3102,6 +3107,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                         error = 1
                         continue
                 elif key == 'endpoint_ssl_profile_id':
+                    if not value['value']:
+                        continue
                     try:
                         value['value'] = self.mc_data['ssl_profiles'][value['value']].id
                     except KeyError as err:
@@ -3109,6 +3116,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                         error = 1
                         continue
                 elif key == 'endpoint_certificate_id':
+                    if not value['value']:
+                        continue
                     try:
                         value['value'] = self.mc_data['certs'][value['value']].id
                     except KeyError as err:
@@ -3227,6 +3236,8 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
         for key, value in data.items():
             if key in params:
                 if key == 'tunnel_inspection_zone_config':
+                    if not value['value']['target_zone']:
+                        continue
                     try:
                         value['value']['target_zone'] = self.mc_data['zones'][value['value']['target_zone']].id
                     except KeyError:
@@ -5638,6 +5649,176 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
         self.stepChanged.emit('LBLUE|    Проверьте флаг "Использовать HTTPS" во всех импортированных правилах! Если не установлен профиль SSL, выберите нужный.')
 
 
+    #------------------------------- Вышестоящий прокси -----------------------------------------
+    def import_upstream_proxies_servers(self, path, template_id, template_name):
+        """Импортируем список серверов вышестоящих прокси"""
+        json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт серверов вышестоящих прокси в раздел "Вышестоящие прокси/Серверы".')
+        error = 0
+
+        if not self.mc_data.get('upstreamproxies_servers', False):
+            if self.get_upstream_proxies_servers(): # Устанавливаем self.mc_data['upstreamproxies_servers']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов вышестоящих прокси.')
+                return
+        proxies_servers = self.mc_data['upstreamproxies_servers']
+
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
+            if item['name'] in proxies_servers:
+                if template_id == proxies_servers[item['name']].template_id:
+                    self.stepChanged.emit(f'uGRAY|    Cервер вышестоящих прокси "{item["name"]}" уже существует в текущем шаблоне.')
+                else:
+                    self.stepChanged.emit(f'sGREEN|    Cервер вышестоящих прокси "{item["name"]}" уже существует в шаблоне "{proxies_servers[item["name"]].template_name}".')
+            else:
+                err, result = self.utm.add_template_cascade_proxy_server(template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result}  [Cервер вышестоящих прокси "{item["name"]}" не импортирован]')
+                    error = 1
+                else:
+                    proxies_servers[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
+                    self.stepChanged.emit(f'BLACK|    Cервер вышестоящих прокси "{item["name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте серверов вышестоящих прокси.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт серверов вышестоящих прокси завершён.')
+
+
+    def import_upstream_proxies_profiles(self, path, template_id, template_name):
+        """Импортируем список профилей вышестоящих прокси"""
+        json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт профилей вышестоящих прокси в раздел "Вышестоящие прокси/Профили".')
+        error = 0
+
+        if not self.mc_data.get('upstreamproxies_servers', False):
+            if self.get_upstream_proxies_servers(): # Устанавливаем self.mc_data['upstreamproxies_servers']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей вышестоящих прокси.')
+                return
+        proxies_servers = self.mc_data['upstreamproxies_servers']
+
+        if not self.mc_data.get('upstreamproxies_profiles', False):
+            if self.get_upstream_proxies_profiles(): # Устанавливаем self.mc_data['upstreamproxies_profiles']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей вышестоящих прокси.')
+                return
+        proxies_profiles = self.mc_data['upstreamproxies_profiles']
+
+        for item in data:
+            new_servers = []
+            for x in item['servers']:
+                error, x = self.get_transformed_name(x, err=error, descr='Имя сервера')
+                try:
+                    new_servers.append(proxies_servers[x].id)
+                except KeyError:
+                    self.stepChanged.emit(f'RED|    Error: [Профиль "{item["name"]}"] Не найден сервер "{x}".')
+                    item['description'] = f'{item["description"]}\nError: Не найден сервер "{x}".'
+                    error = 1
+            item['servers'] = new_servers
+
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя сервера')
+            if item['name'] in proxies_profiles:
+                if template_id == proxies_profiles[item['name']].template_id:
+                    self.stepChanged.emit(f'uGRAY|    Профиль вышестоящих прокси "{item["name"]}" уже существует в текущем шаблоне.')
+                else:
+                    self.stepChanged.emit(f'sGREEN|    Профиль вышестоящих прокси "{item["name"]}" уже существует в шаблоне "{proxies_profiles[item["name"]].template_name}".')
+            else:
+                err, result = self.utm.add_template_cascade_proxy_profile(template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result}  [Профиль вышестоящих прокси "{item["name"]}" не импортирован]')
+                    error = 1
+                else:
+                    proxies_profiles[item['name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
+                    self.stepChanged.emit(f'BLACK|    Профиль вышестоящих прокси "{item["name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей вышестоящих прокси.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт профилей вышестоящих прокси завершён.')
+
+
+    def import_upstream_proxies_rules(self, path, template_id, template_name):
+        """Импортируем список правил вышестоящих прокси"""
+        json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        self.stepChanged.emit('BLUE|Импорт правил вышестоящих прокси в раздел "Вышестоящие прокси/Правила".')
+        error = 0
+
+        if not self.mc_data.get('upstreamproxies_profiles', False):
+            if self.get_upstream_proxies_profiles(): # Устанавливаем self.mc_data['upstreamproxies_profiles']
+                self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил вышестоящих прокси.')
+                return
+        proxies_profiles = self.mc_data['upstreamproxies_profiles']
+
+        err, result = self.utm.get_template_cascade_proxy_rules(template_id)
+        if err:
+            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте правил вышестоящих прокси.')
+            self.error = 1
+            return
+        proxies_rules = {x['name']: x['id'] for x in result}
+
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя правила')
+            item.pop('time_created', None)
+            item.pop('time_updated', None)
+
+            if item['proxy_profile']:
+                try:
+                    item['proxy_profile'] = proxies_profiles[item['proxy_profile']].id
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден профиль прокси {err}. Установлен режим работы: "Мимо прокси".')
+                    item['description'] = f'{item["description"]}\nError: Не найден профиль прокси {err}. Установлен режим работы: "Мимо прокси".'
+                    item['proxy_profile'] = ''
+                    item['action'] = 'direct'
+                    item['fallback_action'] = 'direct'
+                    item.pop('fallback_block_page', None)
+                    error = 1
+            if 'fallback_block_page' in item:
+                try:
+                    item['fallback_block_page'] = self.mc_data['response_pages'][item['fallback_block_page']].id
+                except KeyError as err:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{item["name"]}"] Не найден шаблон страницы блокировки {err}. Импортируйте шаблоны страниц и повторите попытку.')
+                    item['description'] = f'{item["description"]}\nError: Не найден шаблон страницы блокировки "{item["fallback_block_page"]}".'
+                    item['fallback_block_page'] = -1
+                    error = 1
+
+            item['users'] = self.get_guids_users_and_groups(item) if self.mc_data['ldap_servers'] else []
+            item['time_restrictions'] = self.get_time_restrictions(item)
+            item['url_categories'] = self.get_url_categories_id(item)
+            item['urls'] = self.get_urls_id(item['urls'], item)
+            item['src_zones'] = self.get_zones_id('src', item['src_zones'], item)
+            item['src_ips'] = self.get_ips_id('src', item['src_ips'], item)
+
+            if item.pop('error', False):
+                item['enabled'] = False
+                error = 1
+
+            if item['name'] in proxies_rules:
+                self.stepChanged.emit(f'uGRAY|    Правило вышестоящих прокси "{item["name"]}" уже существует в текущем шаблоне.')
+            else:
+                err, result = self.utm.add_template_cascade_proxy_rule(template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result}  [Правило вышестоящих прокси "{item["name"]}" не импортировано]')
+                    error = 1
+                else:
+                    proxies_rules[item['name']] = result
+                    self.stepChanged.emit(f'BLACK|    Правило вышестоящих прокси "{item["name"]}" импортировано.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил вышестоящих прокси.')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт правил вышестоящих прокси завершён.')
+
+
     #-------------------------------------- VPN -------------------------------------------------
     def import_vpnclient_security_profiles(self, path, template_id, template_name):
         """Импортируем клиентские профилей безопасности VPN"""
@@ -6828,6 +7009,40 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     self.stepChanged.emit(f'ORANGE|    Профиль DoS "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль DoS из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['dos_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+        return 0
+
+
+    def get_upstream_proxies_servers(self):
+        """Получаем сервера вышестоящих прокси в группе шаблонов и устанавливаем значение self.mc_data['upstreamproxies_servers']"""
+        self.mc_data['upstreamproxies_servers'] = {}
+        for name, uid in self.group_templates[self.selected_group].items():
+            err, result = self.utm.get_template_cascade_proxy_servers(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                return 1
+            for x in result:
+                if x['name'] in self.mc_data['upstreamproxies_servers']:
+                    self.stepChanged.emit(f'ORANGE|    Сервер вышестоящих прокси "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Сервер из шаблона "{name}" не будет использован.')
+                else:
+                    self.mc_data['upstreamproxies_servers'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+        return 0
+
+
+    def get_upstream_proxies_profiles(self):
+        """Получаем профили вышестоящих прокси в группе шаблонов и устанавливаем значение self.mc_data['upstreamproxies_profiles']"""
+        self.mc_data['upstreamproxies_profiles'] = {}
+        for name, uid in self.group_templates[self.selected_group].items():
+            err, result = self.utm.get_template_cascade_proxy_profiles(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}')
+                self.error = 1
+                return 1
+            for x in result:
+                if x['name'] in self.mc_data['upstreamproxies_profiles']:
+                    self.stepChanged.emit(f'ORANGE|    Профиль вышестоящих прокси "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль из шаблона "{name}" не будет использован.')
+                else:
+                    self.mc_data['upstreamproxies_profiles'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
         return 0
 
 

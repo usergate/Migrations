@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс импорта разделов конфигурации в шаблон DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.6   03.09.2025  (только для ug_ngfw_converter)
+# Версия 1.8   09.10.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -720,6 +720,9 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     custom_url[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
 
         for item in data:
+            item.pop('user', None)
+            item.pop('change_date', None)
+            item.pop('default_categories', None)
             try:
                 item['categories'] = [self.mc_data['url_categories'][x] for x in item['categories']]
             except KeyError as err:
@@ -2059,13 +2062,14 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         for item in data:
             item['is_automatic'] = False
+            item.pop('mac', None)
 
-            if 'node_name' in item:
-                if item['node_name'] != self.node_name:
-                    self.stepChanged.emit(f'rNOTE|    Шлюз "{item["name"]}" не импортирован так как имя узла в настройках не совпало с указанным.')
-                    continue
-            else:
-                item['node_name'] = self.node_name
+#            if 'node_name' in item:
+#                if item['node_name'] != self.node_name:
+#                    self.stepChanged.emit(f'rNOTE|    Шлюз "{item["name"]}" не импортирован так как имя узла в настройках не совпало с указанным.')
+#                    continue
+#            else:
+            item['node_name'] = self.node_name
 
             # Создаём новый VRF если такого ещё нет для этого узла кластера с интерфейсами, которые используются в шлюзах.
             vrf_name = f'{item["vrf"]}:{self.node_name}'
@@ -2380,20 +2384,24 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             error = 1
 
             if item['ospf']:
-                if 'metric' in item['ospf']:
-                    if isinstance(item['ospf']['default_originate'], bool):
-                        item['ospf']['default_originate'] = {
-                            'enabled': item['ospf']['default_originate'],
-                            'always': False,
-                            'metric': item['ospf']['metric']
-                        }
-                item['ospf'].pop('metric', None)
-                item['ospf']['routemaps'] = item['ospf'].get('routemaps', [])
-
-                if item['ospf']['redistribute'] and isinstance(item['ospf']['redistribute'][0], str):
-                    self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Route redistributtion удалёно из настроек OSPF так как структура не соответствует версии МС.')
-                    item['ospf']['redistribute'] = []
-                    error = 1
+                # Переделываем для версии 7.4 со старых версий
+                if isinstance(item['ospf']['default_originate'], bool):
+                    new_redistribute = []
+                    for x in item['ospf']['redistribute']:
+                        new_redistribute.append({
+                            'enabled': True,
+                            'kind': x,
+                            'metric': item['ospf']['metric'],
+                            'routemaps': []
+                        })
+                    item['ospf']['redistribute'] = new_redistribute
+                    item['ospf']['routemaps'] = []
+                    item['ospf']['default_originate'] = {
+                        'enabled': item['ospf']['default_originate'],
+                        'always': False,
+                        'metric': item['ospf']['metric']
+                    }
+                    item['ospf'].pop('metric', None)
 
                 ids = set()
                 new_interfaces = []
@@ -3862,7 +3870,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         error = 0
         n = 0
         for item in data:
-            n =+ 1
+            n += 1
             item.pop('time_created', None)
             item.pop('time_updated', None)
             item.pop('apps', None)

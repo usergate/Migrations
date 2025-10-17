@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.2   02.09.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 3.4   06.10.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -397,12 +397,15 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         params = {
             'auth_captive': 'Домен Auth captive-портала',
             'logout_captive': 'Домен Logout captive-портала',
+            'cert_captive': 'Домен Cert captive-портала',
             'block_page_domain': 'Домен страницы блокировки',
             'ftpclient_captive': 'FTP поверх HTTP домен',
             'ftp_proxy_enabled': 'FTP поверх HTTP',
             'tunnel_inspection_zone_config': 'Зона для инспектируемых туннелей',
             'lldp_config': 'Настройка LLDP'
         }
+        if self.utm.float_version < 7.4:
+            data.pop('cert_captive', None)
         if self.utm.float_version < 7.1:
             data.pop('tunnel_inspection_zone_config', None)
             data.pop('lldp_config', None)
@@ -569,8 +572,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_upstream_proxy_settings(self, path):
-        """Импортируем настройки вышестоящего прокси. Только для версии 7.1 и выше."""
-        if self.utm.float_version >= 7.1:
+        """Импортируем настройки вышестоящего прокси. Только для версии с 7.1 по 7.3."""
+        if 7.1 >= self.utm.float_version < 7.4:
             json_file = os.path.join(path, 'upstream_proxy_settings.json')
             err, data = self.read_json_file(json_file, mode=2)
             if err:
@@ -805,6 +808,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('master', None)
                 item.pop('running', None)
                 item.pop('kind', None)
+                item.pop('node_name', None)              # удаляем если конфиг получен из МС
                 
                 new_slaves = []
                 for port in item['bonding']['slaves']:
@@ -894,6 +898,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('master', None)      # удаляем readonly поле
                 item.pop('kind', None)        # удаляем readonly поле
                 item.pop('mac', None)
+                item.pop('node_name', None)              # удаляем если конфиг получен из МС
 
                 if item.get('config_on_device', False):  # не импортируем если конфиг получен из МС и настраивается на устройстве.
                     continue
@@ -1050,6 +1055,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('is_automatic', None)
                 item.pop('vrf', None)
             item.pop('node_name', None)         # удаляем если конфиг получен из МС
+            item.pop('mac', None)
             
             if item['name'] in gateways_list:
                 if not gateways_read_only[item['name']]:
@@ -1305,6 +1311,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 continue
             else:
                 vrfnames.append(item['name'])
+            item.pop('node_name', None)         # удаляем если конфиг получен из МС
         
             new_routes = {}
             for x in item['routes']:
@@ -1328,6 +1335,17 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     item['ospf']['enabled'] = False
                     ids = set()
                     new_interfaces = []
+
+                    # Переделываем item['ospf'] для версии 6.1.9
+                    if self.utm.float_version < 7.3:
+                        item['ospf'].pop('routemaps', None)
+                        item['ospf']['metric'] = item['ospf']['default_originate']['metric']
+                        item['ospf']['default_originate'] = item['ospf']['default_originate']['enabled']
+                        new_redistribute = []
+                        for x in item['ospf']['redistribute']:
+                            new_redistribute.append(x['kind'])
+                        item['ospf']['redistribute'] = new_redistribute
+
                     for x in item['ospf']['interfaces']:
                         if x['iface_id'] not in ngfw_ifaces:
                             self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс OSPF "{x["iface_id"]}" удалён из настроек OSPF так как отсутствует на NGFW.')
@@ -5777,12 +5795,16 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         custom_url = {x['name']: x['id'] for x in result}
 
         for item in data:
+            item.pop('user', None)
+            item.pop('change_date', None)
+            item.pop('default_categories', None)
             try:
                 item['categories'] = [self.ngfw_data['url_categories'][x] for x in item['categories']]
             except KeyError as err:
                 self.stepChanged.emit(f'RED|    Error: В правиле "{item["name"]}" обнаружена несуществующая категория {err}. Правило  не добавлено.')
                 error = 1
                 continue
+
             if item['name'] in custom_url:
                 self.stepChanged.emit(f'GRAY|    URL категория "{item["name"]}" уже существует.')
                 err, result = self.utm.update_custom_url(custom_url[item['name']], item)

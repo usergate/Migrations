@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 4.5   28.08.2025
+# Версия 4.6   29.08.2025
 # Общий класс для работы с xml-rpc для NGFW и DCFW
 #
 # Коды возврата:
@@ -198,6 +198,28 @@ class UtmXmlRpc:
                 return 1, 'Error utm.set_upstream_proxy_settings: This method is only available for version 7.1 and higher.'
         except rpc.Fault as err:
             return 1, f"Error utm.set_upstream_proxy_settings: [{err.faultCode}] — {err.faultString}"
+
+    def get_upstream_proxy_update_settings(self):
+        """Получить настройки вышестоящего прокси для проверки лицензии и обновлений"""
+        try:
+            if self.float_version >= 7.1:
+                result = self._server.v2.settings.upstream.update.proxy.config.get(self._auth_token)
+                return 0, result
+            else:
+                return 1, 'Error utm.get_upstream_proxy_update_settings: This method is only available for version 7.1 and higher.'
+        except rpc.Fault as err:
+            return 1, f"Error utm.get_upstream_proxy_update_settings: [{err.faultCode}] — {err.faultString}"
+
+    def set_upstream_proxy_update_settings(self, settings):
+        """Обновить настройки вышестоящего прокси для проверки лицензии и обновлений"""
+        try:
+            if self.float_version >= 7.1:
+                result = self._server.v2.settings.upstream.update.proxy.config.set(self._auth_token, settings)
+                return 0, result    # Возвращает True
+            else:
+                return 1, 'Error utm.set_upstream_proxy_update_settings: This method is only available for version 7.1 and higher.'
+        except rpc.Fault as err:
+            return 1, f"Error utm.set_upstream_proxy_update_settings: [{err.faultCode}] — {err.faultString}"
 
     def get_statistics_status(self):
         """

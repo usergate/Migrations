@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.2   29.05.2025
+# Версия 3.3   17.10.2025
 # Общий класс для работы с xml-rpc для Management Center
 #
 # Коды возврата:
@@ -33,6 +33,8 @@ class McXmlRpc:
         self.version_other = None
         self.float_version = None
         self.waf_license = False
+
+        rpc.MAXINT = 2**64 - 1
 
     def connect(self):
         """Подключиться к UTM"""

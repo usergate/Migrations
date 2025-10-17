@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.13  10.09.2025
+# Версия 3.15  06.10.2025
 #
 
 import os, sys, json
@@ -251,6 +251,8 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         params = ["auth_captive", "logout_captive", "block_page_domain", "ftpclient_captive", "ftp_proxy_enabled"]
         if self.utm.float_version >= 7.1:
             params.extend(['tunnel_inspection_zone_config', 'lldp_config'])
+        if self.utm.float_version >= 7.4:
+            params.insert(2, 'cert_captive')
 
         err, data = self.utm.get_settings_params(params)
         if err:
@@ -389,7 +391,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
         """Экспортируем настройки вышестоящего прокси"""
-        if self.utm.float_version >= 7.1:
+        if 7.1 >= self.utm.float_version < 7.4:
             self.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
 
             err, result = self.utm.get_upstream_proxy_settings()
@@ -401,6 +403,21 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 with open(json_file, 'w') as fh:
                     json.dump(result, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'GREEN|    Настройки вышестоящего прокси выгружены в файл "{json_file}".')
+
+
+        """Экспортируем настройки вышестоящего прокси для проверки лицензии и обновлений"""
+        if self.utm.float_version >= 7.1:
+            self.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Настройки/Вышестоящий прокси для проверки лицензии и обновлений".')
+
+            err, result = self.utm.get_upstream_proxy_update_settings()
+            if err:
+                self.stepChanged.emit(f'RED|    {result}\n    Ошибка экспорта настроек вышестоящего прокси для проверки лицензии и обновлений.')
+                self.error = 1
+            else:
+                json_file = os.path.join(path, 'upstream_proxy_update_settings.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(result, fh, indent=4, ensure_ascii=False)
+                self.stepChanged.emit(f'GREEN|    Настройки вышестоящего прокси для проверки лицензии и обновлений выгружены в файл "{json_file}".')
 
 
     def export_certificates(self, path):
@@ -645,7 +662,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             item.pop('speed', None)
             item.pop('errors', None)
             item.pop('running', None)
-            item.pop('node_name', None)
+#            item.pop('node_name', None)
             if item['zone_id']:
                 item['zone_id'] = self.ngfw_data['zones'].get(item['zone_id'], 0)
             item['netflow_profile'] = list_netflow.get(item['netflow_profile'], 'undefined')
@@ -737,9 +754,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
             for item in data:
                 item.pop('id', None)
-                item.pop('node_name', None)
                 item.pop('active', None)
-                item.pop('mac', None)
                 item.pop('protocol', None)
                 item.pop('_appliance_iface', None)
                 item.pop('index', None)
@@ -794,7 +809,6 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             for item in data:
                 item['iface_id'] = iface_names[item['iface_id']]
                 item.pop('id', None)
-                item.pop('node_name', None)
                 item.pop('cc', None)
 
             err, msg = self.create_dir(path)
@@ -909,7 +923,6 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
             for item in data:
                 item.pop('id', None)
-                item.pop('node_name', None)
                 item.pop('cc', None)
                 for x in item['routes']:
                     x.pop('id', None)
@@ -939,7 +952,27 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     for i, rmap in enumerate(x['routemap_out']):
                         x['routemap_out'][i] = route_maps[rmap]
                     x['bfd_profile'] = -1 if self.utm.float_version < 7.1 else bfd_profiles[x['bfd_profile']]
+
                 item['ospf'].pop('id', None)
+                # В версии 6 переделываем item['ospf'] для версии 7.4
+                if isinstance(item['ospf']['default_originate'], bool):
+                    new_redistribute = []
+                    for x in item['ospf']['redistribute']:
+                        new_redistribute.append({
+                            'enabled': True,
+                            'kind': x,
+                            'metric': item['ospf']['metric'],
+                            'routemaps': []
+                        })
+                    item['ospf']['redistribute'] = new_redistribute
+                    item['ospf']['routemaps'] = []
+                    item['ospf']['default_originate'] = {
+                        'enabled': item['ospf']['default_originate'],
+                        'always': False,
+                        'metric': item['ospf']['metric']
+                    }
+                    item['ospf'].pop('metric', None)
+
                 for x in item['ospf']['interfaces']:
                     x['bfd_profile'] = -1 if self.utm.float_version < 7.1 else bfd_profiles[x['bfd_profile']]
                 for x in item['ospf']['areas']:
@@ -4171,11 +4204,10 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         if data:
             for item in data:
                 item.pop('id', None)
-                item.pop('user', None)
-                item.pop('default_categories', None)
-                item.pop('change_date', None)
                 item.pop('cc', None)
                 item['categories'] = [self.ngfw_data['url_categories'][x] for x in item['categories']]
+                item['default_categories'] = [self.ngfw_data['url_categories'][x] for x in item['default_categories']]
+                item['change_date'] = dt.strptime(item['change_date'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
 
             err, msg = self.create_dir(path)
             if err:

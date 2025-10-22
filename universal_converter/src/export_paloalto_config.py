@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль переноса конфигурации с PaloAlto  на NGFW UserGate.
-# Версия 1.0  24.07.2025
+# Версия 1.1  22.10.2025
 #
 
 import os, sys, copy, json
@@ -64,7 +64,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             if err:
                 self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate NGFW прервана.\n')
             else:
-                self.convert_local_users_and_groups(data['config']['shared']['local-user-database'])
+                if data['config']['shared'].get('local-user-database', False):  # Проверяем что есть локальные users и groups
+                    self.convert_local_users_and_groups(data['config']['shared']['local-user-database'])
                 lib = data['config']['devices']['entry']['vsys']['entry']
                 if isinstance(lib, list):
                     lib = lib[0]

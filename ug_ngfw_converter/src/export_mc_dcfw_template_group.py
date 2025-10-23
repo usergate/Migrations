@@ -2549,11 +2549,32 @@ class ExportMcDcfwTemplateGroup(QThread, MyMixedService):
         for template_id, template_name in self.templates.items():
             error = 0
             self.stepChanged.emit(f'sGREEN|    Экспорт из шаблона {template_name}.')
+            path = os.path.join(self.group_path, template_name, 'UserGate/Administrators')
+            err, msg = self.create_dir(path)
+            if err:
+                self.stepChanged.emit(f'RED|       {msg}')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта раздела "UserGate/Администраторы".')
+                return 1
 
+            # Экспортируем настройки аутентификации администраторов.
+            err, data = self.utm.get_dcfw_template_admin_config(template_id)
+            if err:
+                self.stepChanged.emit(f'RED|       {data}')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте аутентификации администраторов".')
+                return 1
+
+            data.pop('template_id', None)
+
+            json_file = os.path.join(path, 'auth_settings.json')
+            with open(json_file, 'w') as fh:
+                json.dump(data, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'BLACK|       Настройки аутентификации выгружены в файл "{json_file}".')
+
+            # Экспортируем профили администраторов.
             err, data = self.utm.get_dcfw_template_admins_profiles(template_id)
             if err:
                 self.stepChanged.emit(f'RED|       {data}')
-                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка экспорта раздела "UserGate/Администраторы".')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка экспорта профилей администраторов.')
                 return 1
 
             if data:
@@ -2562,50 +2583,46 @@ class ExportMcDcfwTemplateGroup(QThread, MyMixedService):
                     item.pop('id', None)
                     item.pop('template_id', None)
 
-                path = os.path.join(self.group_path, template_name, 'UserGate/Administrators')
-                err, msg = self.create_dir(path)
-                if err:
-                    self.stepChanged.emit(f'RED|       {msg}')
-                    self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Не удалось создать директорию для экспорта настроек Администраторов.')
-                    return 1
-
                 json_file = os.path.join(path, 'administrator_profiles.json')
                 with open(json_file, 'w') as fh:
                     json.dump(data, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       Профили администраторов выгружены в файл "{json_file}".')
+            else:
+                self.stepChanged.emit(f'GRAY|       [Шаблон "{template_name}"] Нет профилей администраторов для экспорта.')
 
-                err, data = self.utm.get_dcfw_template_admins(template_id)
-                if err:
-                    self.stepChanged.emit(f'RED|       {data}')
-                    self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте списка администраторов".')
-                    return 1
+            # Экспортируем администраторов.
+            err, data = self.utm.get_dcfw_template_admins(template_id)
+            if err:
+                self.stepChanged.emit(f'RED|       {data}')
+                self.stepChanged.emit(f'RED|       Error [Шаблон "{template_name}"]. Произошла ошибка при экспорте списка администраторов".')
+                return 1
 
-                if data:
-                    for item in data:
-                        item.pop('id', None)
-                        item.pop('template_id', None)
-                        item['profile_id'] = admin_profiles[item['profile_id']]
-                        if 'user_auth_profile_id' in item:
-                            try:
-                                item['user_auth_profile_id'] = self.mc_data['auth_profiles'][item['user_auth_profile_id']]
-                            except KeyError:
-                                self.stepChanged.emit(f'RED|       Error: Не найден профиль аутентификации для администратора "{item["name"]}" в данной группе шаблонов. Профиль установлен в дефолтное значение.')
-                                item['user_auth_profile_id'] = 'Example user auth profile'
-                                error = 1
+            if data:
+                for item in data:
+                    item.pop('id', None)
+                    item.pop('template_id', None)
+                    item['profile_id'] = admin_profiles[item['profile_id']]
+                    if item['type'] == 'auth_profile':
+                        try:
+                            item['user_auth_profile_id'] = self.mc_data['auth_profiles'][item['user_auth_profile_id']]
+                        except KeyError:
+                            self.stepChanged.emit(f'RED|       Error: Не найден профиль аутентификации для администратора "{item["display_name"]}" в данной группе шаблонов. Профиль установлен в дефолтное значение.')
+                            item['user_auth_profile_id'] = 'Example user auth profile'
+                            error = 1
 
-                    json_file = os.path.join(path, 'administrators_list.json')
-                    with open(json_file, 'w') as fh:
-                        json.dump(data, fh, indent=4, ensure_ascii=False)
-                    self.stepChanged.emit(f'BLACK|       Список администраторов выгружен в файл "{json_file}".')
-
-                if error:
-                    self.stepChanged.emit(f'ORANGE|       [Шаблон "{template_name}"]. Произошла ошибка при экспорте раздела "UserGate/Администраторы".')
-                    self.error = 1
-                else:
-                    self.stepChanged.emit(f'GREEN|       [Шаблон "{template_name}"] Раздел "UserGate/Администраторы" выгружен в каталог "{path}".')
+                json_file = os.path.join(path, 'administrators_list.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(data, fh, indent=4, ensure_ascii=False)
+                self.stepChanged.emit(f'BLACK|       Список администраторов выгружен в файл "{json_file}".')
             else:
                 self.stepChanged.emit(f'GRAY|       [Шаблон "{template_name}"] Нет администраторов для экспорта.')
-        return error
+
+            if error:
+                self.stepChanged.emit(f'ORANGE|       [Шаблон "{template_name}"]. Произошла ошибка при экспорте раздела "UserGate/Администраторы".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|       [Шаблон "{template_name}"] Экспорт раздела "UserGate/Администраторы" завершён.')
+        return 0
 
 
     #-------------------------------------- Политики сети -----------------------------------------------------

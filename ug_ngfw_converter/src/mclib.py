@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Версия 3.3   17.10.2025
+# Версия 3.5   22.10.2025
 # Общий класс для работы с xml-rpc для Management Center
 #
 # Коды возврата:
@@ -446,20 +446,52 @@ class McXmlRpc:
         return 0, result  # Возвращает True
 
     def get_template_admins_profiles(self, template_id, start=0, limit=10000, query={}):
-        """Получить список профилей администраторов шаблона"""
+        """Получить список профилей администраторов шаблона NGFW"""
         try:
             result = self._server.v1.ccadministrators.administrator.profiles.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_admins_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
+    def add_template_admins_profile(self, template_id, profile):
+        """Импортировать профиль администратора в шаблон NGFW"""
+        try:
+            result = self._server.v1.ccadministrators.administrator.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_admins_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID добавленого профиля
+
     def get_template_admins(self, template_id, start=0, limit=10000, query={}):
-        """Получить список администраторов шаблона"""
+        """Получить список администраторов шаблона NGFW"""
         try:
             result = self._server.v1.ccadministrators.administrators.list(self._auth_token, template_id, start, limit, query, [])
         except rpc.Fault as err:
             return 1, f'Error mclib.get_template_admins: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
+
+    def add_template_admin(self, template_id, admin_data):
+        """Импортировать администратора в шаблон NGFW"""
+        try:
+            result = self._server.v1.ccadministrators.administrator.add(self._auth_token, template_id, admin_data)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_template_admin: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID добавленого профиля
+
+    def get_template_admin_config(self, template_id):
+        """Получить настройки аутентификации админов в шаблоне NGFW"""
+        try:
+            result = self._server.v1.ccadministrators.config.fetch(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_template_admin_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def set_template_admin_config(self, template_id, config):
+        """Установить настройки аутентификации админов в шаблоне NGFW"""
+        try:
+            result = self._server.v1.ccadministrators.config.update(self._auth_token, template_id, config)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.set_template_admin_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
 
     def get_template_certificates_list(self, template_id, start=0, limit=500, query={}):
         """Получить список сертификатов шаблона"""
@@ -3229,6 +3261,14 @@ class McXmlRpc:
             return 1, f'Error mclib.get_dcfw_template_admins_profiles: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
 
+    def add_dcfw_template_admins_profile(self, template_id, profile):
+        """Импортировать профиль администратора в шаблона DCFW"""
+        try:
+            result = self._server.v1.dcfwadministrators.administrator.profile.add(self._auth_token, template_id, profile)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_dcfw_template_admins_profile: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID добавленого профиля
+
     def get_dcfw_template_admins(self, template_id, start=0, limit=10000, query={}):
         """Получить список администраторов шаблона DCFW"""
         try:
@@ -3236,6 +3276,30 @@ class McXmlRpc:
         except rpc.Fault as err:
             return 1, f'Error mclib.get_dcfw_template_admins: [{err.faultCode}] — {err.faultString}'
         return 0, result['items']
+
+    def add_dcfw_template_admin(self, template_id, admin_data):
+        """Импортировать администратора в шаблон DCFW"""
+        try:
+            result = self._server.v1.dcfwadministrators.administrator.add(self._auth_token, template_id, admin_data)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.add_dcfw_template_admin: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает ID добавленого объекта
+
+    def get_dcfw_template_admin_config(self, template_id):
+        """Получить настройки аутентификации админов в шаблоне DCFW"""
+        try:
+            result = self._server.v1.dcfwadministrators.config.fetch(self._auth_token, template_id)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.get_dcfw_template_admin_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result
+
+    def set_dcfw_template_admin_config(self, template_id, config):
+        """Установить настройки аутентификации админов в шаблоне DCFW"""
+        try:
+            result = self._server.v1.dcfwadministrators.config.update(self._auth_token, template_id, config)
+        except rpc.Fault as err:
+            return 1, f'Error mclib.set_dcfw_template_admin_config: [{err.faultCode}] — {err.faultString}'
+        return 0, result    # Возвращает True
 
     def get_dcfw_template_certificates(self, template_id, start=0, limit=500, query={}):
         """Получить список сертификатов DCFW шаблона"""

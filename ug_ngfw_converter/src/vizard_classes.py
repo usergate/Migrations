@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.9   03.09.2025
+# Версия 2.10   22.10.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -551,7 +551,13 @@ class SelectMcExportMode(QWidget):
         if e == 2:
             self.parent.resize(980, 750)
             if self.get_auth():
-                self.realm = self.utm._login.split('/')[1]
+                try:
+                    self.realm = self.utm._login.split('/')[1]
+                except IndexError:
+                    message = f'Error: Не корректный логин "{self.utm._login}". Не указан идентификатор области.'
+                    self.add_item_log(message, color='RED')
+                    return
+
                 self.label_node_name.setText(f'  {self.utm.node_name}/{self.realm}/{self.device}')
                 self.label_version.setText(f'MC (версия {self.utm.version})')
                 if self.utm.float_version < 7.1:
@@ -1072,7 +1078,12 @@ class SelectMcImportMode(SelectMode):
                         self.run_page_0()
                         return
 
-                    self.current_realm_name = self.utm._login.split('/')[1]
+                    try:
+                        self.current_realm_name = self.utm._login.split('/')[1]
+                    except IndexError:
+                        message = f'Error: Не корректный логин "{self.utm._login}". Не указан идентификатор области.'
+                        self.add_item_log(message, color='RED')
+                        return
 
                     groups_dialog = SelectMcGroupTemplates(self, self.parent)
                     groups_result = groups_dialog.exec()
@@ -1188,13 +1199,17 @@ class SelectMcImportMode(SelectMode):
         if not func.check_auth(self):
             self.run_page_0()
 
+        all_points = self.tree.select_all_items()
+        if not all_points:
+            func.message_inform(self, "Внимание!", "Нет разделов для импорта.")
+            return
+
         node_name = 'node_1'
         node_name, ok = QInputDialog.getItem(self, 'Выбор идентификатора узла', 'Выберите идентификатор узла кластера', self.id_nodes)
         if not ok:
             func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
             return
 
-        all_points = self.tree.select_all_items()
         arguments = {
             'ngfw_ports': [],
             'dhcp_settings': [],
@@ -1422,7 +1437,12 @@ class SelectMcTemplateGroupImport(QWidget):
                 self.tree.init_tree(self.groups)
                 self.tree.setHidden(False)
                 if self.get_auth():
-                    self.current_realm_name = self.utm._login.split('/')[1]
+                    try:
+                        self.current_realm_name = self.utm._login.split('/')[1]
+                    except IndexError:
+                        message = f'Error: Не корректный логин "{self.utm._login}". Не указан идентификатор области.'
+                        self.add_item_log(message, color='RED')
+                        return
                     self.label_version.setText(f'MC (версия {self.utm.version})')
                     if self.utm.float_version < 7.1:
                         message = f'Импорт на Management Center версии менее чем 7.1 не поддерживается. Ваша версия: {self.utm.version}'
@@ -1468,7 +1488,7 @@ class SelectMcTemplateGroupImport(QWidget):
                 self.selected_group = self.tree.selected_path['group']
                 self.selected_templates = self.tree.selected_path['points']
                 self.label_config_path.setText(f'  Input: ./{self.base_path[self.device]}/{self.selected_group}')
-                self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.new_device}  ')
+                self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.new_device}/{self.selected_group}  ')
                 title, title1, color = self.prepare_records()
                 self.enable_buttons()
             else:
@@ -1490,7 +1510,7 @@ class SelectMcTemplateGroupImport(QWidget):
 
     def _radio_button_clicked(self, button):
         self.new_device = button.text()
-        self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.new_device}  ')
+        self.label_node_name.setText(f'Output: {self.utm.node_name}/{self.current_realm_name}/{self.new_device}/{self.selected_group}  ')
         if self.tree.selected_path:
             title, title1, color = self.prepare_records()
             self.log_list.clear()
@@ -1503,7 +1523,7 @@ class SelectMcTemplateGroupImport(QWidget):
         if self.selected_templates:
             tmp_string = 'шаблонов' if len(self.selected_templates) > 1 else 'шаблона'
             title = f'Импорт {tmp_string} "{'", "'.join(self.selected_templates)}" группы шаблонов "{self.device}/{self.selected_group}"'
-            title1 = f'на МС в раздел "{self.new_device}" области "{self.current_realm_name}".'
+            title1 = f'на МС в раздел "{self.new_device}/{self.selected_group}" области "{self.current_realm_name}".'
             color = 'GREEN'
         else:
             title = f'В группе "{self.device}/{self.selected_group}" нет шаблонов для импорта.'

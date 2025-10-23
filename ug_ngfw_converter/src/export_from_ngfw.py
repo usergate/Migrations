@@ -46,7 +46,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.export_funcs = {
             'GeneralSettings':  self.export_general_settings,
             'DeviceManagement': self.pass_function,
-            'Administrators': self.pass_function,
+            'Administrators': self.export_admins,
             'Certificates': self.export_certificates,
             'UserCertificateProfiles': self.export_users_certificate_profiles,
             'Zones': self.export_zones,
@@ -563,6 +563,83 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit(f'GREEN|    Профили пользовательских сертификатов выгружены в файл "{json_file}".')
         else:
             self.stepChanged.emit('GRAY|    Нет профилей пользовательских сертификатов для экспорта.')
+
+
+    def export_admins(self, path):
+        """Экспортируем профили администраторов и список администраторов."""
+        self.stepChanged.emit('BLUE|Экспорт раздела "UserGate/Администраторы".')
+        admin_profiles = {}
+        error = 0
+
+        err, msg = self.create_dir(path)
+        if err:
+            self.stepChanged.emit(f'RED|    {msg}\n    Произошла ошибка при экспорте раздела "UserGate/Администраторы".')
+            self.error = 1
+            return
+
+        err, result = self.utm.get_admins_profiles()
+        if err:
+            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при экспорте профилей администраторов.')
+            self.error = 1
+            return
+
+        if result:
+            for item in result:
+                admin_profiles[item['id']] = item['name']
+                item.pop('id', None)
+                item.pop('cc', None)
+
+            json_file = os.path.join(path, 'administrator_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(result, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'BLACK|    Профили администраторов выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет профилей администраторов для экспорта.')
+
+        err, result2 = self.utm.get_admins()
+        if err:
+            self.stepChanged.emit(f'RED|    {result2}\n    Произошла ошибка при экспорте списка администраторов.')
+            self.error = 1
+            return
+
+        if result2:
+            for item in result2:
+                item.pop('id', None)
+                item.pop('guid', None)
+                item.pop('cc', None)
+                if item['is_root']:
+                    continue
+                item['profile_id'] = admin_profiles[item['profile_id']]
+                if item['type'] == 'auth_profile':
+                    try:
+                        item['user_auth_profile_id'] = self.ngfw_data['auth_profiles'][item['user_auth_profile_id']]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Error: Не найден профиль аутентификации для администратора "{item["login"]}". Профиль установлен в дефолтное значение.')
+                        item['user_auth_profile_id'] = 'Example user auth profile'
+                        error = 1
+
+            json_file = os.path.join(path, 'administrators_list.json')
+            with open(json_file, 'w') as fh:
+                json.dump(result2, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'BLACK|    Список администраторов выгружен в файл "{json_file}".')
+
+        err, result3 = self.utm.get_admin_config()
+        if err:
+            self.stepChanged.emit(f'RED|    {result2}\n    Произошла ошибка при экспорте настроек аутентификации.')
+            self.error = 1
+            return
+
+        json_file = os.path.join(path, 'auth_settings.json')
+        with open(json_file, 'w') as fh:
+            json.dump(result3, fh, indent=4, ensure_ascii=False)
+        self.stepChanged.emit(f'BLACK|    Настройки аутентификации выгружены в файл "{json_file}".')
+
+
+        if error:
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при экспорте раздела "UserGate/Администраторы".')
+            self.error = 1
+        else:
+            self.stepChanged.emit('GREEN|    Экспорт раздела "UserGate/Администраторы" завершён.')
 
 
     #---------------------------------- Сеть -------------------------------------------------------

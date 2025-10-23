@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс импорта разделов конфигурации в шаблон DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.8   09.10.2025  (только для ug_ngfw_converter)
+# Версия 1.9   22.10.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -85,7 +85,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             'AuthProfiles': self.import_auth_profiles,
             'GeneralSettings': self.import_general_settings,
             'DeviceManagement': self.pass_function,
-            'Administrators': self.pass_function,
+            'Administrators': self.import_administrators,
             'Groups': self.import_local_groups,
             'Users': self.import_local_users,
             'CaptiveProfiles': self.import_captive_profiles,
@@ -2965,6 +2965,154 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
         else:
             self.stepChanged.emit('GREEN|    Импортированы настройки вышестоящего прокси для проверки лицензий и обновлений".')
+
+
+    def import_administrators(self, path):
+        """Импортируем профили администраторов и список администраторов."""
+        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Администраторы".')
+        error = 0
+
+        # Импортируем настройки аутентификации.
+        json_file = os.path.join(path, 'auth_settings.json')
+        err, auth_config = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+        print(auth_config)
+
+        err, result = self.utm.set_dcfw_template_admin_config(self.template_id, auth_config)
+        if err:
+            self.stepChanged.emit(f'RED|    {result}\n    Настройки аутентификации не импортированы.')
+            error = 1
+        else:
+            self.stepChanged.emit('BLACK|    Импортированы настройки аутентификации.')
+
+        return
+
+        # Импортируем профили администраторов.
+        admin_profiles = {}
+        for uid, name in self.templates.items():
+            err, result = self.utm.get_dcfw_template_admins_profiles(uid)
+            if err:
+                self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте профилей администраторов.')
+                self.error = 1
+                return
+            for x in result:
+                if x['name'] in admin_profiles:
+                    self.stepChanged.emit(f'ORANGE|    Профиль администраторов "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Профиль из шаблона "{name}" не будет использован.')
+                else:
+                    admin_profiles[x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+
+        json_file = os.path.join(path, 'administrator_profiles.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
+            if item['name'] in admin_profiles:
+                if self.template_id == admin_profiles[item['name']].template_id:
+                    self.stepChanged.emit(f'uGRAY|    Профиль администраторов "{item["name"]}" уже существует в текущем шаблоне.')
+                else:
+                    self.stepChanged.emit(f'sGREEN|    Профиль администраторов "{item["name"]}" уже существует в шаблоне "{admin_profiles[item["name"]].template_name}".')
+                    continue
+            else:
+                err, result = self.utm.add_dcfw_template_admins_profile(self.template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result} [Профиль администратора "{item["name"]}" не импортирован]')
+                    error = 1
+                else:
+                    admin_profiles[item['name']] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
+                    self.stepChanged.emit(f'BLACK|    Профиль администратора "{item["name"]}" импортирован.')
+
+        # Импортируем администраторов.
+        err, result = self.utm.get_dcfw_template_admins(self.template_id)
+        if err:
+            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте администраторов.')
+            self.error = 1
+            return
+        admins = {x['login']: x['id'] for x in result}
+
+        json_file = os.path.join(path, 'administrators_list.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+
+        for item in data:
+            if item['is_root']:
+                continue
+            if item['type'] == 'auth_profile':
+                item['display_name'] = item['login']
+                try:
+                    item['user_auth_profile_id'] = self.mc_data['auth_profiles'][item['user_auth_profile_id']].id
+                except KeyError:
+                    self.stepChanged.emit(f'RED|    Error: [Администратор "{item["login"]}" не импортирован] Нет найден профиль аутентификации "{item["user_auth_profile_id"]}".')
+                    error = 1
+                    continue
+            else:
+                item.pop('user_auth_profile_id', None)
+                item.pop('locked', None)
+                item.pop('is_root', None)
+                item.pop('password', None)
+
+            if item['type'] == 'local':
+                item['login'] = self.get_transformed_userlogin(item['login'])
+                item['display_name'] = item['login']
+                item['password'] = 'Q12345678@'
+            if item['type'] in ['ldap_user', 'ldap_group']:
+                if item['type'] == 'ldap_user':
+                    ldap_domain, _, login_name = item['login'].partition("\\")
+                    item['display_name'] = f'{login_name} ({item["login"]})'
+                else:
+                    tmp_arr1 = [x.split('=') for x in item['login'].split(',')]
+                    tmp_arr2 = [b for a, b in tmp_arr1 if a in ('dc', 'DC')]
+                    ldap_domain = '.'.join(tmp_arr2)
+                    login_name = tmp_arr1[0][1] if tmp_arr1[0][0] == 'CN' else None
+                    item['display_name'] = f'{login_name} ({ldap_domain}\\{login_name})'
+                if login_name:
+                    try:
+                        ldap_id = self.mc_data['ldap_servers'][ldap_domain.lower()]
+                    except KeyError:
+                        self.stepChanged.emit(f'RED|    Error: [Администратор "{item["display_name"]}" не импортирован.] Нет LDAP-коннектора для домена "{ldap_domain}".')
+                        error = 1
+                        continue
+
+                    if item['type'] == 'ldap_user':
+                        err, result = self.utm.get_usercatalog_ldap_user_guid(ldap_id, login_name)
+                    else:
+                        err, result = self.utm.get_usercatalog_ldap_group_guid(ldap_id, login_name)
+                    if err:
+                        self.stepChanged.emit(f'RED|    {result}\n       Администратор "{item["display_name"]}" не импортирован.')
+                        error = 1
+                        continue
+                    elif not result:
+                        self.stepChanged.emit(f'RED|    Error: [Администратор "{item["display_name"]}" не импортирован] Нет такого пользователя в домене или LDAP-коннектора для домена "{ldap_domain}".')
+                        error = 1
+                        continue
+                    else:
+                        item['guid'] = result
+                else:
+                    self.stepChanged.emit(f'RED|    Error: [Администратор "{item["login"]}" не импортирован] Нет такого пользователя в домене "{ldap_domain}".')
+                    error = 1
+                    continue
+
+            item['profile_id'] = admin_profiles[item['profile_id']].id
+
+            if item['login'] in admins:
+                self.stepChanged.emit(f'uGRAY|    Администратор "{item["display_name"]}" уже существует в текущем шаблоне.')
+            else:
+                err, result = self.utm.add_dcfw_template_admin(self.template_id, item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result}  [Администратор "{item["display_name"]}" не импортирован]')
+                    error = 1
+                else:
+                    admins[item['login']] = result
+                    self.stepChanged.emit(f'BLACK|    Администратор "{item["display_name"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте раздела "UserGate/Администраторы".')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт раздела "UserGate/Администраторы" завершён.')
+            self.stepChanged.emit('LBLUE|    Установите пароли для локальных администраторов.')
 
 
     #------------------------------------ Пользователи и устройства -------------------------------------------------

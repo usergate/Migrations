@@ -257,7 +257,7 @@ class UtmXmlRpc:
             return 1, f"Error utm.set_proxyportal_config: [{err.faultCode}] — {err.faultString}"
         return 0, result    # Возвращает True
 
-    def get_admin_profiles_list(self, start=0, limit=1000, query={}):
+    def get_admins_profiles(self, start=0, limit=1000, query={}):
         """Получить список профилей администраторов"""
         try:
             if self.float_version >= 7.0:
@@ -267,7 +267,7 @@ class UtmXmlRpc:
                 result = self._server.v2.core.administrator.profiles.list(self._auth_token)
                 return 0, result
         except rpc.Fault as err:
-            return 1, f"Error utm.get_admin_profiles_list: [{err.faultCode}] — {err.faultString}"
+            return 1, f"Error utm.get_admin_profiles: [{err.faultCode}] — {err.faultString}"
 
     def add_admin_profile(self, profile):
         """Добавить новый профиль администраторов"""
@@ -306,7 +306,7 @@ class UtmXmlRpc:
             return 1, f"Error utm.set_admin_config: [{err.faultCode}] — {err.faultString}"
         return 0, result
 
-    def get_admin_list(self, start=0, limit=1000, query={}):
+    def get_admins(self, start=0, limit=1000, query={}):
         """Получить список администраторов"""
         try:
             if self.float_version >= 7.0:

@@ -98,7 +98,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             'UserCertificateProfiles': self.import_users_certificate_profiles,
             'GeneralSettings': self.import_general_settings,
             'DeviceManagement': self.pass_function,
-            'Administrators': self.pass_function,
+            'Administrators': self.import_admins,
             'DNS': self.import_dns_config,
             'DHCP': self.import_dhcp_subnets,
             'VRF': self.import_vrf,
@@ -622,6 +622,122 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте профилей пользовательских сертификатов.')
         else:
             self.stepChanged.emit('GREEN|    Импорт профилей пользовательских сертификатов завершён.')
+
+
+    def import_admins(self, path):
+        """Импортируем профили администраторов и список администраторов."""
+        self.stepChanged.emit('BLUE|Импорт раздела "UserGate/Администраторы".')
+        error = 0
+
+        # Импортируем настройки аутентификации.
+        json_file = os.path.join(path, 'auth_settings.json')
+        err, auth_config = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+        err, result = self.utm.set_admin_config(auth_config)
+        if err:
+            self.stepChanged.emit(f'RED|    {result}\n    Настройки аутентификации не импортированы.')
+            error = 1
+        else:
+            self.stepChanged.emit('BLACK|    Импортированы настройки аутентификации.')
+
+        # Импортируем профили администраторов.
+        err, result = self.utm.get_admins_profiles()
+        if err:
+            self.stepChanged.emit('RED|    {result}\n    Произошла ошибка при импорте профили администраторов.')
+            self.error = 1
+            return
+        admin_profiles = {x['name']: x['id'] for x in result}
+
+        json_file = os.path.join(path, 'administrator_profiles.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+        for item in data:
+            error, item['name'] = self.get_transformed_name(item['name'], err=error, descr='Имя профиля')
+            if item['name'] in admin_profiles:
+                err, result = self.utm.update_admin_profile(admin_profiles[item['name']], item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result} [Профиль "{item["name"]}"]')
+                    error = 1
+                else:
+                    self.stepChanged.emit(f'BLACK|    Профиль "{item["name"]}" уже существует - Updated!')
+            else:
+                err, result = self.utm.add_admin_profile(item)
+                if err:
+                    self.stepChanged.emit(f'RED|    {result} [Профиль администратора "{item["name"]}" не импортирован]')
+                    error = 1
+                else:
+                    admin_profiles[item['name']] = result
+                    self.stepChanged.emit(f'BLACK|    Профиль администратора "{item["name"]}" импортирован.')
+
+        # Импортируем администраторов.
+        err, result = self.utm.get_admins()
+        if err:
+            self.stepChanged.emit('RED|    {result}\n    Произошла ошибка при импорте администраторов.')
+            self.error = 1
+            return
+        admins = {x['login']: x['id'] for x in result}
+
+        json_file = os.path.join(path, 'administrators_list.json')
+        err, data = self.read_json_file(json_file, mode=2)
+        if err:
+            return
+        for item in data:
+            if item['is_root']:
+                continue
+            if item['type'] == 'local':
+                item['login'] = self.get_transformed_userlogin(item['login'])
+                item['password'] = 'Q12345678@'
+            if item['type'] in ['ldap_user', 'ldap_group']:
+                if item['type'] == 'ldap_user':
+                    ldap_domain, _, login_name = item['login'].partition("\\")
+                else:
+                    tmp_arr1 = [x.split('=') for x in item['login'].split(',')]
+                    tmp_arr2 = [b for a, b in tmp_arr1 if a in ('dc', 'DC')]
+                    ldap_domain = '.'.join(tmp_arr2)
+                    login_name = tmp_arr1[0][1] if tmp_arr1[0][0] == 'CN' else None
+                if login_name:
+                    if item['type'] == 'ldap_user':
+                        err, result = self.utm.get_ldap_user_guid(ldap_domain, login_name)
+                    else:
+                        err, result = self.utm.get_ldap_group_guid(ldap_domain, login_name)
+                    if err:
+                        self.stepChanged.emit(f'RED|    {result}\n       Администратор "{item["login"]}" не импортирован.')
+                        error = 1
+                        continue
+                    elif not result:
+                        self.stepChanged.emit(f'RED|    Error: [Администратор "{item["login"]}" не импортирован] Нет такого пользователя в домене или LDAP-коннектора для домена "{ldap_domain}".')
+                        error = 1
+                        continue
+                    else:
+                        item['guid'] = result
+
+            item['profile_id'] = admin_profiles[item['profile_id']]
+            if item['type'] == 'auth_profile':
+                try:
+                    item['user_auth_profile_id'] = self.ngfw_data['auth_profiles'][item['user_auth_profile_id']]
+                except KeyError:
+                    self.stepChanged.emit(f'RED|    Error: [Администратор "{item["login"]}" не импортирован] Нет найден профиль аутентификации "{item["user_auth_profile_id"]}".')
+                    error = 1
+                    continue
+
+            if item['login'] in admins:
+                self.stepChanged.emit(f'GRAY|    Администратор "{item["login"]}" уже существует.')
+            else:
+                err, result = self.utm.add_admin(item)
+                if err:
+                    self.stepChanged.emit('RED|    {result}  [Администратор "{item["login"]}" не импортирован]')
+                    error = 1
+                else:
+                    admins[item['login']] = result
+                    self.stepChanged.emit(f'BLACK|    Администратор "{item["login"]}" импортирован.')
+        if error:
+            self.error = 1
+            self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте раздела "UserGate/Администраторы".')
+        else:
+            self.stepChanged.emit('GREEN|    Импорт раздела "UserGate/Администраторы" завершён.')
+            self.stepChanged.emit('LBLUE|    Установите пароли для локальных администраторов.')
 
 
     #----------------------------------------------- Сеть -----------------------------------------------

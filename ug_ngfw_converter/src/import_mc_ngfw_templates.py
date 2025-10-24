@@ -3427,7 +3427,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
 
     def import_upstream_proxy_settings(self, path, template_id):
-        """Импортируем настройки вышестоящего прокси"""
+        """Импортируем настройки вышестоящего прокси. Только для версий меньше 7.4"""
+        if self.utm.float_version >= 7.4:
+            return
+
         json_file = os.path.join(path, 'upstream_proxy_settings.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:

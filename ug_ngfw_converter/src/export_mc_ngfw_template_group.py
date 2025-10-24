@@ -3071,12 +3071,13 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
         """Экспортируем настройки вышестоящего прокси"""
         self.stepChanged.emit('BLUE|       Экспорт настроек прокси раздела "UserGate/Настройки/Вышестоящий прокси".')
 
-        values = data['upstream_proxy']
-        values.pop('template_id', None)
-        json_file = os.path.join(path, 'upstream_proxy_settings.json')
-        with open(json_file, 'w') as fh:
-            json.dump(values, fh, indent=4, ensure_ascii=False)
-        self.stepChanged.emit(f'BLACK|          Настройки вышестоящего прокси выгружены в файл "{json_file}".')
+        if self.utm.float_version < 7.4:
+            values = data['upstream_proxy']
+            values.pop('template_id', None)
+            json_file = os.path.join(path, 'upstream_proxy_settings.json')
+            with open(json_file, 'w') as fh:
+                json.dump(values, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'BLACK|          Настройки вышестоящего прокси выгружены в файл "{json_file}".')
 
         values = data['upstream_update_proxy']
         values.pop('template_id', None)

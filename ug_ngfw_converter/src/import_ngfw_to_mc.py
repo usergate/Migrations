@@ -6297,6 +6297,9 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     #------------------------------- Вышестоящий прокси -----------------------------------------
     def import_upstream_proxies_servers(self, path):
         """Импортируем список серверов вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -6340,6 +6343,9 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_upstream_proxies_profiles(self, path):
         """Импортируем список профилей вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -6399,6 +6405,9 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_upstream_proxies_rules(self, path):
         """Импортируем список правил вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -7720,6 +7729,9 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def get_upstream_proxies_servers(self):
         """Получаем сервера вышестоящих прокси и устанавливаем значение self.mc_data['upstreamproxies_servers']"""
+        if self.utm.float_version < 7.4:
+            return 0
+
         for uid, name in self.templates.items():
             err, result = self.utm.get_template_cascade_proxy_servers(uid)
             if err:
@@ -7736,6 +7748,9 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def get_upstream_proxies_profiles(self):
         """Получаем профили вышестоящих прокси и устанавливаем значение self.mc_data['upstreamproxies_profiles']"""
+        if self.utm.float_version < 7.4:
+            return 0
+
         for uid, name in self.templates.items():
             err, result = self.utm.get_template_cascade_proxy_profiles(uid)
             if err:

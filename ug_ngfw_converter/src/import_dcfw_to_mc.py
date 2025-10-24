@@ -2977,7 +2977,6 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         err, auth_config = self.read_json_file(json_file, mode=2)
         if err:
             return
-        print(auth_config)
 
         err, result = self.utm.set_dcfw_template_admin_config(self.template_id, auth_config)
         if err:

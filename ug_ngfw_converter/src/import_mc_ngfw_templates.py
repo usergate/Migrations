@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов на UserGate Management Center версии 7 и выше.
-# Версия 1.6   22.10.2025  (только для ug_ngfw_converter)
+# Версия 1.7   24.10.2025  (только для ug_ngfw_converter)
 #
 
 import os, sys, json
@@ -343,6 +343,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
         for item in data:
             if item['name'] in self.mc_data['devices_list']:
                 if self.selected_group == item['device_templates_group']:
+                    n = 1
                     self.stepChanged.emit(f'uGRAY|    Устройство NGFW "{item["name"]}" для группы шаблонов "{self.selected_group}" уже существует.')
             else:
                 if self.selected_group == item['device_templates_group']:   # Проверяем что устройство принадлежит импортируемой группе шаблонов.
@@ -5788,6 +5789,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
     #------------------------------- Вышестоящий прокси -----------------------------------------
     def import_upstream_proxies_servers(self, path, template_id, template_name):
         """Импортируем список серверов вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -5826,6 +5830,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
     def import_upstream_proxies_profiles(self, path, template_id, template_name):
         """Импортируем список профилей вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -5881,6 +5888,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
     def import_upstream_proxies_rules(self, path, template_id, template_name):
         """Импортируем список правил вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -7151,6 +7161,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
     def get_upstream_proxies_servers(self):
         """Получаем сервера вышестоящих прокси в группе шаблонов и устанавливаем значение self.mc_data['upstreamproxies_servers']"""
         self.mc_data['upstreamproxies_servers'] = {}
+        if self.utm.float_version < 7.4:
+            return 0
+
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_template_cascade_proxy_servers(uid)
             if err:
@@ -7168,6 +7181,9 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
     def get_upstream_proxies_profiles(self):
         """Получаем профили вышестоящих прокси в группе шаблонов и устанавливаем значение self.mc_data['upstreamproxies_profiles']"""
         self.mc_data['upstreamproxies_profiles'] = {}
+        if self.utm.float_version < 7.4:
+            return 0
+
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_template_cascade_proxy_profiles(uid)
             if err:

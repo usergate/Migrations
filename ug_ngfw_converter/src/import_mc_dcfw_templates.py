@@ -292,6 +292,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
         for item in data:
             if item['name'] in self.mc_data['devices_list']:
                 if self.selected_group == item['device_templates_group']:
+                    n = 1
                     self.stepChanged.emit(f'uGRAY|    Устройство DCFW "{item["name"]}" для группы шаблонов "{self.selected_group}" уже существует.')
             else:
                 if self.selected_group == item['device_templates_group']:   # Проверяем что устройство принадлежит импортируемой группе шаблонов.

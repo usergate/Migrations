@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс экспорта группы шаблонов NGFW из UserGate Management Center.
-# Версия 1.9  10.09.2025
+# Версия 2.0  24.10.2025
 #
 
 import os, sys, json
@@ -4200,6 +4200,9 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
     #--------------------------------------------- Вышестоящие прокси ------------------------------------------------------
     def export_upstream_proxies_servers(self):
         """Экспортируем список серверов вышестоящих прокси."""
+        if self.utm.float_version < 7.4:
+            return 0
+
         self.stepChanged.emit('BLUE|Экспорт списка серверов вышестоящих прокси из раздела "Вышестоящие прокси/Серверы".')
 
         self.mc_data['upstreamproxies_servers'] = {}
@@ -4234,6 +4237,9 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
 
     def export_upstream_proxies_profiles(self):
         """Экспортируем список профилей вышестоящих прокси."""
+        if self.utm.float_version < 7.4:
+            return 0
+
         self.stepChanged.emit('BLUE|Экспорт списка профилей вышестоящих прокси из раздела "Вышестоящие прокси/Профили".')
         self.mc_data['upstreamproxies_profiles'] = {}
 
@@ -4273,6 +4279,9 @@ class ExportMcNgfwTemplateGroup(QThread, MyMixedService):
 
     def export_upstream_proxies_rules(self):
         """Экспортируем список правил вышестоящих прокси."""
+        if self.utm.float_version < 7.4:
+            return 0
+
         self.stepChanged.emit('BLUE|Экспорт списка правил вышестоящих прокси из раздела "Вышестоящие прокси/Правила".')
 
         for template_id, template_name in self.templates.items():

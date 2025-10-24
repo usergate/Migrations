@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.4   06.10.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Версия 3.5   24.10.2025   (идентично с ug_ngfw_converter и universal_converter)
 #
 
 import os, sys, copy, json
@@ -4357,6 +4357,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     #----------------------------------- Вышестоящий прокси --------------------------------------
     def import_upstream_proxies_servers(self, path):
         """Импортируем список серверов вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_servers.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -4398,6 +4401,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_upstream_proxies_profiles(self, path):
         """Импортируем список профилей вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_profiles.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
@@ -4455,6 +4461,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_upstream_proxies_rules(self, path):
         """Импортируем список правил вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         json_file = os.path.join(path, 'config_upstreamproxies_rules.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:

@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW в json-формат версии 7.
-# Версия 3.15  06.10.2025
+# Версия 3.16  24.10.2025
 #
 
 import os, sys, json
@@ -3224,6 +3224,9 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     #_-------------------------------- Вышестоящие прокси ------------------------------------
     def export_upstream_proxies_servers(self, path):
         """Экспортируем список серверов вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         self.stepChanged.emit('BLUE|Экспорт списка серверов вышестоящих прокси из раздела "Вышестоящие прокси/Серверы".')
 
         err, data = self.utm.get_cascade_proxy_servers()
@@ -3256,6 +3259,9 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def export_upstream_proxies_profiles(self, path):
         """Экспортируем список профилей вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         self.stepChanged.emit('BLUE|Экспорт списка профилей вышестоящих прокси из раздела "Вышестоящие прокси/Профили".')
 
         err, data = self.utm.get_cascade_proxy_profiles()
@@ -3270,8 +3276,8 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'ORANGE|    Произошла ошибка при экспорте списка профилей вышестоящих прокси.')
                     return
             proxies_servers = self.ngfw_data['upstreamproxies_servers']
-            self.ngfw_data['upstreamproxies_profiles'] = {}
 
+            self.ngfw_data['upstreamproxies_profiles'] = {}
             for item in data:
                 self.ngfw_data['upstreamproxies_profiles'][item['id']] = item['name']
                 item.pop('id', None)
@@ -3299,6 +3305,9 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def export_upstream_proxies_rules(self, path):
         """Экспортируем список правил вышестоящих прокси"""
+        if self.utm.float_version < 7.4:
+            return
+
         self.stepChanged.emit('BLUE|Экспорт списка правил вышестоящих прокси из раздела "Вышестоящие прокси/Правила".')
 
         err, data = self.utm.get_cascade_proxy_rules()

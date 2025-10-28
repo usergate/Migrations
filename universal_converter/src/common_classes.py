@@ -19,8 +19,8 @@
 #
 #-----------------------------------------------------------------------------
 # common_classes.py
-# Общие функции (идентично для ug_ngfw_converter и universal_converter)
-# Версия 1.5  16.07.2025
+# Общие функции (только для universal_converter)
+# Версия 1.6  28.10.2025
 #
 
 import os, json, re
@@ -121,7 +121,8 @@ class TransformObjectName():
         """
         Получить имя объекта без запрещённых спецсимволов.
         Удаляется первый символ если он является символом пуектуации, т.к. запрещается делать первый символ спецсимволом.
-        Так же проверяется длина имени. Если оно более 64 символов, то обрезается до длины 64.
+        Так же проверяется длина имени. Если оно более 64 символов, то обрезается до длины 60 (так как при дублировании
+        объектов к имени добавляется номер через тире: "-n").
         """
         message = ''
         if isinstance(name, str):
@@ -138,7 +139,7 @@ class TransformObjectName():
                 errorX = 1
             new_name = new_name.translate(self.trans_object_name).strip()
             if len(new_name) > 64:
-                new_name = new_name[:64]
+                new_name = new_name[:60]
                 error64 = 1
 #            if bool(re.search('[а-яА-ЯёЁ]', new_name)):
 #                new_name = re.sub('[а-яА-ЯёЁ]', 'X', new_name)
@@ -147,7 +148,7 @@ class TransformObjectName():
                 if mode:
                     message = f'RED|    Error: {descr} "{name}".\n'
                     if error64:
-                        message = f'{message}       {descr} имеет длину более 64 символов. Имя обрезано до 64 символов.\n'
+                        message = f'{message}       {descr} имеет длину более 64 символов. Имя обрезано до 60 символов.\n'
                     if errorX:
                         message = f'{message}       {descr} содержит символы отсутствующие в кодировке ascii. Они заменены на символ "X".\n'
 #                    if errorRus:

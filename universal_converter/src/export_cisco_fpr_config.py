@@ -21,7 +21,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Cisco FPR в формат json NGFW UserGate.
-# Версия 1.9 03.04.2025
+# Версия 1.10 27.10.2025
 #
 
 import os, sys, json, re, copy
@@ -35,7 +35,7 @@ pattern = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
 
 class ConvertCiscoFPRConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации Cisco FPR в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации Cisco FPR в формат UserGate."""
     stepChanged = pyqtSignal(str)
     
     def __init__(self, current_fpr_path, current_ug_path):
@@ -47,7 +47,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco FPR в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco FPR в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
 #        return
@@ -71,9 +71,9 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
             self.convert_firewall_rules(data)
 
         if self.error:
-            self.stepChanged.emit('iORANGE|Конвертация конфигурации Cisco FPR в формат UserGate NGFW прошла с ошибками.')
+            self.stepChanged.emit('iORANGE|Конвертация конфигурации Cisco FPR в формат UserGate прошла с ошибками.')
         else:
-            self.stepChanged.emit('iGREEN|Конвертация конфигурации Cisco FPR в формат UserGate NGFW прошла успешно.')
+            self.stepChanged.emit('iGREEN|Конвертация конфигурации Cisco FPR в формат UserGate прошла успешно.')
 
     def convert_config_file(self):
         """Преобразуем файл конфигурации Cisco FPR в json."""
@@ -106,6 +106,16 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
         for item in self.create_ug_services():
             item['group'] = False
             data['services'][item['name']] = item
+
+        def get_block(fh):
+            """Читаем файл и создаём блок записей для раздела конфигурации"""
+            block = []
+            line = fh.readline()
+            while line.startswith(' '):
+                block.append(line.translate(self.trans_table).strip().split(' '))
+                line = fh.readline()
+            return line, block
+
 
         def add_ip_list(ip, mask='255.255.255.255', obj='host'):
             ip_list = {
@@ -633,7 +643,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                             case ['domain-lookup', zone_name]:
                                 data['dns']['domain-lookup'].append(zone_name)
                             case ['server-group', servergroup_name]:
-                                line, tmp_block = self.get_block(fh)
+                                line, tmp_block = get_block(fh)
                                 self.create_dns_rules(data, servergroup_name, tmp_block)
                                 continue
                             case 'forwarder':
@@ -675,7 +685,7 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
                     case 'route':
                         convert_routes_list(x)
                     case 'time-range':
-                        line, tmp_block = self.get_block(fh)
+                        line, tmp_block = get_block(fh)
                         data['time-range'][x[1]] = tmp_block
                         continue
                 line = fh.readline()
@@ -699,17 +709,6 @@ class ConvertCiscoFPRConfig(QThread, MyConv):
             self.stepChanged.emit('ORANGE|    В процессе конвертации конфигурации Cisco FPR в формат json произошли ошибки.')
         else:
             self.stepChanged.emit(f'BLACK|    Конфигурация Cisco FPR в формате json выгружена в файл "{json_file}".')
-
-
-    @staticmethod
-    def get_block(fh):
-        """Читаем файл и создаём блок записей для раздела конфигурации"""
-        block = []
-        line = fh.readline()
-        while line.startswith(' '):
-            block.append(line.translate(self.trans_table).strip().split(' '))
-            line = fh.readline()
-        return line, block
 
 
     @staticmethod

@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 # universal_converter.py
-# Version 8.45   22.10.2025
+# Version 9.0   24.10.2025
 #--------------------------------------------------------------------------------------------------- 
 #
 import os, sys
@@ -31,27 +31,26 @@ from common_func import create_dir, message_alert
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 8.45)")
+        self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 9.0)")
         ico = QIcon("favicon.png")
 #        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
         self.setWindowIcon(ico)
-        self._base_bluecoat_path = 'data_blue_coat'
-        self._base_asa_path = 'data_cisco_asa'
-        self._base_fpr_path = 'data_cisco_fpr'
-        self._base_cp_path = 'data_checkpoint'
-        self._base_cp_old_path = 'data_checkpoint_old'
-        self._base_fort_path = 'data_fortigate'
-        self._base_huawei_path = 'data_huawei'
-        self._base_mikrotik_path = 'data_mikrotik'
-        self._base_paloalto_path = 'data_paloalto'
-        self._base_kerio_path = 'data_kerio'
+        self.vendors_path = 'other_vendors'
+        self._base_bluecoat_path = os.path.join(self.vendors_path, 'blue_coat')
+        self._base_asa_path = os.path.join(self.vendors_path, 'cisco_asa')
+        self._base_fpr_path = os.path.join(self.vendors_path, 'cisco_fpr')
+        self._base_cp_path = os.path.join(self.vendors_path, 'checkpoint')
+        self._base_cp_old_path = os.path.join(self.vendors_path, 'checkpoint_old')
+        self._base_fort_path = os.path.join(self.vendors_path, 'fortigate')
+        self._base_huawei_path = os.path.join(self.vendors_path, 'huawei')
+        self._base_mikrotik_path = os.path.join(self.vendors_path, 'mikrotik')
+        self._base_paloalto_path = os.path.join(self.vendors_path, 'paloalto')
+        self._base_kerio_path = os.path.join(self.vendors_path, 'kerio')
         self._current_ug_path = None    # Полный путь к каталогу с конфигурацией узла UG NGFW
 
         self.stacklayout = QStackedLayout()
         self.stacklayout.addWidget(vc.SelectAction(self))
         self.stacklayout.addWidget(vc.SelectExportMode(self))
-        self.stacklayout.addWidget(vc.SelectImportMode(self))
-        self.stacklayout.addWidget(vc.SelectMcImportMode(self))
 
         main_widget = QWidget()
         main_widget.setLayout(self.stacklayout)
@@ -77,7 +76,7 @@ class MainWindow(QMainWindow):
     @property
     def base_ug_path(self):
         """Получаем имя базового каталога конфигураций UG NGFW"""
-        return 'data_usergate'
+        return 'ngfw_data'
 
     def get_vendor_base_path(self, vendor):
         """Получаем имя базового каталога конфигураций выбранного вендора"""
@@ -115,18 +114,18 @@ class MainWindow(QMainWindow):
         """Удаляем путь к каталогу с конфигурацией выбранного устройсва UG NGFW"""
         self._current_ug_path = None
 
-    def closeEvent(self, event):
-        """
-        При закрытии программы:
-        1. Удаляем временный файл: temporary_data.bin
-        2. Делаем logout с NGFW или МС если ранее был login
-        """
-        if os.path.isfile('temporary_data.bin'):
-            os.remove('temporary_data.bin')
-        for i in (2, 3):
-            if self.stacklayout.widget(i).utm:
-                self.stacklayout.widget(i).utm.logout()
-                break
+#    def closeEvent(self, event):
+#        """
+#        При закрытии программы:
+#        1. Удаляем временный файл: temporary_data.bin
+#        2. Делаем logout с NGFW или МС если ранее был login
+#        """
+#        if os.path.isfile('temporary_data.bin'):
+#            os.remove('temporary_data.bin')
+#        for i in (2, 3):
+#            if self.stacklayout.widget(i).utm:
+#                self.stacklayout.widget(i).utm.logout()
+#                break
 
 def main():
     app = QApplication([])

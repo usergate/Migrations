@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #---------------------------------------------------------------------------------------------------------
-# Модуль предназначен для выгрузки конфигурации CheckPoint версии gaia 77.30 в формат json NGFW UserGate.
-# Версия 1.0  26.05.2025
+# Модуль предназначен для выгрузки конфигурации CheckPoint версии gaia 77.30 в формат json UserGate.
+# Версия 1.1  27.10.2025
 #
 
 import os, sys, json, shlex
@@ -29,7 +29,7 @@ from services import ip_proto, network_proto
 
 
 class ConvertOldCheckPointConfig(QThread, MyConv):
-    """Преобразуем конфигурацию CheckPoint в формат UserGate NGFW."""
+    """Преобразуем конфигурацию CheckPoint в формат UserGate."""
     stepChanged = pyqtSignal(str)
     
     def __init__(self, current_vendor_path, current_ug_path):
@@ -48,7 +48,7 @@ class ConvertOldCheckPointConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации CheckPoint (версии 77.30) в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации CheckPoint (версии 77.30) в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
 
         self.convert_config_files(self.current_vendor_path)
@@ -64,9 +64,9 @@ class ConvertOldCheckPointConfig(QThread, MyConv):
             self.convert_firewall_rules()
 
             if self.error:
-                self.stepChanged.emit('iORANGE|Конвертация конфигурации CheckPoint в формат UserGate NGFW прошла с ошибками.\n')
+                self.stepChanged.emit('iORANGE|Конвертация конфигурации CheckPoint в формат UserGate прошла с ошибками.\n')
             else:
-                self.stepChanged.emit('iGREEN|Конвертация конфигурации CheckPoint в формат UserGate NGFW прошла успешно.\n')
+                self.stepChanged.emit('iGREEN|Конвертация конфигурации CheckPoint в формат UserGate прошла успешно.\n')
 
 
     @staticmethod

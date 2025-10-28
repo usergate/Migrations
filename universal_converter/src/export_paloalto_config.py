@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Модуль переноса конфигурации с PaloAlto  на NGFW UserGate.
-# Версия 1.1  22.10.2025
+# Модуль преобразования конфигурации с PaloAlto в формат UserGate.
+# Версия 1.1  27.10.2025
 #
 
 import os, sys, copy, json
@@ -30,7 +30,7 @@ from services import zone_services, ug_services, ip_proto, GEOIP_CODE
 
 
 class ConvertPaloaltoConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации PaloAlto в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации PaloAlto в формат UserGate."""
     stepChanged = pyqtSignal(str)
 
     def __init__(self, current_pa_path, current_ug_path):
@@ -52,17 +52,17 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации PaloAlto в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации PaloAlto в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
 
         if self.error:
-            self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate NGFW прервана.')
+            self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate прервана.')
         else:
             json_file = os.path.join(self.current_pa_path, 'config.json')
             err, data = self.read_json_file(json_file)
             if err:
-                self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate NGFW прервана.\n')
+                self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate прервана.\n')
             else:
                 if data['config']['shared'].get('local-user-database', False):  # Проверяем что есть локальные users и groups
                     self.convert_local_users_and_groups(data['config']['shared']['local-user-database'])
@@ -100,9 +100,9 @@ class ConvertPaloaltoConfig(QThread, MyConv):
 #                print(json.dumps(self.ip_lists, indent=4, ensure_ascii=False))
 
                 if self.error:
-                    self.stepChanged.emit('iORANGE|Конвертация конфигурации PaloAlto в формат UserGate NGFW прошла с ошибками.\n')
+                    self.stepChanged.emit('iORANGE|Конвертация конфигурации PaloAlto в формат UserGate прошла с ошибками.\n')
                 else:
-                    self.stepChanged.emit('iGREEN|Конвертация конфигурации PaloAlto в формат UserGate NGFW прошла успешно.\n')
+                    self.stepChanged.emit('iGREEN|Конвертация конфигурации PaloAlto в формат UserGate прошла успешно.\n')
 
 
     def convert_config_file(self):

@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Модуль переноса конфигурации с устройств Huawei на NGFW UserGate.
-# Версия 1.9  03.04.2025
+# Модуль преобразования конфигурации с Huawei в формат UserGate.
+# Версия 1.10  27.10.2025
 #
 
 import os, sys, json
@@ -35,7 +35,7 @@ ug_proto = {x for x in ip_proto.values()}
 
 
 class ConvertHuaweiConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации Huawei в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации Huawei в формат UserGate."""
     stepChanged = pyqtSignal(str)
 
     def __init__(self, current_vendor_path, current_ug_path):
@@ -65,16 +65,16 @@ class ConvertHuaweiConfig(QThread, MyConv):
         }
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Huawei в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Huawei в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
         if self.error:
-            self.stepChanged.emit('iRED|Конвертация конфигурации Huawei в формат UserGate NGFW прервана.')
+            self.stepChanged.emit('iRED|Конвертация конфигурации Huawei в формат UserGate прервана.')
         else:
             json_file = os.path.join(self.current_vendor_path, 'config.json')
             err, self.data = self.read_json_file(json_file)
             if err:
-                self.stepChanged.emit('iRED|Конвертация конфигурации Huawei в формат UserGate NGFW прервана.')
+                self.stepChanged.emit('iRED|Конвертация конфигурации Huawei в формат UserGate прервана.')
             else:
                 self.convert_time_zone()
                 self.convert_zone()
@@ -96,9 +96,9 @@ class ConvertHuaweiConfig(QThread, MyConv):
                 self.save_new_services()
 
                 if self.error:
-                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Huawei в формат UserGate NGFW прошла с ошибками.')
+                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Huawei в формат UserGate прошла с ошибками.')
                 else:
-                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Huawei в формат UserGate NGFW прошла успешно.')
+                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Huawei в формат UserGate прошла успешно.')
 
 
     def convert_config_file(self):

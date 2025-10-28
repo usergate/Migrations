@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Модуль переноса конфигурации с устройств Fortigate на NGFW UserGate.
-# Версия 4.3 25.08.2025
+# Модуль преобразования конфигурации с Fortigate в формат UserGate.
+# Версия 4.4 27.10.2025
 #
 
 import os, sys, json, copy
@@ -29,7 +29,7 @@ from services import zone_services, ug_services, ip_proto, GEOIP_CODE
 
 
 class ConvertFortigateConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации Fortigate в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации Fortigate в формат UserGate."""
     stepChanged = pyqtSignal(str)
 
     def __init__(self, current_fg_path, current_ug_path):
@@ -58,18 +58,18 @@ class ConvertFortigateConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Fortigate в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Fortigate в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
 #        return
 
         if self.error:
-            self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.')
+            self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate прервана.')
         else:
             json_file = os.path.join(self.current_fg_path, 'config.json')
             err, data = self.read_json_file(json_file)
             if err:
-                self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate NGFW прервана.\n')
+                self.stepChanged.emit('iRED|Конвертация конфигурации Fortigate в формат UserGate прервана.\n')
             else:
                 self.convert_ntp_settings(data)
                 self.convert_dns_servers(data)
@@ -98,9 +98,9 @@ class ConvertFortigateConfig(QThread, MyConv):
                 self.convert_bgp_routes(data)
 
                 if self.error:
-                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла с ошибками.\n')
+                    self.stepChanged.emit('iORANGE|Конвертация конфигурации Fortigate в формат UserGate прошла с ошибками.\n')
                 else:
-                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Fortigate в формат UserGate NGFW прошла успешно.\n')
+                    self.stepChanged.emit('iGREEN|Конвертация конфигурации Fortigate в формат UserGate прошла успешно.\n')
 
 
     def convert_config_file(self):

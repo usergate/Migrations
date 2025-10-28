@@ -19,8 +19,8 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
-# Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate NGFW.
-# Версия 4.6    03.09.2025
+# Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate.
+# Версия 4.8    28.10.2025
 #
 
 import os, sys, json, uuid, copy
@@ -33,7 +33,7 @@ from applications import (app_compliance, appgroup_compliance, l7_category_compl
 
 
 class ConvertCheckPointConfig(QThread, MyConv):
-    """Конвертируем всю конфигурацию CheckPoint в формат UserGate NGFW."""
+    """Конвертируем всю конфигурацию CheckPoint в формат UserGate."""
     stepChanged = pyqtSignal(str)
     
     def __init__(self, current_vendor_path, current_ug_path, sg_name):
@@ -52,12 +52,13 @@ class ConvertCheckPointConfig(QThread, MyConv):
         self.service_groups = {}
         self.app_groups = []
         self.zones = {}
+        self.url_groups = {}
         self.fw_rules = []
         self.kf_rules = []
 
     def run(self):
         """Конвертируем всё в пакетном режиме"""
-        title = f'Конвертация конфигурации CheckPoint (Secure Gateway: {self.sg_name}) в формат UG NGFW'
+        title = f'Конвертация конфигурации CheckPoint (Secure Gateway: {self.sg_name}) в формат UserGate.'
         self.stepChanged.emit(f'GREEN|{title:>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_cp()
@@ -92,6 +93,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
         self.convert_checkpoint_host()
         self.convert_ip_lists_groups()
         self.convert_ip_group_with_exclusion()
+        self.convert_url_groups()
         self.convert_url_lists()
         self.convert_application_site_category()
         self.convert_application_site()
@@ -105,9 +107,9 @@ class ConvertCheckPointConfig(QThread, MyConv):
         self.save_zones()
 
         if self.error:
-            self.stepChanged.emit('iORANGE|Преобразование конфигурации CheckPoint в формат UG NGFW прошло с ошибками!\n')
+            self.stepChanged.emit('iORANGE|Преобразование конфигурации CheckPoint в формат UserGate прошло с ошибками.\n')
         else:
-            self.stepChanged.emit('iGREEN|Преобразование конфигурации CheckPoint в формат UG NGFW прошло успешно.\n')
+            self.stepChanged.emit('iGREEN|Преобразование конфигурации CheckPoint в формат UserGate прошло успешно.\n')
 
     def create_app_group(self, group_name, app_list, comment=''):
         app_group = {
@@ -1072,9 +1074,9 @@ class ConvertCheckPointConfig(QThread, MyConv):
         """
         Выгружаем списки групп IP-адресов.
         В "objects" тип "group" переписывается в вид:
-        uid: {"type": "network", "name": {"list": "ИМЯ_IP_ЛИСТА"}}.
+        uid: {"type": "network", "name": {"list": ИМЯ_IP_ЛИСТА}}.
         """
-        self.stepChanged.emit('BLUE|Конвертация списков групп IP-адресов.')
+        self.stepChanged.emit('BLUE|Конвертация списков групп IP-адресов (пустые списки не экспортируются).')
         section_path = os.path.join(self.current_ug_path, 'Libraries')
         current_path = os.path.join(section_path, 'IPAddresses')
         err, msg = self.create_dir(current_path, delete='no')
@@ -1085,16 +1087,20 @@ class ConvertCheckPointConfig(QThread, MyConv):
 
         error = 0
         n = 0
+        url_groups = {}
         for key, value in self.objects.items():
             if value['type'] == 'group':
-                n += 1
-                error, ip_list_name = self.get_transformed_name(value['name'], err=error, descr='Имя списка групп IP-адресов')
-                self.objects[key] = {'type': 'network', 'name': {'list': ip_list_name}}
                 content = []
                 for uid in value['members']:
                     try:
                         if self.objects[uid]['type'] == 'simple-gateway':
                             content.append({"value": self.objects[uid]['ipv4-address']})
+                        if self.objects[uid]['type'] == 'dns-domain':
+                            if key in self.url_groups:
+                                self.url_groups[key]['members'].append(uid)
+                            else:
+                                self.url_groups[key] = {'type': 'group', 'name': value['name'], 'members': [uid]}
+                            continue
                         else:
                             if isinstance(self.objects[uid]['name'], dict):
                                 content.append(self.objects[uid]['name'])
@@ -1107,27 +1113,33 @@ class ConvertCheckPointConfig(QThread, MyConv):
                         error = 1
                         self.stepChanged.emit(f'RED|    Error: [Группа IP-аресов "{value["name"]}"] В членах группы присутствует ссылка на несуществующий объект: {uid}.')
 
-                ip_list = {
-                    'name': ip_list_name,
-                    'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
-                    'type': 'network',
-                    'url': '',
-                    'list_type_update': 'static',
-                    'schedule': 'disabled',
-                    'attributes': {'threat_level': 3},
-                    'content': content
-                }
+                if content:
+                    error, ip_list_name = self.get_transformed_name(value['name'], err=error, descr='Имя списка групп IP-адресов')
+                    self.objects[key] = {'type': 'network', 'name': {'list': ip_list_name}}
+                    n += 1
+                    ip_list = {
+                        'name': ip_list_name,
+                        'description': f"Портировано с CheckPoint.\n{value.get('comments', '')}",
+                        'type': 'network',
+                        'url': '',
+                        'list_type_update': 'static',
+                        'schedule': 'disabled',
+                        'attributes': {'threat_level': 3},
+                        'content': content
+                    }
 
-                json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
-                try:
-                    with open(json_file, 'w') as fh:
-                        json.dump(ip_list, fh, indent=4, ensure_ascii=False)
-                    self.stepChanged.emit(f'BLACK|    {n} - Список групп IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
-                except OSError as err:
-                    error = 1
-                    self.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список групп IP-адресов "{value["name"]}" не конвертирован.'}
-                    self.stepChanged.emit(f'RED|    Error: Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.\n    {err}')
-                self.msleep(2)
+                    json_file = os.path.join(current_path, f'{ip_list_name.translate(self.trans_filename)}.json')
+                    try:
+                        with open(json_file, 'w') as fh:
+                            json.dump(ip_list, fh, indent=4, ensure_ascii=False)
+                        self.stepChanged.emit(f'BLACK|    {n} - Список групп IP-адресов "{ip_list["name"]}" выгружен в файл "{json_file}".')
+                    except OSError as err:
+                        error = 1
+                        self.objects[key] = {'type': 'error', 'name': value['name'], 'description': f'Список групп IP-адресов "{value["name"]}" не конвертирован.'}
+                        self.stepChanged.emit(f'RED|    Error: Объект "{value["type"]}" - "{value["name"]}" не конвертирован и не будет использован в правилах.\n    {err}')
+                    self.msleep(2)
+                else:
+                    self.url_groups.pop(key, None)
 
         if error:
             self.error = 1
@@ -1177,15 +1189,75 @@ class ConvertCheckPointConfig(QThread, MyConv):
             self.stepChanged.emit('GREEN|    Группы IP-адресов с типом group-with-exclusion конвертированы.')
 
 
+    def convert_url_groups(self):
+        """
+        Выгружаем списки групп URL.
+        В "objects" тип "dns-domain" переписывается в вид: uid: {'type': 'dns-domain', 'value': ['urllist_id', ИМЯ_URL_ЛИСТА]}.
+        """
+        self.stepChanged.emit('BLUE|Конвертация списков групп URL.')
+        section_path = os.path.join(self.current_ug_path, 'Libraries')
+        current_path = os.path.join(section_path, 'URLLists')
+        err, msg = self.create_dir(current_path)
+        if err:
+            self.stepChanged.emit(f'RED|    {msg}')
+            self.error = 1
+            return
+
+        error = 0
+        url_list = []
+        for item_obj in (self.objects, self.url_groups):
+            for key, value in item_obj.items():
+                if value['type'] == 'group':
+                    error, url_name = self.get_transformed_name(value['name'], err=error, descr='Имя списка URL')
+                    self.url_groups[key] = {'type': 'dns-domain', 'value': ['urllist_id', url_name]}
+                    content = []
+                    for uid in value['members']:
+                        try:
+                            if self.objects[uid]['type'] == 'dns-domain':
+                                content.append({"value": self.objects[uid]['name']})
+                        except KeyError:
+                            error = 1
+                            self.stepChanged.emit(f'RED|    Error: [Список URL "{value["name"]}"] В списке присутствует ссылка на несуществующий объект: {uid}.')
+
+                    if content:
+                        url_list.append({
+                            'name': url_name,
+                            'description': f'Портировано с CheckPoint.\n{value.get("comments", "")}',
+                            'type': 'url',
+                            'url': '',
+                            'list_type_update': 'static',
+                            'schedule': 'disabled',
+                            'attributes': {
+                                'list_compile_type': 'domain'
+                            },
+                            'content': content
+                        })
+
+        if url_list:
+            for item in url_list:
+                json_file = os.path.join(current_path, f'{item["name"].translate(self.trans_filename)}.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(item, fh, indent=4, ensure_ascii=False)
+                self.stepChanged.emit(f'BLACK|    Группа URL "{item["name"]}" выгружена в файл "{json_file}".')
+            if error:
+                self.error = 1
+                self.stepChanged.emit('ORANGE|    Списки групп URL выгружены с ошибками.')
+            else:
+                self.stepChanged.emit(f'GREEN|    Списки групп URL выгружены в каталог "{current_path}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет групп URL для экспорта.')
+
+
     def convert_url_lists(self):
         """
         Выгружаем списки URL.
-        В "objects" тип "application-site" переписывается в вид: uid: {'type': 'url', 'name': 'ИМЯ_URL_ЛИСТА'}.
+        В "objects" тип "application-site" переписывается в вид: uid: {'type': 'url', 'name': ИМЯ_URL_ЛИСТА}.
+        В "objects" тип "dns-domain" переписывается в вид: uid: {'type': 'dns-domain', 'value': ['urllist_id', ИМЯ_URL_ЛИСТА]}.
         """
         self.stepChanged.emit('BLUE|Конвертация списков URL.')
         section_path = os.path.join(self.current_ug_path, 'Libraries')
         current_path = os.path.join(section_path, 'URLLists')
-        err, msg = self.create_dir(current_path)
+        err, msg = self.create_dir(current_path, delete='no')
         if err:
             self.stepChanged.emit(f'RED|    {msg}')
             self.error = 1
@@ -1585,6 +1657,8 @@ class ConvertCheckPointConfig(QThread, MyConv):
                             item['description'].append(f'Из destination удалена запись {self.objects[uid]["name"]}.')
                         else:
                             destination.append(self.objects[uid])
+                            if uid in self.url_groups:
+                                destination.append(self.url_groups[uid])
                     item['destination'] = destination
                     source = []
                     for uid in item['source']:
@@ -1592,6 +1666,8 @@ class ConvertCheckPointConfig(QThread, MyConv):
                             item['description'].append(f'Из source удалена запись {self.objects[uid]["name"]}.')
                         else:
                             source.append(self.objects[uid])
+                            if uid in self.url_groups:
+                                source.append(self.url_groups[uid])
                     item['source'] = source
                     item['content'] = [self.objects[uid] for uid in item['content']]
                     item['action'] = self.objects[item['action']]
@@ -1602,8 +1678,6 @@ class ConvertCheckPointConfig(QThread, MyConv):
                     access_rules.append(item)
                     self.stepChanged.emit(f'BLACK|    Конвертировано access-rule "{item["name"]}".')
                 
-#            access_rules.extend(data)
-
 #            json_file = os.path.join(self.config_path, access_policy_file.replace('.json', '_convert.json'))
 #            with open(json_file, 'w') as fh:
 #                json.dump(data, fh, indent=4, ensure_ascii=False)
@@ -1702,7 +1776,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
         for item in self.fw_rules:
             if item['name'] in rule_names:  # Встречаются одинаковые имена.
                 rule_names[item['name']] += 1        # В этом случае добавляем "1" к имени правила.
-                item['name'] = f'{item["name"]} - {rule_names[item["name"]]}'
+                item['name'] = f'{item["name"]}-{rule_names[item["name"]]}'
             else:
                 rule_names[item['name']] = 0
 
@@ -1771,7 +1845,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
         for item in self.kf_rules:
             if item['name'] in rule_names:  # Встречаются одинаковые имена.
                 rule_names[item['name']] += 1        # В этом случае добавляем "1" к имени правила.
-                item['name'] = f'{item["name"]} - {rule_names[item["name"]]}'
+                item['name'] = f'{item["name"]}-{rule_names[item["name"]]}'
             else:
                 rule_names[item['name']] = 0
 

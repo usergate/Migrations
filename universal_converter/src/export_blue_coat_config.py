@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для выгрузки конфигурации Blue Coat в формат json NGFW UserGate.
-# Версия 1.5  03.04.2025
+# Версия 1.6  27.10.2025
 #
 
 import os, sys, json, re
@@ -33,7 +33,7 @@ pattern_rule = re.compile(r"ALLOW|;ALLOW|DENY|;DENY", flags=re.IGNORECASE)
 trans_foo = {ord('('): None, ord(')'): None, ord(' '): None, ord('"'): None, ord("'"): None}
 
 class ConvertBlueCoatConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации BlueCoat в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации BlueCoat в формат UserGate."""
     stepChanged = pyqtSignal(str)
     
     def __init__(self, current_bluecoat_path, current_ug_path):
@@ -46,7 +46,7 @@ class ConvertBlueCoatConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации BlueCoat в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации BlueCoat в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
 
         self.convert_config_file(self.current_vendor_path)
@@ -63,9 +63,9 @@ class ConvertBlueCoatConfig(QThread, MyConv):
             self.convert_firewall_rules(self.current_ug_path, data)
 
         if self.error:
-            self.stepChanged.emit('iORANGE|Конвертация конфигурации BlueCoat в формат UserGate NGFW прошла с ошибками.\n')
+            self.stepChanged.emit('iORANGE|Конвертация конфигурации BlueCoat в формат UserGate прошла с ошибками.\n')
         else:
-            self.stepChanged.emit('iGREEN|Конвертация конфигурации BlueCoat в формат UserGate NGFW прошла успешно.\n')
+            self.stepChanged.emit('iGREEN|Конвертация конфигурации BlueCoat в формат UserGate прошла успешно.\n')
 
 
     @staticmethod

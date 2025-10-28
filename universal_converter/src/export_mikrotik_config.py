@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Модуль предназначен для выгрузки конфигурации MikroTik Router в формат json NGFW UserGate.
-# Версия 2.5  10.04.2025
+# Модуль предназначен для преобразования конфигурации MikroTik Router в формат UserGate.
+# Версия 2.6  27.10.2025
 #
 
 import os, sys, json, re
@@ -36,7 +36,7 @@ pattern_ip = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 
 
 class ConvertMikrotikConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации MikroTik в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации MikroTik в формат UserGate."""
     stepChanged = pyqtSignal(str)
     
     def __init__(self, current_microtic_path, current_ug_path):
@@ -54,7 +54,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
 
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации MikroTik в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации MikroTik в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
         
@@ -82,9 +82,9 @@ class ConvertMikrotikConfig(QThread, MyConv):
             self.save_interfaces()
 
         if self.error:
-            self.stepChanged.emit('iORANGE|Конвертация конфигурации MikroTik в формат UserGate NGFW прошла с ошибками.')
+            self.stepChanged.emit('iORANGE|Конвертация конфигурации MikroTik в формат UserGate прошла с ошибками.')
         else:
-            self.stepChanged.emit('iGREEN|Конвертация конфигурации MikroTik в формат UserGate NGFW прошла успешно.')
+            self.stepChanged.emit('iGREEN|Конвертация конфигурации MikroTik в формат UserGate прошла успешно.')
 
 
     def save_interfaces(self):

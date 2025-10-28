@@ -20,7 +20,7 @@
 #--------------------------------------------------------------------------------------------------- 
 # export_cisco_asa_config.py (convert configuration from Cisco ASA to NGFW UserGate).
 # Модуль предназначен для выгрузки конфигурации Cisco ASA в формат json NGFW UserGate.
-# Версия 2.5 16.07.2025
+# Версия 2.6 27.10.2025
 #
 
 import os, sys, json
@@ -33,7 +33,7 @@ from services import (service_ports, ug_services,
 
 
 class ConvertCiscoASAConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации Cisco ASA в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации Cisco ASA в формат UserGate."""
     stepChanged = pyqtSignal(str)
     
     def __init__(self, current_asa_path, current_ug_path):
@@ -49,18 +49,18 @@ class ConvertCiscoASAConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco ASA в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Cisco ASA в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
         if self.error:
-            self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прервана.\n')
+            self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate прервана.\n')
         else:
             if self.error_convert_config_file:
                 self.error = 1
             json_file = os.path.join(self.current_asa_path, 'cisco_asa.json')
             err, data = self.read_json_file(json_file)
             if err:
-                self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прервана.\n')
+                self.stepChanged.emit('iRED|Конвертация конфигурации Cisco ASA в формат UserGate прервана.\n')
                 self.error = 1
             else:
                 self.convert_settings_ui(data['timezone'])
@@ -95,9 +95,9 @@ class ConvertCiscoASAConfig(QThread, MyConv):
                 self.save_service_groups()
 
             if self.error:
-                self.stepChanged.emit('iORANGE|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прошла с ошибками.\n')
+                self.stepChanged.emit('iORANGE|Конвертация конфигурации Cisco ASA в формат UserGate прошла с ошибками.\n')
             else:
-                self.stepChanged.emit('iGREEN|Конвертация конфигурации Cisco ASA в формат UserGate NGFW прошла успешно.\n')
+                self.stepChanged.emit('iGREEN|Конвертация конфигурации Cisco ASA в формат UserGate прошла успешно.\n')
 
 
     def convert_config_file(self):
@@ -2599,15 +2599,16 @@ class ConvertCiscoASAConfig(QThread, MyConv):
             case 'interface':
                 ip = deq.popleft()
             case _:
-                if self.check_ip(address):
-                    mask = deq.popleft()
-                    err, ip = self.pack_ip_address(address, mask)
-                    if not err:
-                        iplist_name = self.create_ip_list(ips=[ip], name=f'subnet {ip}', descr='Портировано с Cisco ASA.')
-                        data['ip_lists'][iplist_name] = []
-                        rule[ips_mode].append(['list_id', iplist_name])
-                else:
-                    self.stepChanged.emit(f'RED|    Error: [Правило МЭ "{rule["name"]}"] Не корректный IP-адрес "{address}"')
+                if address:
+                    if self.check_ip(address):
+                        mask = deq.popleft()
+                        err, ip = self.pack_ip_address(address, mask)
+                        if not err:
+                            iplist_name = self.create_ip_list(ips=[ip], name=f'subnet {ip}', descr='Портировано с Cisco ASA.')
+                            data['ip_lists'][iplist_name] = []
+                            rule[ips_mode].append(['list_id', iplist_name])
+                    else:
+                        self.stepChanged.emit(f'RED|    Error: [Правило МЭ "{rule["name"]}"] Не корректный IP-адрес "{address}"')
 
 
     def create_url_list(self, url, name, rule_name, error):

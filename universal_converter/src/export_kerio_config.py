@@ -18,8 +18,8 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# Модуль переноса конфигурации с Kerio  на NGFW UserGate.
-# Версия 1.0  25.08.2025
+# Модуль преобразования конфигурации с Kerio в формат UserGate.
+# Версия 1.1  27.10.2025
 #
 
 import os, sys, copy, json
@@ -30,7 +30,7 @@ from services import zone_services, ug_services, ip_proto, GEOIP_CODE
 
 
 class ConvertKerioConfig(QThread, MyConv):
-    """Преобразуем файл конфигурации Kerio в формат UserGate NGFW."""
+    """Преобразуем файл конфигурации Kerio в формат UserGate."""
     stepChanged = pyqtSignal(str)
 
     def __init__(self, current_kerio_path, current_ug_path):
@@ -48,17 +48,17 @@ class ConvertKerioConfig(QThread, MyConv):
         self.error = 0
 
     def run(self):
-        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Kerio в формат UserGate NGFW.":>110}')
+        self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации Kerio в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
         self.convert_config_file()
 
         if self.error:
-            self.stepChanged.emit('iRED|Конвертация конфигурации Kerio в формат UserGate NGFW прервана.')
+            self.stepChanged.emit('iRED|Конвертация конфигурации Kerio в формат UserGate прервана.')
         else:
             json_file = os.path.join(self.current_kerio_path, 'winroute.json')
             err, data = self.read_json_file(json_file)
             if err:
-                self.stepChanged.emit('iRED|Конвертация конфигурации Kerio в формат UserGate NGFW прервана.\n')
+                self.stepChanged.emit('iRED|Конвертация конфигурации Kerio в формат UserGate прервана.\n')
             else:
                 self.convert_zone_settings()
                 self.convert_ntp_settings(data['config']['table'])
@@ -98,9 +98,9 @@ class ConvertKerioConfig(QThread, MyConv):
             self.stepChanged.emit(f'GREEN|    Сервисы выгружены в файл "{json_file}".')
 
             if self.error:
-                self.stepChanged.emit('iORANGE|Конвертация конфигурации Kerio в формат UserGate NGFW прошла с ошибками.\n')
+                self.stepChanged.emit('iORANGE|Конвертация конфигурации Kerio в формат UserGate прошла с ошибками.\n')
             else:
-                self.stepChanged.emit('iGREEN|Конвертация конфигурации Kerio в формат UserGate NGFW прошла успешно.\n')
+                self.stepChanged.emit('iGREEN|Конвертация конфигурации Kerio в формат UserGate прошла успешно.\n')
 
 
     def convert_config_file(self):

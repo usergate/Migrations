@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с Fortigate в формат UserGate.
-# Версия 4.4 27.10.2025
+# Версия 4.5 31.10.2025
 #
 
 import os, sys, json, copy
@@ -767,7 +767,7 @@ class ConvertFortigateConfig(QThread, MyConv):
                         'servers': []
                     },
                     'vlan_id': int(ifblock.get('vlanid', 0)),
-                    'link': ifblock.get('interface', '')
+                    'link': ''
                 }
                 if ('ip' in ifblock and ifblock['ip']):
                     ip, mask = ifblock['ip'].split(' ')

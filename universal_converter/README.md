@@ -1,5 +1,5 @@
 <h2 align="center">Преобразование конфигурации сторонних вендоров в формат UserGate</h2>
-<h3 align="center">(Версия 9.0)</h3>
+<h3 align="center">(Версия 9.1)</h3>
 
 Программа предназначена для преобразования конфигурации с Blue Coat, Cisco ASA, Cisco FPR, Check Point, Fortigate, Huawei,
 Kerio, MikroTik, PaloAlto в формат UserGate.
@@ -414,6 +414,7 @@ Fortigate не существуют на UserGate.<br>
 3. <b>qt.qpa.xcb: could not connect to display</b> - попытка запустить конвертер без графического окружения.
 установите GNOME или KDE, XFCE и т.д.<br>
 
+31.10.2025  Исправлен экспорт VLAN для Fortigate.<br>
 27.10.2025  Изменена концепция конвертера. Оставлена только конвертация конфигурации сторонних вендоров.
 Импорт должен производится конвертором ug_ngfw_converter.<br>
 22.10.2025  Исправлена ошибка при отсутствии локальных пользователей в конфигурации PaloAlto.<br>

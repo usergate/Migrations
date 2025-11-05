@@ -17,8 +17,6 @@
 1. Открыть веб-консоль администратора таким образом: https://<usergate_ip>:8001/?features=zone-xml-rpc
 2. В настройках нужной зоны активировать сервис "API XML RPC поверх HTTP".
 
-Архив <b>ug_ngfw_converter.zip</b> доступен здесь: https://docs.usergate.com/722/#konverter-konfiguracij-usergate
-
 <b>Экспорт конфигурации из UG NGFW и DCFW:</b>
 1. Скачайте архив <b>ug_ngfw_converter.zip</b> и распакуйте его. Файл <b>ug_ngfw_converter</b> сделайте исполняемым.<br>
 2. Запустите программу <b>ug_ngfw_converter</b>. Программа выполняется в графической среде. В текущей директории будет создан

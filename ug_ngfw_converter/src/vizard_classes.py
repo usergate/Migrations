@@ -34,11 +34,11 @@ class SelectAction(QWidget):
         super().__init__()
         self.parent = parent
         text1 = "<b><font color='green' size='+2'>Экспорт/Импорт конфигурации UserGate: NGFW, DCFW, MC</font></b>"
-        text2 = "Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b> и сохранение её в файлах json в каталоге <b>data</b> в текущей директории."
-        text3 = "Экспорт группы шаблонов NGFW <b>UserGate Management Center</b> версии <b>7</b> и сохранение в каталог <b>mc_templates</b> в текущей директории."
-        text4 = "Импорт файлов конфигурации NGFW из каталога <b>data</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b>."
-        text5 = "Импорт файлов конфигурации NGFW и DCFW из каталога <b>data</b> в группу шаблонов NGFW или DCFW <b>UserGate Management Center</b> версии <b>7</b>."
-        text6 = "Импорт из каталога <b>mc_templates</b> ранее экспортированной группы шаблонов в административную область <b>UserGate Management Center</b> версии <b>7</b>."
+        text2 = f"Экспорт конфигурации из <b>UG NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b> и сохранение её в каталоге <b>{self.parent.ngfw_base_path}</b> в текущей директории."
+        text3 = f"Экспорт группы шаблонов <b>UserGate Management Center</b> и сохранение в каталог <b>{self.parent.mc_base_path}</b> в текущей директории."
+        text4 = f"Импорт файлов конфигурации из каталога <b>{self.parent.ngfw_base_path}</b> на <b>UserGate NGFW</b> (версий <b>5, 6, 7</b>) и <b>DCFW</b>."
+        text5 = f"Импорт файлов конфигурации NGFW и DCFW из каталога <b>{self.parent.ngfw_base_path}</b> в группу шаблонов NGFW или DCFW <b>UserGate Management Center</b>."
+        text6 = f"Импорт из каталога <b>{self.parent.mc_base_path}</b> ранее экспортированной группы шаблонов в административную область <b>UserGate Management Center</b>."
         label1 = QLabel(text1)
         label1.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label2 = QLabel(text2)
@@ -130,7 +130,7 @@ class SelectAction(QWidget):
 
     def resize_window(self, e):
         if e == 0:
-            self.parent.resize(610, 360)
+            self.parent.resize(610, 390)
 
     def set_export_page(self):
         """Переходим на страницу экспорта конфигурации из NGFW. Номер в стеке 1."""
@@ -927,7 +927,11 @@ class SelectImportMode(SelectMode):
             arguments['dhcp_settings'] = f'RED|    {ngfw_interfaces}\nНастойки DHCP не будут импортированы.'
             arguments['ngfw_vlans'] = 1
             arguments['new_vlans'] = f'RED|    {ngfw_interfaces}\nИнтерфейсы не будут импортированы.'
+            errmsg = f'Error: {ngfw_interfaces}\n    Произошла ошибка при получении списка интерфейсов. Интерфейсы и настойки DHCP не будут импортированы.'
+            self.add_item_log(errmsg, color='RED')
             return
+        else:
+            arguments['iface_settings'] = {x['name']: x['kind'] for x in ngfw_interfaces}
 
         if 'DHCP' in self.selected_points:
             err, result = self.import_dhcp(ngfw_interfaces)
@@ -938,67 +942,67 @@ class SelectImportMode(SelectMode):
                 arguments['ngfw_vlans'] = 2
                 arguments['new_vlans'] = f'bRED|    VLAN нельзя импортировать на NGFW версии {self.utm.version}.'
             else:
-                iface_path = os.path.join(self.current_path, 'Interfaces')
-                json_file = os.path.join(iface_path, 'config_interfaces.json')
-                err, data = func.read_json_file(self, json_file)
-                if err:
-                    arguments['ngfw_vlans'] = err
-                    arguments['new_vlans'] = data
-                    return
-                arguments['iface_settings'] = data
-
-                err, result = self.utm.get_zones_list()
-                if err:
-                    arguments['ngfw_vlans'] = err
-                    arguments['new_vlans'] = f'RED|    {result}'
-                    return
-                zones = sorted([x['name'] for x in result])
-                zones.insert(0, "Undefined")
-
-                # Составляем список легитимных интерфейсов (interfaces_list).
-                ngfw_vlans = {}
-                management_port = ''
-                interfaces_list = ['Undefined']
-
-                for item in ngfw_interfaces:
-                    if item['kind'] == 'vlan':
-                        ngfw_vlans[item['vlan_id']] = item['name']
-                        continue
-                    for ip in item['ipv4']:
-                        if ip.startswith(self.utm.server_ip):
-                            management_port = item["name"]
-                    if item["name"] == management_port:
-                        continue
-                    if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
-                        continue
-                    else:
-                        if item['kind'] == 'adapter':
-                            arguments['adapter_ports'].add(item['name'])
-                    interfaces_list.append(item['name'])
-
-                err, result = self.create_vlans(interfaces_list, zones, data)
+                err, result = self.create_vlans(ngfw_interfaces)
                 if err:
                     arguments['ngfw_vlans'] = err
                     arguments['new_vlans'] = result
                 else:
-                    arguments['ngfw_vlans'] = ngfw_vlans
-                    arguments['new_vlans'] = result
+                    arguments['ngfw_vlans'] = result[0]
+                    arguments['new_vlans'] = result[1]
+                    arguments['adapter_ports'] = result[2]
 
-    def create_vlans(self, interfaces_list, zones, data):
+
+    def create_vlans(self, ngfw_interfaces):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
-        new_vlans = {item['vlan_id']: {'zone': item['zone_id'], 'port': item['link']} for item in data if item['kind'] == 'vlan'}
-        if not new_vlans:
+        err, result = self.utm.get_zones_list()
+        if err:
+            return err, f'RED|    {result}'
+        zones = ['Undefined', *sorted([x['name'] for x in result])]
+
+        # Составляем список легитимных интерфейсов (interfaces_list).
+        ngfw_vlans = {}
+        management_port = ''
+        adapter_ports = set()
+        interfaces_list = ['Undefined']
+
+        for item in ngfw_interfaces:
+            if item['kind'] == 'vlan':
+                ngfw_vlans[item['vlan_id']] = item['name']
+                continue
+            for ip in item['ipv4']:
+                if ip.startswith(self.utm.server_ip):
+                    management_port = item["name"]
+                    msg = f'Интерфейс {item["name"]} используется для текущей сессии.\nОн не будет использоваться для создания интерфейсов VLAN.'
+                    self.add_item_log(msg, color='NOTE')
+            if item["name"] == management_port:
+                continue
+            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
+                continue
+            else:
+                if item['kind'] == 'adapter':
+                    adapter_ports.add(item['name'])
+            interfaces_list.append(item['name'])
+
+        # Получаем список импортируемых VLAN.
+        iface_path = os.path.join(self.current_path, 'Interfaces')
+        json_file = os.path.join(iface_path, 'config_interfaces.json')
+        err, data = func.read_json_file(self, json_file)
+        if err:
+            return err, data
+        vlans = sorted([item['vlan_id'] for item in data if item['kind'] == 'vlan'])
+        if not vlans:
             return 3, 'LBLUE|    Нет VLAN для импорта.'
 
-        dialog = VlanWindow(self, vlans=new_vlans, ports=interfaces_list, zones=zones)
+        dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones, mode='ngfw')
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
-            for key, value in dialog.combo_vlans.items():
-                new_vlans[key]['port'] = value['port'].currentText()
-                new_vlans[key]['zone'] = value['zone'].currentText()
-            return 0, new_vlans
+            new_vlans = {}
+            for key, value in dialog.vlans.items():
+                new_vlans[key] = {'port': value['port'].currentText(), 'zone': value['zone'].currentText()}
+            return 0, [ngfw_vlans, new_vlans, adapter_ports]
         else:
             return 3, 'LBLUE|    Импорт настроек интерфейсов отменён пользователем.'
+
 
     def import_dhcp(self, ngfw_interfaces):
         dhcp_path = os.path.join(self.current_path, 'DHCP')
@@ -1022,6 +1026,7 @@ class SelectMcImportMode(SelectMode):
     """Класс для импорта конфигурации NGFW и DCFW в группу шаблонов МС. Номер в стеке 4."""
     def __init__(self, parent):
         super().__init__(parent)
+        self.device = None
         self.group_name = None
         self.templates_ids = None
         self.template_id = None
@@ -1040,7 +1045,7 @@ class SelectMcImportMode(SelectMode):
 
     def init_temporary_data(self):
         """
-        Запускаем в потоке mctd.GetImportTemporaryData() для получения часто используемых данных с MC.
+        Запускаем в потоке получение часто используемых данных с групы шаблонов MC.
         """
         if self.thread is None:
             self.disable_buttons()
@@ -1052,7 +1057,7 @@ class SelectMcImportMode(SelectMode):
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
         else:
-            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с МС! {self.thread}')
+            func.message_inform(self, 'Ошибка', f'Произошла ошибка получения служебных структур данных с МС. {self.thread}')
 
 
     def init_import_widget(self, e):
@@ -1064,7 +1069,6 @@ class SelectMcImportMode(SelectMode):
         4. Выбирает шаблон из группы шаблонов.
         """
         if e == 4:
-            self.device = None
             self.parent.resize(980, 750)
             dialog =  SelectConfigDirectoryWindow(self.parent, mode='import')
             result = dialog.exec()
@@ -1091,7 +1095,7 @@ class SelectMcImportMode(SelectMode):
                         self.group_name = groups_dialog.current_group_name
                         self.templates_ids = groups_dialog.templates
                         self.device = groups_dialog.device
-                        # Инициализируем дерево разделов конфигурации
+                        # Инициализируем class MainTree (дерево разделов конфигурации)
                         if self.device == 'DCFW':
                             self.tree.product = 'dcfw'
                             self.tree.version = 8.0
@@ -1132,7 +1136,6 @@ class SelectMcImportMode(SelectMode):
             self.add_item_log(f'{title2:>100}', color='GREEN')
             self.add_item_log(f'{"="*100}', color='ORANGE')
             self.init_temporary_data()
-            self.enable_buttons()
         else:
             self.run_page_0()
 
@@ -1147,8 +1150,10 @@ class SelectMcImportMode(SelectMode):
 
         if self.selected_points:
             arguments = {
-                'ngfw_ports': '',
-                'dhcp_settings': '',
+                'ngfw_ports': None,
+                'dhcp_settings': [],
+                'mc_vlans': None,
+                'new_vlans': None,
             }
             node_name = 'node_1'
             if not {'Interfaces', 'Gateways', 'DHCP', 'VRF', 'UserIDagent', 'SNMPParameters'}.isdisjoint(self.selected_points):
@@ -1156,8 +1161,12 @@ class SelectMcImportMode(SelectMode):
                 if not ok:
                     func.message_inform(self, 'Ошибка', f'Импорт прерван, так как не указан идентификатор узла.')
                     return
-                if 'DHCP' in self.selected_points:
+                if not {'Interfaces', 'DHCP'}.isdisjoint(self.selected_points):
                     self.set_arguments(node_name, arguments)
+            # Ещё раз проверяем что сессия не протухла, т.к. пользователь может долго думать.
+            if not func.check_auth(self):
+                self.run_page_0()
+
             if self.thread is None:
                 self.disable_buttons()
                 if self.device == 'NGFW':
@@ -1191,6 +1200,7 @@ class SelectMcImportMode(SelectMode):
         else:
             func.message_inform(self, "Внимание!", "Вы не выбрали раздел для импорта.")
 
+
     def import_all(self):
         """
         Проверяем что авторизация не протухла. Если протухла, логинимся заново.
@@ -1211,9 +1221,22 @@ class SelectMcImportMode(SelectMode):
             return
 
         arguments = {
-            'ngfw_ports': [],
+            'ngfw_ports': None,
             'dhcp_settings': [],
+            'mc_vlans': None,
+            'new_vlans': None,
         }
+        for item in all_points:
+            if item['path'] == 'Network':
+                if not {'Interfaces', 'DHCP'}.isdisjoint(item['points']):
+                    self.selected_points = item['points']
+                    self.current_path = item['path']
+                    self.set_arguments(node_name, arguments)
+                    break
+        # Ещё раз проверяем что сессия не протухла, т.к. пользователь может долго думать.
+        if not func.check_auth(self):
+            self.run_page_0()
+
         self.tree.set_current_item()
 
         if self.thread is None:
@@ -1244,47 +1267,121 @@ class SelectMcImportMode(SelectMode):
         else:
             func.message_inform(self, 'Ошибка', f'Произошла ошибка при запуске процесса импорта! {self.thread}')
 
+
     def set_arguments(self, node, arguments):
         """Заполняем структуру параметров для импорта."""
-        mc_interfaces = []
+        all_ifaces = set()
+        vlans = []
+        from_ngfw_conferter = False     # Откуда импортируемая конфигурация. Если из universal_converter то False. Если из NGFW/DCFW то True
+        json_file = os.path.join(self.current_path, 'Interfaces', 'config_interfaces.json')
+        err, data = func.read_json_file(self, json_file)
+        if err == 1:
+            self.on_step_changed(err)
+        else:
+            for item in data:
+                if item['name'] == 'port0':     # port0 нельзя использовать в шаблонах.
+                    continue
+                if item['kind'] == 'vlan':
+                    # Получаем список импортируемых VLAN.
+                    vlans.append(item['vlan_id'])
+                    # Определяем откуда исходная конфигурация.
+                    from_ngfw_conferter = True if item['link'] else False
+                elif item['kind'] in ('bridge', 'bond', 'adapter') and not item['master']:
+                    # Добавляем интерфейсы, на которых может создаваться VLAN (они будут созданы в процессе импорта).
+                    all_ifaces.add(item['name'])
+
         for uid, name in self.templates.items():
             if self.device == 'NGFW':
                 err, result = self.utm.get_template_interfaces_list(uid)
             else:
                 err, result = self.utm.get_dcfw_template_interfaces(uid)
             if err:
-                func.message_alert(self, 'Произошла ошибка при получении списка интерфейсов.\nИмпорт настроек DHCP отменён.', result)
-                return
+                message = (
+                    f"Error: [Шаблон '{name}'] Произошла ошибка при получении списка интерфейсов.\n"
+                    "    Интерфейсы этого шаблона не будут использованы.\n"
+                    f"    {result}"
+                )
+                self.add_item_log(message, color='RED')
+                func.message_alert(self, 'Произошла ошибка при получении списка интерфейсов.')
             for item in result:
-                if item['kind'] not in ('bridge', 'bond', 'adapter', 'vlan') or item['master']:
-                    continue
                 if item['node_name'] == node:   # Только для нужного уза кластера.
-                    mc_interfaces.append({'name': item['name'], 'kind': item['kind'], 'vlan_id': item.get('vlan_id', 0)})
+                    if item['kind'] == 'vlan':
+                        continue
+                    elif item['kind'] in ('bridge', 'bond', 'adapter') and not item['master']:
+#                        print(item['name'], item['master'])
+                        # Добавляем интерфейсы, присутствующие в группе шаблонов, на которых может создаваться VLAN.
+                        all_ifaces.add(item['name'])
 
-        if not mc_interfaces:
-            msg = f'Для "{node}" отсутствуют интерфейсы.\nSubnets DHCP не будут импортированы.'
+        if not all_ifaces:
+            msg = f'Для "{node}" отсутствуют интерфейсы. Интерфейсы и Subnets DHCP не будут импортированы.'
+            self.add_item_log(f'Warning: {msg}', color='bRED')
             func.message_inform(self, 'Внимание!', msg)
-            arguments['ngfw_ports'] = 3
-            arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле "{node}" шаблона.'
+            arguments['ngfw_ports'] = 2
+            arguments['dhcp_settings'] = f'ORANGE|    Импорт настроек DHCP отменён из-за отсутствия портов на узле "{node}" группы шаблонов.'
+            arguments['mc_vlans'] = 2
+            arguments['new_vlans'] = f'ORANGE|    Импорт интерфейсов отменён из-за отсутствия портов на узле "{node}" группы шаблонов.'
             return
- 
-        err, result = self.import_dhcp(mc_interfaces)
-        arguments['ngfw_ports'] = err
-        arguments['dhcp_settings'] = result
 
-    def import_dhcp(self, mc_interfaces):
+        if from_ngfw_conferter:
+            # Если конфигурация получена с NGFW/DCFW, показать окно с вопросом:
+            # "Надо ли переназначать порты и зоны на VLAN и порты на DHCP?"
+            if func.message_question(self, 'Внимание!', 'Переназначать порты и зоны на VLAN и порты на DHCP?') == 'no':
+                return
+                
+        interfaces_list = ['Undefined', *sorted(list(all_ifaces))]
+
+        if 'DHCP' in self.selected_points:
+            err, result = self.import_dhcp(interfaces_list)
+            arguments['ngfw_ports'] = err
+            arguments['dhcp_settings'] = result
+
+        if 'Interfaces' in self.selected_points:
+            err, result = self.create_vlans(vlans, interfaces_list)
+            if err:
+                arguments['mc_vlans'] = err
+                arguments['new_vlans'] = result
+            else:
+                arguments['new_vlans'] = result
+
+
+    def create_vlans(self, vlans, ports):
+        """Выбираем интерфейсы VLAN для импорта и назначаем им порт и зону."""
+        if not vlans:
+            return 3, 'LBLUE|    Нет VLAN для импорта.'
+
+        tmp_zones = set()
+        for uid, name in self.templates.items():
+            if self.device == 'NGFW':
+                err, result = self.utm.get_template_zones_list(uid)
+            else:
+                err, result = self.utm.get_dcfw_template_zones(uid)
+            if err:
+                return err, f'RED|       {result}'
+            for x in result:
+                tmp_zones.add(x['name'])
+        zones = ['Undefined', *sorted(list(tmp_zones))]
+        
+        dialog = VlanWindow(self, vlans=vlans, ports=ports, zones=zones, mode='mc')
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            new_vlans = {}
+            for key, value in dialog.vlans.items():
+                new_vlans[key] = {'port': value['port'].currentText(), 'zone': value['zone'].currentText()}
+            return 0, new_vlans
+        else:
+            return 3, 'LBLUE|       Импорт настроек VLAN отменён пользователем.'
+
+
+    def import_dhcp(self, ports):
         json_file = os.path.join(self.current_path, 'DHCP', 'config_dhcp_subnets.json')
         err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
-        ngfw_ports = sorted([x['name'] for x in mc_interfaces])
-        ngfw_ports.insert(0, 'Undefined')
-
-        dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
+        dialog = CreateDhcpSubnetsWindow(self, ports, data)
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
-            return ngfw_ports, data
+            return ports, data
         else:
             return 3, 'LBLUE|    Импорт настроек DHCP отменён пользователем.'
 
@@ -1844,8 +1941,8 @@ class SelectConfigDirectoryWindow(QDialog):
             self.setFixedHeight(160)
             self.config_directory.setEditable(True)
             text = (
-                '<b><font color="green">Введите название каталога для экспорта конфигурации.<br> '
-                f'Каталог будет создан в текущей директории в каталоге {self.base_path}.<br>Или выберите из уже существующих.</font></b>'
+                '<b><font size="+1" color="green">Выберите каталог для экспорта конфигурации.</font></b><br> '
+                f'Если каталог не существует, введите имя нового каталога.<br>Он будет создан в текущей директории в каталоге <b>{self.base_path}.</b>'
             )
         else:
             self.setFixedHeight(120)
@@ -2043,20 +2140,24 @@ class ColorLabel(QLabel):
 
 class VlanWindow(QDialog):
     """Окно настройки VLAN-ов. Для установки порта и зоны каждого VLAN."""
-    def __init__(self, parent, vlans=None, ports=None, zones=None):
+    def __init__(self, parent, vlans=None, ports=None, zones=None, mode='ngfw'):
         super().__init__(parent)
         self.setWindowTitle("Настройка VLANs")
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
-#        self.vlans = {item: {'port': '', 'zone': ''} for item in vlans}
-        self.vlans = vlans
-        self.combo_vlans = {item: {'port': '', 'zone': ''} for item in sorted(vlans)}
+        self.setMinimumWidth(380)
+        self.vlans = {item: {'port': '', 'zone': ''} for item in vlans}
+        self.ports = ports
+        self.zones = zones
         title = QLabel(f"<b><font color='green'>Настройка добавляемых интерфейсов VLAN</font></b>")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        text1 = QLabel(
-            "Для импортируемых VLAN установите порт и зону. Если порт не будет "
-            "назначен, VLAN не будет импортирован. Если вы используете интерфейс "
-            "bond который в данный момент не существует, он будет создан."
-        )
+        if mode == 'mc':
+            text1 = QLabel(
+                "Для импортируемых VLAN установите порт и зону. Если порт не будет "
+                "назначен, VLAN не будет импортирован. Если вы используете интерфейс "
+                "bond который в данный момент не существует, он будет создан."
+            )
+        else:
+            text1 = QLabel("Для импортируемых VLAN установите порт и зону. Если порт не будет назначен, VLAN не будет импортирован.")
         text1.setWordWrap(True)
 
         grid_title_hbox = QHBoxLayout()
@@ -2068,25 +2169,15 @@ class VlanWindow(QDialog):
         grid_title_hbox.addWidget(ColorLabel(f'Зона', 'blue'))
         grid_title_hbox.addStretch(10)
 
-        for key, value in self.vlans.items():
-            if value['port'] not in ports and value['port'].startswith('bond'):
-                ports.append(value['port'])
-
         grid_layout = QGridLayout()
         for i, vlan in enumerate(self.vlans.keys()):
-            self.combo_vlans[vlan]['port'] = QComboBox()
-            self.combo_vlans[vlan]['port'].addItems(ports)
-
-            if self.vlans[vlan]['port'] in ports:
-                self.combo_vlans[vlan]['port'].setCurrentText(self.vlans[vlan]['port'])
-
-            self.combo_vlans[vlan]['zone'] = QComboBox()
-            self.combo_vlans[vlan]['zone'].addItems(zones)
-            if self.vlans[vlan]['zone'] in zones:
-                self.combo_vlans[vlan]['zone'].setCurrentText(self.vlans[vlan]['zone'])
+            self.vlans[vlan]['port'] = QComboBox()
+            self.vlans[vlan]['port'].addItems(self.ports)
+            self.vlans[vlan]['zone'] = QComboBox()
+            self.vlans[vlan]['zone'].addItems(self.zones)
             grid_layout.addWidget(QLabel(f'VLAN {vlan}'), i, 0)
-            grid_layout.addWidget(self.combo_vlans[vlan]['port'], i, 1)
-            grid_layout.addWidget(self.combo_vlans[vlan]['zone'], i, 2)
+            grid_layout.addWidget(self.vlans[vlan]['port'], i, 1)
+            grid_layout.addWidget(self.vlans[vlan]['zone'], i, 2)
 
         widget = QWidget()
         widget.setLayout(grid_layout)
@@ -2132,7 +2223,8 @@ class CreateDhcpSubnetsWindow(QDialog):
         self.setWindowFlags(Qt.WindowType.WindowTitleHint|Qt.WindowType.CustomizeWindowHint|Qt.WindowType.Dialog|Qt.WindowType.Window)
         title = QLabel(f"<b><font color='green'>Настройка DHCP subnets</font></b>")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        text1 = QLabel("Для импортируемых DHCP subnets установите порт.<br>Если порт не будет назначен<br>subnet не будет импортирована.")
+        text1 = QLabel("Для импортируемых DHCP subnets установите порт. Если порт не будет назначен, subnet не будет импортирована.")
+        text1.setWordWrap(True)
 
         grid_title_hbox = QHBoxLayout()
         grid_title_hbox.addStretch(5)

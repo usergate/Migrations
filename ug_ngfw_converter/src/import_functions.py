@@ -41,7 +41,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.selected_path = selected_path
         self.selected_points = selected_points
 
-        self.iface_settings = arguments['iface_settings']
+        self.ngfw_ifaces = arguments['iface_settings']
         self.ngfw_vlans = arguments['ngfw_vlans']
         self.new_vlans = arguments['new_vlans']
         self.ngfw_ports = arguments['ngfw_ports']
@@ -802,19 +802,16 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN" и "VPN" в раздел "Сеть/Интерфейсы".')
+        self.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN", "BOND", "VPN" в раздел "Сеть/Интерфейсы".')
+        if isinstance(self.ngfw_ports, int):
+            self.stepChanged.emit(self.new_vlans)
+            self.error = 1
+            return
 
         kinds = {item['kind'] for item in data}
         if kinds.isdisjoint({'tunnel', 'vlan', 'vpn', 'bond'}):
             self.stepChanged.emit('GRAY|    Нет интерфейсов "TUNNEL", "VLAN", "VPN", "BOND" для импорта.')
             return
-
-        err, result = self.utm.get_interfaces_list()
-        if err:
-            self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте интерфейсов.')
-            self.error = 1
-            return
-        ngfw_ifaces = {x['name']: x['kind'] for x in result}
 
         err, result = self.utm.get_netflow_profiles_list()
         if err:
@@ -835,13 +832,13 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             list_lldp['undefined'] = 'undefined'
 
         if 'tunnel' in kinds:
-            self.import_ipip_interfaces(path, data, ngfw_ifaces)
+            self.import_ipip_interfaces(data)
         if 'bond' in kinds:
-            self.import_bonds(list_netflow, list_lldp, ngfw_ifaces)
+            self.import_bonds(data, list_netflow, list_lldp)
         if 'vlan' in kinds:
-            self.import_vlans(path, list_netflow, list_lldp)
+            self.import_vlans(data, list_netflow, list_lldp)
         if 'vpn' in kinds:
-            self.import_vpn_interfaces(path, data, list_netflow, list_lldp, ngfw_ifaces)
+            self.import_vpn_interfaces(data, list_netflow, list_lldp)
 
         # Устанавливаем тэги на интерфейсы
         tag_relations = {}
@@ -854,7 +851,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 error = 1
 
 
-    def import_ipip_interfaces(self, path, data, ngfw_ifaces):
+    def import_ipip_interfaces(self, data):
         """Импортируем интерфесы IP-IP."""
         # Проверяем что есть интерфейсы IP-IP для импорта.
         is_gre = False
@@ -865,7 +862,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
 
         self.stepChanged.emit('BLUE|    Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
-        mc_gre = [int(name[3:]) for name, kind in ngfw_ifaces.items() if kind == 'tunnel' and name.startswith('gre')]
+        mc_gre = [int(name[3:]) for name, kind in self.ngfw_ifaces.items() if kind == 'tunnel' and name.startswith('gre')]
         gre_num = max(mc_gre) if mc_gre else 0
         if gre_num:
             self.stepChanged.emit(f'rNOTE|    Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как младшие номера уже существуют на NGFW.')
@@ -905,7 +902,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
 
 
-    def import_bonds(self, list_netflow, list_lldp, ngfw_ifaces):
+    def import_bonds(self, data, list_netflow, list_lldp):
         """Импортируем интерфесы BOND. Нельзя использовать интерфейсы Management и slave."""
         self.stepChanged.emit('BLUE|    Импорт интерфейсов bond в раздел "Сеть/Интерфейсы".')
         error = 0
@@ -914,9 +911,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             return
 
-        for item in self.iface_settings:
+        for item in data:
             if 'kind' in item and item['kind'] == 'bond':
-                if item['name'] in ngfw_ifaces:
+                if item['name'] in self.ngfw_ifaces:
                     self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на NGFW.')
                     continue
                 item.pop('id', None)
@@ -924,7 +921,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('master', None)
                 item.pop('running', None)
                 item.pop('kind', None)
-                item.pop('node_name', None)              # удаляем если конфиг получен из МС
+                item.pop('node_name', None)    # удаляем если конфиг получен из МС
                 
                 new_slaves = []
                 for port in item['bonding']['slaves']:
@@ -974,7 +971,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err == 2:
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                 else:
-                    ngfw_ifaces[item['name']] = 'bond'
+                    self.ngfw_ifaces[item['name']] = 'bond'
                     self.stepChanged.emit(f'BLACK|       Интерфейс "{item["name"]}" импортирован.')
         if error:
             self.error = 1
@@ -984,7 +981,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
 
-    def import_vlans(self, path, list_netflow, list_lldp):
+    def import_vlans(self, data, list_netflow, list_lldp):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         self.stepChanged.emit('BLUE|    Импорт VLAN в раздел "Сеть/Интерфейсы".')
         error = 0
@@ -994,13 +991,13 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.error = 1
             return
 
-        for item in self.iface_settings:
+        for item in data:
             if 'kind' in item and item['kind'] == 'vlan':
-                current_port = self.new_vlans[item['vlan_id']]['port']
-                current_zone = self.new_vlans[item['vlan_id']]['zone']
                 if item["vlan_id"] in self.ngfw_vlans:
                     self.stepChanged.emit(f'GRAY|       VLAN {item["vlan_id"]} уже существует на порту {self.ngfw_vlans[item["vlan_id"]]}')
                     continue
+                current_port = self.new_vlans[item['vlan_id']]['port']
+                current_zone = self.new_vlans[item['vlan_id']]['zone']
                 if current_port == "Undefined":
                     self.stepChanged.emit(f"rNOTE|       VLAN {item['vlan_id']} не импортирован так как для него не назначен порт.")
                     continue
@@ -1014,11 +1011,10 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('master', None)      # удаляем readonly поле
                 item.pop('kind', None)        # удаляем readonly поле
                 item.pop('mac', None)
-                item.pop('node_name', None)              # удаляем если конфиг получен из МС
+                item.pop('node_name', None)   # удаляем если конфиг получен из МС
 
                 if item.get('config_on_device', False):  # не импортируем если конфиг получен из МС и настраивается на устройстве.
                     continue
-                item.pop('node_name', None)         # удаляем если конфиг получен из МС
 
                 if current_zone != "Undefined":
                     try:
@@ -1062,14 +1058,14 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|       Импорт интерфейсов VLAN завершён.')
 
 
-    def import_vpn_interfaces(self, path, data, list_netflow, list_lldp, ngfw_ifaces):
+    def import_vpn_interfaces(self, data, list_netflow, list_lldp):
         """Импортируем интерфейсы VPN"""
         self.stepChanged.emit('BLUE|    Импорт интерфейсов VPN в раздел "Сеть/Интерфейсы".')
         error = 0
     
         for item in data:
             if 'kind' in item and item['kind'] == 'vpn':
-                if item['name'] in ngfw_ifaces:
+                if item['name'] in self.ngfw_ifaces:
                     self.stepChanged.emit(f'GRAY|       Интерфейс VPN {item["name"]} уже существует на NGFW.')
                     continue
 
@@ -1113,7 +1109,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err == 2:
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                 else:
-                    ngfw_ifaces[item['name']] = item['kind']
+                    self.ngfw_ifaces[item['name']] = item['kind']
                     self.stepChanged.emit(f'BLACK|       Интерфейс VPN "{item["name"]}" импортирован.')
         if error:
             self.error = 1

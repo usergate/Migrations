@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс импорта разделов конфигурации в шаблон DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.9   22.10.2025  (только для ug_ngfw_converter)
+# Версия 2.0   05.11.2025
 #
 
 import os, sys, json
@@ -45,6 +45,8 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.node_name = node_name
         self.ngfw_ports = arguments['ngfw_ports']
         self.dhcp_settings = arguments['dhcp_settings']
+        self.mc_vlans = arguments['mc_vlans']
+        self.new_vlans = arguments['new_vlans']
 
         self.users_signatures = {}
         self.error = 0
@@ -1580,6 +1582,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
 
         self.stepChanged.emit(f'BLUE|Импорт интерфейсов на узел кластера "{self.node_name}"')
+
         if not self.mc_data['interfaces']:
             if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
@@ -1615,6 +1618,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         """Импортируем интерфесы типа ADAPTER."""
         self.stepChanged.emit('BLUE|    Импорт сетевых адаптеров в раздел "Сеть/Интерфейсы"')
         error = 0
+        n = 0
 
         mc_ifaces = self.mc_data['interfaces']
         netflow_profiles = self.mc_data['netflow_profiles']
@@ -1622,11 +1626,12 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         for item in data:
             if 'kind' in item and item['kind'] == 'adapter':
-#                if 'node_name' in item:
-#                     if item['node_name'] != self.node_name:
-#                        continue
-#                else:
-                item['node_name'] = self.node_name
+                if 'node_name' in item and item['node_name'].startswith('node_'):
+                    if item['node_name'] != self.node_name:
+                        continue
+                else:
+                    item['node_name'] = self.node_name
+                    n += 1
 
                 iface_name = f'{item["name"]}:{self.node_name}'
                 if iface_name in mc_ifaces:
@@ -1663,7 +1668,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         error = 1
                     else:
                         new_ipv4.append(result)
-                if not new_ipv4:
+                if not new_ipv4 and item['mode'] == 'static':
                     item['mode'] = 'manual'
                 item['ipv4'] = new_ipv4
 
@@ -1687,18 +1692,21 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|       Сетевой адаптер "{item["name"]}" импортирован на узел кластера "{self.node_name}".')
-
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании сетевых адаптеров.')
+        if n:
+            if error:
+                self.error = 1
+                self.stepChanged.emit('ORANGE|       Произошла ошибка при создании сетевых адаптеров.')
+            else:
+                self.stepChanged.emit('GREEN|       Импорт сетевых адаптеров завершён.')
         else:
-            self.stepChanged.emit('GREEN|       Импорт сетевых адаптеров завершён.')
+            self.stepChanged.emit(f'GRAY|       Нет сетевых адаптеров для импорта в шаблон на узел кластера "{self.node_name}".')
 
 
     def import_bond_interfaces(self, path, data):
         """Импортируем Бонд-интерфесы."""
         self.stepChanged.emit('BLUE|    Импорт агрегированных интерфейсов в раздел "Сеть/Интерфейсы"')
         error = 0
+        n = 0
 
         mc_ifaces = self.mc_data['interfaces']
         netflow_profiles = self.mc_data['netflow_profiles']
@@ -1706,11 +1714,12 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         for item in data:
             if 'kind' in item and item['kind'] in ('bond', 'bridge'):
-#                if 'node_name' in item:
-#                     if item['node_name'] != self.node_name:
-#                        continue
-#                else:
-                item['node_name'] = self.node_name
+                if 'node_name' in item and item['node_name'].startswith('node_'):
+                    if item['node_name'] != self.node_name:
+                        continue
+                else:
+                    item['node_name'] = self.node_name
+                    n += 1
 
                 iface_name = f'{item["name"]}:{self.node_name}'
                 if iface_name in mc_ifaces:
@@ -1754,7 +1763,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         error = 1
                     else:
                         new_ipv4.append(result)
-                if not new_ipv4:
+                if not new_ipv4 and item['mode'] == 'static':
                     item['mode'] = 'manual'
                 item['ipv4'] = new_ipv4
 
@@ -1778,12 +1787,14 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|       Интерфейс "{item["name"]}" импортирован на узел кластера "{self.node_name}".')
-
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании агрегированных интерфейсов.')
+        if n:
+            if error:
+                self.error = 1
+                self.stepChanged.emit('ORANGE|       Произошла ошибка при создании агрегированных интерфейсов.')
+            else:
+                self.stepChanged.emit('GREEN|       Импорт агрегированных интерфейсов завершён.')
         else:
-            self.stepChanged.emit('GREEN|       Импорт агрегированных интерфейсов завершён.')
+            self.stepChanged.emit(f'GRAY|       Нет агрегированных интерфейсов для импорта в шаблон на узел кластера "{self.node_name}".')
 
 
     def import_ipip_interfaces(self, path, data):
@@ -1803,6 +1814,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         if gre_num:
             self.stepChanged.emit(f'uGRAY|       Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как меньшие номера уже существует в этой группе шаблонов для узла кластера "{self.node_name}".')
         error = 0
+        n = 0
 
         for item in data:
             if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
@@ -1811,11 +1823,12 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('id', None)          # удаляем readonly поле
                 item.pop('master', None)      # удаляем readonly поле
                 item.pop('mac', None)
-                if 'node_name' in item:
-                     if item['node_name'] != self.node_name:
+                if 'node_name' in item and item['node_name'].startswith('node_'):
+                    if item['node_name'] != self.node_name:
                         continue
                 else:
                     item['node_name'] = self.node_name
+                    n += 1
 
                 iface_name = f'{item["name"]}:{self.node_name}'
                 if iface_name in mc_ifaces:
@@ -1852,11 +1865,14 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|       Интерфейс {item["tunnel"]["mode"]} - {item["name"]} импортирован на узел кластера "{self.node_name}".')
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов GRE/IPIP/VXLAN.')
+        if n:
+            if error:
+                self.error = 1
+                self.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов GRE/IPIP/VXLAN.')
+            else:
+                self.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
         else:
-            self.stepChanged.emit('GREEN|       Импорт интерфейсов GRE/IPIP/VXLAN завершён.')
+            self.stepChanged.emit(f'GRAY|       Нет интерфейсов GRE/IPIP/VXLAN для импорта в шаблон на узел кластера "{self.node_name}".')
 
 
     def import_vpn_interfaces(self, path, data):
@@ -1900,7 +1916,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         error = 1
                     else:
                         new_ipv4.append(result)
-                if not new_ipv4:
+                if not new_ipv4 and item['mode'] == 'static':
                     item['mode'] = 'manual'
                 item['ipv4'] = new_ipv4
 
@@ -1933,9 +1949,19 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_vlan_interfaces(self, path, data):
-        """Импортируем интерфесы VLAN."""
+        """
+        Импортируем интерфесы VLAN.
+        Если self.new_vlans: self.new_vlans - здесь находится переопределение параметров VLAN для импорта.
+        """
         self.stepChanged.emit('BLUE|    Импорт интерфейсов VLAN в раздел "Сеть/Интерфейсы"')
+        if self.mc_vlans:
+            self.stepChanged.emit(self.new_vlans)
+            if self.mc_vlans == 1:
+                self.error = 1
+            return
+
         error = 0
+        n = 0
 
         mc_ifaces = self.mc_data['interfaces']
         netflow_profiles = self.mc_data['netflow_profiles']
@@ -1943,11 +1969,20 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         for item in data:
             if 'kind' in item and item['kind'] == 'vlan':
-#                if 'node_name' in item:
-#                     if item['node_name'] != self.node_name:
-#                        continue
-#                else:
-                item['node_name'] = self.node_name
+                if 'node_name' in item and item['node_name'].startswith('node_'):
+                    if item['node_name'] != self.node_name:
+                        continue
+                else:
+                    item['node_name'] = self.node_name
+                    n += 1
+
+                if self.new_vlans:
+                    if self.new_vlans[item['vlan_id']]['port'] == 'Undefined':
+                        self.stepChanged.emit(f'rNOTE|       VLAN "{item["vlan_id"]}" не импортирован так как для него не назначен порт.')
+                        continue
+                    item['link'] = self.new_vlans[item['vlan_id']]['port']
+                    item['zone_id'] = self.new_vlans[item['vlan_id']]['zone']
+                    item['name'] = f"{item['link']}.{item['vlan_id']}"
 
                 iface_name = f'{item["name"]}:{self.node_name}'
                 if iface_name in mc_ifaces:
@@ -1956,6 +1991,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     else:
                         self.stepChanged.emit(f'sGREEN|       Интерфейс "{item["name"]}" уже существует в шаблоне "{mc_ifaces[iface_name].template_name}" на узле кластера "{self.node_name}".')
                     continue
+
                 if item['link'] == 'port0':
                     self.stepChanged.emit(f'bRED|       Интерфейс "{item["name"]}" не может быть импортирован в шаблон МС так как привязан к port0.')
                     continue
@@ -1968,6 +2004,8 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 if 'config_on_device' not in item:
                     item['config_on_device'] = False
 
+                if item['zone_id'] == 'Undefined':
+                    item['zone_id'] = 0
                 if item['zone_id']:
                     try:
                         item['zone_id'] = self.mc_data['zones'][item['zone_id']].id
@@ -1984,7 +2022,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                         error = 1
                     else:
                         new_ipv4.append(result)
-                if not new_ipv4:
+                if not new_ipv4 and item['mode'] == 'static':
                     item['mode'] = 'manual'
                 item['ipv4'] = new_ipv4
 
@@ -2008,12 +2046,14 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     mc_ifaces[iface_name] = BaseObject(id=result, template_id=self.template_id, template_name=self.templates[self.template_id])
                     self.stepChanged.emit(f'BLACK|       Интерфейс VLAN "{item["name"]}" импортирован на узел кластера "{self.node_name}".')
-
-        if error:
-            self.error = 1
-            self.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов VLAN.')
+        if n:
+            if error:
+                self.error = 1
+                self.stepChanged.emit('ORANGE|       Произошла ошибка при создании интерфейсов VLAN.')
+            else:
+                self.stepChanged.emit('GREEN|       Импорт интерфейсов VLAN завершён.')
         else:
-            self.stepChanged.emit('GREEN|       Импорт интерфейсов VLAN завершён.')
+            self.stepChanged.emit(f'GREEN|       Нет VLAN для импорта в шаблон на узел кластера "{self.node_name}".')
 
 
     def import_gateways(self, path):
@@ -2140,17 +2180,17 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.error = 1
             return
 
-        if isinstance(self.ngfw_ports, list) and not self.dhcp_settings:
-            json_file = os.path.join(path, 'config_dhcp_subnets.json')
-            err, self.dhcp_settings = self.read_json_file(json_file)
-            if err:
-                return
-
-            if not self.mc_data['interfaces']:
-                if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
-                    self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
-                    return
-            self.ngfw_ports = [x.split(':')[0] for x in self.mc_data['interfaces'] if x.split(':')[1] == self.node_name]
+#        if isinstance(self.ngfw_ports, list) and not self.dhcp_settings:
+#            json_file = os.path.join(path, 'config_dhcp_subnets.json')
+#            err, self.dhcp_settings = self.read_json_file(json_file)
+#            if err:
+#                return
+#
+#            if not self.mc_data['interfaces']:
+#                if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
+#                    self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP.')
+#                    return
+#            self.ngfw_ports = [x.split(':')[0] for x in self.mc_data['interfaces'] if x.split(':')[1] == self.node_name]
 
         mc_dhcp_subnets = {}
         for uid, name in self.templates.items():
@@ -2163,12 +2203,12 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         error = 0
 
         for item in self.dhcp_settings:
-#            if 'node_name' in item:
-#                if item['node_name'] != self.node_name:
-#                    self.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не импортирован так как имя узла в настройках не совпало с указанным.')
-#                    continue
-#            else:
-            item['node_name'] = self.node_name
+            if 'node_name' in item and item['node_name'].startswith('node_'):
+                if item['node_name'] != self.node_name:
+                    self.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не импортирован так как имя узла в настройках не совпало с указанным.')
+                    continue
+            else:
+                item['node_name'] = self.node_name
 
             if item['iface_id'] == 'Undefined':
                 self.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как для него не указан порт.')

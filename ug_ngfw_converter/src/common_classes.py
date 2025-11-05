@@ -268,6 +268,22 @@ class MyMixedService(TransformObjectName):
 
 
     @staticmethod
+    def check_ip(ip):
+        """
+        Получаем данные в виде ip или ip/mask и проверяем что адрес действителен.
+        Если нет ошибки, возвращаем 'ip/mask'. Если получили не валидный IP, возвращаем False.
+        """
+        try:
+            interface = ipaddress.ip_interface(ip)
+            if isinstance(interface, ipaddress.IPv4Interface):
+                return f'{interface.ip}/{interface.network.prefixlen}'
+            else:
+                return False
+        except ValueError as err:
+            return False
+
+
+    @staticmethod
     def pack_ip_address(ip, mask):
         """Получаем ip и маску (24, 255.255.255.0). Выдаём упакованный IP-адрес."""
         if ip == '0':
@@ -390,22 +406,6 @@ class MyConv(MyMixedService):
             self.stepChanged.emit(f'NOTE|    Создан список IP-адресов "{ip_list["name"]}" и выгружен в файл "{json_file}".')
 
         return iplist_name
-
-
-    @staticmethod
-    def check_ip(ip):
-        """
-        Получаем данные в виде ip или ip/mask и проверяем что адрес действителен.
-        Если нет ошибки, возвращаем 'ip/mask'. Если получили не валидный IP, возвращаем False.
-        """
-        try:
-            interface = ipaddress.ip_interface(ip)
-            if isinstance(interface, ipaddress.IPv4Interface):
-                return f'{interface.ip}/{interface.network.prefixlen}'
-            else:
-                return False
-        except ValueError as err:
-            return False
 
 
     @staticmethod

@@ -193,7 +193,7 @@ ip-адрес на каждом интерфейсе.<br>
 2. На виртуальных машинах возможна ошибка: "libEGL.so.1: cannot open shared object file: No such file or directory"<br>
 Может помочь: <b>apt update && apt install -y libopencv-dev && apt clean && rm -rf /var/lib/apt/lists/*</b>
 
-05.11.2025 Доработан импорт на NGFW/DCFW и шаблоны МС для совместимости с universal_converter.
+05.11.2025 Доработан импорт на NGFW/DCFW и шаблоны МС для совместимости с universal_converter.<br>
 24.10.2025 Исправлена ошибка экспорта/импорта вышестоящих прокси для NGFW и МС версий меньше 7.4.<br>
 23.10.2025 Добавлен экспорт/импорт раздела UserGate/Администраторы для NGFW, DCFW и МС.<br>
 22.10.2025 Добавлена проверка наличия конфигурации при импорте в шаблон МС.<br>

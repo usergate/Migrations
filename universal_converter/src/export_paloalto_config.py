@@ -19,17 +19,18 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 1.1  27.10.2025
+# Версия 2.0  13.11.2025
 #
 
 import os, sys, copy, json
 import xmltodict
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import MyConv
-from services import zone_services, ug_services, ip_proto, GEOIP_CODE
+from services import zone_services, GEOIP_CODE
+from applications import pa_url_category
 
 
-class ConvertPaloaltoConfig(QThread, MyConv):
+class ConvertPaloAltoConfig(QThread, MyConv):
     """Преобразуем файл конфигурации PaloAlto в формат UserGate."""
     stepChanged = pyqtSignal(str)
 
@@ -54,7 +55,7 @@ class ConvertPaloaltoConfig(QThread, MyConv):
     def run(self):
         self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации PaloAlto в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
-        self.convert_config_file()
+#        self.convert_config_file()
 
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate прервана.')
@@ -66,6 +67,12 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             else:
                 if data['config']['shared'].get('local-user-database', False):  # Проверяем что есть локальные users и groups
                     self.convert_local_users_and_groups(data['config']['shared']['local-user-database'])
+                if 'server-profile' in data['config']['shared']:
+                    server_profile = data['config']['shared']['server-profile']
+                    if 'ldap' in server_profile:
+                        self.convert_ldap_servers(server_profile['ldap']['entry'])
+                    if 'netflow' in server_profile:
+                        self.convert_netflow_profile(server_profile['netflow']['entry'])
                 lib = data['config']['devices']['entry']['vsys']['entry']
                 if isinstance(lib, list):
                     lib = lib[0]
@@ -77,6 +84,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                     self.convert_url_lists(lib['address']['entry'])
                 if lib['address-group']:
                     self.convert_iplist_groups(lib['address-group']['entry'])
+                if 'profiles' in lib and lib['profiles'].get('custom-url-category', False):
+                    self.convert_custom_url_lists(lib['profiles']['custom-url-category']['entry'])
                 if lib['tag']:
                     self.convert_tags(lib['tag']['entry'])
                 if lib['zone']:
@@ -90,14 +99,14 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 self.convert_settings_ui(systemconfig)
                 self.convert_dns_servers(systemconfig)
                 self.convert_ntp_settings(systemconfig)
-                if lib['rulebase'] and lib['rulebase']['security'] and lib['rulebase']['security']['rules']:
-                    self.convert_firewall_policy(lib['rulebase']['security']['rules']['entry'])
-                if lib['rulebase'] and lib['rulebase']['nat'] and lib['rulebase']['nat']['rules']:
-                    self.convert_nat_rule(lib['rulebase']['nat']['rules']['entry'])
-
-#                self.convert_time_sets(data)
-#                self.convert_auth_servers(data)
-#                print(json.dumps(self.ip_lists, indent=4, ensure_ascii=False))
+                if lib['rulebase']:
+                    if lib['rulebase']['security'] and lib['rulebase']['security']['rules']:
+                        self.convert_firewall_policy(lib['rulebase']['security']['rules']['entry'])
+                        self.convert_content_rule(lib['rulebase']['security']['rules']['entry'])
+                    if lib['rulebase']['nat'] and lib['rulebase']['nat']['rules']:
+                        self.convert_nat_rule(lib['rulebase']['nat']['rules']['entry'])
+                    if 'decryption' in lib['rulebase'] and lib['rulebase']['decryption']['rules']:
+                        self.convert_ssl_inspection(lib['rulebase']['decryption']['rules']['entry'])
 
                 if self.error:
                     self.stepChanged.emit('iORANGE|Конвертация конфигурации PaloAlto в формат UserGate прошла с ошибками.\n')
@@ -131,18 +140,20 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         self.stepChanged.emit(f'GREEN|    Конфигурация PaloAlto в формате json выгружена в файл "{json_file}".')
 
 
-    #----------------------------------- Конвертация ------------------------------------------------
+    #----------------------------------- Пользователи и устройства ---------------------------------
     def convert_local_users_and_groups(self, local_users_database):
         """Конвертируем локальных пользователей и группы"""
         self.stepChanged.emit('BLUE|Конвертация локальных пользователей и групп.')
 
-        if local_users_database['user']:
-            for user in local_users_database['user']['entry']:
-                auth_login = self.get_transformed_userlogin(user['@name'])
-                self.local_users[auth_login] = {
-                    'name': auth_login,
+        if 'user' in local_users_database:
+            users = local_users_database['user']['entry']
+            if isinstance(users, dict):
+                users = [users]
+            for user in users:
+                self.local_users[user['@name']] = {
+                    'name': user['@name'],
                     'enabled': False if user.get('disabled', None) == 'yes' else True,
-                    'auth_login': auth_login,
+                    'auth_login': user['@name'],
                     'is_ldap': False,
                     'static_ip_addresses': [],
                     'ldap_dn': '',
@@ -154,8 +165,11 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 }
 
         groups = []
-        if local_users_database['user-group']:
-            for item in local_users_database['user-group']['entry']:
+        if 'user-group' in local_users_database:
+            user_group = local_users_database['user-group']['entry']
+            if isinstance(user_group, dict):
+                user_group = [user_group]
+            for item in user_group:
                 group = {
                     'name': item['@name'],
                     'description': 'Портировано с PaloAlto.',
@@ -172,8 +186,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                     for user in group['users']:
                         self.local_users[user]['groups'].append(group['name'])
 
-                    groups.append(group)
-                    self.local_groups.add(group['name'])
+                self.local_groups.add(group['name'])
+                groups.append(group)
 
         if groups:
             current_path = os.path.join(self.current_ug_path, 'UsersAndDevices', 'Groups')
@@ -206,26 +220,85 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             self.stepChanged.emit('GRAY|    Нет локальных пользователей для экспорта.')
 
 
+    def convert_ldap_servers(self, pa_ldap):
+        """Конвертируем сервера авторизации"""
+        self.stepChanged.emit('BLUE|Конвертация серверов аутентификации.')
+        if isinstance(pa_ldap, dict):
+            pa_ldap = [pa_ldap]
+        ldap_servers = []
+
+        for item in pa_ldap:
+            if item['ldap-type'] == 'active-directory':
+                tmp_dn1 = [x.split('=') for x in item['base'].split(',')]
+                tmp_dn2 = [b for a, b in tmp_dn1 if a in ('dc', 'DC')]
+                dn = '.'.join(tmp_dn2)
+                if '=' in item['bind-dn']:
+                    tmp_arr = [x.split('=') for x in item['bind-dn'].split(',')]
+                    ad_name = tmp_arr[0][1] if tmp_arr[0][0] in ('cn', 'CN') else None
+                    ad_name = f'{ad_name}@{dn}'
+                else:
+                    ad_name = item['bind-dn']
+                if isinstance(item['server']['entry'], dict):
+                    item['server']['entry'] = [item['server']['entry']]
+                for server in item['server']['entry']:
+                    ldap_servers.append({
+                        'name': server['@name'],
+                        'description': 'LDAP-коннектор импортирован с PaloAlto.',
+                        'enabled': False,
+                        'ssl': False if item.get('ssl', 'no') == 'no' else True,
+                        'address': server['address'],
+                        'bind_dn': ad_name,
+                        'password': '',
+                        'domains': [dn],
+                        'roots': [dn] if item['base'] else [],
+                        'keytab_exists': False
+                    })
+
+        if ldap_servers:
+            current_path = os.path.join(self.current_ug_path, 'UsersAndDevices', 'AuthServers')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_ldap_servers.json')
+            with open(json_file, 'w') as fh:
+                json.dump(ldap_servers, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'GREEN|    Сервера аутентификации LDAP выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет серверов аутентификации LDAP для экспорта.')
+
+
+    #---------------------------------------- Библиотека ----------------------------------------------------
     def convert_services(self, pa_services):
         """Конвертируем сетевые сервисы."""
         self.stepChanged.emit('BLUE|Конвертация сетевых сервисов.')
         services = {}
+        error = 0
 
         if pa_services:
             for item in pa_services['entry']:
-                services[item['@name']] = {
-                    'name': item['@name'],
-                    'description': item.get('description', 'Портировано с PaloAlto.'),
+                error, service_name = self.get_transformed_name(item['@name'], err=error, descr='Имя сервиса')
+                descr = item.get('description', 'Портировано с PaloAlto.')
+                services[service_name] = {
+                    'name': service_name,
+                    'description': descr['#text'] if isinstance(descr, dict) else descr,
                     'protocols': []
                 }
                 for key, value in item['protocol'].items():
-                    services[item['@name']]['protocols'].append({
-                        'proto': key,
-                        'port': value['port'],
-                        'app_proto': '',
-                        'source_port': value.get('source-port', ''),
-                        'alg': ''
-                    })
+                    if key in ('tcp', 'udp'):
+                        if (source_port := value.get('source-port', '')) and isinstance(source_port, dict):
+                            source_port = source_port['#text']
+                        ports = value['port'] if isinstance(value['port'], str) else value['port']['#text']
+                        for port in ports.split(','):
+                            services[item['@name']]['protocols'].append({
+                                'proto': key,
+                                'port': port,
+                                'app_proto': '',
+                                'source_port': source_port,
+                                'alg': ''
+                            })
             for key, value in {'service-http': '80', 'service-https': '443'}.items():
                 services[key] = {
                     'name': key,
@@ -238,7 +311,24 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                         'alg': ''
                     }]
                 }
-
+            services['netbios-dg'] = {'name': 'netbios-dg', 'description': 'Портировано с PaloAlto', 'protocols': [
+                {'proto': 'udp', 'port': '138', 'app_proto': '', 'source_port': '', 'alg': ''}]}
+            services['netbios-ns'] = {'name': 'netbios-ns', 'description': 'Портировано с PaloAlto', 'protocols': [
+                {'proto': 'tcp', 'port': '137', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'udp', 'port': '137', 'app_proto': '', 'source_port': '', 'alg': ''}]}
+            services['netbios-ss'] = {'name': 'netbios-ss', 'description': 'Портировано с PaloAlto', 'protocols': [
+                {'proto': 'tcp', 'port': '139', 'app_proto': '', 'source_port': '', 'alg': ''}]}
+            services['ms-ds-smb'] = {'name': 'ms-ds-smb', 'description': 'Портировано с PaloAlto', 'protocols': [
+                {'proto': 'tcp', 'port': '445', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'tcp', 'port': '139', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'udp', 'port': '445', 'app_proto': '', 'source_port': '', 'alg': ''}]}
+            services['rlogin'] = {'name': 'rlogin', 'description': 'Портировано с PaloAlto', 'protocols': [
+                {'proto': 'tcp', 'port': '221', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'tcp', 'port': '513', 'app_proto': '', 'source_port': '', 'alg': ''},
+                {'proto': 'udp', 'port': '221', 'app_proto': '', 'source_port': '', 'alg': ''}]}
+            services['web-browsing'] = {'name': 'web-browsing', 'description': 'Портировано с PaloAlto', 'protocols': [
+                {'proto': 'tcp', 'port': '80', 'app_proto': '', 'source_port': '', 'alg': ''}]}
+            
             current_path = os.path.join(self.current_ug_path, 'Libraries', 'Services')
             err, msg = self.create_dir(current_path)
             if err:
@@ -259,14 +349,17 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         """Конвертируем группы сервисов"""
         self.stepChanged.emit('BLUE|Конвертация групп сервисов.')
         services_groups = []
+        error = 0
 
         if isinstance(pa_servicegroups, dict):
             pa_servicegroups = [pa_servicegroups]
 
         for item in pa_servicegroups:
+            error, service_name = self.get_transformed_name(item['@name'], err=error, descr='Имя группы сервисов')
+            descr = item.get('description', 'Портировано с PaloAlto.')
             srv_group = {
-                'name': item['@name'],
-                'description': item.get('description', 'Портировано с PaloAlto.'),
+                'name': service_name,
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
                 'type': 'servicegroup',
                 'url': '',
                 'list_type_update': 'static',
@@ -275,6 +368,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 'content': []
             }
             for member in item['members']['member']:
+                if isinstance(member, dict):
+                    member = member['#text']
                 service = copy.deepcopy(self.services.get(member, None))
                 if service:
                     for x in service['protocols']:
@@ -314,7 +409,7 @@ class ConvertPaloaltoConfig(QThread, MyConv):
 
         n = 0
         error = 0
-        file_names = set()
+        file_names = {}
 
         if isinstance(pa_iplists, dict):
             pa_iplists = [pa_iplists]
@@ -322,15 +417,15 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         for item in pa_iplists:
             content = []
             if 'ip-netmask' in item:
-                content.append({'value': item['ip-netmask']})
+                content.append({'value': item['ip-netmask'] if isinstance(item['ip-netmask'], str) else item['ip-netmask']['#text']})
             elif 'ip-range' in item:
-                content.append({'value': item['ip-range']})
+                content.append({'value': item['ip-range'] if isinstance(item['ip-range'], str) else item['ip-range']['#text']})
             if content:
-                number_for_ip_list = 1
                 error, iplist_name = self.get_transformed_name(item['@name'], err=error, descr='Имя списка IP-адресов')
+                descr = item.get('description', 'Портировано с PaloAlto.')
                 ip_list = {
                     'name': iplist_name,
-                    'description': item.get('description', 'Портировано с PaloAlto.'),
+                    'description': descr['#text'] if isinstance(descr, dict) else descr,
                     'type': 'network',
                     'url': '',
                     'list_type_update': 'static',
@@ -342,10 +437,12 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 n += 1
                 self.ip_lists[ip_list['name']] = content[0]['value']
                 file_name = ip_list['name'].translate(self.trans_filename)
-                while file_name in file_names:
-                    file_name = f'{file_name}-{number_for_ip_list}'
-                    number_for_ip_list += 1
-                file_names.add(file_name)
+
+                if file_name in file_names:
+                    file_names[file_name] += 1
+                    file_name = f'{file_name}-{file_names[file_name]}'
+                else:
+                    file_names[file_name] = 0
 
                 json_file = os.path.join(current_path, f'{file_name}.json')
                 with open(json_file, 'w') as fh:
@@ -359,8 +456,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
 
 
     def convert_url_lists(self, pa_urllists):
-        """Конвертируем списки URL"""
-        self.stepChanged.emit('BLUE|Конвертация списков URL.')
+        """Конвертируем списки URL (домены)"""
+        self.stepChanged.emit('BLUE|Конвертация списков URL (домены).')
         current_path = os.path.join(self.current_ug_path, 'Libraries', 'URLLists')
         err, msg = self.create_dir(current_path)
         if err:
@@ -376,15 +473,16 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         for item in pa_urllists:
             if 'fqdn' in item:
                 error, list_name = self.get_transformed_name(item['@name'], err=error, descr='Имя списка URL')
+                descr = item.get('description', 'Портировано с PaloAlto.')
                 url_list = {
                     'name': list_name,
-                    'description': item.get('description', 'Портировано с PaloAlto.'),
+                    'description': descr['#text'] if isinstance(descr, dict) else descr,
                     'type': 'url',
                     'url': '',
                     'list_type_update': 'static',
                     'schedule': 'disabled',
                     'attributes': {'list_compile_type': 'case_insensitive'},
-                    'content': [{'value': item['fqdn']}]
+                    'content': [{'value': item['fqdn'] if isinstance(item['fqdn'], str) else item['fqdn']['#text']}]
                 }
 
                 n += 1
@@ -402,6 +500,54 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             self.stepChanged.emit(f'GREEN|    Списки URL выгружены в каталог "{current_path}".')
 
 
+    def convert_custom_url_lists(self, custom_urls):
+        """Конвертируем списки URL из custom-url-category"""
+        self.stepChanged.emit('BLUE|Конвертация списков custom-URL.')
+        current_path = os.path.join(self.current_ug_path, 'Libraries', 'URLLists')
+        err, msg = self.create_dir(current_path, delete='no')
+        if err:
+            self.stepChanged.emit(f'RED|    {msg}')
+            self.error = 1
+            return
+
+        n = 0
+        error = 0
+        if isinstance(custom_urls, dict):
+            custom_urls = [custom_urls]
+
+        for item in custom_urls:
+            item_type = item['type'] if isinstance(item['type'], str) else item['type']['#text']
+            if item_type == 'URL List':
+                error, list_name = self.get_transformed_name(item['@name'], err=error, descr='Имя списка URL')
+                descr = item.get('description', 'Портировано с PaloAlto.')
+                members = item['list']['member'] if isinstance(item['list']['member'], list) else [item['list']['member']]
+
+                url_list = {
+                    'name': list_name,
+                    'description': descr['#text'] if isinstance(descr, dict) else descr,
+                    'type': 'url',
+                    'url': '',
+                    'list_type_update': 'static',
+                    'schedule': 'disabled',
+                    'attributes': {'list_compile_type': 'case_insensitive'},
+                    'content': [{'value': url if isinstance(url, str) else url['#text']} for url in members]
+                }
+
+                n += 1
+                self.url_lists.add(url_list['name'])
+
+                json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
+                with open(json_file, 'w') as fh:
+                    json.dump(url_list, fh, indent=4, ensure_ascii=False)
+                self.stepChanged.emit(f'BLACK|       {n} - Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+
+        if error:
+            self.stepChanged.emit(f'ORANGE|    Конвертация списков custom-URL прошла с ошибками. Списки URL выгружены в каталог "{current_path}".')
+            self.error = 1
+        else:
+            self.stepChanged.emit(f'GREEN|    Списки custom-URL выгружены в каталог "{current_path}".')
+
+
     def convert_iplist_groups(self, pa_iplist_groups):
         """Конвертируем группы IP-адресов"""
         self.stepChanged.emit('BLUE|Конвертация групп IP-адресов.')
@@ -416,15 +562,22 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             error, iplist_name = self.get_transformed_name(item['@name'], err=error, descr='Имя списка групп IP-адресов')
             if isinstance(item['static']['member'], str):
                 item['static']['member'] = [item['static']['member']]
+            content = []
+            for member in item['static']['member']:
+                if isinstance(member, dict):
+                    member = member['#text']
+                if member in self.ip_lists:
+                    content.append({'list': member})
+            descr = item.get('description', 'Портировано с PaloAlto.')
             ip_list = {
                 'name': iplist_name,
-                'description': item.get('description', 'Портировано с PaloAlto.'),
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
                 'type': 'network',
                 'url': '',
                 'list_type_update': 'static',
                 'schedule': 'disabled',
                 'attributes': {'threat_level': 3},
-                'content': [{'list': x} for x in item['static']['member'] if x in self.ip_lists]
+                'content': content
             }
 
             n += 1
@@ -439,6 +592,45 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             self.error = 1
         else:
             self.stepChanged.emit(f'GREEN|    Группа IP-адресов выгружена в каталог "{current_path}".')
+
+
+    def convert_netflow_profile(self, pa_netflow):
+        """Конвертируем профили netflow."""
+        self.stepChanged.emit('BLUE|Конвертация профилей netflow.')
+        if isinstance(pa_netflow, dict):
+            pa_netflow = [pa_netflow]
+
+        netflow = []
+        for item in pa_netflow:
+            if isinstance(item['server']['entry'], dict):
+                item['server']['entry'] = [item['server']['entry']]
+            for flow in item['server']['entry']:
+                netflow.append({
+                    'name': flow['@name'],
+                    'description': 'Портировано с PaloAlto.',
+                    'host': flow['host'],
+                    'port': flow['port'],
+                    'protocol': 9,
+                    'active_timeout': int(item['active-timeout']),
+                    'inactive_timeout': 15,
+                    'refresh_rate': int(item['template-refresh-rate']['packets']),
+                    'timeout_rate': int(item['template-refresh-rate']['minutes'])*60,
+                    'maxflows': 2000000,
+                    'natevents': False,
+                })
+        if netflow:
+            current_path = os.path.join(self.current_ug_path, 'Libraries', 'NetflowProfiles')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+            json_file = os.path.join(current_path, 'config_netflow_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(netflow, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'GREEN|    Профили netflow выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет профилей netflow для экспорта.')
 
 
     def convert_tags(self, pa_tags):
@@ -470,10 +662,13 @@ class ConvertPaloaltoConfig(QThread, MyConv):
 
         for item in pa_tags:
             _, tag_name = self.get_transformed_name(item['@name'], descr='Имя тэга', mode=0)
+            descr = item.get('comments', 'Портировано с PaloAlto.')
             color = item.get('color', 'no_color')
+            if isinstance(color, dict):
+                color = color['#text']
             tags.append({
                 'name': tag_name,
-                'description': item.get('description', 'Портировано с PaloAlto.'),
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
                 'html_color': colors.get(color, 'no_color')
             })
             self.tags.add(tag_name)
@@ -487,21 +682,21 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             self.stepChanged.emit('GRAY|    Нет тэгов для экспорта.')
 
 
-
+    #--------------------------------- Сеть ------------------------------------------------
     def convert_vlan_interfaces(self, network):
         """Конвертируем интерфейсы VLAN."""
         self.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
         error = 0
         ifaces = []
-        if network['interface']['vlan']['units']:
-            pass
+#        if network['interface']['vlan']['units']:
+#            pass
 
-        if network['interface']['aggregate-ethernet']:
-            if isinstance(network['interface']['aggregate-ethernet']['entry'], list):
-                for item in network['interface']['aggregate-ethernet']['entry']:
+        if (tmp_net := network['interface'].get('aggregate-ethernet', False)):
+            if isinstance(tmp_net['entry'], list):
+                for item in tmp_net['entry']:
                     self.create_vlans(item['layer3']['units'])
-            elif isinstance(network['interface']['aggregate-ethernet']['entry'], dict):
-                self.create_vlans(network['interface']['aggregate-ethernet']['entry']['layer3']['units'])
+            elif isinstance(tmp_net['entry'], dict):
+                self.create_vlans(tmp_net['entry']['layer3']['units'])
 
 
     def create_vlans(self, units):
@@ -549,7 +744,7 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                             iface['ipv4'].append(self.ip_lists[ip_entry['@name']])
                             iface['mode'] = 'static'
                         else:
-                            self.stepChanged.emit(f'RED|    Error: Интерфейс VLAN "[iface["name"]]" - не валидный IP-адрес "{item["ip"]["entry"]["@name"]}".')
+                            self.stepChanged.emit(f'RED|    Error: Интерфейс VLAN "{iface["name"]}" - не валидный IP-адрес "{ip_entry["@name"]}".')
                 ifaces.append(iface)
 
         if ifaces:
@@ -588,6 +783,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             }
             if vrf['routing-table'] and vrf['routing-table']['ip']['static-route']:
                 routes = vrf['routing-table']['ip']['static-route']['entry']
+                if isinstance(routes, dict):
+                    routes = [routes]
 
                 for item in routes:
                     # Конвертируем шлюзы
@@ -735,22 +932,41 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         """Конвертируем правила МЭ"""
         self.stepChanged.emit('BLUE|Конвертация правил межсетевого экрана.')
         message = (
-            '    После импорта правил МЭ, необходимо в каждом правиле указать зону источника и зону назначения.\n'
+            '    После импорта правил МЭ, в каждом правиле укажите зону источника и зону назначения.\n'
             '    Создайте необходимое количество зон и присвойте зону каждому интерфейсу.'
         )
         self.stepChanged.emit(f'LBLUE|{message}')
 
         error = 0
+        app_error = 0
         n = 0
         rules = []
         for item in firewall_rules:
+            # Проверяем что это не правило КФ. Если КФ, пропускаем.
+            if 'category' in item:
+                category = item['category']['member']
+                if isinstance(category, list):
+                    continue
+                else:
+                    if (text := category if isinstance(category, str) else category['#text']) != 'any':
+                        continue
+
             error, rule_name = self.get_transformed_name(item['@name'], err=error, descr='Имя правила МЭ')
+            descr = item.get('description', 'Портировано с PaloAlto.')
+            if (action := item.get('action', None)):
+                action = action['#text'] if isinstance(action, dict) else action
+            if (disabled := item.get('disabled', None)):
+                disabled = disabled['#text'] if isinstance(disabled, dict) else disabled
+            if (negate_src := item.get('negate-source', None)):
+                negate_src = negate_src if isinstance(negate_src, str) else negate_src['#text']
+            if (negate_dst := item.get('negate-destination', None)):
+                negate_dst = negate_dst if isinstance(negate_dst, str) else negate_dst['#text']
             rule = {
                 'name': rule_name,
-                'description': item.get('description', 'Портировано с PaloAlto.'),
-                'action': 'accept' if item.get('action', None) == 'allow' else 'drop',
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
+                'action': 'accept' if action == 'allow' else 'drop',
                 'position': 'last',
-                'scenario_rule_id': False,     # При импорте заменяется на UID или "0". 
+                'scenario_rule_id': False,
                 'src_zones': self.get_zones(item['from']['member']),
                 'dst_zones': self.get_zones(item['to']['member']),
                 'src_ips': [],
@@ -758,7 +974,7 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 'services': [],
                 'apps': [],
                 'users': [],
-                'enabled': True,
+                'enabled': False if disabled == 'yes' else True,
                 'limit': True,
                 'limit_value': '3/h',
                 'limit_burst': 5,
@@ -766,8 +982,8 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 'log_session_start': True,
                 'src_zones_negate': False,
                 'dst_zones_negate': False,
-                'src_ips_negate': False,
-                'dst_ips_negate': False,
+                'src_ips_negate': True if negate_src == 'yes' else False,
+                'dst_ips_negate': True if negate_dst == 'yes' else False,
                 'services_negate': False,
                 'apps_negate': False,
                 'fragmented': 'ignore',
@@ -782,6 +998,31 @@ class ConvertPaloaltoConfig(QThread, MyConv):
 #            self.get_time_restrictions(value['schedule'], rule)
             if 'tag' in item:
                 self.get_tags(item['tag']['member'], rule)
+
+            apps = set()
+            if not isinstance(item['application']['member'], list):
+                item['application']['member'] = [item['application']['member']]
+            for app in item['application']['member']:
+                app = app if isinstance(app, str) else app['#text']
+                if app != 'any':
+                    apps.add(app)
+            if apps:
+                num_appp = False
+                tmp_apps = apps.copy()
+                for app in apps:
+                    if app.startswith('ms-ds-smb'):
+                        tmp_apps.remove(app)
+                        if not num_appp:
+                            rule['services'].append(['service', 'ms-ds-smb'])
+                            num_appp = True
+                    elif app in ('rlogin', 'netbios-dg', 'netbios-ns', 'netbios-ss', 'web-browsing', 'ms-ds-smb'):
+                        rule['services'].append(['service', app])
+                        tmp_apps.remove(app)
+                if tmp_apps:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найдено приложение: {", ".join(tmp_apps)}')
+                    rule['description'] = f'{rule["description"]}\nНе найдено приложение: {", ".join(tmp_apps)}'
+                    rule['rule_error'] = 1
+                    app_error = 1
 
             if rule['rule_error']:
                 rule['name'] = f'ERROR - {rule["name"]}'
@@ -806,12 +1047,139 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 json.dump(rules, fh, indent=4, ensure_ascii=False)
 
             if error:
-                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. Павила межсетевого экрана выгружены в файл "{json_file}".')
+                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. Правила межсетевого экрана выгружены в файл "{json_file}".')
                 self.error = 1
             else:
-                self.stepChanged.emit(f'GREEN|    Павила межсетевого экрана выгружены в файл "{json_file}".')
+                self.stepChanged.emit(f'GREEN|    Правила межсетевого экрана выгружены в файл "{json_file}".')
+            if app_error:
+                self.stepChanged.emit('bRED|    Внимание: После импорта создайте профили отсутствующих приложений и вставте их в соответствующие правила МЭ.')
         else:
             self.stepChanged.emit('GRAY|    Нет правил межсетевого экрана для экспорта.')
+
+
+    def convert_content_rule(self, firewall_rules):
+        """Конвертируем правила фильтрации контента"""
+        self.stepChanged.emit('BLUE|Конвертация правил фильтрации контента.')
+        message = '    После импорта правил ФК, в каждом правиле укажите зону источника и зону назначения.'
+
+        error = 0
+        n = 0
+        rules = []
+        for item in firewall_rules:
+            # Проверяем что это правило КФ. Если не КФ, пропускаем.
+            if 'category' not in item:
+                continue
+            categories = item['category']['member']
+            if isinstance(categories, dict) and categories['#text'] == 'any':
+                continue
+            elif isinstance(categories, str) and categories == 'any':
+                continue
+
+            error, rule_name = self.get_transformed_name(item['@name'], err=error, descr='Имя правила МЭ')
+            descr = item.get('description', 'Портировано с PaloAlto.')
+            if (action := item.get('action', None)):
+                action = action['#text'] if isinstance(action, dict) else action
+            if (disabled := item.get('disabled', None)):
+                disabled = disabled['#text'] if isinstance(disabled, dict) else disabled
+            if (negate_src := item.get('negate-source', None)):
+                negate_src = negate_src if isinstance(negate_src, str) else negate_src['#text']
+            if (negate_dst := item.get('negate-destination', None)):
+                negate_dst = negate_dst if isinstance(negate_dst, str) else negate_dst['#text']
+            rule = {
+                'name': rule_name,
+                'public_name': '',
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
+                'action': 'accept' if action == 'allow' else 'drop',
+                'position': 'last',
+                'enabled': False if disabled == 'yes' else True,
+                'enable_custom_redirect': False,
+                'blockpage_template_id': -1,
+                'users': [],
+                'url_categories': [],
+                'src_zones': self.get_zones(item['from']['member']),
+                'dst_zones': self.get_zones(item['to']['member']),
+                'src_ips': [],
+                'dst_ips': [],
+                'morph_categories': [],
+                'urls': [],
+                'referers': [],
+                'referer_categories': [],
+                'user_agents': [],
+                'time_restrictions': [],
+                'content_types': [],
+                'http_methods': [],
+                'custom_redirect': '',
+                'enable_kav_check': False,
+                'enable_md5_check': False,
+                'rule_log': True,
+                'scenario_rule_id': False,
+                'src_zones_negate': False,
+                'dst_zones_negate': False,
+                'src_ips_negate': True if negate_src == 'yes' else False,
+                'dst_ips_negate': True if negate_dst == 'yes' else False,
+                'url_categories_negate': False,
+                'urls_negate': False,
+                'content_types_negate': False,
+                'user_agents_negate': False,
+                'user_negate': False,
+                'rule_error': 0,
+            }
+            rule['src_ips'] = self.get_ips('src', item['source']['member'], rule)
+            rule['dst_ips'] = self.get_ips('dst', item['destination']['member'], rule)
+            self.get_users_and_groups(item['source-user']['member'], rule)
+#            self.get_time_restrictions(value['schedule'], rule)
+            if 'tag' in item:
+                self.get_tags(item['tag']['member'], rule)
+
+            if not isinstance(categories, list):
+                categories = [categories]
+            cat_set = set()
+            err_url_category = set()
+            for x in categories:
+                category = x if isinstance(x, str) else x['#text']
+                if category in self.url_lists:
+                    rule['urls'].append(category)
+                elif category in pa_url_category:
+                    cat_set.update(pa_url_category[category])
+                else:
+                    err_url_category.add(category)
+            if cat_set:
+                rule['url_categories'] = [['category_id', y] for y in cat_set]
+            if err_url_category:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не конвертирована URL-категория: {", ".join(err_url_category)}. Возможно такой категории нет на UserGate.')
+                rule['description'] = f'{rule["description"]}\nНе найдена URL-категория: {", ".join(err_url_category)}'
+                rule['rule_error'] = 1
+
+            if rule['rule_error']:
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
+                error = 1
+            rule.pop('rule_error', None)
+
+            rules.append(rule)
+            n += 1
+            self.stepChanged.emit(f'BLACK|    {n} - Создано правило ФК "{rule["name"]}".')
+
+        if rules:
+            current_path = os.path.join(self.current_ug_path, 'SecurityPolicies', 'ContentFiltering')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_content_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(rules, fh, indent=4, ensure_ascii=False)
+
+            if error:
+                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. Правила фильтрации контента выгружены в файл "{json_file}".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|    Правила фильтрации контента выгружены в файл "{json_file}".')
+            self.stepChanged.emit(f'LBLUE|{message}')
+        else:
+            self.stepChanged.emit('GRAY|    Нет правил фильтрации контента для экспорта.')
 
 
     def convert_nat_rule(self, nat_rules):
@@ -820,11 +1188,20 @@ class ConvertPaloaltoConfig(QThread, MyConv):
         error = 0
         rules = []
 
+        if isinstance(nat_rules, dict):
+            nat_rules = [nat_rules]
         for item in nat_rules:
             error, rule_name = self.get_transformed_name(item['@name'], err=error, descr='Имя правила NAT')
+            descr = item.get('description', 'Портировано с PaloAlto.'),
+            if (disabled := item.get('disabled', None)):
+                disabled = disabled['#text'] if isinstance(disabled, dict) else disabled
+            if (negate_src := item.get('negate-source', None)):
+                negate_src = negate_src if isinstance(negate_src, str) else negate_src['#text']
+            if (negate_dst := item.get('negate-destination', None)):
+                negate_dst = negate_dst if isinstance(negate_dst, str) else negate_dst['#text']
             rule = {
                 'name': rule_name,
-                'description': item.get('description', 'Портировано с PaloAlto.'),
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
                 'action': 'nat',
                 'position': 'last',
                 'zone_in': self.get_zones(item['from']['member']),
@@ -834,15 +1211,15 @@ class ConvertPaloaltoConfig(QThread, MyConv):
                 'service': [],
                 'target_ip': '',
                 'gateway': '',
-                'enabled': True if item.get('disabled', None) == 'no' else False,
+                'enabled': False if disabled == 'yes' else True,
                 'log': False,
                 'log_session_start': False,
                 'target_snat': True,
                 'snat_target_ip': '',
                 'zone_in_nagate': False,
                 'zone_out_nagate': False,
-                'source_ip_nagate': False,
-                'dest_ip_nagate': False,
+                'source_ip_nagate': True if negate_src == 'yes' else False,
+                'dest_ip_nagate': True if negate_dst == 'yes' else False,
                 'port_mappings': [],
                 'direction': "input",
                 'users': [],
@@ -859,14 +1236,20 @@ class ConvertPaloaltoConfig(QThread, MyConv):
 
             if 'source-translation' in item:
                 if 'dynamic-ip-and-port' in item['source-translation']:
-                    rule['snat_target_ip'] = self.ip_lists[item['source-translation']['dynamic-ip-and-port']['interface-address']['ip']].partition('/')[0]
+                    ip = item['source-translation']['dynamic-ip-and-port']['interface-address']['ip']
+                    ip = ip['#text'] if isinstance(ip, dict) else ip
+                    rule['snat_target_ip'] = self.ip_lists.get(ip, ip).partition('/')[0]
                 elif 'static-ip' in item['source-translation']:
-                    rule['snat_target_ip'] = self.ip_lists[item['source-translation']['static-ip']['translated-address']].partition('/')[0]
+                    ip = item['source-translation']['static-ip']['translated-address']
+                    ip = ip['#text'] if isinstance(ip, dict) else ip
+                    rule['snat_target_ip'] = self.ip_lists.get(ip, ip).partition('/')[0]
 
             elif 'destination-translation' in item:
                 dnat_ip = item['destination-translation']['translated-address']
+                dnat_ip = dnat_ip['#text'] if isinstance(dnat_ip, dict) else dnat_ip
                 rule['target_ip'] = self.ip_lists.get(dnat_ip, dnat_ip).partition('/')[0]
                 trans_port = item['destination-translation']['translated-port']
+                trans_port = trans_port['#text'] if isinstance(trans_port, dict) else trans_port
                 try:
                     dport = self.services[item['service']]['protocols'][0]['port']
                     proto = self.services[item['service']]['protocols'][0]['proto']
@@ -920,6 +1303,9 @@ class ConvertPaloaltoConfig(QThread, MyConv):
     def convert_zone_settings(self, zones):
         """Конвертируем зоны"""
         self.stepChanged.emit('BLUE|Конвертация Зон.')
+
+        if isinstance(zones, dict):
+            zones = [zones]
         new_zones = []
 
         for item in zones:
@@ -993,6 +1379,113 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             self.stepChanged.emit(f'GREEN|    Настройки зон выгружены в файл "{json_file}".')
         else:
             self.stepChanged.emit('GRAY|    Нет зон для экспорта.')
+
+
+    def convert_ssl_inspection(self, decript_rules):
+        """Конвертируем правила инспектирования SSL"""
+        self.stepChanged.emit('BLUE|Конвертация правил инспектирования SSL.')
+        error = 0
+        n = 0
+        rules = []
+
+        if isinstance(decript_rules, dict):
+            decript_rules = [decript_rules]
+        for item in decript_rules:
+            error, rule_name = self.get_transformed_name(item['@name'], err=error, descr='Имя правила инспектирования SSL')
+            descr = item.get('description', 'Портировано с PaloAlto.')
+            if (disabled := item.get('disabled', None)):
+                disabled = disabled['#text'] if isinstance(disabled, dict) else disabled
+            if (action := item.get('action', None)):
+                action = action['#text'] if isinstance(action, dict) else action
+            if (negate_src := item.get('negate-source', None)):
+                negate_src = negate_src if isinstance(negate_src, str) else negate_src['#text']
+            if (negate_dst := item.get('negate-destination', None)):
+                negate_dst = negate_dst if isinstance(negate_dst, str) else negate_dst['#text']
+            rule = {
+                'name': rule_name,
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
+                'action': 'pass' if action == 'no-decrypt' else 'decrypt',
+                'position': 'last',
+                'enabled': False if disabled == 'yes' else True,
+                'block_invalid_certs': False,
+                'block_revoked_certs': False,
+                'block_expired_certs': False,
+                'block_selfsigned_certs': False,
+                'users': [],
+                'url_categories': [],
+                'protocols': [],
+                'src_zones': self.get_zones(item['from']['member']),
+                'src_ips': [],
+                'dst_ips': [],
+                'urls': [],
+                'time_restrictions': [],
+                'src_zones_nagate': False,
+                'src_ips_nagate': True if negate_src == 'yes' else False,
+                'dst_ips_nagate': True if negate_dst == 'yes' else False,
+                'url_categories_nagate': False,
+                'urls_nagate': False,
+                'rule_log': True,
+                'ssl_profile_id': 'Default_SSL_profile',
+                'ssl_forward_profile_id': -1,
+                'position_layer': 'local',
+                'rule_error': 0,
+            }
+            self.get_users_and_groups(item['source-user']['member'], rule)
+            rule['src_ips'] = self.get_ips('src', item['source']['member'], rule)
+            rule['dst_ips'] = self.get_ips('dst', item['destination']['member'], rule)
+            if 'tag' in item:
+                self.get_tags(item['tag']['member'], rule)
+
+            categories = item['category']['member']
+            if not isinstance(categories, list):
+                categories = [categories]
+            cat_set = set()
+            err_url_category = set()
+            for x in categories:
+                category = x if isinstance(x, str) else x['#text']
+                if category != 'any':
+                    if category in self.url_lists:
+                        rule['urls'].append(category)
+                    elif category in pa_url_category:
+                        cat_set.update(pa_url_category[category])
+                    else:
+                        err_url_category.add(category)
+            if cat_set:
+                rule['url_categories'] = [['category_id', y] for y in cat_set]
+            if err_url_category:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не конвертирована URL-категория: {", ".join(err_url_category)}. Возможно такой категории нет на UserGate.')
+                rule['description'] = f'{rule["description"]}\nНе найдена URL-категория: {", ".join(err_url_category)}'
+                rule['rule_error'] = 1
+
+            if rule['rule_error']:
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
+                error = 1
+            rule.pop('rule_error', None)
+
+            rules.append(rule)
+            n += 1
+            self.stepChanged.emit(f'BLACK|    {n} - Создано правило инспектирования SSL "{rule["name"]}".')
+
+        if rules:
+            current_path = os.path.join(self.current_ug_path, 'SecurityPolicies', 'SSLInspection')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_ssldecrypt_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(rules, fh, indent=4, ensure_ascii=False)
+
+            if error:
+                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. Правила инспектирования SSL выгружены в файл "{json_file}".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|    Правила инспектирования SSL выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет правил инспектирования SSL для экспорта.')
 
 
 #------------------------------------------------------------------------------------------------------------------
@@ -1106,110 +1599,31 @@ class ConvertPaloaltoConfig(QThread, MyConv):
             self.stepChanged.emit('GRAY|    Нет календарей для экспорта.')
 
 
-    def convert_auth_servers(self, data):
-        """Конвертируем сервера авторизации"""
-        self.stepChanged.emit('BLUE|Конвертация серверов аутентификации.')
-        ldap_servers = []
-        radius_servers = []
-        error = 0
-
-        if 'config user ldap' in data:
-            for key, value in data['config user ldap'].items():
-                if value['dn']:
-                    tmp_dn1 = [x.split('=') for x in value['dn'].split(',')]
-                    tmp_dn2 = [b for a, b in tmp_dn1 if a in ['dc', 'DC']]
-                    dn = '.'.join(tmp_dn2)
-                error, rule_name = self.get_transformed_name(f'{key.strip()} - AD Auth server', err=error, descr='Имя календаря')
-                ldap_servers.append({
-                    'name': rule_name,
-                    'description': 'LDAP-коннектор импортирован с PaloAlto.',
-                    'enabled': False,
-                    'ssl': True if value.get('secure', False) == 'ldaps' else False,
-                    'address': value['server'],
-                    'bind_dn': value['username'].replace('\\', '', 1),
-                    'password': '',
-                    'domains': [dn],
-                    'roots': [value['dn']] if value['dn'] else [],
-                    'keytab_exists': False
-                })
-
-        if 'config user radius' in data:
-            for key, value in data['config user radius'].items():
-                error, rule_name = self.get_transformed_name(f'{key.strip()} - Radius Auth server', err=error, descr='Имя календаря')
-                radius_servers.append({
-                    'name': rule_name,
-                    'description': 'Radius auth server импортирован с PaloAlto.',
-                    'enabled': False,
-                    'addresses': [
-                        {'host': value['server'], 'port': 1812}
-                    ]
-                })
-                auth_login = self.get_transformed_userlogin(key)
-                self.local_users[key] = {
-                    'name': key,
-                    'enabled': True,
-                    'auth_login': auth_login,
-                    'is_ldap': False,
-                    'static_ip_addresses': [],
-                    'ldap_dn': '',
-                    'emails': [],
-                    'phones': [],
-                    'first_name': '',
-                    'last_name': '',
-                    'groups': [],
-                }
-
-        if ldap_servers or radius_servers:
-            current_path = os.path.join(self.current_ug_path, 'UsersAndDevices', 'AuthServers')
-            err, msg = self.create_dir(current_path)
-            if err:
-                self.stepChanged.emit(f'RED|    {msg}')
-                self.error = 1
-                return
-
-            if ldap_servers:
-                json_file = os.path.join(current_path, 'config_ldap_servers.json')
-                with open(json_file, 'w') as fh:
-                    json.dump(ldap_servers, fh, indent=4, ensure_ascii=False)
-                self.stepChanged.emit(f'BLACK|    Настройки серверов аутентификации LDAP выгружены в файл "{json_file}".')
-            if radius_servers:
-                json_file = os.path.join(current_path, 'config_radius_servers.json')
-                with open(json_file, 'w') as fh:
-                    json.dump(radius_servers, fh, indent=4, ensure_ascii=False)
-                self.stepChanged.emit(f'BLACK|    Настройки серверов аутентификации RADIUS выгружены в файл "{json_file}".')
-
-            if error:
-                self.stepChanged.emit('ORANGE|    Конвертация прошла с ошибками. Настройки серверов аутентификации конвертированы.')
-                self.error = 1
-            else:
-                self.stepChanged.emit('GREEN|    Настройки серверов аутентификации конвертированы.')
-        else:
-            self.stepChanged.emit('GRAY|    Нет серверов аутентификации для экспорта.')
-
-
 ############################################# Служебные функции ###################################################
     def get_ips(self, mode, ips, rule):
         """
         Получить имена списков IP-адресов и URL-листов.
-        Если списки не найдены, то они создаются или пропускаются, если невозможно создать."""
+        Если списки не найдены, то они создаются или пропускаются, если невозможно создать.
+        """
         new_rule_ips = []
-        if ips != 'any':
-            if isinstance(ips, str):
-                ips = [ips]
-            for item in ips:
-                err, item = self.get_transformed_name(item, descr='Имя списка IP-адресов')
+        if not isinstance(ips, list):
+            ips = [ips]
+        for item in ips:
+            ips_name = item if isinstance(item, str) else item['#text']
+            if ips_name != 'any':
+                err, ips_name = self.get_transformed_name(ips_name, descr='Имя списка IP-адресов')
                 if err:
                     self.stepChanged.emit(f'RED|       Error: Правило "{rule["name"]}".')
-                if item in self.ip_lists or item in self.ip_lists_groups:
-                    new_rule_ips.append(['list_id', item])
-                elif item in self.url_lists:
-                    new_rule_ips.append(['urllist_id', item])
+                if ips_name in self.ip_lists or ips_name in self.ip_lists_groups:
+                    new_rule_ips.append(['list_id', ips_name])
+                elif ips_name in self.url_lists:
+                    new_rule_ips.append(['urllist_id', ips_name])
                 else:
-                    if self.check_ip(item):
-                        new_rule_ips.append(['list_id', self.create_ip_list(ips=[item], name=item, descr='Портировано с PaloAlto')])
+                    if self.check_ip(ips_name):
+                        new_rule_ips.append(['list_id', self.create_ip_list(ips=[ips_name], name=ips_name, descr='Портировано с PaloAlto')])
                     else:
-                        self.stepChanged.emit(f'RED|    Error: Не найден список {mode}-адресов "{item}" для правила "{rule["name"]}".')
-                        rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{item}".'
+                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден список {mode}-адресов "{ips_name}".')
+                        rule['description'] = f'{rule["description"]}\nError: Не найден список {mode}-адресов "{ips_name}".'
                         rule['rule_error'] = 1
         return new_rule_ips
 
@@ -1217,17 +1631,18 @@ class ConvertPaloaltoConfig(QThread, MyConv):
     def get_services(self, rule_services, rule):
         """Получить список сервисов"""
         new_service_list = []
-        if rule_services != 'any':
-            if isinstance(rule_services, str):
-                rule_services = [rule_services]
-            for service in rule_services:
+        if not isinstance(rule_services, list):
+            rule_services = [rule_services]
+        for item in rule_services:
+            service = item if isinstance(item, str) else item['#text']
+            if service != 'any':
                 _, service = self.get_transformed_name(service, descr='Имя ceрвиса', mode=0)
                 if service in self.services:
-                    new_service_list.append(['service', ug_services.get(service, service)])
+                    new_service_list.append(['service', service])
                 elif service in self.service_groups:
                     new_service_list.append(['list_id', service])
                 else:
-                    self.stepChanged.emit(f'RED|    Error: Не найден сервис "{service}" для правила "{rule["name"]}".')
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден сервис "{service}".')
                     rule['description'] = f'{rule["description"]}\nError: Не найден сервис "{service}".'
                     rule['rule_error'] = 1
         return new_service_list
@@ -1236,48 +1651,68 @@ class ConvertPaloaltoConfig(QThread, MyConv):
     def get_zones(self, rule_zones):
         """Получить список зон для правила"""
         new_zones = []
-        if rule_zones != 'any':
-            if isinstance(rule_zones, str):
-                rule_zones = [rule_zones]
-            for item in rule_zones:
-#                err, item = self.get_transformed_name(item.strip(), descr='Имя зоны')
-                if item in self.zones:
-                    new_zones.append(item)
+        if not isinstance(rule_zones, list):
+            rule_zones = [rule_zones]
+        for item in rule_zones:
+            zone = item if isinstance(item, str) else item['#text']
+            if zone != 'any' and zone in self.zones:
+                new_zones.append(zone)
         return new_zones
 
 
     def get_users_and_groups(self, users, rule):
         """Получить имена групп и пользователей."""
-        if users != 'any':
-            new_users_list = []
-            if isinstance(users, str):
-                users = [users]
-            for item in users:
-                if item in self.local_users:
-                    new_users_list.append(['user', item])
-                elif item in self.local_groups:
-                    new_users_list.append(['group', item])
+        new_users_list = []
+        if not isinstance(users, list):
+            users = [users]
+        for item in users:
+            user = item if isinstance(item, str) else item['#text']
+            if user != 'any':
+                if user == 'unknown':
+                    new_users_list.append(['special', 'unknown_user'])
+                elif user == 'known-user':
+                    new_users_list.append(['special', 'known_user'])
+                elif '\\' in user:
+                    # Это доменный пользователь.
+                    new_users_list.append(['user', user])
+                elif '=' in user:
+                    # Это доменная группа.
+                    tmp_arr1 = [x.split('=') for x in user.split(',')]
+                    tmp_arr2 = [y for x, y in tmp_arr1 if x in ('dc', 'DC')]
+                    ldap_domain = '.'.join(tmp_arr2)
+                    group_name = tmp_arr1[0][1] if tmp_arr1[0][0] in ('cn', 'CN') else None
+                    if group_name:
+                        new_users_list.append(['group', f'{ldap_domain}\\{group_name}'])
+                    else:
+                        self.stepChanged.emit(f'bRED|    Warning: [Правило "{rule["name"]}"] Не конвертирован доменный пользователь/группа "{user}".')
+                        rule['description'] = f'{rule["description"]}\nWarning: Не конвертирован доменный  пользователь/группа "{user}".'
+                        rule['rule_error'] = 1
+                elif user in self.local_users:
+                    new_users_list.append(['user', user])
+                elif user in self.local_groups:
+                    new_users_list.append(['group', user])
                 else:
-                    self.stepChanged.emit(f'RED|    Error: Не найден локальный пользователь/группа "{item}" для правила "{rule["name"]}".')
-                    rule['description'] = f'{rule["description"]}\nError: Не найден локальный пользователь/группа "{item}".'
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден локальный пользователь/группа "{user}".')
+                    rule['description'] = f'{rule["description"]}\nError: Не найден локальный пользователь/группа "{user}".'
                     rule['rule_error'] = 1
-            rule['users'] =  new_users_list
+        rule['users'] =  new_users_list
 
 
     def get_tags(self, tags, rule):
         """Получить список тэгов"""
         new_tags_list = []
-        if isinstance(tags, str):
+        if not isinstance(tags, list):
             tags = [tags]
-            for item in tags:
-                _, tag_name = self.get_transformed_name(item, descr='Имя тэга', mode=0)
-                if tag_name in self.tags:
-                    new_tags_list.append(tag_name)
-                else:
-                    self.stepChanged.emit(f'RED|    Error: Не найден тэг "{item}" для правила "{rule["name"]}".')
-                    rule['description'] = f'{rule["description"]}\nError: Не найден тэг "{item}".'
-                    rule['rule_error'] = 1
-            rule['tags'] = new_tags_list
+        for item in tags:
+            tag_name = item if isinstance(item, str) else item['#text']
+            _, tag_name = self.get_transformed_name(tag_name, descr='Имя тэга', mode=0)
+            if tag_name in self.tags:
+                new_tags_list.append(tag_name)
+            else:
+                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не найден тэг "{tag_name}".')
+                rule['description'] = f'{rule["description"]}\nError: Не найден тэг "{tag_name}".'
+                rule['rule_error'] = 1
+        rule['tags'] = new_tags_list
 
 
 #    def get_time_restrictions(self, time_restrictions, rule):

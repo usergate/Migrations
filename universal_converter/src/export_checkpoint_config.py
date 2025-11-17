@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # export_checkpoint_config.py
 # Класс и его функции для конвертации конфигурации CheckPoint в формат UserGate.
-# Версия 4.8    28.10.2025
+# Версия 4.9    17.11.2025
 #
 
 import os, sys, json, uuid, copy
@@ -1780,7 +1780,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
             else:
                 rule_names[item['name']] = 0
 
-            description = f'Портировано с CheckPoint.\n{"\n".join(item["description"])}'
+            description = f'Портировано с CheckPoint.\n' + "\n".join(item["description"])
             if item['comments']:
                 description = f'{item["comments"]}\n{description}'
             n += 1
@@ -1849,7 +1849,7 @@ class ConvertCheckPointConfig(QThread, MyConv):
             else:
                 rule_names[item['name']] = 0
 
-            description = f'Портировано с CheckPoint.\n{"\n".join(item["description"])}'
+            description = f'Портировано с CheckPoint.\n' + "\n".join(item["description"])
             if item['comments']:
                 description = f'{item["comments"]}\n{description}'
 

@@ -55,7 +55,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
     def run(self):
         self.stepChanged.emit(f'GREEN|{"Конвертация конфигурации PaloAlto в формат UserGate.":>110}')
         self.stepChanged.emit(f'ORANGE|{"="*110}')
-#        self.convert_config_file()
+        self.convert_config_file()
 
         if self.error:
             self.stepChanged.emit('iRED|Конвертация конфигурации PaloAlto в формат UserGate прервана.')

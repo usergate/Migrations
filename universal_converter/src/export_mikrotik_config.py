@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль предназначен для преобразования конфигурации MikroTik Router в формат UserGate.
-# Версия 2.6  27.10.2025
+# Версия 2.7  17.11.2025
 #
 
 import os, sys, json, re
@@ -820,7 +820,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         'content': [{'value': item['address']}]
                     }
             except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: IP-лист "{item.get("list", item.get("address", ''))}" не конвертирован. [{err}]')
+                self.stepChanged.emit(f'RED|    Error: IP-лист "{item.get("list", item.get("address", ""))}" не конвертирован. [{err}]')
                 error = 1
         if ip_list:
             for key, value in ip_list.items():
@@ -930,7 +930,7 @@ class ConvertMikrotikConfig(QThread, MyConv):
                         'content': [{'value': item['address']}]
                     }
             except KeyError as err:
-                self.stepChanged.emit(f'RED|    Error: URL-лист "{item.get("list", item.get("address", ''))}" не конвертирован. [{err}]')
+                self.stepChanged.emit(f'RED|    Error: URL-лист "{item.get("list", item.get("address", ""))}" не конвертирован. [{err}]')
                 error = 1
 
         if url_list:

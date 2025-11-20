@@ -408,11 +408,11 @@ class ConvertCiscoASAConfig(QThread, MyConv):
         [iface, network, mask, next_hop, *other] = array[1:]
         err, network_dest = self.pack_ip_address(network, mask)
         if err:
-            return 1, f'RED|    Error: Route "{' '.join(array)}" не конвертирован так как содержит не корректный IP-адрес.'
+            return 1, f'RED|    Error: Route "{" ".join(array)}" не конвертирован так как содержит не корректный IP-адрес.'
 
         err, _ = self.ip_isglobal(next_hop)
         if err:
-            return 1, f'RED|    Error: Route "{' '.join(array)}" не конвертирован так как не указан gateway.'
+            return 1, f'RED|    Error: Route "{" ".join(array)}" не конвертирован так как не указан gateway.'
 
         if network_dest == '0.0.0.0/0':
             gtw_name = f"{iface} (backup)" if iface in data['gateways'] else iface

@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.0  13.11.2025
+# Версия 2.1  20.11.2025
 #
 
 import os, sys, copy, json
@@ -99,13 +99,13 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 self.convert_settings_ui(systemconfig)
                 self.convert_dns_servers(systemconfig)
                 self.convert_ntp_settings(systemconfig)
-                if lib['rulebase']:
-                    if lib['rulebase']['security'] and lib['rulebase']['security']['rules']:
+                if lib.get('rulebase', False):
+                    if lib['rulebase'].get('security', False) and lib['rulebase']['security']['rules']:
                         self.convert_firewall_policy(lib['rulebase']['security']['rules']['entry'])
                         self.convert_content_rule(lib['rulebase']['security']['rules']['entry'])
-                    if lib['rulebase']['nat'] and lib['rulebase']['nat']['rules']:
+                    if lib['rulebase'].get('nat', False) and lib['rulebase']['nat']['rules']:
                         self.convert_nat_rule(lib['rulebase']['nat']['rules']['entry'])
-                    if 'decryption' in lib['rulebase'] and lib['rulebase']['decryption']['rules']:
+                    if lib['rulebase'].get('decryption', False) and lib['rulebase']['decryption']['rules']:
                         self.convert_ssl_inspection(lib['rulebase']['decryption']['rules']['entry'])
 
                 if self.error:
@@ -781,7 +781,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 'rip': {},
                 'pimsm': {}
             }
-            if vrf['routing-table'] and vrf['routing-table']['ip']['static-route']:
+            if vrf.get('routing-table', False) and vrf['routing-table']['ip']['static-route']:
                 routes = vrf['routing-table']['ip']['static-route']['entry']
                 if isinstance(routes, dict):
                     routes = [routes]
@@ -1248,14 +1248,25 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 dnat_ip = item['destination-translation']['translated-address']
                 dnat_ip = dnat_ip['#text'] if isinstance(dnat_ip, dict) else dnat_ip
                 rule['target_ip'] = self.ip_lists.get(dnat_ip, dnat_ip).partition('/')[0]
-                trans_port = item['destination-translation']['translated-port']
+                # Проверяем что есть порт для port-forwarding
+                trans_port = item['destination-translation'].get('translated-port', False)
                 trans_port = trans_port['#text'] if isinstance(trans_port, dict) else trans_port
+
                 try:
                     dport = self.services[item['service']]['protocols'][0]['port']
                     proto = self.services[item['service']]['protocols'][0]['proto']
                 except KeyError:
                     error = 1
-                else:
+                    dport = False
+
+                if not dport and not trans_port:
+                    rule['action'] = 'dnat'
+                elif dport and not trans_port:
+                    rule['action'] = 'dnat'
+                elif not dport and trans_port:
+                    rule['action'] = 'dnat'
+                    rule['service'].append(['service', trans_port])
+                elif dport and trans_port:
                     if trans_port == dport:
                         rule['action'] = 'dnat'
                     else:

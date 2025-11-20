@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Версия 2.0    27.10.2025
+# Версия 2.1    19.11.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json
@@ -139,7 +139,7 @@ class SelectExportMode(QWidget):
         self.btn2.setFixedWidth(190)
         self.btn2.clicked.connect(self.export_selected_vendor)
         self.btn3 = QPushButton("Сохранить лог")
-        self.btn3.setFixedWidth(100)
+        self.btn3.setFixedWidth(130)
         self.btn3.clicked.connect(lambda: self._save_logs('export.log'))
 
         hbox_btn = QHBoxLayout()

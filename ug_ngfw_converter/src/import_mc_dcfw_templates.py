@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2021-2023 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <aremnev@usergate.com>
@@ -19,13 +19,14 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов DCFW в раздел DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.6   20.10.2025  (только для ug_ngfw_converter)
+# Версия 1.7   21.11.2025
 #
 
 import os, sys, json
 import copy
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import MyMixedService, UsercatalogLdapServers, BaseObject, BaseAppObject
+from services import certs_role
 
 
 class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
@@ -2467,7 +2468,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
     #------------------------------------------ UserGate --------------------------------------------------
     def import_certificates(self, path, template_id, template_name):
-        """Импортируем сертификаты"""
+        """
+        Импортируем сертификаты. Правила импорта приведены в разделе документации 'Импорт сертификатов'.
+        """
         self.stepChanged.emit(f'BLUE|[Шаблон "{template_name}"] Импорт сертификатов в раздел "UserGate/Сертификаты".')
 
         if not os.path.isdir(path):
@@ -2478,6 +2481,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             return
         error = 0
         mc_certs = self.mc_data['certs']
+        new_cert_exists = False
 
         for cert_name, cert_path in certificates.items():
             files = [entry.name for entry in os.scandir(cert_path) if entry.is_file()]
@@ -2487,23 +2491,42 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             if err:
                 continue
 
+            cert_data = None
             if 'cert.pem' in files:
                 with open(os.path.join(cert_path, 'cert.pem'), mode='rb') as fh:
                     cert_data = fh.read()
             elif 'cert.der' in files:
                 with open(os.path.join(cert_path, 'cert.der'), mode='rb') as fh:
                     cert_data = fh.read()
-            else:
-                if data['name'] in mc_certs:
-                    if template_id == mc_certs[data['name']].template_id:
-                        message = f'       Cертификат "{cert_name}" не обновлён так как не найден файл сертификата "cert.pem" или "cert.der".'
-                        self.stepChanged.emit(f'uGRAY|{message}\n    Сертификат "{cert_name}" уже существует в текущем шаблоне.')
-                    else:
-                        self.stepChanged.emit(f'sGREEN|    Cертификат "{cert_name}" уже существует в шаблоне "{mc_certs[data["name"]].template_name}".')
-                    continue
+
+            key_data = None
+            if 'key.der' in files:
+                with open(os.path.join(cert_path, 'key.der'), mode='rb') as fh:
+                    key_data = fh.read()
+            elif 'key.pem' in files:
+                with open(os.path.join(cert_path, 'key.pem'), mode='rb') as fh:
+                    key_data = fh.read()
+
+            if data['name'] in mc_certs:
+                if template_id == mc_certs[data['name']].template_id:
+                    self.stepChanged.emit(f'uGRAY|    Сертификат "{cert_name}" уже существует в текущем шаблоне.')
                 else:
-                    self.stepChanged.emit(f'BLACK|    Не найден файл сертификата "{cert_name}" для импорта. Будет сгенерирован новый сертификат "{cert_name}".')
-                    data.update(data['issuer'])
+                    self.stepChanged.emit(f'sGREEN|    Cертификат "{cert_name}" уже существует в шаблоне "{mc_certs[data["name"]].template_name}".')
+            else:
+                if not cert_data:
+                    self.stepChanged.emit(f'BLACK|    Сертификат "{cert_name}": Не найден файл "cert.pem" или "cert.der" для импорта. Будет сгенерирован новый сертификат.')
+                    data.pop('user_guid', None)
+                    data.pop('subject', None)
+                    data.pop('has_private_key', None)
+                    data.pop('has_cert', None)
+                    data.pop('has_csr', None)
+                    data.pop('has_cert_chain', None)
+                    data.pop('not_before', None)
+                    data.pop('not_after', None)
+                    data.pop('ca', None)
+                    data.pop('keyUsage', None)
+                    data.update(data.pop('issuer', None))
+
                     err, result = self.utm.new_dcfw_template_certificate(template_id, data)
                     if err == 1:
                         self.stepChanged.emit(f'RED|       {result}')
@@ -2511,39 +2534,37 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     elif err == 3:
                         self.stepChanged.emit(f'GRAY|       {result}')
                     else:
-                        self.mc_data['certs'][cert_name] = result
-                        self.stepChanged.emit(f'BLACK|       Создан новый сертификат "{cert_name}". Назначьте роль новому сертификату')
-                    continue
+                        mc_certs[cert_name] = BaseObject(id=result, template_id=template_id, template_name=template_name)
+                        self.stepChanged.emit(f'BLACK|    Создан новый сертификат "{cert_name}".')
 
-            if 'key.der' in files:
-                with open(os.path.join(cert_path, 'key.der'), mode='rb') as fh:
-                    key_data = fh.read()
-            elif 'key.pem' in files:
-                with open(os.path.join(cert_path, 'key.pem'), mode='rb') as fh:
-                    key_data = fh.read()
-            else:
-                key_data = None
-
-            if data['name'] in mc_certs:
-                if template_id == mc_certs[data['name']].template_id:
-                    self.stepChanged.emit(f'uGRAY|    Сертификат "{cert_name}" уже существует в текущем шаблоне.')
-                    err, result = self.utm.update_dcfw_template_certificate(template_id, mc_certs[data['name']].id, data, cert_data, private_key=key_data)
+                    if data['role'] in self.mc_data['cert_roles']:
+                        self.stepChanged.emit(f'NOTE|       Сертификат "{cert_name}": Роль не назначена. Роль "{certs_role.get(data["role"], data["role"])}" уже используется в другом сертификате.')
+                    else:
+                        err, result = self.utm.update_dcfw_template_certificate(template_id, mc_certs[data['name']].id, {'role': data['role']})
+                        if err:
+                            self.stepChanged.emit(f'RED|       {result} [Сертификат "{cert_name}"]')
+                            error = 1
+                        else:
+                            self.stepChanged.emit(f'uGRAY|       Для сертификата "{cert_name}" установлена роль "{certs_role.get(data["role"], data["role"])}".')
+                            self.mc_data['cert_roles'].add(data['role'])
+                            new_cert_exists = True
+                elif key_data or data['role'] in ('proxy_ca_chain', 'proxy_ca_chain_root'):
+                    if data['role'] in self.mc_data['cert_roles']:
+                        self.stepChanged.emit(f'NOTE|    Сертификат "{cert_name}": Роль не будет назначена. Роль "{certs_role.get(data["role"], data["role"])}" уже используется в другом сертификате.')
+                        data['role'] = 'none'
+                    err, result = self.utm.add_dcfw_template_certificate(template_id, data, cert_data, private_key=key_data)
                     if err:
-                        self.stepChanged.emit(f'RED|       {result} [Сертификат "{cert_name}"]')
+                        self.stepChanged.emit(f'RED|    {result} [Сертификат "{cert_name}" не импортирован]')
                         error = 1
                     else:
-                        self.stepChanged.emit(f'uGRAY|       Cертификат "{cert_name}" обновлён.')
+                        mc_certs[cert_name] = BaseObject(id=result, template_id=template_id, template_name=template_name)
+                        self.mc_data['cert_roles'].add(data['role'])
+                        self.stepChanged.emit(f'BLACK|    Сертификат "{cert_name}" импортирован. Установлена роль "{certs_role.get(data["role"], data["role"])}".')
                 else:
-                    self.stepChanged.emit(f'sGREEN|    Cертификат "{cert_name}" уже существует в шаблоне "{mc_certs[data["name"]].template_name}".')
-            else:
-                err, result = self.utm.add_dcfw_template_certificate(template_id, data, cert_data, private_key=key_data)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result} [Сертификат "{cert_name}" не импортирован]')
-                    error = 1
-                else:
-                    mc_certs[cert_name] = BaseObject(id=result, template_id=template_id, template_name=template_name)
-                    self.stepChanged.emit(f'BLACK|    Сертификат "{cert_name}" импортирован.')
+                    self.stepChanged.emit(f'bRED|    Warning: Сертификат "{cert_name}" не импортирован так как не имеет приватного ключа.')
             self.msleep(1)
+        if new_cert_exists:
+            self.stepChanged.emit('NOTE|    ВНИМАНИЕ: Были созданы новые сертификаты. После синхронизации с DCFW необходимо заново импортировать их на клиентские устройства.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте сертификатов.')
@@ -2775,21 +2796,13 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             'block_page_domain': 'Домен страницы блокировки',
             'ftpclient_captive': 'FTP поверх HTTP домен',
             'ftp_proxy_enabled': 'FTP поверх HTTP',
-            'tunnel_inspection_zone_config': 'Зона для инспектируемых туннелей',
             'lldp_config': 'Настройка LLDP',
         }
         error = 0
     
         for key, value in data.items():
             if key in params:
-                if key == 'tunnel_inspection_zone_config':
-                    try:
-                        value['value']['target_zone'] = self.mc_data['zones'][value['value']['target_zone']].id
-                    except KeyError:
-                        self.stepChanged.emit(f'RED|    Error: Не найдена зона {value["value"]["target_zone"]} для "{params[key]}". Вероятно зона отсутствует в этой группе шаблонов.')
-                        value['value']['target_zone'] = ''
-                        error = 1
-                elif key == 'cert_captive' and not value:
+                if key == 'cert_captive' and not value:
                     continue
                 setting = {}
                 setting[key] = value
@@ -5460,6 +5473,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
         # Получаем список сертификатов группы шаблонов DCFW и устанавливаем значение self.mc_data['certs']
         self.mc_data['certs'] = {-1: BaseObject(id=-1, template_id='', template_name='')}
+        self.mc_data['cert_roles'] = set()
         for name, uid in self.group_templates[self.selected_group].items():
             err, result = self.utm.get_dcfw_template_certificates(uid)
             if err:
@@ -5471,6 +5485,7 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     self.stepChanged.emit(f'ORANGE|    Сертификат "{x["name"]}" обнаружен в нескольких шаблонах группы. Сертификат из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['certs'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+                    self.mc_data['cert_roles'].add(x['role'])
 
         # Получаем список профилей аутентификации группы шаблонов DCFW и устанавливаем значение self.mc_data['auth_profiles']
         self.mc_data['auth_profiles'] = {

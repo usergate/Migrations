@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Это только для ug_ngfw_converter
 # Версия 2.10   22.10.2025
@@ -1619,7 +1619,8 @@ class SelectMcTemplateGroupImport(QWidget):
     def prepare_records(self):
         if self.selected_templates:
             tmp_string = 'шаблонов' if len(self.selected_templates) > 1 else 'шаблона'
-            title = f'Импорт {tmp_string} "{'", "'.join(self.selected_templates)}" группы шаблонов "{self.device}/{self.selected_group}"'
+            tmp_string_1 = '", "'.join(self.selected_templates)
+            title = f'Импорт {tmp_string} "{tmp_string_1}" группы шаблонов "{self.device}/{self.selected_group}"'
             title1 = f'на МС в раздел "{self.new_device}/{self.selected_group}" области "{self.current_realm_name}".'
             color = 'GREEN'
         else:

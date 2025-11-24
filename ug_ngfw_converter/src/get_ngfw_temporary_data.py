@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2020-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -17,10 +17,10 @@
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
-#--------------------------------------------------------------------------------------------------- 
-# get_temporary_data.py
-# Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных.
-# Version 2.1  19.05.2025    (идентично ug_ngfw_converter и universal_converter)
+#----------------------------------------------------------------------------------------------------------------
+# get_ngfw_temporary_data.py
+# Классы: GetExportTemporaryData и GetImportTemporaryData - для получения часто используемых данных с NGFW и DCFW.
+# Version 2.1  19.05.2025
 #
 
 import os, sys
@@ -226,6 +226,7 @@ class GetImportTemporaryData(QThread, WriteBinFile, TransformObjectName):
         self.ngfw_data['certs'] = {self.get_transformed_name(x['name'], mode=1)[1]: x['id'] for x in result}
         self.ngfw_data['certs'][-1] = -1
         self.ngfw_data['certs'][0] = 0
+        self.ngfw_data['cert_roles'] = {x['role'] for x in result}
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации')

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2021-2023 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <aremnev@usergate.com>
@@ -18,7 +18,7 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #-------------------------------------------------------------------------------------------------------- 
-# Экспорт конфигурации UserGate NGFW в json-формат версии 7.
+# Экспорт конфигурации UserGate NGFW/DCFW в json-формат версии 7.
 # Версия 3.16  24.10.2025
 #
 

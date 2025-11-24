@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2021-2023 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <aremnev@usergate.com>
@@ -19,14 +19,14 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
-# Классы импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.5   24.10.2025   (идентично с ug_ngfw_converter и universal_converter)
+# Класс импорта разделов конфигурации на NGFW UserGate.
+# Версия 3.6   21.11.2025
 #
 
 import os, sys, copy, json
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import ReadWriteBinFile, MyMixedService
-from services import zone_services
+from services import zone_services, certs_role
 
 
 class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
@@ -94,7 +94,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             'UserIDagent': self.import_userid_agent,
             'BYODPolicies': self.import_byod_policy,
             'BYODDevices': self.pass_function,
-            'Certificates': self.pass_function,
+            'Certificates': self.import_certificates,
             'UserCertificateProfiles': self.import_users_certificate_profiles,
             'GeneralSettings': self.import_general_settings,
             'DeviceManagement': self.pass_function,
@@ -185,7 +185,9 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     #------------------------------------------ UserGate -------------------------------------------
     def import_certificates(self, path):
-        """Импортируем сертификаты"""
+        """
+        Импортируем сертификаты. Правила импорта приведены в разделе документации 'Импорт сертификатов'.
+        """
         self.stepChanged.emit('BLUE|Импорт сертификатов в раздел "UserGate/Сертификаты".')
 
         if not os.path.isdir(path):
@@ -195,6 +197,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GRAY|    Нет сертификатов для импорта.')
             return
         error = 0
+        new_cert_exists = False
     
         for cert_name, cert_path in certificates.items():
             files = [entry.name for entry in os.scandir(cert_path) if entry.is_file()]
@@ -204,54 +207,76 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if err:
                 continue
 
+            cert_data = None
             if 'cert.pem' in files:
                 with open(os.path.join(cert_path, 'cert.pem'), mode='rb') as fh:
                     cert_data = fh.read()
             elif 'cert.der' in files:
                 with open(os.path.join(cert_path, 'cert.der'), mode='rb') as fh:
                     cert_data = fh.read()
-            else:
-                self.stepChanged.emit(f'NOTE|    Не найден файл сертификата "{cert_name}" для импорта. Будет сгенерирован новый сертификат "{cert_name}".')
-                data.update(data['issuer'])
-                err, result = self.utm.new_certificate(data)
-                if err == 1:
-                    self.stepChanged.emit(f'RED|    {result}')
-                    error = 1
-                elif err == 3:
-                    self.stepChanged.emit(f'GRAY|       {result}')
-                    continue
-                else:
-                    self.ngfw_data['certs'][cert_name] = result
-                    message = f'Необходимо назначить роль новому сертификату "{cert_name}".'
-                    self.stepChanged.emit(f'BLACK|    Создан новый сертификат "{cert_name}".\n       {message}')
-                    continue
 
+            key_data = None
             if 'key.der' in files:
                 with open(os.path.join(cert_path, 'key.der'), mode='rb') as fh:
                     key_data = fh.read()
             elif 'key.pem' in files:
                 with open(os.path.join(cert_path, 'key.pem'), mode='rb') as fh:
                     key_data = fh.read()
-            else:
-                key_data = None
 
             if data['name'] in self.ngfw_data['certs']:
-                self.stepChanged.emit(f'GRAY|    Сертификат "{cert_name}" уже существует.')
-                err, result = self.utm.update_certificate(self.ngfw_data['certs'][data['name']], data, cert_data, private_key=key_data)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}')
-                    error = 1
-                else:
-                    self.stepChanged.emit(f'BLACK|       Cертификат "{cert_name}" updated.')
+                self.stepChanged.emit(f'uGRAY|    Сертификат "{cert_name}" уже существует.')
             else:
-                err, result = self.utm.add_certificate(data, cert_data, private_key=key_data)
-                if err:
-                    self.stepChanged.emit(f'RED|    {result}')
-                    error = 1
-                else:
-                    self.ngfw_data['certs'][cert_name] = result
-                    self.stepChanged.emit(f'BLACK|    Импортирован сертификат "{cert_name}".')
+                if not cert_data:
+                    self.stepChanged.emit(f'BLACK|    Сертификат "{cert_name}": Не найден файл "cert.pem" или "cert.der" для импорта. Будет сгенерирован новый сертификат.')
+                    data.pop('user_guid', None)
+                    data.pop('subject', None)
+                    data.pop('has_private_key', None)
+                    data.pop('has_cert', None)
+                    data.pop('has_csr', None)
+                    data.pop('has_cert_chain', None)
+                    data.pop('not_before', None)
+                    data.pop('not_after', None)
+                    data.pop('ca', None)
+                    data.pop('keyUsage', None)
+                    data.update(data.pop('issuer', None))
 
+                    err, result = self.utm.new_certificate(data)
+                    if err == 1:
+                        self.stepChanged.emit(f'RED|       {result}')
+                        error = 1
+                    elif err == 3:
+                        self.stepChanged.emit(f'GRAY|       {result}')
+                    else:
+                        self.ngfw_data['certs'][cert_name] = result
+                        self.stepChanged.emit(f'BLACK|       Создан новый сертификат "{cert_name}".')
+
+                    if data['role'] in self.ngfw_data['cert_roles']:
+                        self.stepChanged.emit(f'NOTE|          Сертификат "{cert_name}": Роль не назначена. Роль "{certs_role.get(data["role"], data["role"])}" уже используется в другом сертификате.')
+                    else:
+                        err, result = self.utm.update_certificate(self.ngfw_data['certs'][data['name']], {'role': data['role']})
+                        if err:
+                            self.stepChanged.emit(f'RED|       {result} [Cертификат "{cert_name}"]')
+                            error = 1
+                        else:
+                            self.stepChanged.emit(f'BLACK|          Для сертификата "{cert_name}" установлена роль "{certs_role.get(data["role"], data["role"])}".')
+                            self.ngfw_data['cert_roles'].add(data['role'])
+                            new_cert_exists = True
+                elif key_data or data['role'] in ("proxy_ca_chain", "proxy_ca_chain_root"):
+                    if data['role'] in self.ngfw_data['cert_roles']:
+                        self.stepChanged.emit(f'NOTE|    Сертификат "{cert_name}": Роль не будет назначена так как роль "{certs_role.get(data["role"], data["role"])}" уже используется в другом сертификате.')
+                        data['role'] = 'none'
+                    err, result = self.utm.add_certificate(data, cert_data, private_key=key_data)
+                    if err:
+                        self.stepChanged.emit(f'RED|    {result} [Cертификат "{cert_name}" не импортирован]')
+                        error = 1
+                    else:
+                        self.ngfw_data['certs'][cert_name] = result
+                        self.ngfw_data['cert_roles'].add(data['role'])
+                        self.stepChanged.emit(f'BLACK|    Сертификат "{cert_name}" импортирован. Установлена роль "{certs_role.get(data["role"], data["role"])}".')
+                else:
+                    self.stepChanged.emit(f'bRED|    Warning: Сертификат "{cert_name}" не импортирован так как не имеет приватного ключа.')
+        if new_cert_exists:
+            self.stepChanged.emit('NOTE|    ВНИМАНИЕ: Были созданы новые сертификаты. Необходимо заново импортировать их на клиентские устройства')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте сертификатов.')

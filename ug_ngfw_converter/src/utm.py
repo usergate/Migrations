@@ -1,5 +1,5 @@
-#!/usr/bin/python3
-# Версия 4.6   29.08.2025
+#!/usr/bin/env python3
+# Версия 4.7   21.11.2025
 # Общий класс для работы с xml-rpc для NGFW и DCFW
 #
 # Коды возврата:
@@ -378,14 +378,38 @@ class UtmXmlRpc:
             return 1, f"Error utm.get_certificate_chain_data: [{err.faultCode}] — {err.faultString}"
         return 0, result
 
-    def add_certificate(self, cert):
-        """Добавить новый сертификат"""
+    def add_certificate(self, cert_info, cert_data, private_key=None):
+        """Импортировать новый сертификат"""
         try:
-            result = self._server.v2.setting.certificate.add(self._auth_token, cert)
+            cert_info['cert_data'] = rpc.Binary(cert_data)
+            if private_key:
+                cert_info['key_data'] = rpc.Binary(private_key)
+            result = self._server.v2.settings.certificate.add(self._auth_token, cert_info)
         except rpc.Fault as err:
             return 1, f'Error utm.add_certificate: [{err.faultCode}] — {err.faultString}'
         else:
             return 0, result     # Возвращает ID добавленного правила
+
+    def update_certificate(self, cert_id, cert_info, cert_data=None, private_key=None):
+        """Обновить сертификат"""
+        try:
+            if cert_data:
+                cert_info['cert_data'] = rpc.Binary(cert_data)
+            if private_key:
+                cert_info['key_data'] = rpc.Binary(private_key)
+            result = self._server.v2.settings.certificate.update(self._auth_token, cert_id, cert_info)
+        except rpc.Fault as err:
+            return 1, f'Error utm.update_certificate: [{err.faultCode}] — {err.faultString}'
+        else:
+            return 0, result     # Возвращает True
+
+    def new_certificate(self, cert_info):
+        """Создать новый сертификат"""
+        try:
+            result = self._server.v2.settings.generate.certificate(self._auth_token, cert_info)
+        except rpc.Fault as err:
+            return 1, f'Error utm.new_certificate: [{err.faultCode}] — {err.faultString}'
+        return 0, result     # Возвращает ID добавленного сертификата
 
     def get_snmp_engine(self):
         """Выгрузить SNMP Engine ID"""

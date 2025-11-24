@@ -1,5 +1,5 @@
-#!/usr/bin/python3
-# Версия 3.5   22.10.2025
+#!/usr/bin/env python3
+# Версия 3.6   21.11.2025
 # Общий класс для работы с xml-rpc для Management Center
 #
 # Коды возврата:
@@ -547,16 +547,17 @@ class McXmlRpc:
             result = self._server.v1.cccertificates.certificate.generate.ca(self._auth_token, template_id, cert_info)
         except rpc.Fault as err:
             if err.faultCode == 2:
-                return 1, f'Error: Не заполнены все поля сертификата. Сертификат "{cert_info["name"]}" не создан.'
+                return 1, f'Error: Не заполнены все поля сертификата. Сертификат "{cert_info["name"]}" не создан.\n    {err.faultString}'
             if err.faultCode == 9:
                 return 3, f'Сертификат "{cert_info["name"]}" уже существует в текущем шаблоне.'
             return 1, f'Error mclib.new_template_certificate: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает ID добавленого сертификата
 
-    def update_template_certificate(self, template_id, cert_id, cert_info, cert_data, private_key=None):
+    def update_template_certificate(self, template_id, cert_id, cert_info, cert_data=None, private_key=None):
         """Обновить сертификат в шаблоне"""
         try:
-            cert_info['cert_data'] = rpc.Binary(cert_data)
+            if cert_data:
+                cert_info['cert_data'] = rpc.Binary(cert_data)
             if private_key:
                 cert_info['key_data'] = rpc.Binary(private_key) 
             result = self._server.v1.cccertificates.certificate.update(self._auth_token, template_id, cert_id, cert_info)
@@ -3361,10 +3362,11 @@ class McXmlRpc:
             return 1, f'Error mclib.new_dcfw_template_certificate: [{err.faultCode}] — {err.faultString}'
         return 0, result  # Возвращает ID добавленого сертификата
 
-    def update_dcfw_template_certificate(self, template_id, cert_id, cert_info, cert_data, private_key=None):
+    def update_dcfw_template_certificate(self, template_id, cert_id, cert_info, cert_data=None, private_key=None):
         """Обновить сертификат в шаблоне DCFW"""
         try:
-            cert_info['cert_data'] = rpc.Binary(cert_data)
+            if cert_data:
+                cert_info['cert_data'] = rpc.Binary(cert_data)
             if private_key:
                 cert_info['key_data'] = rpc.Binary(private_key) 
             result = self._server.v1.dcfwcertificates.certificate.update(self._auth_token, template_id, cert_id, cert_info)

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2020-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -18,9 +18,9 @@
 # with this program; if not, contact the site <https://www.gnu.org/licenses/>.
 #
 #--------------------------------------------------------------------------------------------------- 
-# get_mc_temporary_data.py
+# get_mc_dcfw_temp_data.py
 # Класс GetMcDcfwTemporaryData - для получения часто используемых данных.
-# Version 1.2  10.07.2025    (идентично для ug_ngfw_converter и universal_converter)
+# Version 1.2  10.07.2025
 #
 
 import os, sys
@@ -75,6 +75,7 @@ class GetMcDcfwTemporaryData(QThread, WriteBinFile, UsercatalogLdapServers):
             'gateways': {},
             'vrf': {},
             'certs': {-1: BaseObject(id=-1, template_id='', template_name='')},
+            'cert_roles': set(),
             'client_certs_profiles': {},
             'local_groups': {},
             'local_users': {},
@@ -171,6 +172,7 @@ class GetMcDcfwTemporaryData(QThread, WriteBinFile, UsercatalogLdapServers):
                     self.stepChanged.emit(f'ORANGE|       Сертификат "{x["name"]}" обнаружен в нескольких шаблонах группы шаблонов. Сертификат из шаблона "{name}" не будет использован.')
                 else:
                     self.mc_data['certs'][x['name']] = BaseObject(id=x['id'], template_id=uid, template_name=name)
+                    self.mc_data['cert_roles'].add(x['role'])
 
         # Получаем список профилей аутентификации
         self.stepChanged.emit(f'BLACK|    Получаем список профилей аутентификации группы шаблонов')

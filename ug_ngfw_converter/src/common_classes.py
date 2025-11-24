@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #  
 # Copyright @ 2021-2023 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <aremnev@usergate.com>

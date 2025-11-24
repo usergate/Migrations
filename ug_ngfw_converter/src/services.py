@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 from dataclasses import dataclass
 
 
@@ -999,4 +999,17 @@ GEOIP_CODE = {
     "Union of South Africa": "ZA",
     "Northern Rhodesia": "ZM",
     "Zimbabwe": "ZW"
+}
+
+# Роли сертификатов. Используется при импорте сертификатов для вывода сообщений.
+certs_role = {
+    'none': 'Нет роли',
+    'proxy_ca': 'SSL инспектирование',
+    'webui': 'SSL веб-консоли',
+    'webui_ca': 'УЦ для авторизации в веб-консоли',
+    'proxy_ca_chain': 'SSL инспектирование (промежуточный)',
+    'proxy_ca_chain_root': 'SSL инспектирование (корневой)',
+    'resp_pages': 'SSL captive-портала',
+    'saml': 'SAML server',
+    'user': 'Пользовательский сертификат'
 }

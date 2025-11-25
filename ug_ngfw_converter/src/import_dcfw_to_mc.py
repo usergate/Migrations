@@ -3082,6 +3082,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             return
         admins = {x['login']: x['id'] for x in result}
+        admins_exists = False
 
         json_file = os.path.join(path, 'administrators_list.json')
         err, data = self.read_json_file(json_file, mode=2)
@@ -3109,6 +3110,7 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item['login'] = self.get_transformed_userlogin(item['login'])
                 item['display_name'] = item['login']
                 item['password'] = 'Q12345678@'
+                item['enabled'] = False
             if item['type'] in ['ldap_user', 'ldap_group']:
                 if item['type'] == 'ldap_user':
                     ldap_domain, _, login_name = item['login'].partition("\\")
@@ -3158,12 +3160,14 @@ class ImportMcDcfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     admins[item['login']] = result
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["display_name"]}" импортирован.')
+                    admins_exists = True
+        if admins_exists:
+            self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled". Активируйте их и установите пароль.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте раздела "UserGate/Администраторы".')
         else:
             self.stepChanged.emit('GREEN|    Импорт раздела "UserGate/Администраторы" завершён.')
-            self.stepChanged.emit('LBLUE|    Установите пароли для локальных администраторов.')
 
 
     #------------------------------------ Пользователи и устройства -------------------------------------------------

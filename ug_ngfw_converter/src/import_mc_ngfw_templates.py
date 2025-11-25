@@ -3577,11 +3577,13 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
             self.error = 1
             return
         admins = {x['display_name']: x['id'] for x in result}
+        admins_exists = False
 
         for item in data:
             if item['type'] == 'local':
                 error, item['display_name'] = self.get_transformed_name(item['display_name'], err=error, descr='Имя администратора')
                 item['password'] = 'Q12345678@'
+                item['enabled'] = False
             if item['type'] in ['ldap_user', 'ldap_group']:
                 login = item['display_name'].split('(')[1].replace(')', '')
                 ldap_domain, _, login_name = login.partition("\\")
@@ -3627,12 +3629,14 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                 else:
                     admins[item['display_name']] = result
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["display_name"]}" импортирован.')
+                    admins_exists = True
+        if admins_exists:
+            self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled". Активируйте их и установите пароль.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте администраторов.')
         else:
             self.stepChanged.emit('GREEN|    Импорт администраторов завершён.')
-            self.stepChanged.emit('LBLUE|    Установите пароли для локальных администраторов.')
 
 
     #------------------------------------ Пользователи и устройства -------------------------------------------------

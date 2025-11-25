@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов DCFW в раздел DCFW UserGate Management Center версии 7 и выше.
-# Версия 1.7   21.11.2025
+# Версия 1.8   25.11.2025
 #
 
 import os, sys, json
@@ -3031,6 +3031,8 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
         for x in result:
             admins[x['display_name']] = BaseObject(id=x['id'], template_id=template_id, template_name=template_name)
 
+        admins_exists = False
+
         for item in data:
             if item['type'] == 'local':
                 item['login'] = self.get_transformed_userlogin(item['login'])
@@ -3080,6 +3082,9 @@ class ImportMcDcfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                 else:
                     admins[item['display_name']] = BaseObject(id=result, template_id=template_id, template_name=template_name)
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["display_name"]}" импортирован.')
+                    admins_exists = True
+        if admins_exists:
+            self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled". Активируйте их и установите пароль.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте администраторов.')

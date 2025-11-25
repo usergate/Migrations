@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Класс импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.6   21.11.2025
+# Версия 3.7   25.11.2025
 #
 
 import os, sys, copy, json
@@ -703,6 +703,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             return
         admins = {x['login']: x['id'] for x in result}
+        admins_exists = False
 
         json_file = os.path.join(path, 'administrators_list.json')
         err, data = self.read_json_file(json_file, mode=2)
@@ -714,6 +715,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             if item['type'] == 'local':
                 item['login'] = self.get_transformed_userlogin(item['login'])
                 item['password'] = 'Q12345678@'
+                item['enabled'] = False
             if item['type'] in ['ldap_user', 'ldap_group']:
                 if item['type'] == 'ldap_user':
                     ldap_domain, _, login_name = item['login'].partition("\\")
@@ -757,12 +759,14 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     admins[item['login']] = result
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["login"]}" импортирован.')
+                    admins_exists = Fraue
+        if admins_exists:
+            self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled".  Активируйте их и установите пароль.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте раздела "UserGate/Администраторы".')
         else:
             self.stepChanged.emit('GREEN|    Импорт раздела "UserGate/Администраторы" завершён.')
-            self.stepChanged.emit('LBLUE|    Установите пароли для локальных администраторов.')
 
 
     #----------------------------------------------- Сеть -----------------------------------------------
@@ -827,15 +831,15 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         if err:
             return
 
-        self.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN", "BOND", "VPN" в раздел "Сеть/Интерфейсы".')
+        self.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN", "BOND", "BRIDGE", "VPN" в раздел "Сеть/Интерфейсы".')
         if isinstance(self.ngfw_ports, int):
             self.stepChanged.emit(self.new_vlans)
             self.error = 1
             return
 
         kinds = {item['kind'] for item in data}
-        if kinds.isdisjoint({'tunnel', 'vlan', 'vpn', 'bond'}):
-            self.stepChanged.emit('GRAY|    Нет интерфейсов "TUNNEL", "VLAN", "VPN", "BOND" для импорта.')
+        if kinds.isdisjoint({'tunnel', 'vlan', 'vpn', 'bond', 'bridge'}):
+            self.stepChanged.emit('GRAY|    Нет интерфейсов "TUNNEL", "VLAN", "VPN", "BOND", "BRIDGE" для импорта.')
             return
 
         err, result = self.utm.get_netflow_profiles_list()
@@ -858,7 +862,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         if 'tunnel' in kinds:
             self.import_ipip_interfaces(data)
-        if 'bond' in kinds:
+        if kinds.intersection({'bond', 'bridge'}):
             self.import_bonds(data, list_netflow, list_lldp)
         if 'vlan' in kinds:
             self.import_vlans(data, list_netflow, list_lldp)
@@ -869,8 +873,11 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         tag_relations = {}
         if self.utm.float_version >= 7.3:
             for item in data:
-                if 'tags' in item:
-                    tag_relations[f'{item["id"]}:{self.utm.node_name}'] = item['tags']
+                if 'tags' in item and 'id' in item:
+                    try:
+                        tag_relations[f'{item["id"]}:{self.utm.node_name}'] = item['tags']
+                    except KeyError:
+                        print(item['name'])
         if tag_relations:
             if self.add_tags_for_objects(tag_relations, 'interfaces'):
                 error = 1
@@ -919,6 +926,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err == 2:
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован]')
                 else:
+                    item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
         if error:
             self.error = 1
@@ -928,39 +936,58 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_bonds(self, data, list_netflow, list_lldp):
-        """Импортируем интерфесы BOND. Нельзя использовать интерфейсы Management и slave."""
-        self.stepChanged.emit('BLUE|    Импорт интерфейсов bond в раздел "Сеть/Интерфейсы".')
+        """Импортируем интерфесы Bond, Bridge. Нельзя использовать интерфейсы Management и slave."""
+        self.stepChanged.emit('BLUE|    Импорт агрегированных интерфейсов в раздел "Сеть/Интерфейсы".')
         error = 0
         if not self.adapter_ports:
-            self.stepChanged.emit('ORANGE|       Нет свободных адаптеров для импорта bond-интерфейсов.')
+            self.stepChanged.emit('ORANGE|       Нет свободных адаптеров для импорта агрегированных интерфейсов.')
+            # Это должно быть здесь для корректного добавления тэгов.
+            for item in data:
+                if 'kind' in item and item['kind'] in ('bond', 'bridge'):
+                    item.pop('id', None)
             self.error = 1
             return
 
         for item in data:
-            if 'kind' in item and item['kind'] == 'bond':
+#            if 'kind' in item and item['kind'] == 'bond':
+            if 'kind' in item and item['kind'] in ('bond', 'bridge'):
+                item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
                 if item['name'] in self.ngfw_ifaces:
-                    self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на NGFW.')
+                    self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на NGFW/DCFW.')
                     continue
-                item.pop('id', None)
                 item.pop('mac', None)
                 item.pop('master', None)
                 item.pop('running', None)
-                item.pop('kind', None)
                 item.pop('node_name', None)    # удаляем если конфиг получен из МС
                 
-                new_slaves = []
-                for port in item['bonding']['slaves']:
-                    if port in self.adapter_ports:
-                        self.adapter_ports.remove(port)
-                        new_slaves.append(port)
-                    else:
-                        self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] порт "{port}" занят или не существует на NGFW.')
+                if item['kind'] == 'bond':
+                    new_slaves = []
+                    for port in item['bonding']['slaves']:
+                        if port in self.adapter_ports:
+                            self.adapter_ports.remove(port)
+                            new_slaves.append(port)
+                        else:
+                            self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] порт "{port}" занят или не существует на NGFW/DCFW.')
+                            error = 1
+                    if not new_slaves:
+                        self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] Нет интерфейсов. Bond не импортирован')
                         error = 1
-                if not new_slaves:
-                    self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] Нет интерфейсов. Bond не импортирован')
-                    error = 1
-                    continue
-                item['bonding']['slaves'] = new_slaves
+                        continue
+                    item['bonding']['slaves'] = new_slaves
+                elif item['kind'] == 'bridge':
+                    new_slaves = []
+                    for port in item['bridging']['ports']:
+                        if port in self.adapter_ports:
+                            self.adapter_ports.remove(port)
+                            new_slaves.append(port)
+                        else:
+                            self.stepChanged.emit(f'RED|       Error: [bridge "{item["name"]}"] порт "{port}" занят или не существует на NGFW/DCFW.')
+                            error = 1
+                    if not new_slaves or len(new_slaves) < 2:
+                        self.stepChanged.emit(f'RED|       Error: [bridge "{item["name"]}"] Нет свободных интерфейсов. Bridge не импортирован')
+                        error = 1
+                        continue
+                    item['bridging']['ports'] = new_slaves
 
                 if item['zone_id']:
                     try:
@@ -989,7 +1016,12 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     item['netflow_profile'] = 'undefined'
                     error = 1
 
-                err, result = self.utm.add_interface_bond(item)
+                if item['kind'] == 'bond':
+                    item.pop('kind', None)
+                    err, result = self.utm.add_interface_bond(item)
+                elif item['kind'] == 'bridge':
+                    item.pop('kind', None)
+                    err, result = self.utm.add_interface_bridge(item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                     error = 1
@@ -997,12 +1029,13 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                 else:
                     self.ngfw_ifaces[item['name']] = 'bond'
+                    item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Интерфейс "{item["name"]}" импортирован.')
         if error:
             self.error = 1
-            self.stepChanged.emit('ORANGE|       Произошла ошибка при импорте интерфейса BOND.')
+            self.stepChanged.emit('ORANGE|       Произошла ошибка при импорте агрегированных интерфейсов.')
         else:
-            self.stepChanged.emit('GREEN|       Импорт интерфейсов bond завершён.')
+            self.stepChanged.emit('GREEN|       Импорт агрегированных интерфейсов завершён.')
 
 
 
@@ -1018,6 +1051,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
         for item in data:
             if 'kind' in item and item['kind'] == 'vlan':
+                item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
                 if item["vlan_id"] in self.ngfw_vlans:
                     self.stepChanged.emit(f'GRAY|       VLAN {item["vlan_id"]} уже существует на порту {self.ngfw_vlans[item["vlan_id"]]}')
                     continue
@@ -1032,7 +1066,6 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 if item['mode'] == 'keep':   # Если конфиг получен из МС
                     item['mode'] = 'manual'
 
-                item.pop('id', None)          # удаляем readonly поле
                 item.pop('master', None)      # удаляем readonly поле
                 item.pop('kind', None)        # удаляем readonly поле
                 item.pop('mac', None)
@@ -1075,6 +1108,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     error = 1
                 else:
                     self.ngfw_vlans[item['vlan_id']] = item['name']
+                    item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Интерфейс VLAN "{item["name"]}" импортирован.')
         if error:
             self.error = 1
@@ -1090,12 +1124,12 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     
         for item in data:
             if 'kind' in item and item['kind'] == 'vpn':
+                item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
                 if item['name'] in self.ngfw_ifaces:
                     self.stepChanged.emit(f'GRAY|       Интерфейс VPN {item["name"]} уже существует на NGFW.')
                     continue
 
                 item['node_name'] = 'cluster'
-                item.pop('id', None)
                 item.pop('mac', None)
                 item.pop('master', None)
                 item.pop('running', None)
@@ -1135,6 +1169,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                 else:
                     self.ngfw_ifaces[item['name']] = item['kind']
+                    item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Интерфейс VPN "{item["name"]}" импортирован.')
         if error:
             self.error = 1

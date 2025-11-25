@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Класс импорта разделов конфигурации в шаблон NGFW UserGate Management Center версии 7 и выше.
-# Версия 3.20   21.11.2025
+# Версия 3.21   25.11.2025
 #
 
 import os, sys, json
@@ -1988,6 +1988,10 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
 
         self.stepChanged.emit(f'BLUE|Импорт интерфейсов на узел кластера "{self.node_name}"')
+        kinds = {item['kind'] for item in data}
+        if kinds.isdisjoint({'adapter', 'bond', 'bridge', 'tunnel', 'vpn', 'vlan'}):
+            self.stepChanged.emit('GRAY|    Нет интерфейсов для импорта.')
+            return
         
         if not self.mc_data['interfaces']:
             if self.get_interfaces_list():        # Получаем все интерфейсы группы шаблонов и заполняем: self.mc_data['interfaces']
@@ -2004,9 +2008,6 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте интерфейсов.')
                 return
 
-        kinds = set()
-        for item in data:
-            kinds.add(item['kind'])
 
         if 'adapter' in kinds:
             self.import_adapter_interfaces(path, data)
@@ -3649,6 +3650,7 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             return
         admins = {x['login']: x['id'] for x in result}
+        admins_exists = False
 
         json_file = os.path.join(path, 'administrators_list.json')
         err, data = self.read_json_file(json_file, mode=2)
@@ -3676,6 +3678,7 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item['login'] = self.get_transformed_userlogin(item['login'])
                 item['display_name'] = item['login']
                 item['password'] = 'Q12345678@'
+                item['enabled'] = False
             if item['type'] in ['ldap_user', 'ldap_group']:
                 if item['type'] == 'ldap_user':
                     ldap_domain, _, login_name = item['login'].partition("\\")
@@ -3724,12 +3727,14 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     admins[item['login']] = result
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["display_name"]}" импортирован.')
+                    admins_exists = True
+        if admins_exists:
+            self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled". Активируйте их и установите пароль.')
         if error:
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте раздела "UserGate/Администраторы".')
         else:
             self.stepChanged.emit('GREEN|    Импорт раздела "UserGate/Администраторы" завершён.')
-            self.stepChanged.emit('LBLUE|    Установите пароли для локальных администраторов.')
 
 
     #------------------------------------ Пользователи и устройства -------------------------------------------------

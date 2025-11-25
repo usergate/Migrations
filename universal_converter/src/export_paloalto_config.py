@@ -19,10 +19,10 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.1  20.11.2025
+# Версия 2.2  25.11.2025
 #
 
-import os, sys, copy, json
+import os, sys, copy, json, copy
 import xmltodict
 from PyQt6.QtCore import QThread, pyqtSignal
 from common_classes import MyConv
@@ -1143,15 +1143,37 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     cat_set.update(pa_url_category[category])
                 else:
                     err_url_category.add(category)
+            # Если есть и URLs и URL_category, то делаем 2 отдельных правила (т.к. у нас логическое 'И').
             if cat_set:
-                rule['url_categories'] = [['category_id', y] for y in cat_set]
+                if rule['urls']:
+                    rule2 = copy.deepcopy(rule)
+                    rule2['urls'] = []
+                    rule2['name'] = f"1_{rule['name']}"
+                    rule['name'] = f"2_{rule['name']}"
+                    rule2['url_categories'] = [['category_id', y] for y in cat_set]
+                    if err_url_category:
+                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule2["name"]}"] Не конвертирована URL-категория: {", ".join(err_url_category)}. Возможно такой категории нет на UserGate.')
+                        rule2['description'] = f'{rule2["description"]}\nНе найдена URL-категория: {", ".join(err_url_category)}'
+                        rule2['rule_error'] = 1
+                        err_url_category = set()
+                    if rule2['rule_error']:
+                        rule2['name'] = f'ERROR-{rule2["name"]}'
+                        rule2['enabled'] = False
+                        error = 1
+                    rule2.pop('rule_error', None)
+                    rules.append(rule2)
+                    n += 1
+                    self.stepChanged.emit(f'BLACK|    {n} - Создано правило ФК "{rule2["name"]}".')
+                else:
+                    rule['url_categories'] = [['category_id', y] for y in cat_set]
+
             if err_url_category:
                 self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не конвертирована URL-категория: {", ".join(err_url_category)}. Возможно такой категории нет на UserGate.')
                 rule['description'] = f'{rule["description"]}\nНе найдена URL-категория: {", ".join(err_url_category)}'
                 rule['rule_error'] = 1
 
             if rule['rule_error']:
-                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['name'] = f'ERROR-{rule["name"]}'
                 rule['enabled'] = False
                 error = 1
             rule.pop('rule_error', None)

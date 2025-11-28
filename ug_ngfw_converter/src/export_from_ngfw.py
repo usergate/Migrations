@@ -4262,11 +4262,20 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     item['schedule'] = 'disabled'
                 else:
                     item['last_update'] = item['last_update'].rstrip('Z').replace('T', ' ', 1)
+
+                content_error = False
                 for content in item['content']:
                     if self.utm.float_version < 6:
                         content['category_id'] = content.pop('value')
-                        content['name'] = self.ngfw_data['url_categories'][int(content['category_id'])]
+                        # На версии 5 может быть такой артефакт.
+                        if content['category_id'] == 'ERR':
+                            content_error = True
+                        else:
+                            content['name'] = self.ngfw_data['url_categories'][int(content['category_id'])]
                     content.pop('id', None)
+                if content_error:
+                    item['content'] = []
+                    self.stepChanged.emit(f'bRED|    Произошла ошибка при экспорте категорий URL "{item["name"]}".')
 
             err, msg = self.create_dir(path)
             if err:

@@ -886,18 +886,17 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.error = 1
                 return
             else:
+                err, msg = self.create_dir(path)
+                if err:
+                    self.stepChanged.emit(f'RED|    {msg}')
+                    self.error = 1
+                    return
                 iface_names = self.translate_iface_name(path, result) # Преобразуем имена интерфейсов для версии 5 из eth в port.
 
             for item in data:
                 item['iface_id'] = iface_names[item['iface_id']]
                 item.pop('id', None)
                 item.pop('cc', None)
-
-            err, msg = self.create_dir(path)
-            if err:
-                self.stepChanged.emit(f'RED|    {msg}')
-                self.error = 1
-                return
 
             json_file = os.path.join(path, 'config_dhcp_subnets.json')
             with open(json_file, 'w') as fh:

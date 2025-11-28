@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Экспорт конфигурации UserGate NGFW/DCFW в json-формат версии 7.
-# Версия 3.16  24.10.2025
+# Версия 3.17  28.11.2025
 #
 
 import os, sys, json
@@ -391,7 +391,7 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
         """Экспортируем настройки вышестоящего прокси"""
-        if 7.1 >= self.utm.float_version < 7.4:
+        if 7.4 > self.utm.float_version >= 7.1:
             self.stepChanged.emit('BLUE|Экспорт настроек раздела "UserGate/Настройки/Вышестоящий прокси".')
 
             err, result = self.utm.get_upstream_proxy_settings()
@@ -607,6 +607,12 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item.pop('id', None)
                 item.pop('guid', None)
                 item.pop('cc', None)
+                if self.utm.float_version < 6:
+                    item['locked'] = item.pop('is_lock', False)
+                    item['is_root'] = True if item['login'] == 'Admin' else False
+                if self.utm.float_version < 7:
+                    item['user_auth_profile_id'] = 0
+                    item['password'] = ''
                 if item['is_root']:
                     continue
                 item['profile_id'] = admin_profiles[item['profile_id']]
@@ -739,7 +745,6 @@ class ExportSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             item.pop('speed', None)
             item.pop('errors', None)
             item.pop('running', None)
-#            item.pop('node_name', None)
             if item['zone_id']:
                 item['zone_id'] = self.ngfw_data['zones'].get(item['zone_id'], 0)
             item['netflow_profile'] = list_netflow.get(item['netflow_profile'], 'undefined')

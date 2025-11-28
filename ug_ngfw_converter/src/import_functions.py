@@ -759,7 +759,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     admins[item['login']] = result
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["login"]}" импортирован.')
-                    admins_exists = Fraue
+                    admins_exists = True
         if admins_exists:
             self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled".  Активируйте их и установите пароль.')
         if error:

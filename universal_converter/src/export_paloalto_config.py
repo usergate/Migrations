@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -560,15 +560,16 @@ class ConvertPaloAltoConfig(QThread, MyConv):
 
         for item in pa_iplist_groups:
             error, iplist_name = self.get_transformed_name(item['@name'], err=error, descr='Имя списка групп IP-адресов')
-            if isinstance(item['static']['member'], str):
-                item['static']['member'] = [item['static']['member']]
-            content = []
-            for member in item['static']['member']:
-                if isinstance(member, dict):
-                    member = member['#text']
-                if member in self.ip_lists:
-                    content.append({'list': member})
             descr = item.get('description', 'Портировано с PaloAlto.')
+            content = []
+            if 'static' in item:
+                if isinstance(item['static']['member'], str):
+                    item['static']['member'] = [item['static']['member']]
+                for member in item['static']['member']:
+                    if isinstance(member, dict):
+                        member = member['#text']
+                    if member in self.ip_lists:
+                        content.append({'list': member})
             ip_list = {
                 'name': iplist_name,
                 'description': descr['#text'] if isinstance(descr, dict) else descr,

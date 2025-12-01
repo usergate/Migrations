@@ -19,7 +19,7 @@
 #
 #-------------------------------------------------------------------------------------------------------- 
 # Импорт ранее экспортированной группы шаблонов на UserGate Management Center версии 7 и выше.
-# Версия 1.8   24.11.2025
+# Версия 1.9   02.12.2025
 #
 
 import os, sys, json
@@ -2233,10 +2233,6 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
 
         for item in data:
             if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
-                item.pop('id', None)          # удаляем readonly поле
-                item.pop('master', None)      # удаляем readonly поле
-                item.pop('mac', None)
-
                 iface_name = f'{item["name"]}:{item["node_name"]}'
                 if iface_name in mc_ifaces:
                     if template_id == mc_ifaces[iface_name].template_id:
@@ -2244,6 +2240,10 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
                     else:
                         self.stepChanged.emit(f'sGREEN|       Интерфейс "{item["name"]}" уже существует в шаблоне "{mc_ifaces[iface_name].template_name}" на узле кластера "{item["node_name"]}".')
                     continue
+
+                item.pop('id', None)          # удаляем readonly поле
+                item.pop('master', None)      # удаляем readonly поле
+                item.pop('mac', None)
 
                 if item['zone_id']:
                     try:
@@ -4918,7 +4918,7 @@ class ImportMcNgfwTemplates(QThread, MyMixedService, UsercatalogLdapServers):
         morphology_list = self.mc_data['morphology']
 
         if not self.mc_data.get('useragents', False):
-            if self.get_useragent_list():    # Устанавливаем self.mc_data['useragents']
+            if self.get_useragents_list():    # Устанавливаем self.mc_data['useragents']
                 self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте правил контентной фильтрации.')
                 return
         useragent_list = self.mc_data['useragents']

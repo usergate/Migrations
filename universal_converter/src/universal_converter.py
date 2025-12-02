@@ -32,8 +32,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Перенос конфигурации сторонних вендоров на UserGate (version 9.7)")
-#        ico = QIcon("favicon.png")
-        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
+        ico = QIcon("favicon.png")
+#        ico = QIcon(os.path.join(sys._MEIPASS, "favicon.png")) # для PyInstaller
         self.setWindowIcon(ico)
         self.vendors_path = 'other_vendors'
         self._base_bluecoat_path = os.path.join(self.vendors_path, 'blue_coat')

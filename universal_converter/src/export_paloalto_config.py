@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.2  25.11.2025
+# Версия 2.3  02.12.2025
 #
 
 import os, sys, copy, json, copy
@@ -995,7 +995,8 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             rule['src_ips'] = self.get_ips('src', item['source']['member'], rule)
             rule['dst_ips'] = self.get_ips('dst', item['destination']['member'], rule)
             rule['services'] = self.get_services(item['service']['member'], rule)
-            self.get_users_and_groups(item['source-user']['member'], rule)
+            if 'source-user' in item:
+                self.get_users_and_groups(item['source-user']['member'], rule)
 #            self.get_time_restrictions(value['schedule'], rule)
             if 'tag' in item:
                 self.get_tags(item['tag']['member'], rule)

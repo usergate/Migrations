@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Это только для ug_ngfw_converter
-# Версия 2.10   22.10.2025
+# Версия 2.11   02.12.2025
 #-----------------------------------------------------------------------------------------------------------------------------
 
 import os, json, ipaddress
@@ -57,35 +57,35 @@ class SelectAction(QWidget):
         self.btn_export = QPushButton("Экспорт конфигурации из UG NGFW|DCFW")
         self.btn_export.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_export.setFont(btn_font)
-        self.btn_export.setFixedWidth(280)
+        self.btn_export.setFixedWidth(300)
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self.set_export_page)
 
         self.btn_export_mc = QPushButton("Экспорт группы шаблонов из\n UG Management Center")
         self.btn_export_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_export_mc.setFont(btn_font)
-        self.btn_export_mc.setFixedWidth(280)
+        self.btn_export_mc.setFixedWidth(300)
         self.btn_export_mc.setEnabled(False)
         self.btn_export_mc.clicked.connect(self.set_export_mc_page)
         
         self.btn_import = QPushButton("Импорт конфигурации на UG NGFW|DCFW")
         self.btn_import.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import.setFont(btn_font)
-        self.btn_import.setFixedWidth(280)
+        self.btn_import.setFixedWidth(300)
         self.btn_import.setEnabled(False)
         self.btn_import.clicked.connect(self.set_import_page)
 
         self.btn_import_mc = QPushButton("Импорт конфигурации NGFW|DCFW в\nгруппу шаблонов UG Management Center")
         self.btn_import_mc.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import_mc.setFont(btn_font)
-        self.btn_import_mc.setFixedWidth(280)
+        self.btn_import_mc.setFixedWidth(300)
         self.btn_import_mc.setEnabled(False)
         self.btn_import_mc.clicked.connect(self.set_import_mc_page)
 
         self.btn_import_mc_template = QPushButton("Импорт группы шаблонов МС на\n UG Management Center")
         self.btn_import_mc_template.setStyleSheet('color: gray; background: gainsboro;')
         self.btn_import_mc_template.setFont(btn_font)
-        self.btn_import_mc_template.setFixedWidth(280)
+        self.btn_import_mc_template.setFixedWidth(300)
         self.btn_import_mc_template.setEnabled(False)
         self.btn_import_mc_template.clicked.connect(self.set_import_mc_template)
         
@@ -483,7 +483,7 @@ class SelectMcExportMode(QWidget):
         self.btn1.setStyleSheet('color: steelblue; background: white;')
         self.btn1.clicked.connect(self.run_page_0)
         self.btn2 = QPushButton('Экспорт выбранной группы шаблонов')
-        self.btn2.setFixedWidth(260)
+        self.btn2.setFixedWidth(280)
         self.btn2.setStyleSheet('color: gray; background: gainsboro;')
         self.btn2.setEnabled(False)
         self.btn2.clicked.connect(self.export_selected_group)
@@ -853,12 +853,13 @@ class SelectImportMode(SelectMode):
             if self.thread is None:
                 self.disable_buttons()
                 arguments = {
-                    'ngfw_ports': '',
+                    'ngfw_ports': 1,
                     'dhcp_settings': '',
-                    'ngfw_vlans': '',
+                    'ngfw_vlans': 1,
                     'new_vlans': '',
-                    'iface_settings': '',
-                    'adapter_ports': set()
+                    'iface_settings': {},
+                    'adapter_ports': set(),
+                    'node_name': None
                 }
                 if not {'DHCP', 'Interfaces'}.isdisjoint(self.selected_points):
                     self.set_arguments(arguments)
@@ -895,12 +896,13 @@ class SelectImportMode(SelectMode):
             return
         
         arguments = {
-            'ngfw_ports': '',
+            'ngfw_ports': 1,
             'dhcp_settings': '',
-            'ngfw_vlans': '',
+            'ngfw_vlans': 1,
             'new_vlans': '',
-            'iface_settings': '',
-            'adapter_ports': set()
+            'iface_settings': {},
+            'adapter_ports': set(),
+            'node_name': None
         }
         for item in all_points:
             self.current_path = os.path.join(self.parent.get_config_path(), item['path'])
@@ -921,105 +923,135 @@ class SelectImportMode(SelectMode):
 
     def set_arguments(self, arguments):
         """Заполняем структуру параметров для импорта."""
-        err, ngfw_interfaces = self.utm.get_interfaces_list()
+        all_ifaces = set()
+        vlans = []
+        ngfw_vlans = {}
+        _dhcp_ports = set()
+
+        err, result = self.utm.get_interfaces_list()
         if err:
-            arguments['ngfw_ports'] = 1
-            arguments['dhcp_settings'] = f'RED|    {ngfw_interfaces}\nНастойки DHCP не будут импортированы.'
-            arguments['ngfw_vlans'] = 1
-            arguments['new_vlans'] = f'RED|    {ngfw_interfaces}\nИнтерфейсы не будут импортированы.'
+            arguments['dhcp_settings'] = f'RED|    {result}\nНастойки DHCP не будут импортированы.'
+            arguments['new_vlans'] = f'RED|    {result}\nИнтерфейсы не будут импортированы.'
             errmsg = f'Error: {ngfw_interfaces}\n    Произошла ошибка при получении списка интерфейсов. Интерфейсы и настойки DHCP не будут импортированы.'
             self.add_item_log(errmsg, color='RED')
             return
-        else:
-            arguments['iface_settings'] = {x['name']: x['kind'] for x in ngfw_interfaces}
 
-        if 'DHCP' in self.selected_points:
-            err, result = self.import_dhcp(ngfw_interfaces)
-            arguments['ngfw_ports'] = err
-            arguments['dhcp_settings'] = result
+        for item in result:
+            # Выбираем интерфейсы только того узла кластера, к которому подключились и VPN.
+            if item['node_name'] in (self.utm.node_name, 'cluster'):
+                arguments['iface_settings'][item['name']] = item['kind']
+                # Получаем порты, на которых можно создать DHCP-subnet.
+                if item.get('ipv4', False) and item['kind'] in {'bridge', 'bond', 'adapter', 'vlan'} and not item['master']:
+                    _dhcp_ports.add(item['name'])
+                if item['kind'] == 'vlan':
+                    ngfw_vlans[item['vlan_id']] = item['link']
+                # Добавляем интерфейсы, существующие на узле, на которых можно создавать VLAN.
+                elif item['kind'] in ('bridge', 'bond', 'adapter') and not item['master']:
+                    all_ifaces.add(item['name'])
+                    # Используется при импорте bridge и bond.
+                    if item['kind'] == 'adapter':
+                        arguments['adapter_ports'].add(item['name'])
+
+        json_file = os.path.join(self.current_path, 'Interfaces', 'config_interfaces.json')
+        err, data = func.read_json_file(self, json_file)
+        if err:
+            self.on_step_changed(err)
+            arguments['dhcp_settings'] = f'RED|    {ngfw_interfaces}\nНастойки DHCP не будут импортированы.'
+            arguments['new_vlans'] = f'RED|    {ngfw_interfaces}\nИнтерфейсы не будут импортированы.'
+            return
+
+        nodes_name = {item['node_name'] for item in data if 'node_name' in item}
+        nodes_name.discard('cluster')
+        if not nodes_name:
+            arguments['node_name'] = 'ALL'
+        elif len(nodes_name) != 1:
+            arguments['node_name'], ok = QInputDialog.getItem(self,
+                                                'Выбор идентификатора узла',
+                                                f'{"Выберите узел кластера,":>44}\nконфигурацию которого надо импортировать.',
+                                                nodes_name,
+                                                editable=False)
+            if not ok:
+                arguments['node_name'] = None
+                errmsg = f'Вы не выбрали узел кластера, конфигурацию которого надо импортировать. Интерфейсы, шлюзы, VRF и настойки DHCP не будут импортированы.'
+                self.add_item_log(errmsg, color='LBLUE')
+                return
+        else:
+            arguments['node_name'] = nodes_name.pop()
+
+        _dhcp_vlans = set()
+        for item in data:
+            if arguments['node_name'] in ('ALL', item['node_name']):
+                if item['kind'] == 'vlan':
+                    vlans.append(item['vlan_id'])   # Получаем список импортируемых VLAN
+                    # Из зайла конфигурации получаем VLAN, на которых можно создать DHCP-subnet.
+                    if item.get('ipv4', False):
+                        _dhcp_vlans.add(item['vlan_id'])
+                # Добавляем интерфейсы, на которых можно создавать VLAN (bond и bridge будут созданы в процессе импорта).
+                elif item['kind'] in ('bridge', 'bond') and not item['master']:
+                    all_ifaces.add(item['name'])
+                    _dhcp_ports.add(item['name'])
+
         if 'Interfaces' in self.selected_points:
             if self.utm.version_hight == 5:
                 arguments['ngfw_vlans'] = 2
                 arguments['new_vlans'] = f'bRED|    VLAN нельзя импортировать на NGFW версии {self.utm.version}.'
             else:
-                err, result = self.create_vlans(ngfw_interfaces)
+                err, result = self.create_vlans(vlans, ['Undefined', *sorted(list(all_ifaces))])
                 if err:
                     arguments['ngfw_vlans'] = err
                     arguments['new_vlans'] = result
                 else:
-                    arguments['ngfw_vlans'] = result[0]
-                    arguments['new_vlans'] = result[1]
-                    arguments['adapter_ports'] = result[2]
+                    arguments['ngfw_vlans'] = ngfw_vlans
+                    arguments['new_vlans'] = result
+        if 'DHCP' in self.selected_points:
+            # Добавляем VLAN-ы которые будут созданы в процессе импорта интерфейсов.
+            if isinstance(arguments['new_vlans'], dict):
+                _dhcp_ports.update([f"{val['port']}.{key}" for key, val in arguments['new_vlans'].items() if key in _dhcp_vlans])
+            err, result = self.import_dhcp(['Undefined', *sorted(list(_dhcp_ports))], arguments['node_name'])
+            arguments['ngfw_ports'] = err
+            arguments['dhcp_settings'] = result
 
 
-    def create_vlans(self, ngfw_interfaces):
-        """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
+    def create_vlans(self, vlans, ports):
+        """Выбираем интерфесы VLAN для импорта и назначаем им порт и зону."""
+        if not vlans:
+            return 3, 'LBLUE|       Нет VLAN для импорта.'
+
         err, result = self.utm.get_zones_list()
         if err:
-            return err, f'RED|    {result}'
+            return 3, f'RED|    {result}'
         zones = ['Undefined', *sorted([x['name'] for x in result])]
 
-        # Составляем список легитимных интерфейсов (interfaces_list).
-        ngfw_vlans = {}
-        management_port = ''
-        adapter_ports = set()
-        interfaces_list = ['Undefined']
-
-        for item in ngfw_interfaces:
-            if item['kind'] == 'vlan':
-                ngfw_vlans[item['vlan_id']] = item['name']
-                continue
-            for ip in item['ipv4']:
-                if ip.startswith(self.utm.server_ip):
-                    management_port = item["name"]
-                    msg = f'Интерфейс {item["name"]} используется для текущей сессии.\nОн не будет использоваться для создания интерфейсов VLAN.'
-                    self.add_item_log(msg, color='NOTE')
-            if item["name"] == management_port:
-                continue
-            if item['kind'] not in ('bridge', 'bond', 'adapter') or item['master']:
-                continue
-            else:
-                if item['kind'] == 'adapter':
-                    adapter_ports.add(item['name'])
-            interfaces_list.append(item['name'])
-
-        # Получаем список импортируемых VLAN.
-        iface_path = os.path.join(self.current_path, 'Interfaces')
-        json_file = os.path.join(iface_path, 'config_interfaces.json')
-        err, data = func.read_json_file(self, json_file)
-        if err:
-            return err, data
-        vlans = sorted([item['vlan_id'] for item in data if item['kind'] == 'vlan'])
-        if not vlans:
-            return 3, 'LBLUE|    Нет VLAN для импорта.'
-
-        dialog = VlanWindow(self, vlans=vlans, ports=interfaces_list, zones=zones, mode='ngfw')
+        dialog = VlanWindow(self, vlans=vlans, ports=ports, zones=zones, mode='ngfw')
         result = dialog.exec()
         if result == QDialog.DialogCode.Accepted:
             new_vlans = {}
             for key, value in dialog.vlans.items():
                 new_vlans[key] = {'port': value['port'].currentText(), 'zone': value['zone'].currentText()}
-            return 0, [ngfw_vlans, new_vlans, adapter_ports]
+            return 0, new_vlans
         else:
-            return 3, 'LBLUE|    Импорт настроек интерфейсов отменён пользователем.'
+            return 3, 'LBLUE|       Импорт интерфейсов VLAN отменён пользователем.'
 
 
-    def import_dhcp(self, ngfw_interfaces):
-        dhcp_path = os.path.join(self.current_path, 'DHCP')
-        json_file = os.path.join(dhcp_path, 'config_dhcp_subnets.json')
+    def import_dhcp(self, ports, node_name):
+        """Выбираем DHCP subnets для импорта и назначаем им порт."""
+        json_file = os.path.join(self.current_path, 'DHCP', 'config_dhcp_subnets.json')
         err, data = func.read_json_file(self, json_file)
         if err:
             return err, data
 
-        ngfw_ports = [x['name'] for x in ngfw_interfaces if x.get('ipv4', False) and x['kind'] in {'bridge', 'bond', 'adapter', 'vlan'}]
-        ngfw_ports.insert(0, 'Undefined')
-
-        dialog = CreateDhcpSubnetsWindow(self, ngfw_ports, data)
-        result = dialog.exec()
-        if result == QDialog.DialogCode.Accepted:
-            return ngfw_ports, data
+        # Получаем DHCP-subnets только нужного узла кластера.
+        if node_name != 'ALL':
+            data = [item for item in data if item['node_name'] == node_name]
+        if data:
+            dialog = CreateDhcpSubnetsWindow(self, ports, data)
+            result = dialog.exec()
+            if result == QDialog.DialogCode.Accepted:
+                return ports, data
+            else:
+                return 3, 'LBLUE|    Импорт настроек DHCP отменён пользователем.'
         else:
-            return 3, 'LBLUE|    Импорт настроек DHCP отменён пользователем.'
+            return 3, 'LBLUE|    Нет настроек DHCP для импорта.'
 
 
 class SelectMcImportMode(SelectMode):
@@ -1440,7 +1472,7 @@ class SelectMcTemplateGroupImport(QWidget):
         self.btn1.clicked.connect(self.run_page_0)
 
         self.btn2 = QPushButton("Импорт выбранной позиции")
-        self.btn2.setFixedWidth(200)
+        self.btn2.setFixedWidth(210)
         self.btn2.setStyleSheet('color: gray; background: gainsboro;')
         self.btn2.setEnabled(False)
         self.btn2.clicked.connect(self.import_selected_templates)

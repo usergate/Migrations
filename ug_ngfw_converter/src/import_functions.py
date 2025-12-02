@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Класс импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.7   25.11.2025
+# Версия 3.8   02.12.2025
 #
 
 import os, sys, copy, json
@@ -47,6 +47,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.ngfw_ports = arguments['ngfw_ports']
         self.dhcp_settings = arguments['dhcp_settings']
         self.adapter_ports = arguments['adapter_ports']
+        self.node_name = arguments['node_name']
         self.error = 0
         self.import_funcs = {
             'Morphology': self.import_morphology_lists,
@@ -759,7 +760,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 else:
                     admins[item['login']] = result
                     self.stepChanged.emit(f'BLACK|    Администратор "{item["login"]}" импортирован.')
-                    admins_exists = True
+                    admins_exists = Fraue
         if admins_exists:
             self.stepChanged.emit('NOTE|    Импортированным локальным администраторам установлен статус "disabled".  Активируйте их и установите пароль.')
         if error:
@@ -826,16 +827,24 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
 
     def import_interfaces(self, path):
+        if not self.node_name:
+            return
+
         json_file = os.path.join(path, 'config_interfaces.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
             return
 
         self.stepChanged.emit('BLUE|Импорт интерфейсов "TUNNEL", "VLAN", "BOND", "BRIDGE", "VPN" в раздел "Сеть/Интерфейсы".')
-        if isinstance(self.ngfw_ports, int):
-            self.stepChanged.emit(self.new_vlans)
-            self.error = 1
-            return
+        if isinstance(self.ngfw_vlans, int):
+            if self.ngfw_vlans == 1:
+                self.stepChanged.emit(self.new_vlans)
+                self.error = 1
+                return
+
+        # Получаем интерфейсы только нужного узла кластера.
+        if self.node_name != 'ALL':     # Конфигурация получена не из universal_converter или из новой версии ug_ngfw_converter.
+            data = [item for item in data if item['node_name'] in (self.node_name, 'cluster')]
 
         kinds = {item['kind'] for item in data}
         if kinds.isdisjoint({'tunnel', 'vlan', 'vpn', 'bond', 'bridge'}):
@@ -885,29 +894,19 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_ipip_interfaces(self, data):
         """Импортируем интерфесы IP-IP."""
-        # Проверяем что есть интерфейсы IP-IP для импорта.
-        is_gre = False
-        for item in data:
-            if 'kind' in item and item['kind'] == 'tunnel' and item['name'][:3] == 'gre':
-                is_gre = True
-        if not is_gre:
-            return
-
         self.stepChanged.emit('BLUE|    Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
-        mc_gre = [int(name[3:]) for name, kind in self.ngfw_ifaces.items() if kind == 'tunnel' and name.startswith('gre')]
-        gre_num = max(mc_gre) if mc_gre else 0
-        if gre_num:
-            self.stepChanged.emit(f'rNOTE|    Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как младшие номера уже существуют на NGFW.')
         error = 0
 
         for item in data:
             if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
-                gre_num += 1
-                item['name'] = f"gre{gre_num}"
-                item.pop('id', None)
+                item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
+                if item['name'] in self.ngfw_ifaces:    # Проверяем что на выбранном узле кластера нет такого тоннеля.
+                    self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на текущем узле кластера.')
+                    continue
+
                 item.pop('master', None)
                 item.pop('mac', None)
-                item.pop('node_name', None)              # удаляем если конфиг получен из МС
+                item.pop('node_name', None)
                 if item.get('config_on_device', False):  # не импортируем если конфиг получен из МС и параметр True.
                     continue
 
@@ -926,6 +925,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err == 2:
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс {item["tunnel"]["mode"]} - {item["name"]} не импортирован]')
                 else:
+                    self.ngfw_ifaces[item['name']] = item['kind']
                     item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Добавлен интерфейс {item["tunnel"]["mode"]} - {item["name"]}.')
         if error:
@@ -940,25 +940,23 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         self.stepChanged.emit('BLUE|    Импорт агрегированных интерфейсов в раздел "Сеть/Интерфейсы".')
         error = 0
         if not self.adapter_ports:
-            self.stepChanged.emit('ORANGE|       Нет свободных адаптеров для импорта агрегированных интерфейсов.')
+            self.stepChanged.emit('NOTE|       Нет свободных адаптеров для импорта агрегированных интерфейсов.')
             # Это должно быть здесь для корректного добавления тэгов.
             for item in data:
                 if 'kind' in item and item['kind'] in ('bond', 'bridge'):
                     item.pop('id', None)
-            self.error = 1
             return
 
         for item in data:
-#            if 'kind' in item and item['kind'] == 'bond':
             if 'kind' in item and item['kind'] in ('bond', 'bridge'):
                 item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
-                if item['name'] in self.ngfw_ifaces:
-                    self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на NGFW/DCFW.')
+                if item['name'] in self.ngfw_ifaces:    # Проверяем что на выбранном узле кластера нет такого интерфейса.
+                    self.stepChanged.emit(f'GRAY|       Интерфейс "{item["name"]}" уже существует на текущем узле кластера.')
                     continue
                 item.pop('mac', None)
                 item.pop('master', None)
                 item.pop('running', None)
-                item.pop('node_name', None)    # удаляем если конфиг получен из МС
+                item.pop('node_name', None)
                 
                 if item['kind'] == 'bond':
                     new_slaves = []
@@ -967,7 +965,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.adapter_ports.remove(port)
                             new_slaves.append(port)
                         else:
-                            self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] порт "{port}" занят или не существует на NGFW/DCFW.')
+                            self.stepChanged.emit(f'bRED|       Warning: [bond "{item["name"]}"] порт "{port}" занят или не существует на NGFW/DCFW.')
                             error = 1
                     if not new_slaves:
                         self.stepChanged.emit(f'RED|       Error: [bond "{item["name"]}"] Нет интерфейсов. Bond не импортирован')
@@ -981,7 +979,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                             self.adapter_ports.remove(port)
                             new_slaves.append(port)
                         else:
-                            self.stepChanged.emit(f'RED|       Error: [bridge "{item["name"]}"] порт "{port}" занят или не существует на NGFW/DCFW.')
+                            self.stepChanged.emit(f'bRED|       Warning: [bridge "{item["name"]}"] порт "{port}" занят или не существует на NGFW/DCFW.')
                             error = 1
                     if not new_slaves or len(new_slaves) < 2:
                         self.stepChanged.emit(f'RED|       Error: [bridge "{item["name"]}"] Нет свободных интерфейсов. Bridge не импортирован')
@@ -1017,10 +1015,10 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     error = 1
 
                 if item['kind'] == 'bond':
-                    item.pop('kind', None)
+#                    item.pop('kind', None)
                     err, result = self.utm.add_interface_bond(item)
                 elif item['kind'] == 'bridge':
-                    item.pop('kind', None)
+#                    item.pop('kind', None)
                     err, result = self.utm.add_interface_bridge(item)
                 if err == 1:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс "{item["name"]}" не импортирован]')
@@ -1028,7 +1026,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 elif err == 2:
                     self.stepChanged.emit(f'rNOTE|       {result} [Интерфейс "{item["name"]}" не импортирован]')
                 else:
-                    self.ngfw_ifaces[item['name']] = 'bond'
+                    self.ngfw_ifaces[item['name']] = item['kind']
                     item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Интерфейс "{item["name"]}" импортирован.')
         if error:
@@ -1038,22 +1036,19 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit('GREEN|       Импорт агрегированных интерфейсов завершён.')
 
 
-
     def import_vlans(self, data, list_netflow, list_lldp):
         """Импортируем интерфесы VLAN. Нельзя использовать интерфейсы Management и slave."""
         self.stepChanged.emit('BLUE|    Импорт VLAN в раздел "Сеть/Интерфейсы".')
         error = 0
         if isinstance(self.ngfw_vlans, int):
             self.stepChanged.emit(self.new_vlans)
-            if self.ngfw_vlans == 1:
-                self.error = 1
             return
 
         for item in data:
             if 'kind' in item and item['kind'] == 'vlan':
                 item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
-                if item["vlan_id"] in self.ngfw_vlans:
-                    self.stepChanged.emit(f'GRAY|       VLAN {item["vlan_id"]} уже существует на порту {self.ngfw_vlans[item["vlan_id"]]}')
+                if item["vlan_id"] in self.ngfw_vlans:    # Проверяем что на выбранном узле кластера нет такого VLAN.
+                    self.stepChanged.emit(f'GRAY|       VLAN {item["vlan_id"]} уже существует на порту {self.ngfw_vlans[item["vlan_id"]]} на текущем узле кластера.')
                     continue
                 current_port = self.new_vlans[item['vlan_id']]['port']
                 current_zone = self.new_vlans[item['vlan_id']]['zone']
@@ -1067,9 +1062,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     item['mode'] = 'manual'
 
                 item.pop('master', None)      # удаляем readonly поле
-                item.pop('kind', None)        # удаляем readonly поле
                 item.pop('mac', None)
-                item.pop('node_name', None)   # удаляем если конфиг получен из МС
+                item.pop('node_name', None)
 
                 if item.get('config_on_device', False):  # не импортируем если конфиг получен из МС и настраивается на устройстве.
                     continue
@@ -1102,12 +1096,15 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'bRED|       Для VLAN "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
                     item['netflow_profile'] = 'undefined'
 
+#                print(json.dumps(item, indent=4), '\n')
+
                 err, result = self.utm.add_interface_vlan(item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
                     error = 1
                 else:
-                    self.ngfw_vlans[item['vlan_id']] = item['name']
+                    self.ngfw_vlans[item['vlan_id']] = current_port
+                    self.ngfw_ifaces[item['name']] = item['kind']
                     item['id'] = result
                     self.stepChanged.emit(f'BLACK|       Интерфейс VLAN "{item["name"]}" импортирован.')
         if error:
@@ -1125,8 +1122,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
         for item in data:
             if 'kind' in item and item['kind'] == 'vpn':
                 item.pop('id', None)    # Это должно быть здесь для корректного добавления тэгов.
-                if item['name'] in self.ngfw_ifaces:
-                    self.stepChanged.emit(f'GRAY|       Интерфейс VPN {item["name"]} уже существует на NGFW.')
+                if item['name'] in self.ngfw_ifaces:    # Проверяем что на кластере нет такого интерфейса.
+                    self.stepChanged.emit(f'GRAY|       Кластерный интерфейс VPN {item["name"]} уже существует.')
                     continue
 
                 item['node_name'] = 'cluster'
@@ -1274,7 +1271,16 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_dhcp_subnets(self, path):
         """Импортируем настойки DHCP"""
+        print('\n', self.node_name)
+        if not self.node_name:
+            return
+
         self.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
+        print('\nself.ngfw_ifaces:', self.ngfw_ifaces)
+
+        print('\nself.ngfw_ports:', self.ngfw_ports)
+        print('self.dhcp_settings:', self.dhcp_settings)
+
         if isinstance(self.ngfw_ports, int):
             self.stepChanged.emit(self.dhcp_settings)
             if self.ngfw_ports == 1:
@@ -1282,23 +1288,24 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             return
         error = 0
 
+        # Получаем DHCP-subnets текущего узла кластера.
         err, result = self.utm.get_dhcp_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте настроек DHCP.')
             self.error = 1
             return
-        ngfw_dhcp_subnets = [x['name'] for x in result]
+        ngfw_dhcp_subnets = [x['name'] for x in result if item['node_name'] == self.utm.node_name]
 
         for item in self.dhcp_settings:
-            item.pop('node_name', None)         # удаляем если конфиг получен из МС
+            item.pop('node_name', None)
             if item['iface_id'] == 'Undefined':
                 self.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как для него не указан порт.')
                 continue
             if item['name'] in ngfw_dhcp_subnets:
-                self.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как уже существует.')
+                self.stepChanged.emit(f'GRAY|    DHCP subnet "{item["name"]}" не добавлен так как уже существует на этом узле кластера.')
                 continue
-            if item['iface_id'] not in self.ngfw_ports:
-                self.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не добавлен так как порт: {item["iface_id"]} не существует.')
+            if item['iface_id'] not in self.ngfw_ifaces:
+                self.stepChanged.emit(f'rNOTE|    DHCP subnet "{item["name"]}" не добавлен так как порт: {item["iface_id"]} не существует на этом узле кластера.')
                 continue
 
             err, result = self.utm.add_dhcp_subnet(item)
@@ -1314,7 +1321,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.error = 1
             self.stepChanged.emit('ORANGE|    Произошла ошибка при импорте настроек DHCP!')
         else:
-            self.stepChanged.emit('GREEN|    Импорт настроек DHCP завершён.')
+            self.stepChanged.emit(f'GREEN|    Импорт настроек DHCP на узел кластера "{self.utm.node_name}" завершён.')
 
 
     def import_dns_config(self, path):

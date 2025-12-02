@@ -2212,29 +2212,26 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     def import_ipip_interfaces(self, path, data):
         """Импортируем интерфесы IP-IP."""
         # Проверяем что есть интерфейсы IP-IP для импорта.
-        is_gre = False
-        for item in data:
-            if 'kind' in item and item['kind'] == 'tunnel' and item['name'][:3] == 'gre':
-                is_gre = True
-        if not is_gre:
-            return
+#        is_gre = False
+#        for item in data:
+#            if 'kind' in item and item['kind'] == 'tunnel' and item['name'][:3] == 'gre':
+#                is_gre = True
+#        if not is_gre:
+#            return
 
         self.stepChanged.emit('BLUE|    Импорт интерфейсов GRE/IPIP/VXLAN в раздел "Сеть/Интерфейсы".')
         mc_ifaces = self.mc_data['interfaces']
-        mc_gre = [int(aa[0][3:]) for x in mc_ifaces if (aa := x.split(':'))[0].startswith('gre') and aa[1] == self.node_name]
-        gre_num = max(mc_gre) if mc_gre else 0
-        if gre_num:
-            self.stepChanged.emit(f'uGRAY|       Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как меньшие номера уже существует в этой группе шаблонов для узла кластера "{self.node_name}".')
+#        mc_gre = [int(aa[0][3:]) for x in mc_ifaces if (aa := x.split(':'))[0].startswith('gre') and aa[1] == self.node_name]
+#        gre_num = max(mc_gre) if mc_gre else 0
+#        if gre_num:
+#            self.stepChanged.emit(f'uGRAY|       Для интерфейсов GRE будут использованы номера начиная с {gre_num + 1} так как меньшие номера уже существует в этой группе шаблонов для узла кластера "{self.node_name}".')
         error = 0
         n = 0
 
         for item in data:
             if 'kind' in item and item['kind'] == 'tunnel' and item['name'].startswith('gre'):
-                gre_num += 1
-                item['name'] = f'gre{gre_num}'
-                item.pop('id', None)          # удаляем readonly поле
-                item.pop('master', None)      # удаляем readonly поле
-                item.pop('mac', None)
+#                gre_num += 1
+#                item['name'] = f'gre{gre_num}'
                 if 'node_name' in item and item['node_name'].startswith('node_'):
                      if item['node_name'] != self.node_name:
                         continue
@@ -2249,6 +2246,13 @@ class ImportMcNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     else:
                         self.stepChanged.emit(f'sGREEN|       Интерфейс "{item["name"]}" уже существует в шаблоне "{mc_ifaces[iface_name].template_name}" на узле кластера "{self.node_name}".')
                     continue
+
+                item.pop('id', None)          # удаляем readonly поле
+                item.pop('mac', None)
+                item.pop('master', None)      # удаляем readonly поле
+
+                if 'config_on_device' not in item:
+                    item['config_on_device'] = False
 
                 if item['zone_id']:
                     try:

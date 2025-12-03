@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.3  02.12.2025
+# Версия 2.4  03.12.2025
 #
 
 import os, sys, copy, json, copy
@@ -47,6 +47,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
         self.ip_lists_groups = set()
         self.tags = set()
         self.zones = set()
+        self.vlans_address = {}
 
         self.time_restrictions = set()
         self.vendor = 'PaloAlto'
@@ -715,7 +716,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     'name': item['@name'],
                     'kind': 'vlan',
                     'enabled': False,
-                    'description': 'Портировано с PaloAlto.',
+                    'description': item['comment'] if item.get('comment', False) else 'Портировано с PaloAlto.',
                     'zone_id': 0,
                     'master': False,
                     'netflow_profile': 'undefined',
@@ -734,7 +735,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     'vlan_id': int(item['tag']),
                     'link': ''
                 }
-                if item['ip']:
+                if item.get('ip', False):
                     if isinstance(item['ip']['entry'], dict):
                         item['ip']['entry'] = [item['ip']['entry']]
                     for ip_entry in item['ip']['entry']:
@@ -746,6 +747,9 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                             iface['mode'] = 'static'
                         else:
                             self.stepChanged.emit(f'RED|    Error: Интерфейс VLAN "{iface["name"]}" - не валидный IP-адрес "{ip_entry["@name"]}".')
+                else:
+                    iface['mode'] = 'manual'
+                self.vlans_address[item['@name']] = iface['ipv4']
                 ifaces.append(iface)
 
         if ifaces:
@@ -998,7 +1002,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             if 'source-user' in item:
                 self.get_users_and_groups(item['source-user']['member'], rule)
 #            self.get_time_restrictions(value['schedule'], rule)
-            if 'tag' in item:
+            if isinstance(item.get('tag', None), dict):
                 self.get_tags(item['tag']['member'], rule)
 
             apps = set()
@@ -1130,7 +1134,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             rule['dst_ips'] = self.get_ips('dst', item['destination']['member'], rule)
             self.get_users_and_groups(item['source-user']['member'], rule)
 #            self.get_time_restrictions(value['schedule'], rule)
-            if 'tag' in item:
+            if isinstance(item.get('tag', None), dict):
                 self.get_tags(item['tag']['member'], rule)
 
             if not isinstance(categories, list):
@@ -1216,7 +1220,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             nat_rules = [nat_rules]
         for item in nat_rules:
             error, rule_name = self.get_transformed_name(item['@name'], err=error, descr='Имя правила NAT')
-            descr = item.get('description', 'Портировано с PaloAlto.'),
+            descr = item.get('description', 'Портировано с PaloAlto.')
             if (disabled := item.get('disabled', None)):
                 disabled = disabled['#text'] if isinstance(disabled, dict) else disabled
             if (negate_src := item.get('negate-source', None)):
@@ -1255,18 +1259,42 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 rule['source_ip'] = self.get_ips('src', item['source']['member'], rule)
             if 'destination' in item:
                 rule['dest_ip'] = self.get_ips('dst', item['destination']['member'], rule)
-            if 'tag' in item:
+            if isinstance(item.get('tag', None), dict):
                 self.get_tags(item['tag']['member'], rule)
 
             if 'source-translation' in item:
                 if 'dynamic-ip-and-port' in item['source-translation']:
-                    ip = item['source-translation']['dynamic-ip-and-port']['interface-address']['ip']
-                    ip = ip['#text'] if isinstance(ip, dict) else ip
-                    rule['snat_target_ip'] = self.ip_lists.get(ip, ip).partition('/')[0]
+                    if (interface_address := item['source-translation']['dynamic-ip-and-port'].get('interface-address', False)):
+                        if (ip := interface_address.get('ip', False)):
+                            ip = ip['#text'] if isinstance(ip, dict) else ip
+                            rule['snat_target_ip'] = self.ip_lists.get(ip, ip).partition('/')[0]
+                        elif (interface := interface_address.get('interface', False)) and self.vlans_address.get(interface, False):
+                            rule['snat_target_ip'] = self.vlans_address.get(interface, ['/'])[0].partition('/')[0]
+                    elif (translated_address := item['source-translation']['dynamic-ip-and-port'].get('translated-address', False)):
+                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule_name}"] Не конвертировано source-translation: "{translated_address}".')
+                        rule['rule_error'] = True
+                        rule['description'] = f'{rule["description"]}\nНе конвертировано source-translation: "{translated_address}".'
                 elif 'static-ip' in item['source-translation']:
                     ip = item['source-translation']['static-ip']['translated-address']
                     ip = ip['#text'] if isinstance(ip, dict) else ip
                     rule['snat_target_ip'] = self.ip_lists.get(ip, ip).partition('/')[0]
+                elif 'dynamic-ip' in item['source-translation']:
+                    members = item['source-translation']['dynamic-ip']['translated-address']['member']
+                    if isinstance(members, str):
+                        if self.check_ip(self.ip_lists[members]).partition('/')[2] != "32":
+                            pass
+#                            rule['source_ip'].extend(self.get_ips('src', members, rule))
+#                            if isinstance(item['destination']['member'], str):
+#                                if self.check_ip(self.ip_lists[item['destination']['member']]).partition('/')[2] != "32":
+#                                    try:
+#                                        rule['target_ip'] = self.ip_lists[item['destination']['member']]
+#                                        rule['action'] = 'netmap'
+#                                    except KeyError:
+#                                        self.stepChanged.emit(f'RED|    Error: [Правило "{rule_name}"] Проверьте правило, возможны ошибки конвертации.')
+#                                        rule['rule_error'] = True
+#                                        rule['description'] = f"{rule['description']}\nПроверьте правило, возможны ошибки конвертации."
+                        else:
+                            rule['snat_target_ip'] = self.ip_lists.get(members, '/').partition('/')[0]
 
             elif 'destination-translation' in item:
                 dnat_ip = item['destination-translation']['translated-address']
@@ -1465,32 +1493,34 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 'position_layer': 'local',
                 'rule_error': 0,
             }
-            self.get_users_and_groups(item['source-user']['member'], rule)
+            if 'source-user' in item:
+                self.get_users_and_groups(item['source-user']['member'], rule)
             rule['src_ips'] = self.get_ips('src', item['source']['member'], rule)
             rule['dst_ips'] = self.get_ips('dst', item['destination']['member'], rule)
-            if 'tag' in item:
+            if isinstance(item.get('tag', None), dict):
                 self.get_tags(item['tag']['member'], rule)
 
-            categories = item['category']['member']
-            if not isinstance(categories, list):
-                categories = [categories]
-            cat_set = set()
-            err_url_category = set()
-            for x in categories:
-                category = x if isinstance(x, str) else x['#text']
-                if category != 'any':
-                    if category in self.url_lists:
-                        rule['urls'].append(category)
-                    elif category in pa_url_category:
-                        cat_set.update(pa_url_category[category])
-                    else:
-                        err_url_category.add(category)
-            if cat_set:
-                rule['url_categories'] = [['category_id', y] for y in cat_set]
-            if err_url_category:
-                self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не конвертирована URL-категория: {", ".join(err_url_category)}. Возможно такой категории нет на UserGate.')
-                rule['description'] = f'{rule["description"]}\nНе найдена URL-категория: {", ".join(err_url_category)}'
-                rule['rule_error'] = 1
+            if 'category' in item:
+                categories = item['category']['member']
+                if not isinstance(categories, list):
+                    categories = [categories]
+                cat_set = set()
+                err_url_category = set()
+                for x in categories:
+                    category = x if isinstance(x, str) else x['#text']
+                    if category != 'any':
+                        if category in self.url_lists:
+                            rule['urls'].append(category)
+                        elif category in pa_url_category:
+                            cat_set.update(pa_url_category[category])
+                        else:
+                            err_url_category.add(category)
+                if cat_set:
+                    rule['url_categories'] = [['category_id', y] for y in cat_set]
+                if err_url_category:
+                    self.stepChanged.emit(f'RED|    Error: [Правило "{rule["name"]}"] Не конвертирована URL-категория: {", ".join(err_url_category)}. Возможно такой категории нет на UserGate.')
+                    rule['description'] = f'{rule["description"]}\nНе найдена URL-категория: {", ".join(err_url_category)}'
+                    rule['rule_error'] = 1
 
             if rule['rule_error']:
                 rule['name'] = f'ERROR - {rule["name"]}'

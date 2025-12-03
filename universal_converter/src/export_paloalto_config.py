@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.4  03.12.2025
+# Версия 2.5  03.12.2025
 #
 
 import os, sys, copy, json, copy
@@ -689,19 +689,32 @@ class ConvertPaloAltoConfig(QThread, MyConv):
         """Конвертируем интерфейсы VLAN."""
         self.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
         error = 0
-        ifaces = []
-#        if network['interface']['vlan']['units']:
-#            pass
+        all_vlans = []
 
         if (tmp_net := network['interface'].get('aggregate-ethernet', False)):
             if isinstance(tmp_net['entry'], list):
                 for item in tmp_net['entry']:
-                    self.create_vlans(item['layer3']['units'])
+                    all_vlans.extend(self.create_vlans(item['@name'], item['layer3']['units']))
             elif isinstance(tmp_net['entry'], dict):
-                self.create_vlans(tmp_net['entry']['layer3']['units'])
+                all_vlans = self.create_vlans(item['@name'], tmp_net['entry']['layer3']['units'])
+
+        if all_vlans:
+            current_path = os.path.join(self.current_ug_path, 'Network', 'Interfaces')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_interfaces.json')
+            with open(json_file, 'w') as fh:
+                json.dump(all_vlans, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'GREEN|    Интерфейсы VLAN выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.')
 
 
-    def create_vlans(self, units):
+    def create_vlans(self, node_name, units):
         vlans = []
         ifaces = []
         if units:
@@ -714,6 +727,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             if item.get('tag', False):
                 iface = {
                     'name': item['@name'],
+                    'node_name': node_name,
                     'kind': 'vlan',
                     'enabled': False,
                     'description': item['comment'] if item.get('comment', False) else 'Портировано с PaloAlto.',
@@ -751,21 +765,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     iface['mode'] = 'manual'
                 self.vlans_address[item['@name']] = iface['ipv4']
                 ifaces.append(iface)
-
-        if ifaces:
-            current_path = os.path.join(self.current_ug_path, 'Network', 'Interfaces')
-            err, msg = self.create_dir(current_path)
-            if err:
-                self.stepChanged.emit(f'RED|    {msg}')
-                self.error = 1
-                return
-
-            json_file = os.path.join(current_path, 'config_interfaces.json')
-            with open(json_file, 'w') as fh:
-                json.dump(ifaces, fh, indent=4, ensure_ascii=False)
-            self.stepChanged.emit(f'GREEN|    Интерфейсы VLAN выгружены в файл "{json_file}".')
-        else:
-            self.stepChanged.emit('GRAY|    Нет интерфейсов VLAN для экспорта.')
+        return ifaces
 
 
     def convert_vrfs(self, pa_vrfs):

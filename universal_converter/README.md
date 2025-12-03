@@ -1,5 +1,5 @@
 <h2 align="center">Преобразование конфигурации сторонних вендоров в формат UserGate</h2>
-<h3 align="center">(Версия 9.8)</h3>
+<h3 align="center">(Версия 9.9)</h3>
 
 Программа предназначена для преобразования конфигурации с Blue Coat, Cisco ASA, Cisco FPR, Check Point, Fortigate, Huawei,
 Kerio, MikroTik, PaloAlto в формат UserGate.

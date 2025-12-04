@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.5  03.12.2025
+# Версия 2.6  04.12.2025
 #
 
 import os, sys, copy, json, copy
@@ -48,6 +48,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
         self.tags = set()
         self.zones = set()
         self.vlans_address = {}
+        self.dhcp_relays = {}
 
         self.time_restrictions = set()
         self.vendor = 'PaloAlto'
@@ -92,9 +93,14 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 if lib['zone']:
                     self.convert_zone_settings(lib['zone']['entry'])
                 network = data['config']['devices']['entry']['network']
+                if 'dhcp' in network:
+                    if isinstance(network['dhcp']['interface'].get('entry', None), dict):
+                        network['dhcp']['interface']['entry'] = [network['dhcp']['interface']['entry']]
+                    self.convert_dhcp_relays(network['dhcp']['interface']['entry'])
                 self.convert_vlan_interfaces(network)
-                if isinstance(network['virtual-router']['entry'], dict):
-                    network['virtual-router']['entry'] = [network['virtual-router']['entry']]
+                if 'virtual-router' in network:
+                    if isinstance(network['virtual-router'].get('entry', None), dict):
+                        network['virtual-router']['entry'] = [network['virtual-router']['entry']]
                     self.convert_vrfs(network['virtual-router']['entry'])
                 systemconfig = data['config']['devices']['entry']['deviceconfig']['system']
                 self.convert_settings_ui(systemconfig)
@@ -368,6 +374,8 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 'attributes': {},
                 'content': []
             }
+            if isinstance(item['members']['member'], str):
+                item['members']['member'] = [item['members']['member']]
             for member in item['members']['member']:
                 if isinstance(member, dict):
                     member = member['#text']
@@ -685,6 +693,19 @@ class ConvertPaloAltoConfig(QThread, MyConv):
 
 
     #--------------------------------- Сеть ------------------------------------------------
+    def convert_dhcp_relays(self, dhcp_relay_entry):
+        """Конвертируем dhcp_relay"""
+        for item in dhcp_relay_entry:
+            if 'relay' in item:
+                if isinstance(item['relay']['ip']['server']['member'], str):
+                    item['relay']['ip']['server']['member'] = [item['relay']['ip']['server']['member']]
+            self.dhcp_relays[item['@name']] = {
+                'enabled': True if item['relay']['ip'].get('enabled', 'no') == 'yes' else False,
+                'host_ipv4': '',
+                'servers': item['relay']['ip']['server']['member']
+            }
+
+
     def convert_vlan_interfaces(self, network):
         """Конвертируем интерфейсы VLAN."""
         self.stepChanged.emit('BLUE|Конвертация интерфейсов VLAN.')
@@ -741,11 +762,12 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     'mode': 'manual',
                     'mtu': 1500,
                     'tap': False,
-                    'dhcp_relay': {
-                        'enabled': False,
-                        'host_ipv4': '',
-                        'servers': []
-                    },
+                    'dhcp_relay': self.dhcp_relays.get(item['@name'], {'enabled': False, 'host_ipv4': '', 'servers': []}),
+#                    {
+#                        'enabled': False,
+#                        'host_ipv4': '',
+#                        'servers': []
+#                    },
                     'vlan_id': int(item['tag']),
                     'link': ''
                 }
@@ -771,9 +793,10 @@ class ConvertPaloAltoConfig(QThread, MyConv):
     def convert_vrfs(self, pa_vrfs):
         """Конвертируем список VRFs"""
         self.stepChanged.emit('BLUE|Конвертация шлюзов и virtual routers.')
-
         gateways_list = []
         ngfw_vrfs = []
+        error_gw = 0
+        error_st = 0
 
         for vrf in pa_vrfs:
             new_vrf = {
@@ -792,34 +815,47 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     routes = [routes]
 
                 for item in routes:
+                    gateway = item['nexthop']['ip-address']
                     # Конвертируем шлюзы
                     if item['destination'] == '0.0.0.0/0':
-                        gateways_list.append({
-                           'name': item['@name'],
-                           'enabled': True,
-                           'description': item.get('description', 'Портировано с PaloAlto.'),
-                           'ipv4': item['nexthop']['ip-address'],
-                           'vrf': new_vrf['name'],
-                           'weight': int(item.get('metric', 1)),
-                           'multigate': False,
-                           'default': False,
-                           'iface': 'undefined',
-                           'is_automatic': False
-                        })
+                        if (route_gateway := self.check_ip(gateway)) or (route_gateway := self.ip_lists.get(gateway, False)):
+                            gateways_list.append({
+                               'name': item['@name'],
+                               'enabled': True,
+                               'description': item.get('description', 'Портировано с PaloAlto.'),
+                               'ipv4': route_gateway.partition('/')[0],
+                               'vrf': new_vrf['name'],
+                               'weight': int(item.get('metric', 1)),
+                               'multigate': False,
+                               'default': False,
+                               'iface': 'undefined',
+                               'is_automatic': False
+                            })
+                        else:
+                            self.stepChanged.emit(f'RED|    Шлюз "{item["@name"]}" не конвертирован. Ошибка проверки nexthop "{item["nexthop"]["ip-address"]}".')
+                            error_gw = 1
                     else:
                         # Конвертируем статические маршруты
-                        route = {
-                            'name': item['@name'],
-                            'description': item.get('description', 'Портировано с PaloAlto.'),
-                            'enabled': True,
-                            'dest': item['destination'],
-                            'gateway': item['nexthop']['ip-address'],
-                            'ifname': 'undefined',
-                            'kind': 'unicast',
-                            'metric': int(item.get('metric', 1))
-                        }
-                        new_vrf['routes'].append(route)
-            ngfw_vrfs.append(new_vrf)
+                        dest = item['destination']
+                        if (route_dest := self.check_ip(dest)) or (route_dest := self.ip_lists.get(dest, False)):
+                            if (route_gateway := self.check_ip(gateway)) or (route_gateway := self.ip_lists.get(gateway, False)):
+                                new_vrf['routes'].append({
+                                    'name': item['@name'],
+                                    'description': item.get('description', 'Портировано с PaloAlto.'),
+                                    'enabled': True,
+                                    'dest': route_dest,
+                                    'gateway': route_gateway.partition('/')[0],
+                                    'ifname': 'undefined',
+                                    'kind': 'unicast',
+                                    'metric': int(item.get('metric', 1))
+                                })
+                            else:
+                                self.stepChanged.emit(f'RED|    Статический маршрут "{item["@name"]}" не конвертирован. Ошибка проверки nexthop "{item["nexthop"]["ip-address"]}".')
+                                error_st = 1
+                        else:
+                            self.stepChanged.emit(f'RED|    Статический маршрут "{item["@name"]}" не конвертирован. Ошибка проверки destination "{item["destination"]}".')
+                            error_st = 1
+                ngfw_vrfs.append(new_vrf)
 
         if gateways_list:
             current_path = os.path.join(self.current_ug_path, 'Network', 'Gateways')
@@ -832,7 +868,12 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             json_file = os.path.join(current_path, 'config_gateways.json')
             with open(json_file, 'w') as fh:
                 json.dump(gateways_list, fh, indent=4, ensure_ascii=False)
-            self.stepChanged.emit(f'GREEN|    Список шлюзов выгружен в файл "{json_file}".')
+
+            if error_gw:
+                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. Список шлюзов выгружены в файл "{json_file}".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|    Список шлюзов выгружен в файл "{json_file}".')
         else:
             self.stepChanged.emit('GRAY|    Нет списка шлюзов для экспорта.')
 
@@ -847,7 +888,12 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             json_file = os.path.join(current_path, 'config_vrf.json')
             with open(json_file, 'w') as fh:
                 json.dump(ngfw_vrfs, fh, indent=4, ensure_ascii=False)
-            self.stepChanged.emit(f'GREEN|    Virtual Routers выгружены в файл "{json_file}".')
+
+            if error_st:
+                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. VRF выгружены в файл "{json_file}".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|    Virtual Routers выгружены в файл "{json_file}".')
         else:
             self.stepChanged.emit('GRAY|    Нет Virtual Routers для экспорта.')
 

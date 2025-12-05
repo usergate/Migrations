@@ -1,5 +1,5 @@
 <h2 align="center">Преобразование конфигурации сторонних вендоров в формат UserGate</h2>
-<h3 align="center">(Версия 9.10)</h3>
+<h3 align="center">(Версия 9.11)</h3>
 
 Программа предназначена для преобразования конфигурации с Blue Coat, Cisco ASA, Cisco FPR, Check Point, Fortigate, Huawei,
 Kerio, MikroTik, PaloAlto в формат UserGate.
@@ -430,6 +430,7 @@ PaloAlto. Такие правила будут отключены и в опис
 3. <b>qt.qpa.xcb: could not connect to display</b> - попытка запустить конвертер без графического окружения.
 установите GNOME или KDE, XFCE и т.д.<br>
 
+05.12.2025  Добавлена конвертация профилей DoS и правил защиты DoS, исправлена конвертация списков URL для PaloAlto.<br>
 04.12.2025  Исправлена конвертация шлюзов, статических маршрутов, групп сервисов для PaloAlto.<br>
 04.12.2025  Добавлена конвертация dhcp-relay для VLAN в PaloAlto.<br>
 03.12.2025  Исправлены ошибки конвертации для PaloAlto.<br>

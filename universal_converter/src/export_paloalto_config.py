@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.6  04.12.2025
+# Версия 2.7  05.12.2025
 #
 
 import os, sys, copy, json, copy
@@ -49,6 +49,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
         self.zones = set()
         self.vlans_address = {}
         self.dhcp_relays = {}
+        self.dos_profiles = set()
 
         self.time_restrictions = set()
         self.vendor = 'PaloAlto'
@@ -86,8 +87,11 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                     self.convert_url_lists(lib['address']['entry'])
                 if lib['address-group']:
                     self.convert_iplist_groups(lib['address-group']['entry'])
-                if 'profiles' in lib and lib['profiles'].get('custom-url-category', False):
-                    self.convert_custom_url_lists(lib['profiles']['custom-url-category']['entry'])
+                if 'profiles' in lib:
+                    if lib['profiles'].get('custom-url-category', False):
+                        self.convert_custom_url_lists(lib['profiles']['custom-url-category']['entry'])
+                    if lib['profiles'].get('dos-protection', False):
+                        self.convert_dos_profiles(lib['profiles']['dos-protection']['entry'])
                 if lib['tag']:
                     self.convert_tags(lib['tag']['entry'])
                 if lib['zone']:
@@ -114,6 +118,8 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                         self.convert_nat_rule(lib['rulebase']['nat']['rules']['entry'])
                     if lib['rulebase'].get('decryption', False) and lib['rulebase']['decryption']['rules']:
                         self.convert_ssl_inspection(lib['rulebase']['decryption']['rules']['entry'])
+                    if lib['rulebase'].get('dos', False) and lib['rulebase']['dos']['rules']:
+                        self.convert_dos_rules(lib['rulebase']['dos']['rules']['entry'])
 
                 if self.error:
                     self.stepChanged.emit('iORANGE|Конвертация конфигурации PaloAlto в формат UserGate прошла с ошибками.\n')
@@ -571,6 +577,7 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             error, iplist_name = self.get_transformed_name(item['@name'], err=error, descr='Имя списка групп IP-адресов')
             descr = item.get('description', 'Портировано с PaloAlto.')
             content = []
+            urls_list = []
             if 'static' in item:
                 if isinstance(item['static']['member'], str):
                     item['static']['member'] = [item['static']['member']]
@@ -579,6 +586,9 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                         member = member['#text']
                     if member in self.ip_lists:
                         content.append({'list': member})
+                    elif member in self.url_lists:
+                        urls_list.append({'value': member})
+#                        self.stepChanged.emit(f'RED|       Error: [Группа IP-адресов "{iplist_name}"] Пропущен "{member}" т.к. вложенные URL-листы не поддерживаются.')
             ip_list = {
                 'name': iplist_name,
                 'description': descr['#text'] if isinstance(descr, dict) else descr,
@@ -589,6 +599,8 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 'attributes': {'threat_level': 3},
                 'content': content
             }
+            if not ip_list['content']:
+                self.stepChanged.emit(f'ORANGE|       Warning: Группа IP-адресов "{iplist_name}" не имеет содержимого.')
 
             n += 1
             self.ip_lists_groups.add(ip_list['name'])
@@ -597,6 +609,10 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             with open(json_file, 'w') as fh:
                 json.dump(ip_list, fh, indent=4, ensure_ascii=False)
                 self.stepChanged.emit(f'BLACK|       {n} - Группа IP-адресов "{ip_list["name"]}" выгружена в файл "{json_file}".')
+
+            if urls_list:
+                self.create_url_list(iplist_name, urls_list)
+
         if error:
             self.stepChanged.emit(f'ORANGE|    Конвертация группы IP-адресов прошла с ошибками. Группа IP-адресов выгружена в каталог "{current_path}".')
             self.error = 1
@@ -641,6 +657,64 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             self.stepChanged.emit(f'GREEN|    Профили netflow выгружены в файл "{json_file}".')
         else:
             self.stepChanged.emit('GRAY|    Нет профилей netflow для экспорта.')
+
+
+    def convert_dos_profiles(self, profiles_entry):
+        """Конвертируем профили DoS."""
+        self.stepChanged.emit('BLUE|Конвертация профилей DoS.')
+        if isinstance(profiles_entry, dict):
+            profiles_entry = [profiles_entry]
+
+        dos_profiles = []
+        try:
+            for item in profiles_entry:
+                dos_profiles.append({
+                    'name': item['@name'],
+                    'description': '',
+                    'aggregate': True,
+                    'sessions': {
+                        'enabled': True if item['resource']['sessions']['enabled'] == 'yes' else False,
+                        'max_sessions': int(item['resource']['sessions']['max-concurrent-limit'])
+                    },
+                    'floods': [
+                        {
+                            'type': 'syn',
+                            'enabled': False if item['flood']['tcp-syn']['enable'] == 'no' else True,
+                            'alert': int(item['flood']['tcp-syn']['red']['alarm-rate']),
+                            'drop': int(item['flood']['tcp-syn']['red']['maximal-rate'])
+                        },
+                        {
+                            'type': 'udp',
+                            'enabled': False if item['flood']['udp']['enable'] == 'no' else True,
+                            'alert': int(item['flood']['udp']['red']['alarm-rate']),
+                            'drop': int(item['flood']['udp']['red']['maximal-rate'])
+                        },
+                        {
+                            'type': 'icmp',
+                            'enabled': False if item['flood']['icmp']['enable'] == 'no' else True,
+                            'alert': int(item['flood']['icmp']['red']['alarm-rate']),
+                            'drop': int(item['flood']['icmp']['red']['maximal-rate'])
+                        }
+                    ]
+                })
+                self.dos_profiles.add(item['@name'])
+        except Exception:
+            print(item)
+
+        if dos_profiles:
+            current_path = os.path.join(self.current_ug_path, 'SecurityPolicies', 'DosProfiles')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+            json_file = os.path.join(current_path, 'config_dos_profiles.json')
+            with open(json_file, 'w') as fh:
+                json.dump(dos_profiles, fh, indent=4, ensure_ascii=False)
+            self.stepChanged.emit(f'GREEN|    Профили DoS выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет профилей DoS для экспорта.')
+
 
 
     def convert_tags(self, pa_tags):
@@ -1599,6 +1673,103 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             self.stepChanged.emit('GRAY|    Нет правил инспектирования SSL для экспорта.')
 
 
+    def convert_dos_rules(self, dos_rules):
+        """Конвертируем правила защиты DoS"""
+        self.stepChanged.emit('BLUE|Конвертация правил защиты DoS.')
+        error = 0
+        n = 0
+        rules = []
+
+        if isinstance(dos_rules, dict):
+            dos_rules = [dos_rules]
+        for item in dos_rules:
+            error, rule_name = self.get_transformed_name(item['@name'], err=error, descr='Имя правила защиты DoS')
+            descr = item.get('description', 'Портировано с PaloAlto.')
+            if (disabled := item.get('disabled', None)):
+                disabled = disabled['#text'] if isinstance(disabled, dict) else disabled
+            if (dos_profile := item['protection']['classified'].get('profile', None)):
+                dos_profile = dos_profile if isinstance(dos_profile, str) else dos_profile['#text']
+                if dos_profile not in self.dos_profiles:
+                    dos_profile = False
+            if (action := item.get('action', None)):
+                action = action['protect']['#text'] if isinstance(action['protect'], dict) else action['protect']
+                if dos_profile and action:
+                    action = 'protect'
+                elif dos_profile and not action:
+                    action = 'accept'
+                else:
+                    action = 'drop'
+            if (negate_src := item.get('negate-source', None)):
+                negate_src = negate_src if isinstance(negate_src, str) else negate_src['#text']
+            if (negate_dst := item.get('negate-destination', None)):
+                negate_dst = negate_dst if isinstance(negate_dst, str) else negate_dst['#text']
+            rule = {
+                'name': rule_name,
+                'description': descr['#text'] if isinstance(descr, dict) else descr,
+                'action': action,
+                'position': 'last',
+                'enabled': False if disabled == 'yes' else True,
+                'src_zones': self.get_zones(item['from']['zone']['member']),
+                'dst_zones': self.get_zones(item['to']['zone']['member']),
+                'src_ips': [],
+                'dst_ips': [],
+                'services': [],
+                'limit': True,
+                'limit_value': '3/h',
+                'limit_burst': 5,
+                'log': True,
+                'log_session_start': True,
+                'src_zones_nagate': False,
+                'dst_zones_nagate': False,
+                'src_ips_nagate': True if negate_src == 'yes' else False,
+                'dst_ips_nagate': True if negate_dst == 'yes' else False,
+                'services_nagate': False,
+                'dos_profile': dos_profile,
+                'scenario_rule_id': False,
+                'users': [],
+                'time_restrictions': [],
+                'position_layer': 'local',
+                'rule_error': 0,
+            }
+            rule['src_ips'] = self.get_ips('src', item['source']['member'], rule)
+            rule['dst_ips'] = self.get_ips('dst', item['destination']['member'], rule)
+            rule['services'] = self.get_services(item['service']['member'], rule)
+            if 'source-user' in item:
+                self.get_users_and_groups(item['source-user']['member'], rule)
+#            self.get_time_restrictions(value['schedule'], rule)
+            if isinstance(item.get('tag', None), dict):
+                self.get_tags(item['tag']['member'], rule)
+
+            if rule['rule_error']:
+                rule['name'] = f'ERROR - {rule["name"]}'
+                rule['enabled'] = False
+                error = 1
+            rule.pop('rule_error', None)
+
+            rules.append(rule)
+            self.stepChanged.emit(f'BLACK|    Создано правило защиты DoS "{rule["name"]}".')
+
+        if rules:
+            current_path = os.path.join(self.current_ug_path, 'SecurityPolicies', 'DoSRules')
+            err, msg = self.create_dir(current_path)
+            if err:
+                self.stepChanged.emit(f'RED|    {msg}')
+                self.error = 1
+                return
+
+            json_file = os.path.join(current_path, 'config_dos_rules.json')
+            with open(json_file, 'w') as fh:
+                json.dump(rules, fh, indent=4, ensure_ascii=False)
+
+            if error:
+                self.stepChanged.emit(f'ORANGE|    Конвертация прошла с ошибками. Правила защиты DoS выгружены в файл "{json_file}".')
+                self.error = 1
+            else:
+                self.stepChanged.emit(f'GREEN|    Правила защиты DoS выгружены в файл "{json_file}".')
+        else:
+            self.stepChanged.emit('GRAY|    Нет правил защиты DoS для экспорта.')
+
+
 #------------------------------------------------------------------------------------------------------------------
     def convert_time_sets(self, data):
         """Конвертируем time set (календари)"""
@@ -1725,11 +1896,14 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 err, ips_name = self.get_transformed_name(ips_name, descr='Имя списка IP-адресов')
                 if err:
                     self.stepChanged.emit(f'RED|       Error: Правило "{rule["name"]}".')
+                not_found = True
                 if ips_name in self.ip_lists or ips_name in self.ip_lists_groups:
                     new_rule_ips.append(['list_id', ips_name])
-                elif ips_name in self.url_lists:
+                    not_found = False
+                if ips_name in self.url_lists:
                     new_rule_ips.append(['urllist_id', ips_name])
-                else:
+                    not_found = False
+                if not_found:
                     if self.check_ip(ips_name):
                         new_rule_ips.append(['list_id', self.create_ip_list(ips=[ips_name], name=ips_name, descr='Портировано с PaloAlto')])
                     else:
@@ -1842,6 +2016,34 @@ class ConvertPaloAltoConfig(QThread, MyConv):
 #                rule['description'] = f'{rule["description"]}\nError! Не найден календарь "{schedule_name}".'
 #                rule['rule_error'] = 1
 #        rule['time_restrictions'] = new_schedule
+
+
+    def create_url_list(self, list_name, urls_list):
+        """Создаём URL-лист"""
+        url_list = {
+            'name': list_name,
+            'description': 'Портировано с PaloAlto.',
+            'type': 'url',
+            'url': '',
+            'list_type_update': 'static',
+            'schedule': 'disabled',
+            'attributes': {'list_compile_type': 'case_insensitive'},
+            'content': urls_list
+        }
+        self.url_lists.add(url_list['name'])
+
+        current_path = os.path.join(self.current_ug_path, 'Libraries', 'URLLists')
+        err, msg = self.create_dir(current_path, delete='no')
+        if err:
+            self.stepChanged.emit(f'RED|    {msg}')
+            self.error = 1
+            return False
+
+        json_file = os.path.join(current_path, f'{url_list["name"].translate(self.trans_filename)}.json')
+        with open(json_file, 'w') as fh:
+            json.dump(url_list, fh, indent=4, ensure_ascii=False)
+        self.stepChanged.emit(f'sGREEN|       Список URL "{url_list["name"]}" выгружен в файл "{json_file}".')
+        return True
 
 
 def main(args):

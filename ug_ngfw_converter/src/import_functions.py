@@ -20,7 +20,7 @@
 #-------------------------------------------------------------------------------------------------------- 
 # import_functions.py
 # Класс импорта разделов конфигурации на NGFW UserGate.
-# Версия 3.8   02.12.2025
+# Версия 3.9   08.12.2025
 #
 
 import os, sys, copy, json
@@ -1096,8 +1096,6 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     self.stepChanged.emit(f'bRED|       Для VLAN "{item["name"]}" не найден netflow profile "{item["netflow_profile"]}". Импортируйте профили netflow.')
                     item['netflow_profile'] = 'undefined'
 
-#                print(json.dumps(item, indent=4), '\n')
-
                 err, result = self.utm.add_interface_vlan(item)
                 if err:
                     self.stepChanged.emit(f'RED|       {result} [Интерфейс {item["name"]} не импортирован]')
@@ -1182,9 +1180,16 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_gateways_list(self, path):
         """Импортируем список шлюзов"""
+        if not self.node_name:
+            return
+
         json_file = os.path.join(path, 'config_gateways.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
+            return
+        if self.node_name != 'ALL':
+            data = [item for item in data if x['node_name'] == self.node_name]
+        if not data:
             return
 
         self.stepChanged.emit('BLUE|Импорт шлюзов в раздел "Сеть/Шлюзы".')
@@ -1196,8 +1201,8 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте шлюзов.')
             self.error = 1
             return
-        gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result}
-        gateways_read_only = {x.get('name', x['ipv4']): x.get('is_automatic', False) for x in result}
+        gateways_list = {x.get('name', x['ipv4']): x['id'] for x in result if x['node_name'] == self.utm.node_name}
+        gateways_read_only = {x.get('name', x['ipv4']): x.get('is_automatic', False) for x in result if x['node_name'] == self.utm.node_name}
 
         if self.utm.float_version >= 6:
             err, result = self.utm.get_routes_list()
@@ -1205,7 +1210,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте шлюзов.')
                 self.error = 1
                 return
-            vrf_list = [x['name'] for x in result]
+            vrf_list = [x['name'] for x in result if x['node_name'] == self.utm.node_name]
 
         for item in data:
             if self.utm.float_version >= 6:
@@ -1223,7 +1228,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                 item['iface'] = 'undefined'
                 item.pop('is_automatic', None)
                 item.pop('vrf', None)
-            item.pop('node_name', None)         # удаляем если конфиг получен из МС
+            item.pop('node_name', None)
             item.pop('mac', None)
             
             if item['name'] in gateways_list:
@@ -1271,16 +1276,10 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
     def import_dhcp_subnets(self, path):
         """Импортируем настойки DHCP"""
-        print('\n', self.node_name)
         if not self.node_name:
             return
 
         self.stepChanged.emit('BLUE|Импорт настроек DHCP раздела "Сеть/DHCP".')
-        print('\nself.ngfw_ifaces:', self.ngfw_ifaces)
-
-        print('\nself.ngfw_ports:', self.ngfw_ports)
-        print('self.dhcp_settings:', self.dhcp_settings)
-
         if isinstance(self.ngfw_ports, int):
             self.stepChanged.emit(self.dhcp_settings)
             if self.ngfw_ports == 1:
@@ -1294,7 +1293,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте настроек DHCP.')
             self.error = 1
             return
-        ngfw_dhcp_subnets = [x['name'] for x in result if item['node_name'] == self.utm.node_name]
+        ngfw_dhcp_subnets = [x['name'] for x in result if x['node_name'] == self.utm.node_name]
 
         for item in self.dhcp_settings:
             item.pop('node_name', None)
@@ -1447,9 +1446,16 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
     
     def import_vrf(self, path):
         """Импортируем список виртуальных маршрутизаторов"""
+        if not self.node_name:
+            return
+
         json_file = os.path.join(path, 'config_vrf.json')
         err, data = self.read_json_file(json_file, mode=2)
         if err:
+            return
+        if self.node_name != 'ALL':
+            data = [item for item in data if x['node_name'] == self.node_name]
+        if not data:
             return
 
         self.stepChanged.emit('BLUE|Импорт виртуальных маршрутизаторов в раздел "Сеть/Виртуальные маршрутизаторы".')
@@ -1465,14 +1471,14 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте виртуальных маршрутизаторов.')
             self.error = 1
             return
-        ngfw_ifaces = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
+        ngfw_ifaces = {x['name']: x['id'] for x in result if x['node_name'] == self.utm.node_name}
 
         err, result = self.utm.get_routes_list()
         if err:
             self.stepChanged.emit(f'RED|    {result}\n    Произошла ошибка при импорте виртуальных маршрутизаторов.')
             self.error = 1
             return
-        virt_routes = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result}
+        virt_routes = {self.get_transformed_name(x['name'], mode=0)[1]: x['id'] for x in result if x['node_name'] == self.utm.node_name}
 
         if self.utm.float_version >= 7.1:
             err, result = self.utm.get_bfd_profiles()
@@ -1501,7 +1507,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
                     continue
                 if x['ifname'] != 'undefined':
                     if x['ifname'] not in ngfw_ifaces:
-                        self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на NGFW.')
+                        self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс "{x["ifname"]}" удалён из статического маршрута "{x["name"]}" так как отсутствует на этом узле.')
                         x['ifname'] = 'undefined'
                         error = 1
                 new_routes[x['name']] = x
@@ -1527,7 +1533,7 @@ class ImportNgfwSelectedPoints(QThread, ReadWriteBinFile, MyMixedService):
 
                     for x in item['ospf']['interfaces']:
                         if x['iface_id'] not in ngfw_ifaces:
-                            self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс OSPF "{x["iface_id"]}" удалён из настроек OSPF так как отсутствует на NGFW.')
+                            self.stepChanged.emit(f'RED|    Error: [VRF "{item["name"]}"] Интерфейс OSPF "{x["iface_id"]}" удалён из настроек OSPF так как отсутствует на этом узле.')
                             ids.add(x['id'])
                             error = 1
                             continue

@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с PaloAlto в формат UserGate.
-# Версия 2.7  05.12.2025
+# Версия 2.8  08.12.2025
 #
 
 import os, sys, copy, json, copy
@@ -80,22 +80,24 @@ class ConvertPaloAltoConfig(QThread, MyConv):
                 if isinstance(lib, list):
                     lib = lib[0]
                 self.convert_services(lib['service'])
-                if lib['service-group']:
+                if lib.get('service-group', False):
                     self.convert_service_groups(lib['service-group']['entry'])
-                if lib['address']:
+                if lib.get('address', False):
                     self.convert_ip_lists(lib['address']['entry'])
                     self.convert_url_lists(lib['address']['entry'])
-                if lib['address-group']:
+                if lib.get('address-group', False):
                     self.convert_iplist_groups(lib['address-group']['entry'])
-                if 'profiles' in lib:
+                if lib.get('profiles', False):
                     if lib['profiles'].get('custom-url-category', False):
                         self.convert_custom_url_lists(lib['profiles']['custom-url-category']['entry'])
                     if lib['profiles'].get('dos-protection', False):
                         self.convert_dos_profiles(lib['profiles']['dos-protection']['entry'])
-                if lib['tag']:
+                if lib.get('tag', False):
                     self.convert_tags(lib['tag']['entry'])
-                if lib['zone']:
+                if lib.get('zone', False):
                     self.convert_zone_settings(lib['zone']['entry'])
+                if lib.get('schedule', False):
+                    self.convert_time_sets(lib['schedule']['entry'])
                 network = data['config']['devices']['entry']['network']
                 if 'dhcp' in network:
                     if isinstance(network['dhcp']['interface'].get('entry', None), dict):
@@ -1770,95 +1772,67 @@ class ConvertPaloAltoConfig(QThread, MyConv):
             self.stepChanged.emit('GRAY|    Нет правил защиты DoS для экспорта.')
 
 
-#------------------------------------------------------------------------------------------------------------------
     def convert_time_sets(self, data):
         """Конвертируем time set (календари)"""
         self.stepChanged.emit('BLUE|Конвертация календарей.')
-        week = {
-            'monday': 1,
-            'tuesday': 2,
-            'wednesday': 3,
-            'thursday': 4,
-            'friday': 5,
-            'saturday': 6,
-            'sunday': 7
-        }
+#        week = {
+#            'monday': 1,
+#            'tuesday': 2,
+#            'wednesday': 3,
+#            'thursday': 4,
+#            'friday': 5,
+#            'saturday': 6,
+#            'sunday': 7
+#        }
         timerestrictiongroup = []
         error = 0
 
-        if 'config firewall schedule onetime' in data:
-            for key, value in data['config firewall schedule onetime'].items():
-                if value:
-                    error, schedule_name = self.get_transformed_name(key, err=error, descr='Имя календаря')
-                    time_set = {
-                        'name': schedule_name,
-                        'description': 'Портировано с PaloAlto',
-                        'type': 'timerestrictiongroup',
-                        'url': '',
-                        'list_type_update': 'static',
-                        'schedule': 'disabled',
-                        'attributes': {},
-                        'content': []
-                    }
-                    content = {
-                        'name': schedule_name,
-#                        'type': 'range',
-                        'type': 'span',
-                    }
-                    if 'start' in value and 'end' in value:
-                        start = value['start'].split()
-                        end = value['end'].split()
-                        content['time_to'] = end[0]
-                        content['time_from'] = start[0]
-                        content['fixed_date_to'] = f'{end[1].replace("/", "-")}T00:00:00'
-                        content['fixed_date_from'] = f'{start[1].replace("/", "-")}T00:00:00'
-                    elif 'start' not in value:
-                        time_to, fixed_date_to = value['end'].split()
-#                        content['type'] = 'span'
-                        content['time_to'] = time_to
-                        content['fixed_date_to'] = f'{fixed_date_to.replace("/", "-")}T00:00:00'
-                    elif 'end' not in value:
-                        time_from, fixed_date_from = value['start'].split()
-#                        content['type'] = 'span'
-                        content['time_from'] = time_from
-                        content['fixed_date_from'] = f'{fixed_date_from.replace("/", "-")}T00:00:00'
-                    time_set['content'].append(content)
-
-                    timerestrictiongroup.append(time_set)
-                    self.time_restrictions.add(time_set['name'])
-
-        if 'config firewall schedule recurring' in data:
-            for key, value in data['config firewall schedule recurring'].items():
-                if value:
-                    error, schedule_name = self.get_transformed_name(key, err=error, descr='Имя календаря')
-                    schedule = {
-                        'name': schedule_name,
-                        'description': 'Портировано с PaloAlto',
-                        'type': 'timerestrictiongroup',
-                        'url': '',
-                        'list_type_update': 'static',
-                        'schedule': 'disabled',
-                        'attributes': {},
-                        'content': []
-                    }
-                    if 'day' in value and value['day'] != 'none':
-                        content = {
-                            'type': 'weekly',
-                            'name': schedule_name,
-                            'days': [week[day] for day in value['day'].split()]
-                        }
-                    else:
-                        content = {
+        if isinstance(data, dict):
+            data = [data]
+        for item in data:
+            error, item_name = self.get_transformed_name(item['@name'], err=error, descr='Имя календаря')
+            time_set = {
+                'name': item_name,
+                'description': 'Портировано с PaloAlto',
+                'type': 'timerestrictiongroup',
+                'url': '',
+                'list_type_update': 'static',
+                'schedule': 'disabled',
+                'attributes': {},
+                'content': []
+            }
+            if 'recurring' in item['schedule-type']:
+                if (daily := item['schedule-type']['recurring'].get('daily', False)):
+                    if isinstance(daily['member'], str):
+                        daily['member'] = [daily['member']]
+                    for i, member in enumerate(daily['member'], start=1):
+                        member = member['#text'] if isinstance(member, dict) else member
+                        time_from, _, time_to = member.partition('-')
+                        time_set['content'].append({
+                            'name': f'{item_name}_{i}',
                             'type': 'daily',
-                            'name': schedule_name,
-                        }
-                    if 'start' in value:
-                        content['time_from'] = value['start']
-                        content['time_to'] = value['end']
-                    schedule['content'].append(content)
+                            'time_from': time_from,
+                            'time_to': time_to,
+                        })
+            if 'non-recurring' in item['schedule-type']:
+                if isinstance(member := item['schedule-type']['non-recurring']['member'], str):
+                    member = [member]
+                for i, member in enumerate(member, start=1):
+                    member = member['#text'] if isinstance(member, dict) else member
+                    dt_from, _, dt_to = member.partition('-')
+                    date_from, _, time_from = dt_from.partition('@')
+                    date_to, _, time_to = dt_to.partition('@')
+                    time_set['content'].append({
+                        'name': f'{item_name}_{i}',
+                        'type': 'span',
+                        'time_from': time_from,
+                        'time_to': time_to,
+                        'fixed_date_from': f'{date_from.replace("/", "-")}T00:00:00',
+                        'fixed_date_to': f'{date_to.replace("/", "-")}T00:00:00',
+                    })
 
-                    timerestrictiongroup.append(schedule)
-                    self.time_restrictions.add(schedule['name'])
+            timerestrictiongroup.append(time_set)
+            self.time_restrictions.add(time_set['name'])
 
         if timerestrictiongroup:
             current_path = os.path.join(self.current_ug_path, 'Libraries', 'TimeSets')

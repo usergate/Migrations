@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright @ 2021-2022 UserGate Corporation. All rights reserved.
 # Author: Aleksei Remnev <ran1024@yandex.ru>
@@ -19,7 +19,7 @@
 #
 #--------------------------------------------------------------------------------------------------- 
 # Модуль преобразования конфигурации с Fortigate в формат UserGate.
-# Версия 4.5 31.10.2025
+# Версия 4.6 10.12.2025
 #
 
 import os, sys, json, copy
@@ -326,12 +326,12 @@ class ConvertFortigateConfig(QThread, MyConv):
 
         config_fortigate = {}
         try:
-            with open(fg_config_file, "r") as fh:
+            with open(fg_config_file, "r", errors='ignore') as fh:
                 config_block = []
                 for line in fh:
                     if line.startswith('#'):
                         continue
-#                    x = line.rstrip('\n').replace(',', '_').replace('" "', ',').replace('"', '')
+#                        x = line.rstrip('\n').replace(',', '_').replace('" "', ',').replace('"', '')
                     x = line.rstrip('\n').replace('" "', ';').replace('"', '')
                     if x.startswith('config'):
                         key = x
@@ -354,10 +354,13 @@ class ConvertFortigateConfig(QThread, MyConv):
 #        Это оставлено для тестирования.
 #        with open(os.path.join(self.current_fg_path, 'tmp_fort.json'), 'w') as fh:
 #            json.dump(config_fortigate, fh, indent=4, ensure_ascii=False)
+#        return
 
         for key, value in config_fortigate.items():
+#            print('\n', key, value)
             content = [x.strip().split() for x in value]
             if content:
+#                print(content)
                 config_fortigate[key] = self.make_conf_block(content)
             else:
                 config_fortigate[key] = {}
